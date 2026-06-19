@@ -1,0 +1,22 @@
+{
+  "name": "tuckmark",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "dev:preview": "node scripts/dev-preview.mjs",
+    "dev:server": "pnpm --filter @tuckmark/server dev",
+    "dev:web": "pnpm --filter @tuckmark/web dev",
+    "dev:mcp": "pnpm --filter @tuckmark/mcp dev",
+    "dev:cli": "pnpm --filter @tuckmark/cli dev"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}

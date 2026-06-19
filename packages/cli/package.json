@@ -1,0 +1,17 @@
+{
+  "name": "@tuckmark/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "tuckmark": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts --help",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tuckmark/core": "workspace:*",
+    "zod": "^4.4.3"
+  }
+}

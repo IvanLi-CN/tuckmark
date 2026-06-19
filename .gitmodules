@@ -1,0 +1,3 @@
+[submodule "detonger"]
+	path = detonger
+	url = https://github.com/IvanLi-CN/detonger.git
