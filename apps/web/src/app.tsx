@@ -81,6 +81,11 @@ function sortPrinters(printers: Printer[]): Printer[] {
   })
 }
 
+function isPrinterUnavailableError(cause: unknown): boolean {
+  const message = cause instanceof Error ? cause.message : String(cause)
+  return message.includes("Printer is no longer available")
+}
+
 function buildModeLabel(mode: AppContext["mode"]): string {
   return mode === "demo" ? "Demo mode" : "Runtime mode"
 }
@@ -202,9 +207,9 @@ export function App({ client: providedClient, context: providedContext }: AppPro
     preferredPrinterNameRef.current = preferredPrinterName
   }, [preferredPrinterName])
 
-  const refreshSetup = React.useCallback(async () => {
+  const refreshSetup = React.useCallback(async (preferredPrinterName = preferredPrinterNameRef.current) => {
     const nextTemplates = await client.listTemplates()
-    const setup = await loadSetup(client, [], preferredPrinterNameRef.current)
+    const setup = await loadSetup(client, [], preferredPrinterName)
 
     if (nextTemplates.length > 0) {
       const fallbackTemplateId = nextTemplates[0]?.id ?? ""
@@ -221,8 +226,10 @@ export function App({ client: providedClient, context: providedContext }: AppPro
     setPrinters(nextPrinters)
     setPrinterId(nextSelectedPrinter?.id ?? (nextPrinters.length === 1 ? fallbackPrinterId : ""))
     if (nextSelectedPrinter?.name) {
+      preferredPrinterNameRef.current = nextSelectedPrinter.name
       setPreferredPrinterName(nextSelectedPrinter.name)
     } else if (nextPrinters.length === 0) {
+      preferredPrinterNameRef.current = ""
       setPreferredPrinterName("")
     }
 
@@ -265,6 +272,51 @@ export function App({ client: providedClient, context: providedContext }: AppPro
     setPreview(nextPreview)
     setArtifactData(data)
     setPrintResult(null)
+  }
+
+  function rememberPrinterSelection(nextPrinterId: string) {
+    setPrinterId(nextPrinterId)
+    const nextPrinter = printers.find((printer) => printer.id === nextPrinterId)
+    if (nextPrinter?.name) {
+      preferredPrinterNameRef.current = nextPrinter.name
+      setPreferredPrinterName(nextPrinter.name)
+      return
+    }
+
+    if (!nextPrinterId) {
+      preferredPrinterNameRef.current = ""
+      setPreferredPrinterName("")
+    }
+  }
+
+  async function runServerTaskWithRecovery<T>(
+    key: string,
+    task: (printer: Printer) => Promise<T>
+  ): Promise<T | undefined> {
+    if (!selectedPrinter) {
+      setError("先选择一个后端打印机。")
+      return
+    }
+
+    return run(key, async () => {
+      try {
+        return await task(selectedPrinter)
+      } catch (cause) {
+        if (!selectedPrinter.name || !isPrinterUnavailableError(cause)) {
+          throw cause
+        }
+
+        const setup = await refreshSetup(selectedPrinter.name)
+        const reboundPrinter =
+          setup.selectedPrinter ??
+          setup.printers.find((printer) => printer.name === selectedPrinter.name)
+        if (!reboundPrinter) {
+          throw cause
+        }
+
+        return task(reboundPrinter)
+      }
+    })
   }
 
   async function previewTemplate() {
@@ -324,14 +376,10 @@ export function App({ client: providedClient, context: providedContext }: AppPro
   }
 
   async function printThroughServer(artifactId: string) {
-    if (!selectedPrinter) {
-      setError("先选择一个后端打印机。")
-      return
-    }
-    const result = await run("server-print-artifact", () =>
+    const result = await runServerTaskWithRecovery("server-print-artifact", (printer) =>
       client.printArtifact({
-        printerId: selectedPrinter.id,
-        printerName: selectedPrinter.name,
+        printerId: printer.id,
+        printerName: printer.name,
         artifactId,
       })
     )
@@ -389,10 +437,10 @@ export function App({ client: providedClient, context: providedContext }: AppPro
     }
 
     if (hasServerPrinterFlow && selectedPrinter) {
-      const result = await run("server-preview-and-print-template", () =>
+      const result = await runServerTaskWithRecovery("server-preview-and-print-template", (printer) =>
         client.printTemplate({
-          printerId: selectedPrinter.id,
-          printerName: selectedPrinter.name,
+          printerId: printer.id,
+          printerName: printer.name,
           templateId,
           input,
           renderOptions,
@@ -455,10 +503,10 @@ export function App({ client: providedClient, context: providedContext }: AppPro
     }
 
     if (hasServerPrinterFlow && selectedPrinter) {
-      const result = await run("server-preview-and-print-safe-text", () =>
+      const result = await runServerTaskWithRecovery("server-preview-and-print-safe-text", (printer) =>
         client.printSafeText({
-          printerId: selectedPrinter.id,
-          printerName: selectedPrinter.name,
+          printerId: printer.id,
+          printerName: printer.name,
           ...safeTextPayload,
         })
       )
@@ -608,7 +656,7 @@ export function App({ client: providedClient, context: providedContext }: AppPro
               <CardContent className="grid gap-5">
                 {hasServerPrinterFlow ? (
                   <FieldBlock label="后端探测打印机" htmlFor="printer-select">
-                    <Select value={printerId} onValueChange={setPrinterId}>
+                    <Select value={printerId} onValueChange={rememberPrinterSelection}>
                       <SelectTrigger id="printer-select" aria-label="后端探测打印机">
                         <SelectValue
                           placeholder={
