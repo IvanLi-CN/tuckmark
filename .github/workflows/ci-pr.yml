@@ -36,5 +36,7 @@ jobs:
         run: bun run build:web:pages
       - name: Build Storybook
         run: bun run --filter @tuckmark/web build:storybook
+      - name: Install Playwright browser
+        run: bunx playwright install --with-deps chromium
       - name: Run Playwright demo checks
         run: bun run test:e2e:web
