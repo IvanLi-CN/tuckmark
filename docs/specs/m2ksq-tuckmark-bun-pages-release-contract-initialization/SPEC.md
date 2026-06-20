@@ -7,7 +7,7 @@
 ## Summary
 
 Tuckmark must converge on a Bun-first product repository contract with a formal
-Web surface, a Pages-backed owner demo, a durable PR-label release pipeline,
+Web surface, a browser-static owner runtime, a durable PR-label release pipeline,
 and a reproducible worktree bootstrap path.
 
 ## Requirements
@@ -16,7 +16,7 @@ and a reproducible worktree bootstrap path.
 
 - Tuckmark is the product contract.
 - `detonger` is the lower transport and control layer.
-- The formal Web app and the Pages demo reuse the same route tree and component
+- The formal Web app and the static runtime reuse the same route tree and component
   tree.
 
 ### Tooling and bootstrap
@@ -29,9 +29,9 @@ and a reproducible worktree bootstrap path.
 ### Web behavior
 
 - The Web app resolves its mode through an explicit API abstraction.
-- Static Pages uses a mock API layer.
-- Runtime deployments use HTTP `/api`.
-- `demo=true` and `demo=false` change contract behavior, not page structure.
+- Static Pages uses the browser-static runtime with relative asset URLs.
+- Runtime deployments use either `server-http` or `browser-static` surface.
+- `demo=true` enters demo mode, `demo=false` and no param stay on runtime mode.
 
 ### Delivery
 
@@ -44,20 +44,19 @@ and a reproducible worktree bootstrap path.
 
 - `bun run setup` succeeds from a fresh linked worktree.
 - required checks match `.github/quality-gates.json`
-- Pages serves the formal app under `/tuckmark/`
+- Pages serves the formal app from the root path with relative assets
 - Release can publish stable and preview bundles from durable snapshots
 - GitHub labels, protection, and Pages settings align with repository truth
 
 ## Visual Evidence
 
-This spec requires:
+This spec requires deterministic evidence from repo-owned surfaces.
 
-- Pages demo screenshots
-- mock shell screenshots for `demo=false`
-- Storybook and Playwright verification evidence bound to the latest merge-ready
-  SHA
+Accepted evidence for this contract is:
 
-Current local evidence:
+- static build inspection proving root-path relative asset URLs
+- Playwright coverage for root-path runtime and explicit `?demo=true`
+- Storybook coverage for stable `runtime` and `demo` states
 
-- `work/visual/pages-demo.png`: Pages-style seeded demo on the formal app surface
-- `work/visual/mock-shell.png`: `demo=false` mock shell on the same route tree with capability gating
+Non-deterministic screenshots from a live browser window do not count as proof for
+this spec and are not retained here.

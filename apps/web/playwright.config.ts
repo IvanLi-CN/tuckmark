@@ -9,8 +9,8 @@ export default defineConfig({
   },
   webServer: {
     command:
-      "bun run build:pages && bun ../../scripts/serve-pages-preview.ts --root dist --base /tuckmark/ --port 4173",
-    url: "http://127.0.0.1:4173/tuckmark/",
+      "bun run build:pages && bun ../../scripts/serve-pages-preview.ts --root dist --base / --port 4173",
+    url: "http://127.0.0.1:4173/",
     timeout: 120_000,
     reuseExistingServer: false,
   },

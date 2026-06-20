@@ -165,7 +165,7 @@ export function renderSafeTextLabelPreview(request) {
     const verticalPadding = 16;
     const text = normalizedRequest.text.trimEnd() || "Tuckmark";
     const maxChars = Math.max(8, Math.floor((width - horizontalPadding * 2) / (24 * 0.6)));
-    const lines = wrapText(escapeXml(text), maxChars, 4);
+    const lines = wrapText(text, maxChars, 4);
     const height = Math.max(64, verticalPadding * 2 + lines.length * lineHeight);
     const elements = lines.map((line, index) => ({
         kind: "text",

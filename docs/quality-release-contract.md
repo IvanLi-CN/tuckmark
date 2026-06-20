@@ -28,9 +28,9 @@ GitHub Pages deploys from `main` through GitHub Actions.
 
 The published site:
 
-- uses the repository base path `/tuckmark/`
+- uses relative asset URLs for the static `browser-static` build
 - reuses the formal Web app route tree
-- defaults to the demo-safe contract when no query parameter is present
+- defaults to `runtime` when no query parameter is present
 - supports `?demo=true` and `?demo=false` on the same app surface
 
 Pages is independent from GitHub Release publication.
