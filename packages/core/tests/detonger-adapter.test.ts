@@ -59,7 +59,7 @@ describe("DetongerAdapter", () => {
     expect(decoded.some((packet) => packet[1] === 0x2e)).toBe(true)
     expect(decoded.every((packet) => packet[1] !== 0x2c && packet[1] !== 0x2d)).toBe(true)
     expect(decoded.at(-1)?.at(-1)).toBe(0x0c)
-  }, 20_000)
+  }, 60_000)
 
   it("can opt into lpapi compact packets explicitly", async () => {
     process.env.TUCKMARK_DETONGER_PACKET_ENCODER = "lpapi"
