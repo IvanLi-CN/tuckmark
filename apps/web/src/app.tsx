@@ -541,7 +541,9 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                 <Badge variant="secondary">{buildModeLabel(context.mode)}</Badge>
               </div>
               <div className="grid gap-3">
-                <CardTitle className="max-w-3xl text-3xl sm:text-4xl">单标签打印主链路</CardTitle>
+                <CardTitle as="h1" className="max-w-3xl text-3xl sm:text-4xl">
+                  单标签打印主链路
+                </CardTitle>
                 <CardDescription className="max-w-3xl text-base leading-7 text-muted-foreground">
                   模板填充、单条安全文本、预览产物与打印提交全部共用同一份 artifact。Pages demo 和
                   mock shell 只切换 API contract，不复制页面。

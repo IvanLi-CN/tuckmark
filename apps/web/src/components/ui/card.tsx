@@ -18,8 +18,18 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   return <div className={cn("flex flex-col gap-2 p-6", className)} {...props} />
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("text-xl font-semibold tracking-tight", className)} {...props} />
+type CardTitleProps<T extends React.ElementType = "div"> = {
+  as?: T
+  className?: string
+} & Omit<React.ComponentPropsWithoutRef<T>, "as" | "className">
+
+function CardTitle<T extends React.ElementType = "div">({
+  as,
+  className,
+  ...props
+}: CardTitleProps<T>) {
+  const Component = as ?? "div"
+  return <Component className={cn("text-xl font-semibold tracking-tight", className)} {...props} />
 }
 
 function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
