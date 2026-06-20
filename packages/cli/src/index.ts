@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises"
 import path from "node:path"
-
-import { z } from "zod"
-
 import { TuckmarkService } from "@tuckmark/core"
+import { z } from "zod"
 
 const service = new TuckmarkService()
 

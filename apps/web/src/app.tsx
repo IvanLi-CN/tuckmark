@@ -1,27 +1,43 @@
+import { AlertCircle, Bluetooth, Boxes, Cable, RefreshCw, Server, WandSparkles } from "lucide-react"
 import React from "react"
 
 import { type ApiClient, createApiClient, loadSetup } from "./api-client.js"
 import {
-  type BrowserPrintResult,
   type BrowserPrinterSession,
+  type BrowserPrintResult,
   connectBrowserPrinter,
   getSelectedBrowserPrinter,
   isBrowserPrintSupported,
   printPreviewArtifact,
 } from "./browser-printer.js"
+import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
+import { Badge } from "./components/ui/badge.js"
+import { Button } from "./components/ui/button.js"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card.js"
+import { Input } from "./components/ui/input.js"
+import { Label } from "./components/ui/label.js"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select.js"
+import { Textarea } from "./components/ui/textarea.js"
 import {
   buildInputFromTemplate,
   defaultRenderOptions,
   fallbackInputs,
   fallbackTemplates,
 } from "./demo-data.js"
+import { cn } from "./lib/utils.js"
 import { resolveAppContext } from "./runtime.js"
 import type {
   AppContext,
   PreviewArtifact,
   PreviewResult,
-  PrintResult,
   Printer,
+  PrintResult,
   RenderOptions,
   Template,
 } from "./types.js"
@@ -73,6 +89,70 @@ function buildModeLabel(mode: AppContext["mode"]): string {
     return "Mock shell"
   }
   return "Runtime"
+}
+
+function buildServerPrintLabel(context: AppContext): string {
+  return context.capabilities.serverPrint === "available"
+    ? "server print live"
+    : "server print mocked"
+}
+
+function BusyButton({
+  busy,
+  busyKey,
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof Button> & {
+  busy: string | null
+  busyKey: string
+}) {
+  return (
+    <Button className={className} disabled={props.disabled || busy !== null} {...props}>
+      {busy === busyKey ? <RefreshCw className="size-4 animate-spin" /> : null}
+      {children}
+    </Button>
+  )
+}
+
+function FieldBlock({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string
+  htmlFor: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+    </div>
+  )
+}
+
+function StatCard({
+  icon,
+  title,
+  value,
+  description,
+}: {
+  icon: React.ReactNode
+  title: string
+  value: string
+  description: string
+}) {
+  return (
+    <div className="rounded-lg border border-border/70 bg-muted/35 p-4">
+      <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
+        {icon}
+        <span>{title}</span>
+      </div>
+      <div className="text-base font-semibold text-foreground">{value}</div>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+    </div>
+  )
 }
 
 export type AppProps = {
@@ -448,321 +528,513 @@ export function App({ client: providedClient, context: providedContext }: AppPro
   const activeArtifact = preview?.artifact ?? null
 
   return (
-    <div className="app-shell" data-mode={context.mode}>
-      <section className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">Tuckmark</p>
-          <h1>单标签打印主链路</h1>
-          <p className="lede">
-            模板填充、单条安全文本、预览产物与打印提交全部共用同一份 artifact。
-          </p>
-        </div>
-        <div className="hero-card">
-          <strong>{buildModeLabel(context.mode)}</strong>
-          <span>Server Render → Server Print / Browser BLE Print</span>
-          <span>预览与实体打印共用同一份 artifact</span>
-          <div className="mode-badges">
-            <span className="pill">base {context.basePath || "/"}</span>
-            <span className="pill">
-              {context.capabilities.serverPrint === "available"
-                ? "server print live"
-                : "server print mocked"}
-            </span>
-          </div>
-        </div>
-      </section>
-
-      <section className="workspace-grid">
-        <aside className="panel config-panel">
-          <h2>打印配置</h2>
-          <label>
-            后端探测打印机
-            <select
-              value={printerId}
-              onChange={(event) => rememberPrinterSelection(event.target.value)}
-            >
-              {printers.length !== 1 ? <option value="">请选择打印机</option> : null}
-              {printers.length > 0 ? (
-                printers.map((printer) => (
-                  <option key={printer.id} value={printer.id}>
-                    {printer.name ?? printer.id}
-                  </option>
-                ))
-              ) : (
-                <option value="">当前模式没有后端打印机</option>
-              )}
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={() => void run("refresh-setup", refreshSetup)}
-            disabled={busy !== null}
-          >
-            刷新模板与打印机
-          </button>
-          <button
-            type="button"
-            onClick={connectPhysicalPrinter}
-            disabled={busy !== null || !browserPrintSupported}
-          >
-            连接浏览器打印机
-          </button>
-          <label>
-            纸型
-            <select
-              value={renderOptions.paperType}
-              onChange={(event) =>
-                setRenderOptions((current) => ({
-                  ...current,
-                  paperType: event.target.value as RenderOptions["paperType"],
-                }))
-              }
-            >
-              <option value="continuous">连续纸</option>
-              <option value="gap">间隔纸</option>
-            </select>
-          </label>
-          <label>
-            Threshold
-            <input
-              type="number"
-              value={renderOptions.threshold}
-              onChange={(event) =>
-                setRenderOptions((current) => ({
-                  ...current,
-                  threshold: Number(event.target.value) || 0,
-                }))
-              }
-            />
-          </label>
-          <label>
-            X Offset
-            <input
-              type="number"
-              value={renderOptions.xOffsetDots}
-              onChange={(event) =>
-                setRenderOptions((current) => ({
-                  ...current,
-                  xOffsetDots: Number(event.target.value) || 0,
-                }))
-              }
-            />
-          </label>
-          <div className="status-card">
-            <div>浏览器实体打印机</div>
-            <strong>{browserPrinter?.name ?? "未连接"}</strong>
-            <span>
-              {browserPrintSupported
-                ? browserPrinter
-                  ? `设备 ID ${browserPrinter.deviceId}`
-                  : "可选：用当前浏览器选择并连接真实蓝牙打印机。"
-                : "当前浏览器不支持 Web Bluetooth。"}
-            </span>
-          </div>
-          <div className="status-card">
-            <div>后端探测能力</div>
-            <strong>
-              {selectedPrinter?.name ??
-                (context.capabilities.serverPrint === "mocked" ? "mock contract" : "未选择")}
-            </strong>
-            <span>
-              {selectedPrinter
-                ? `宽度 ${selectedPrinter.capabilities.printWidthDots} dots · 支持 ${selectedPrinter.capabilities.supportedPaperTypes.join(
-                    " / "
-                  )}`
-                : context.capabilities.serverPrint === "mocked"
-                  ? "Pages 与 mock shell 通过 capability gating 复用正式路由，不依赖真实 /api。"
-                  : "需要先刷新并选中当前可见的后端打印机；浏览器直连能力可并存使用。"}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={printCurrentPreview}
-            disabled={
-              busy !== null ||
-              !preview?.artifact?.id ||
-              !hasPrintTarget(selectedServerPrinterId, browserPrinter)
-            }
-          >
-            打印当前预览
-          </button>
-        </aside>
-
-        <main className="workbench">
-          <section className="panel form-panel">
-            <div className="section-head">
-              <div>
-                <p className="section-label">Template</p>
-                <h2>模板标签</h2>
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(178,106,58,0.14),transparent_32%),radial-gradient(circle_at_top_right,rgba(70,111,140,0.14),transparent_28%),linear-gradient(180deg,#fcfaf7_0%,#f3eee7_100%)]">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.95fr)]">
+          <Card className="overflow-hidden border-border/60 bg-card/92 shadow-[0_18px_50px_rgba(66,46,31,0.08)]">
+            <CardHeader className="gap-4 border-b border-border/50 pb-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
+                  Tuckmark
+                </Badge>
+                <Badge variant="outline">base {context.basePath || "/"}</Badge>
+                <Badge variant="secondary">{buildModeLabel(context.mode)}</Badge>
               </div>
-              <div className="section-actions">
-                <button type="button" onClick={previewTemplate} disabled={busy !== null}>
-                  生成预览
-                </button>
-                <button
-                  type="button"
-                  onClick={printTemplateDirectly}
-                  disabled={
-                    busy !== null || !hasPrintTarget(selectedServerPrinterId, browserPrinter)
-                  }
-                >
-                  预览后打印
-                </button>
+              <div className="grid gap-3">
+                <CardTitle className="max-w-3xl text-3xl sm:text-4xl">单标签打印主链路</CardTitle>
+                <CardDescription className="max-w-3xl text-base leading-7 text-muted-foreground">
+                  模板填充、单条安全文本、预览产物与打印提交全部共用同一份 artifact。Pages demo 和
+                  mock shell 只切换 API contract，不复制页面。
+                </CardDescription>
               </div>
-            </div>
+            </CardHeader>
+            <CardContent className="grid gap-4 py-6 md:grid-cols-3">
+              <StatCard
+                icon={<Boxes className="size-4" />}
+                title="Surface"
+                value={buildModeLabel(context.mode)}
+                description="正式路由与正式组件树在 runtime、Pages demo、mock shell 之间保持一致。"
+              />
+              <StatCard
+                icon={<Server className="size-4" />}
+                title="Server Contract"
+                value={buildServerPrintLabel(context)}
+                description={
+                  context.capabilities.serverPrint === "available"
+                    ? "当前环境直接走真实 /api 与后端打印能力。"
+                    : "当前环境通过 mock API layer 复用正式状态模型。"
+                }
+              />
+              <StatCard
+                icon={<Bluetooth className="size-4" />}
+                title="Browser BLE"
+                value={browserPrintSupported ? "available" : "unsupported"}
+                description={
+                  canUseBrowserPrintPath
+                    ? "支持时可保留真实浏览器蓝牙连接与 packet 打印链路。"
+                    : "当前只保留真实连接能力，打印提交受 capability gate 限制。"
+                }
+              />
+            </CardContent>
+          </Card>
 
-            <label>
-              模板
-              <select value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <Card className="border-border/60 bg-zinc-950 text-zinc-50 shadow-[0_18px_50px_rgba(16,16,18,0.28)]">
+            <CardHeader className="gap-3 border-b border-white/10 pb-5">
+              <Badge variant="outline" className="w-fit border-white/20 bg-white/5 text-zinc-100">
+                Delivery contract
+              </Badge>
+              <CardTitle className="text-xl text-zinc-50">
+                Preview shares the print artifact
+              </CardTitle>
+              <CardDescription className="text-sm leading-7 text-zinc-300">
+                Server Render → Server Print / Browser BLE Print。所有 owner-facing demo 复用正式
+                app surface，不额外维护副本。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 py-6 text-sm text-zinc-200">
+              <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                <div className="font-medium">Print target</div>
+                <p className="mt-2 leading-6 text-zinc-300">
+                  {selectedPrinter?.name ?? browserPrinter?.name ?? "尚未选择"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+                <div className="font-medium">Capability gate</div>
+                <p className="mt-2 leading-6 text-zinc-300">
+                  {browserPrintSupported
+                    ? canUseBrowserPrintPath
+                      ? "Browser BLE 可直接参与 artifact packet 提交。"
+                      : "Browser BLE 只保留连接示意，packet 生成仍受服务端能力约束。"
+                    : "当前浏览器不支持 Web Bluetooth。"}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
 
-            {activeTemplate ? <p className="meta">{activeTemplate.description}</p> : null}
+        <section className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+          <aside className="grid gap-6">
+            <Card className="border-border/60 bg-card/94">
+              <CardHeader>
+                <CardTitle className="text-lg">打印配置</CardTitle>
+                <CardDescription>
+                  后端打印机、浏览器蓝牙打印机与渲染参数在这里统一控制。
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-5">
+                <FieldBlock label="后端探测打印机" htmlFor="printer-select">
+                  <Select value={printerId} onValueChange={rememberPrinterSelection}>
+                    <SelectTrigger id="printer-select" aria-label="后端探测打印机">
+                      <SelectValue
+                        placeholder={
+                          printers.length === 0 ? "当前模式没有后端打印机" : "请选择打印机"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {printers.length !== 1 ? (
+                        <SelectItem value="">请选择打印机</SelectItem>
+                      ) : null}
+                      {printers.map((printer) => (
+                        <SelectItem key={printer.id} value={printer.id}>
+                          {printer.name ?? printer.id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldBlock>
 
-            <div className="field-grid">
-              {Object.entries(input).map(([key, value]) => {
-                const field = activeTemplate?.fields.find((item) => item.key === key)
-                return (
-                  <label key={key}>
-                    {field?.label ?? key}
-                    <textarea
-                      rows={field?.multiline ? 3 : 1}
-                      value={value}
-                      onChange={(event) =>
-                        setInput((current) => ({
+                <div className="flex flex-col gap-3">
+                  <BusyButton
+                    type="button"
+                    variant="secondary"
+                    busy={busy}
+                    busyKey="refresh-setup"
+                    onClick={() => void run("refresh-setup", refreshSetup)}
+                  >
+                    刷新模板与打印机
+                  </BusyButton>
+                  <BusyButton
+                    type="button"
+                    variant="outline"
+                    busy={busy}
+                    busyKey="connect-browser-printer"
+                    onClick={connectPhysicalPrinter}
+                    disabled={!browserPrintSupported}
+                  >
+                    连接浏览器打印机
+                  </BusyButton>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+                  <FieldBlock label="纸型" htmlFor="paper-type">
+                    <Select
+                      value={renderOptions.paperType}
+                      onValueChange={(value) =>
+                        setRenderOptions((current) => ({
                           ...current,
-                          [key]: event.target.value,
+                          paperType: value as RenderOptions["paperType"],
+                        }))
+                      }
+                    >
+                      <SelectTrigger id="paper-type" aria-label="纸型">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="continuous">连续纸</SelectItem>
+                        <SelectItem value="gap">间隔纸</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FieldBlock>
+
+                  <FieldBlock label="Threshold" htmlFor="threshold-input">
+                    <Input
+                      id="threshold-input"
+                      type="number"
+                      value={renderOptions.threshold}
+                      onChange={(event) =>
+                        setRenderOptions((current) => ({
+                          ...current,
+                          threshold: Number(event.target.value) || 0,
                         }))
                       }
                     />
-                  </label>
-                )
-              })}
-            </div>
-          </section>
+                  </FieldBlock>
 
-          <section className="panel form-panel">
-            <div className="section-head">
-              <div>
-                <p className="section-label">Safe Text</p>
-                <h2>单条安全文本</h2>
-              </div>
-              <div className="section-actions">
-                <button type="button" onClick={previewSafeText} disabled={busy !== null}>
-                  生成预览
-                </button>
-                <button
+                  <FieldBlock label="X Offset" htmlFor="x-offset-input">
+                    <Input
+                      id="x-offset-input"
+                      type="number"
+                      value={renderOptions.xOffsetDots}
+                      onChange={(event) =>
+                        setRenderOptions((current) => ({
+                          ...current,
+                          xOffsetDots: Number(event.target.value) || 0,
+                        }))
+                      }
+                    />
+                  </FieldBlock>
+                </div>
+
+                <div className="grid gap-3">
+                  <StatCard
+                    icon={<Bluetooth className="size-4" />}
+                    title="浏览器实体打印机"
+                    value={browserPrinter?.name ?? "未连接"}
+                    description={
+                      browserPrintSupported
+                        ? browserPrinter
+                          ? `设备 ID ${browserPrinter.deviceId}`
+                          : "可选：用当前浏览器选择并连接真实蓝牙打印机。"
+                        : "当前浏览器不支持 Web Bluetooth。"
+                    }
+                  />
+                  <StatCard
+                    icon={<Server className="size-4" />}
+                    title="后端探测能力"
+                    value={
+                      selectedPrinter?.name ??
+                      (context.capabilities.serverPrint === "mocked" ? "mock contract" : "未选择")
+                    }
+                    description={
+                      selectedPrinter
+                        ? `宽度 ${selectedPrinter.capabilities.printWidthDots} dots · 支持 ${selectedPrinter.capabilities.supportedPaperTypes.join(
+                            " / "
+                          )}`
+                        : context.capabilities.serverPrint === "mocked"
+                          ? "Pages 与 mock shell 通过 capability gating 复用正式路由，不依赖真实 /api。"
+                          : "需要先刷新并选中当前可见的后端打印机；浏览器直连能力可并存使用。"
+                    }
+                  />
+                </div>
+
+                <BusyButton
                   type="button"
-                  onClick={printSafeTextDirectly}
+                  busy={busy}
+                  busyKey="server-print-artifact"
+                  onClick={printCurrentPreview}
                   disabled={
-                    busy !== null || !hasPrintTarget(selectedServerPrinterId, browserPrinter)
+                    !preview?.artifact?.id ||
+                    !hasPrintTarget(selectedServerPrinterId, browserPrinter)
                   }
                 >
-                  预览后打印
-                </button>
-              </div>
+                  打印当前预览
+                </BusyButton>
+              </CardContent>
+            </Card>
+          </aside>
+
+          <main className="grid gap-6">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card className="border-border/60 bg-card/94">
+                <CardHeader className="gap-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="grid gap-1">
+                      <Badge variant="outline" className="w-fit">
+                        Template
+                      </Badge>
+                      <CardTitle className="text-lg">模板标签</CardTitle>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <BusyButton
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        busy={busy}
+                        busyKey="preview-template"
+                        onClick={previewTemplate}
+                      >
+                        生成预览
+                      </BusyButton>
+                      <BusyButton
+                        type="button"
+                        size="sm"
+                        busy={busy}
+                        busyKey="server-preview-and-print-template"
+                        onClick={printTemplateDirectly}
+                        disabled={!hasPrintTarget(selectedServerPrinterId, browserPrinter)}
+                      >
+                        预览后打印
+                      </BusyButton>
+                    </div>
+                  </div>
+                  <CardDescription>
+                    模板预览和打印都产出同一份 artifact，不额外分叉渲染路径。
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-5">
+                  <FieldBlock label="模板" htmlFor="template-select">
+                    <Select value={templateId} onValueChange={setTemplateId}>
+                      <SelectTrigger id="template-select" aria-label="模板">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templates.map((template) => (
+                          <SelectItem key={template.id} value={template.id}>
+                            {template.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FieldBlock>
+
+                  {activeTemplate ? (
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      {activeTemplate.description}
+                    </p>
+                  ) : null}
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {Object.entries(input).map(([key, value]) => {
+                      const field = activeTemplate?.fields.find((item) => item.key === key)
+                      const controlId = `field-${key}`
+                      return (
+                        <div
+                          key={key}
+                          className={cn(
+                            "grid gap-2",
+                            field?.multiline ? "md:col-span-2" : undefined
+                          )}
+                        >
+                          <Label htmlFor={controlId}>{field?.label ?? key}</Label>
+                          <Textarea
+                            id={controlId}
+                            rows={field?.multiline ? 3 : 1}
+                            className={cn(!field?.multiline && "min-h-10 resize-none")}
+                            value={value}
+                            onChange={(event) =>
+                              setInput((current) => ({
+                                ...current,
+                                [key]: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/60 bg-card/94">
+                <CardHeader className="gap-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="grid gap-1">
+                      <Badge variant="outline" className="w-fit">
+                        Safe text
+                      </Badge>
+                      <CardTitle className="text-lg">单条安全文本</CardTitle>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <BusyButton
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        busy={busy}
+                        busyKey="preview-safe-text"
+                        onClick={previewSafeText}
+                      >
+                        生成预览
+                      </BusyButton>
+                      <BusyButton
+                        type="button"
+                        size="sm"
+                        busy={busy}
+                        busyKey="server-preview-and-print-safe-text"
+                        onClick={printSafeTextDirectly}
+                        disabled={!hasPrintTarget(selectedServerPrinterId, browserPrinter)}
+                      >
+                        预览后打印
+                      </BusyButton>
+                    </div>
+                  </div>
+                  <CardDescription>
+                    安全文本标签强制使用连续纸，用来验证服务端渲染与浏览器蓝牙打印链路。
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-5">
+                  <FieldBlock label="文本内容" htmlFor="safe-text">
+                    <Textarea
+                      id="safe-text"
+                      rows={7}
+                      value={safeText}
+                      onChange={(event) => setSafeText(event.target.value)}
+                    />
+                  </FieldBlock>
+
+                  <div className="rounded-lg border border-dashed border-border bg-muted/25 p-4 text-sm leading-6 text-muted-foreground">
+                    `demo=false` 仍然走同一套页面与状态模型，只是 server-only 能力会通过
+                    mock/capability gate 明确表达。
+                  </div>
+                </CardContent>
+              </Card>
             </div>
 
-            <label>
-              文本内容
-              <textarea
-                rows={4}
-                value={safeText}
-                onChange={(event) => setSafeText(event.target.value)}
-              />
-            </label>
-            <p className="meta">
-              安全文本标签强制使用连续纸，用来验证“服务端渲染 + 浏览器蓝牙打印”链路。
-            </p>
-          </section>
-        </main>
-      </section>
-
-      {error ? <div className="error-banner">{error}</div> : null}
-
-      <section className="preview-grid">
-        <div className="panel preview-panel">
-          <div className="section-head">
-            <div>
-              <p className="section-label">Artifact</p>
-              <h2>当前预览</h2>
-            </div>
-            <span className="pill">{activeArtifact ? activeArtifact.id.slice(0, 8) : "empty"}</span>
-          </div>
-
-          {activeArtifact ? (
-            <>
-              <img src={client.previewImageUrl(activeArtifact)} alt="preview artifact" />
-              <dl className="artifact-meta">
+            {error ? (
+              <Alert variant="destructive">
+                <AlertCircle className="mt-0.5 size-4" />
                 <div>
-                  <dt>Template</dt>
-                  <dd>{activeArtifact.templateId ?? "ad-hoc"}</dd>
+                  <AlertTitle>打印链路返回错误</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
                 </div>
-                <div>
-                  <dt>Size</dt>
-                  <dd>
-                    {activeArtifact.width} × {activeArtifact.height}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Paper</dt>
-                  <dd>{activeArtifact.renderOptions.paperType}</dd>
-                </div>
-                <div>
-                  <dt>Created</dt>
-                  <dd>{new Date(activeArtifact.createdAt).toLocaleString()}</dd>
-                </div>
-              </dl>
-            </>
-          ) : (
-            <p className="empty-state">先生成一个模板预览或安全文本预览，再检查产物并提交打印。</p>
-          )}
-        </div>
+              </Alert>
+            ) : null}
 
-        <div className="panel result-panel">
-          <div className="section-head">
-            <div>
-              <p className="section-label">Print Job</p>
-              <h2>打印状态</h2>
-            </div>
-            <span className={`pill ${busy ? "pill-busy" : "pill-idle"}`}>{busy ?? "idle"}</span>
-          </div>
+            <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_380px]">
+              <Card className="border-border/60 bg-card/94">
+                <CardHeader className="gap-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="grid gap-1">
+                      <Badge variant="outline" className="w-fit">
+                        Artifact
+                      </Badge>
+                      <CardTitle className="text-lg">当前预览</CardTitle>
+                    </div>
+                    <Badge variant={activeArtifact ? "default" : "outline"}>
+                      {activeArtifact ? activeArtifact.id.slice(0, 8) : "empty"}
+                    </Badge>
+                  </div>
+                  <CardDescription>
+                    预览图、打印提交和 artifact metadata 始终绑定在同一份产物上。
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-5">
+                  {activeArtifact ? (
+                    <>
+                      <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
+                        <img
+                          src={client.previewImageUrl(activeArtifact)}
+                          alt="preview artifact"
+                          className="block h-auto w-full"
+                        />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <StatCard
+                          icon={<WandSparkles className="size-4" />}
+                          title="Template"
+                          value={activeArtifact.templateId ?? "ad-hoc"}
+                          description="artifact source identity"
+                        />
+                        <StatCard
+                          icon={<Boxes className="size-4" />}
+                          title="Size"
+                          value={`${activeArtifact.width} × ${activeArtifact.height}`}
+                          description="raster dimensions"
+                        />
+                        <StatCard
+                          icon={<Cable className="size-4" />}
+                          title="Paper"
+                          value={activeArtifact.renderOptions.paperType}
+                          description="render option contract"
+                        />
+                        <StatCard
+                          icon={<RefreshCw className="size-4" />}
+                          title="Created"
+                          value={new Date(activeArtifact.createdAt).toLocaleString()}
+                          description="artifact timestamp"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border bg-muted/25 px-5 py-10 text-center text-sm leading-7 text-muted-foreground">
+                      先生成一个模板预览或安全文本预览，再检查产物并提交打印。
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-          <p className="result-summary">{summarizePrintResult(printResult)}</p>
-          <div className="status-stack">
-            <div className="status-card">
-              <div>Mode</div>
-              <strong>{buildModeLabel(context.mode)}</strong>
-              <span>
-                {context.mode === "runtime"
-                  ? "真实 /api contract"
-                  : "Mock API layer over the formal app surface"}
-              </span>
-            </div>
-            <div className="status-card">
-              <div>Capability gate</div>
-              <strong>
-                {context.capabilities.serverPrint === "available"
-                  ? "server print live"
-                  : "server print mocked"}
-              </strong>
-              <span>
-                {browserPrintSupported
-                  ? canUseBrowserPrintPath
-                    ? "Web Bluetooth path can stay real in supported browsers."
-                    : "Web Bluetooth connect stays real, but print submission is gated without packet generation."
-                  : "Browser BLE unavailable in this browser."}
-              </span>
-            </div>
-          </div>
-          {printResult ? <pre>{JSON.stringify(printResult, null, 2)}</pre> : null}
-        </div>
-      </section>
+              <Card className="border-border/60 bg-card/94">
+                <CardHeader className="gap-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="grid gap-1">
+                      <Badge variant="outline" className="w-fit">
+                        Print job
+                      </Badge>
+                      <CardTitle className="text-lg">打印状态</CardTitle>
+                    </div>
+                    <Badge variant={busy ? "secondary" : "outline"}>{busy ?? "idle"}</Badge>
+                  </div>
+                  <CardDescription>
+                    这里汇总主链路状态、capability gate 结果，以及最近一次打印返回。
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  <div className="rounded-lg border border-border/70 bg-muted/35 p-4 text-sm leading-7 text-foreground">
+                    {summarizePrintResult(printResult)}
+                  </div>
+                  <StatCard
+                    icon={<Server className="size-4" />}
+                    title="Mode"
+                    value={buildModeLabel(context.mode)}
+                    description={
+                      context.mode === "runtime"
+                        ? "真实 /api contract"
+                        : "Mock API layer over the formal app surface"
+                    }
+                  />
+                  <StatCard
+                    icon={<Bluetooth className="size-4" />}
+                    title="Capability gate"
+                    value={buildServerPrintLabel(context)}
+                    description={
+                      browserPrintSupported
+                        ? canUseBrowserPrintPath
+                          ? "Web Bluetooth path can stay real in supported browsers."
+                          : "Web Bluetooth connect stays real, but print submission is gated without packet generation."
+                        : "Browser BLE unavailable in this browser."
+                    }
+                  />
+                  {printResult ? (
+                    <pre className="overflow-auto rounded-lg border border-border bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
+                      {JSON.stringify(printResult, null, 2)}
+                    </pre>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </section>
+          </main>
+        </section>
+      </div>
     </div>
   )
 }

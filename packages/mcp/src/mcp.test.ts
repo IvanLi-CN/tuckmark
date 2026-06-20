@@ -1,12 +1,10 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-
+import type { PreviewArtifact } from "@tuckmark/core"
 import { afterEach, describe, expect, it } from "vitest"
 
-import type { PreviewArtifact } from "@tuckmark/core"
-
-import { type McpService, createServer } from "./index.js"
+import { createServer, type McpService } from "./index.js"
 
 const cleanupPaths: string[] = []
 
@@ -224,7 +222,7 @@ describe("mcp", () => {
 
     const registeredTools = (
       server as unknown as {
-        _registeredTools: Record<string, { executor: (...args: unknown[]) => Promise<unknown> }>
+        _registeredTools: Record<string, { handler: (...args: unknown[]) => Promise<unknown> }>
       }
     )._registeredTools
     const toolNames = Object.keys(registeredTools)
@@ -238,7 +236,7 @@ describe("mcp", () => {
       throw new Error("required tools not registered")
     }
 
-    const preview = await previewTool.executor(
+    const preview = await previewTool.handler(
       {
         templateId: "shipping-compact",
         input: { recipient: "Koha" },
@@ -249,7 +247,7 @@ describe("mcp", () => {
       (preview as { structuredContent: { artifact: { id: string } } }).structuredContent.artifact.id
     ).toBe("artifact-1")
 
-    const job = await printArtifactTool.executor(
+    const job = await printArtifactTool.handler(
       {
         printerId: "printer-1",
         artifactId: "artifact-1",
@@ -260,7 +258,7 @@ describe("mcp", () => {
       "completed"
     )
 
-    const probe = await probeTool.executor(
+    const probe = await probeTool.handler(
       {
         printerId: "printer-1",
         printerName: "Mock P2",

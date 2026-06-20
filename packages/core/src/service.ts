@@ -21,10 +21,10 @@ import type {
   PrintByArtifactRequest,
   PrintByTemplateRequest,
   PrintCanvasRequest,
-  PrintJob,
   Printer,
   PrinterCapabilities,
   PrinterProbeResult,
+  PrintJob,
   SafeTextLabelInput,
   TemplateDefinition,
 } from "./types.js"

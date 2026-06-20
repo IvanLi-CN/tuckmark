@@ -1,14 +1,14 @@
 import { readFile } from "node:fs/promises"
 import { pathToFileURL } from "node:url"
 
-import { McpServer, ResourceTemplate, StdioServerTransport } from "@modelcontextprotocol/server"
-import * as z from "zod/v4"
-
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
+  safeTextLabelSchema,
   TuckmarkService,
   type TuckmarkService as TuckmarkServiceType,
-  safeTextLabelSchema,
 } from "@tuckmark/core"
+import * as z from "zod/v4"
 
 export type McpService = Pick<
   TuckmarkServiceType,

@@ -18,7 +18,7 @@
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
     "csv-parse": "^7.0.0",
-    "lpapi-ble": "1.5.260105",
+    "lpapi-ble": "1.7.260605",
     "pngjs": "7.0.0",
     "zod": "^4.4.3"
   }

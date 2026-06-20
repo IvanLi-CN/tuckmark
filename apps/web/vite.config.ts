@@ -1,5 +1,11 @@
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+
+import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig, loadEnv } from "vite"
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export function resolveApiOrigin(env: Record<string, string | undefined>): string {
   if (env.TUCKMARK_API_ORIGIN) {
@@ -17,7 +23,12 @@ export default defineConfig(({ mode }) => {
 
   return {
     base,
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
+    },
     server: {
       port: Number(env.TUCKMARK_WEB_PORT ?? 5173),
       proxy: {

@@ -816,7 +816,7 @@ export class DetongerAdapter {
     return path.join(this.lockRoot, `${safeId}.lock`)
   }
 
-  private rowsPerChunkForArtifact(artifact: PreviewArtifact): number | undefined {
+  private rowsPerChunkForArtifact(_artifact: PreviewArtifact): number | undefined {
     if (this.pngRowsPerChunk !== undefined) {
       return this.pngRowsPerChunk
     }

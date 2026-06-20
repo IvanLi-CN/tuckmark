@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react"
+import type { Meta, StoryObj } from "@storybook/react-vite"
 
 import { MockApiClient } from "./api-client.js"
 import { App } from "./app.js"
@@ -24,8 +24,15 @@ const mockShellContext: AppContext = {
 const meta: Meta<typeof App> = {
   title: "Tuckmark/App Surface",
   component: App,
+  tags: ["autodocs"],
   parameters: {
     layout: "fullscreen",
+    docs: {
+      description: {
+        component:
+          "Formal Tuckmark web surface rendered through the same route tree for runtime, Pages demo, and mock shell contracts.",
+      },
+    },
   },
 }
 

@@ -1,9 +1,7 @@
-import { execFile } from "node:child_process"
 import fs from "node:fs"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { promisify } from "node:util"
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -12,7 +10,12 @@ import { DetongerAdapter } from "../src/detonger-adapter.ts"
 import { TuckmarkService } from "../src/service.ts"
 
 const cleanupPaths: string[] = []
-const execFileAsync = promisify(execFile)
+
+function mockDetongerArgs(adapter: DetongerAdapter, fakeDetongerPath: string) {
+  ;(adapter as unknown as { detongerArgs(args: string[]): string[] }).detongerArgs = (
+    args: string[]
+  ) => [fakeDetongerPath, ...args]
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -137,9 +140,7 @@ describe("DetongerAdapter", () => {
       detongerRepoRoot: root,
     })
 
-    vi.spyOn(directAdapter as DetongerAdapter, "detongerArgs" as never).mockImplementation(((
-      args: string[]
-    ) => [fakeDetongerPath, ...args]) as never)
+    mockDetongerArgs(directAdapter, fakeDetongerPath)
 
     await expect(directAdapter.printArtifact(printerId, preview.artifact)).rejects.toThrow(
       /detonger print job failed: \[timeout\] timeout/
@@ -199,9 +200,7 @@ describe("DetongerAdapter", () => {
       detongerRepoRoot: root,
     })
 
-    vi.spyOn(adapter as DetongerAdapter, "detongerArgs" as never).mockImplementation(((
-      args: string[]
-    ) => [fakeDetongerPath, ...args]) as never)
+    mockDetongerArgs(adapter, fakeDetongerPath)
 
     await adapter.printArtifact(printerId, preview.artifact)
 
@@ -269,9 +268,7 @@ describe("DetongerAdapter", () => {
       detongerRepoRoot: root,
     })
 
-    vi.spyOn(adapter as DetongerAdapter, "detongerArgs" as never).mockImplementation(((
-      args: string[]
-    ) => [fakeDetongerPath, ...args]) as never)
+    mockDetongerArgs(adapter, fakeDetongerPath)
 
     await adapter.printArtifact(printerId, preview.artifact)
 
@@ -316,9 +313,7 @@ describe("DetongerAdapter", () => {
       detongerRepoRoot: root,
     })
 
-    vi.spyOn(adapter as DetongerAdapter, "detongerArgs" as never).mockImplementation(((
-      args: string[]
-    ) => [fakeDetongerPath, ...args]) as never)
+    mockDetongerArgs(adapter, fakeDetongerPath)
 
     const first = await adapter.scanPrinters()
     const second = await adapter.scanPrinters()
@@ -380,9 +375,7 @@ describe("DetongerAdapter", () => {
       detongerRepoRoot: root,
     })
 
-    vi.spyOn(adapter as DetongerAdapter, "detongerArgs" as never).mockImplementation(((
-      args: string[]
-    ) => [fakeDetongerPath, ...args]) as never)
+    mockDetongerArgs(adapter, fakeDetongerPath)
 
     await expect(adapter.printArtifact(printerId, preview.artifact)).rejects.toThrow(
       /timed out after 200ms/

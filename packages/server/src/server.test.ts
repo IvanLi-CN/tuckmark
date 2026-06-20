@@ -2,9 +2,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import type { AddressInfo } from "node:net"
 import os from "node:os"
 import path from "node:path"
-
-import { afterEach, describe, expect, it } from "vitest"
-
 import type {
   ArtifactPackets,
   BatchPreviewRequest,
@@ -18,8 +15,9 @@ import type {
   SafeTextLabelInput,
   TuckmarkService,
 } from "@tuckmark/core"
+import { afterEach, describe, expect, it } from "vitest"
 
-import { type ServerService, createApp } from "./index.js"
+import { createApp, type ServerService } from "./index.js"
 
 const cleanupPaths: string[] = []
 
