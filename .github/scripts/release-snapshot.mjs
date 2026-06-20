@@ -23,6 +23,14 @@ const releaseIntent = {
   artifacts: ["runtime bundle", "CLI bundle"],
 }
 
+const artifactName = `release-intent-${releaseIntent.state}-${mergeSha}`
+
 await fs.mkdir("work/release", { recursive: true })
 await fs.writeFile("work/release/release-intent.json", JSON.stringify(releaseIntent, null, 2))
+if (process.env.GITHUB_OUTPUT) {
+  await fs.appendFile(
+    process.env.GITHUB_OUTPUT,
+    `artifact_name=${artifactName}\nstate=${releaseIntent.state}\nmerge_sha=${mergeSha}\n`
+  )
+}
 console.log(JSON.stringify(releaseIntent, null, 2))

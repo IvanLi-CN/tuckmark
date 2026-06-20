@@ -17,6 +17,7 @@
     "dev:server": "bun run --filter @tuckmark/server dev",
     "dev:storybook": "bun run --filter @tuckmark/web storybook",
     "dev:web": "bun run --filter @tuckmark/web dev",
+    "preview:web:pages": "bun scripts/serve-pages-preview.ts --root apps/web/dist --base /tuckmark/ --port 4173",
     "format": "biome check --write .",
     "format:check": "biome check .",
     "lint": "biome lint .",

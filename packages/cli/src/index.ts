@@ -143,7 +143,10 @@ async function handlePreview(args: string[]): Promise<void> {
   }
   if (safeTextArg) {
     const payload = safeTextSchema.parse(JSON.parse(safeTextArg))
-    const preview = await service.previewSafeTextLabel(payload)
+    const preview = await service.previewSafeTextLabel({
+      ...payload,
+      renderOptions: parseRenderOptions(args),
+    })
     console.log(JSON.stringify(preview, null, 2))
     return
   }

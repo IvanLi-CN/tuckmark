@@ -1,12 +1,48 @@
 #!/usr/bin/env node
 
+import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 
 const snapshotPath = process.argv[2] ?? "work/release/release-intent.json"
 const snapshot = JSON.parse(await fs.readFile(snapshotPath, "utf8"))
 const packageJson = JSON.parse(await fs.readFile("package.json", "utf8"))
 
-const [major, minor, patch] = String(packageJson.version).split(".").map(Number)
+function parseVersion(value) {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(value)
+  if (!match) {
+    return null
+  }
+
+  return match.slice(1).map(Number)
+}
+
+function compareVersion(left, right) {
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] !== right[index]) {
+      return left[index] - right[index]
+    }
+  }
+
+  return 0
+}
+
+function readGitTags() {
+  return execFileSync("git", ["tag", "--list", "v*"], { encoding: "utf8" })
+    .split("\n")
+    .map((value) => value.trim())
+    .filter(Boolean)
+}
+
+const stableTags = readGitTags()
+  .map((tag) => ({ tag, version: parseVersion(tag) }))
+  .filter((entry) => entry.version !== null)
+  .filter((entry) => /^v\d+\.\d+\.\d+$/.test(entry.tag))
+  .sort((left, right) => compareVersion(left.version, right.version))
+
+const currentVersion = stableTags.at(-1)?.version ??
+  parseVersion(String(packageJson.version)) ?? [0, 1, 0]
+
+const [major, minor, patch] = currentVersion
 
 let nextMajor = major
 let nextMinor = minor
@@ -24,7 +60,15 @@ if (snapshot.type_label === "type:major") {
 }
 
 const stableVersion = `v${nextMajor}.${nextMinor}.${nextPatch}`
-const previewVersion = `${stableVersion}-preview.1`
+const previewTags = readGitTags()
+  .map((tag) => {
+    const match = new RegExp(`^${stableVersion.replaceAll(".", "\\.")}-preview\\.(\\d+)$`).exec(tag)
+    return match ? Number(match[1]) : null
+  })
+  .filter((value) => value !== null)
+  .map(Number)
+const previewNumber = (previewTags.at(-1) ?? 0) + 1
+const previewVersion = `${stableVersion}-preview.${previewNumber}`
 const releaseVersion = snapshot.channel_label === "channel:preview" ? previewVersion : stableVersion
 
 const plan = {
@@ -33,5 +77,6 @@ const plan = {
   release_version: releaseVersion,
 }
 
+await fs.mkdir("work/release", { recursive: true })
 await fs.writeFile("work/release/release-plan.json", JSON.stringify(plan, null, 2))
 console.log(JSON.stringify(plan, null, 2))
