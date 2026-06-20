@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "bun run typecheck && vite build",
-    "build:pages": "bun run typecheck && TUCKMARK_WEB_BUILD_TARGET=pages vite build",
+    "build:pages": "bun run typecheck && TUCKMARK_WEB_SURFACE=browser-static vite build",
     "build:storybook": "storybook build --output-dir ../../work/storybook-web",
     "dev": "vite",
     "storybook": "storybook dev --port 6006",

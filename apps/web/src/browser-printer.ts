@@ -1,8 +1,13 @@
-import type { BrowserPrintableArtifact } from "./browser-printer-config.js"
+import type { ArtifactPackets } from "./types.js"
 
 export type BrowserPrinterSession = {
   deviceId: string
   name: string
+}
+
+export type BrowserPrintArtifact = {
+  id: string
+  packets: ArtifactPackets
 }
 
 export type BrowserPrintResult = {
@@ -13,14 +18,6 @@ export type BrowserPrintResult = {
   message: string
   packetCount?: number
   totalBytes?: number
-}
-
-type PacketsResponse = {
-  artifactId: string
-  packetsJsonPath: string
-  packets: string[]
-  packetCount: number
-  totalBytes: number
 }
 
 type PrintErrorCode =
@@ -87,34 +84,6 @@ function describeDevice(device: BluetoothDevice): BrowserPrinterSession {
   return {
     deviceId: device.id,
     name: device.name ?? device.id,
-  }
-}
-
-async function requestArtifactPackets(
-  artifact: BrowserPrintableArtifact
-): Promise<PacketsResponse> {
-  const response = await fetch(artifact.packetsUrl)
-  if (!response.ok) {
-    throw new Error(`无法读取打印协议包: ${response.status}`)
-  }
-
-  const json = (await response.json()) as Partial<PacketsResponse>
-  if (
-    json.artifactId !== artifact.id ||
-    !Array.isArray(json.packets) ||
-    json.packets.length === 0 ||
-    typeof json.packetCount !== "number" ||
-    typeof json.totalBytes !== "number"
-  ) {
-    throw new Error("打印协议包响应不完整。")
-  }
-
-  return {
-    artifactId: json.artifactId,
-    packetsJsonPath: String(json.packetsJsonPath ?? ""),
-    packets: json.packets,
-    packetCount: json.packetCount,
-    totalBytes: json.totalBytes,
   }
 }
 
@@ -223,14 +192,13 @@ export async function connectBrowserPrinter(): Promise<BrowserPrinterSession> {
 
 export async function printPreviewArtifact(
   session: BrowserPrinterSession,
-  artifact: BrowserPrintableArtifact
+  artifact: BrowserPrintArtifact
 ): Promise<BrowserPrintResult> {
   ensureBrowserEnvironment()
 
-  const packets = await requestArtifactPackets(artifact)
   const { characteristic } = await ensureConnectedPrinter(session)
 
-  for (const [index, packet] of packets.packets.entries()) {
+  for (const [index, packet] of artifact.packets.packets.entries()) {
     const bytes = decodePacket(packet, index)
     const payload = bytes as unknown as BufferSource
     try {
@@ -242,7 +210,7 @@ export async function printPreviewArtifact(
     } catch (error) {
       throw createPrintError(
         "write_failed",
-        `写入 BLE 数据失败（packet ${index + 1}/${packets.packetCount}，${bytes.byteLength} bytes）：${
+        `写入 BLE 数据失败（packet ${index + 1}/${artifact.packets.packetCount}，${bytes.byteLength} bytes）：${
           error instanceof Error ? error.message : String(error)
         }`
       )
@@ -258,8 +226,8 @@ export async function printPreviewArtifact(
     printer: session,
     statusCode: 0,
     printable: 0,
-    packetCount: packets.packetCount,
-    totalBytes: packets.totalBytes,
     message: "浏览器蓝牙打印已提交。",
+    packetCount: artifact.packets.packetCount,
+    totalBytes: artifact.packets.totalBytes,
   }
 }

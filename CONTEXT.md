@@ -7,9 +7,12 @@
 - `artifact`: a rendered preview or printable output tracked by Tuckmark
 - `runtime bundle`: the release artifact for the HTTP runtime surface
 - `CLI bundle`: the release artifact for the CLI surface
-- `Web demo`: the owner-facing Pages deployment that reuses the formal Web app
-- `mock shell`: the formal Web route tree backed by mock APIs and capability
-  gating
+- `Web app static runtime`: the owner-facing static deployment that runs fully in
+  the browser
+- `demo mode`: the formal Web route tree backed by the Mock API layer with
+  explicit hardware simulation
+- `server runtime`: the `/api`-backed Web deployment surface
+- `browser runtime`: the pure browser-local Web runtime surface
 
 ## Current Product Truth
 
@@ -26,12 +29,12 @@ by / lower-layer attribution, not as the user-facing brand.
 - merge model: PR-only
 - commit model on protected branch: signed commits required
 - release model: label-driven single-product GitHub Release
-- demo hosting model: GitHub Pages on `main`, independent from release
+- static Web hosting model: GitHub Pages on `main`, independent from release
 
 ## UI Truth
 
 The canonical user interface lives in `apps/web`.
 
 Storybook and Playwright are QA surfaces. They support component-state review,
-browser validation, and visual evidence. They do not replace the Pages demo and
-they do not define an alternate product UI.
+browser validation, and visual evidence. They do not replace the static runtime
+and they do not define an alternate product UI.

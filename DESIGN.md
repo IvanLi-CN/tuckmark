@@ -8,7 +8,8 @@ multiple integration surfaces.
 The Web app uses an explicit `ApiClient` boundary:
 
 - `HttpApiClient` talks to the runtime `/api`
-- `MockApiClient` serves GitHub Pages and local mock shells
+- `BrowserRuntimeApiClient` renders artifacts locally in the browser
+- `DemoApiClient` serves the explicit Mock API demo contract
 
 The UI must not encode transport-specific behavior directly into React
 components. Runtime capabilities are resolved outside the presentational tree
@@ -16,13 +17,12 @@ and exposed as stable feature flags.
 
 ## Web Modes
 
-The Web surface supports three operational modes without cloning routes:
+The Web surface supports two operational modes without cloning routes:
 
-1. Real runtime mode
-2. Seeded demo mode
-3. Mock shell mode
+1. Runtime mode
+2. Demo mode
 
-All three modes share:
+Both modes share:
 
 - route structure
 - layout hierarchy
@@ -30,11 +30,12 @@ All three modes share:
 - preview panels
 - capability disclosure patterns
 
-The only variation point is the API and capability contract.
+The only variation points are the `surface` and capability contract.
 
 ## Pages Contract
 
-GitHub Pages publishes `apps/web` under the repository base path `/tuckmark/`.
+GitHub Pages publishes the static Web runtime with Vite `base: "./"` so the
+generated HTML, JS, CSS, and asset URLs remain relative.
 
 Pages must remain static:
 
@@ -42,9 +43,10 @@ Pages must remain static:
 - no authenticated production backend
 - no release-side runtime coupling
 
-Server-only capabilities are represented through mock responses or explicit
-capability gates. Browser-native capabilities such as Web Bluetooth may remain
-live when the browser supports them.
+`browser-static` runtime performs template loading, preview generation, artifact
+storage, and packet encoding fully in the browser. Server-only capabilities stay
+on `server-http`. `demo mode` reuses the Mock API layer and returns successful
+simulated preview / refresh / print actions with explicit hardware gating.
 
 ## Delivery Contract
 

@@ -16,13 +16,25 @@ export function resolveApiOrigin(env: Record<string, string | undefined>): strin
   return `http://127.0.0.1:${serverPort}`
 }
 
+export function resolveBuildSurface(
+  env: Record<string, string | undefined>
+): "server-http" | "browser-static" {
+  return env.TUCKMARK_WEB_SURFACE === "browser-static" ? "browser-static" : "server-http"
+}
+
+export function resolvePublicBase(env: Record<string, string | undefined>): string {
+  return resolveBuildSurface(env) === "browser-static" ? "./" : "/"
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "")
-  const buildTarget = env.TUCKMARK_WEB_BUILD_TARGET ?? "runtime"
-  const base = buildTarget === "pages" ? "/tuckmark/" : "/"
+  const surface = resolveBuildSurface(env)
 
   return {
-    base,
+    base: resolvePublicBase(env),
+    define: {
+      __TUCKMARK_WEB_SURFACE__: JSON.stringify(surface),
+    },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

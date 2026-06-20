@@ -1,4 +1,13 @@
-import { AlertCircle, Bluetooth, Boxes, Cable, RefreshCw, Server, WandSparkles } from "lucide-react"
+import {
+  AlertCircle,
+  Bluetooth,
+  Boxes,
+  Cable,
+  Database,
+  RefreshCw,
+  Server,
+  WandSparkles,
+} from "lucide-react"
 import React from "react"
 
 import { type ApiClient, createApiClient, loadSetup } from "./api-client.js"
@@ -34,7 +43,7 @@ import { cn } from "./lib/utils.js"
 import { resolveAppContext } from "./runtime.js"
 import type {
   AppContext,
-  PreviewArtifact,
+  ArtifactData,
   PreviewResult,
   Printer,
   PrintResult,
@@ -72,29 +81,12 @@ function sortPrinters(printers: Printer[]): Printer[] {
   })
 }
 
-function hasPrintTarget(printerId: string, browserPrinter: BrowserPrinterSession | null): boolean {
-  return printerId.length > 0 || browserPrinter !== null
-}
-
-function isPrinterUnavailableError(cause: unknown): boolean {
-  const message = cause instanceof Error ? cause.message : String(cause)
-  return message.includes("Printer is no longer available")
-}
-
 function buildModeLabel(mode: AppContext["mode"]): string {
-  if (mode === "demo-seeded") {
-    return "Pages demo"
-  }
-  if (mode === "mock-shell") {
-    return "Mock shell"
-  }
-  return "Runtime"
+  return mode === "demo" ? "Demo mode" : "Runtime mode"
 }
 
-function buildServerPrintLabel(context: AppContext): string {
-  return context.capabilities.serverPrint === "available"
-    ? "server print live"
-    : "server print mocked"
+function buildSurfaceLabel(surface: AppContext["surface"]): string {
+  return surface === "browser-static" ? "Browser static" : "Server HTTP"
 }
 
 function BusyButton({
@@ -182,14 +174,17 @@ export function App({ client: providedClient, context: providedContext }: AppPro
   const [printerId, setPrinterId] = React.useState("")
   const [preferredPrinterName, setPreferredPrinterName] = React.useState("")
   const [preview, setPreview] = React.useState<PreviewResult | null>(null)
+  const [artifactData, setArtifactData] = React.useState<ArtifactData | null>(null)
   const [browserPrinter, setBrowserPrinter] = React.useState<BrowserPrinterSession | null>(
     getSelectedBrowserPrinter()
   )
   const [printResult, setPrintResult] = React.useState<UiPrintResult | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState<string | null>(null)
+
   const browserPrintSupported = React.useMemo(() => isBrowserPrintSupported(), [])
-  const canUseBrowserPrintPath = context.capabilities.packetsSource === "http"
+  const canUseBrowserPrinter = context.capabilities.browserPrint === "available"
+  const hasServerPrinterFlow = context.capabilities.serverPrint === "available"
 
   const activeTemplate = React.useMemo(
     () => templates.find((template) => template.id === templateId) ?? templates[0],
@@ -200,13 +195,8 @@ export function App({ client: providedClient, context: providedContext }: AppPro
     () => printers.find((printer) => printer.id === printerId),
     [printerId, printers]
   )
-  const selectedServerPrinterId = selectedPrinter?.id ?? ""
-  const printerIdRef = React.useRef(printerId)
-  const preferredPrinterNameRef = React.useRef(preferredPrinterName)
 
-  React.useEffect(() => {
-    printerIdRef.current = printerId
-  }, [printerId])
+  const preferredPrinterNameRef = React.useRef(preferredPrinterName)
 
   React.useEffect(() => {
     preferredPrinterNameRef.current = preferredPrinterName
@@ -270,226 +260,19 @@ export function App({ client: providedClient, context: providedContext }: AppPro
     }
   }
 
+  async function syncArtifactData(nextPreview: PreviewResult): Promise<void> {
+    const data = await client.readArtifactData(nextPreview.artifact)
+    setPreview(nextPreview)
+    setArtifactData(data)
+    setPrintResult(null)
+  }
+
   async function previewTemplate() {
     const result = await run("preview-template", () =>
       client.previewTemplate({ templateId, input, renderOptions })
     )
-
     if (result) {
-      setPreview(result)
-      setPrintResult(null)
-    }
-  }
-
-  async function connectPhysicalPrinter() {
-    const result = await run("connect-browser-printer", () => connectBrowserPrinter())
-    if (result) {
-      setBrowserPrinter(result)
-    }
-  }
-
-  function rememberPrinterSelection(nextPrinterId: string) {
-    setPrinterId(nextPrinterId)
-    const nextPrinter = printers.find((printer) => printer.id === nextPrinterId)
-    if (nextPrinter?.name) {
-      setPreferredPrinterName(nextPrinter.name)
-      return
-    }
-
-    if (!nextPrinterId) {
-      setPreferredPrinterName("")
-    }
-  }
-
-  async function postServerPrintWithRecovery<T>(
-    key: string,
-    printer: Printer,
-    task: (resolvedPrinter: Printer) => Promise<T>
-  ): Promise<T | undefined> {
-    return run(key, async () => {
-      try {
-        return await task(printer)
-      } catch (cause) {
-        if (!printer.name || !isPrinterUnavailableError(cause)) {
-          throw cause
-        }
-
-        const setup = await refreshSetup()
-        const reboundPrinter = setup.printers.find((item) => item.name === printer.name)
-        if (!reboundPrinter) {
-          throw cause
-        }
-
-        return task(reboundPrinter)
-      }
-    })
-  }
-
-  async function sendArtifactToSelectedPrinter(artifact: PreviewArtifact) {
-    if (selectedPrinter) {
-      const result = await postServerPrintWithRecovery(
-        "server-print-artifact",
-        selectedPrinter,
-        (printer) =>
-          client.printArtifact({
-            printerId: printer.id,
-            printerName: printer.name,
-            artifactId: artifact.id,
-          })
-      )
-
-      if (result) {
-        setPrintResult(result)
-      }
-      return
-    }
-
-    if (!browserPrinter) {
-      setError("先选择后端探测打印机，或连接浏览器打印机，再提交打印。")
-      return
-    }
-
-    if (!canUseBrowserPrintPath) {
-      setError(
-        "当前模式保留浏览器蓝牙连接能力，但 artifact packet 生成依赖服务端，已通过 capability gate 禁止直接打印。"
-      )
-      return
-    }
-
-    const result = await run("browser-print", () =>
-      printPreviewArtifact(browserPrinter, {
-        id: artifact.id,
-        pngUrl: client.previewImageUrl(artifact),
-        packetsUrl: client.artifactPacketsUrl(artifact.id),
-        renderOptions: artifact.renderOptions,
-      })
-    )
-
-    if (result) {
-      setPrintResult(result)
-    }
-  }
-
-  async function printTemplateDirectly() {
-    if (!hasPrintTarget(selectedServerPrinterId, browserPrinter)) {
-      setError("先选择后端探测打印机，或连接浏览器打印机，再提交打印。")
-      return
-    }
-
-    if (selectedPrinter) {
-      const result = await postServerPrintWithRecovery(
-        "server-preview-and-print-template",
-        selectedPrinter,
-        (printer) =>
-          client.printTemplate({
-            printerId: printer.id,
-            printerName: printer.name,
-            templateId,
-            input,
-            renderOptions,
-          })
-      )
-
-      if (result) {
-        if (result.preview) {
-          setPreview(result.preview)
-        }
-        setPrintResult(result)
-      }
-      return
-    }
-
-    if (browserPrinter) {
-      if (!canUseBrowserPrintPath) {
-        setError(
-          "当前模式保留浏览器蓝牙连接能力，但不提供服务端 packet 生成，因此只能演示连接，不能直接打印。"
-        )
-        return
-      }
-
-      const result = await run("preview-and-print-template", async () => {
-        const nextPreview = await client.previewTemplate({ templateId, input, renderOptions })
-        const print = await printPreviewArtifact(browserPrinter, {
-          id: nextPreview.artifact.id,
-          pngUrl: client.previewImageUrl(nextPreview.artifact),
-          packetsUrl: client.artifactPacketsUrl(nextPreview.artifact.id),
-          renderOptions: nextPreview.artifact.renderOptions,
-        })
-
-        return { preview: nextPreview, print }
-      })
-
-      if (result) {
-        setPreview(result.preview)
-        setPrintResult(result.print)
-      }
-      return
-    }
-
-    setError("未找到可用打印目标。")
-  }
-
-  async function printSafeTextDirectly() {
-    if (!hasPrintTarget(selectedServerPrinterId, browserPrinter)) {
-      setError("先选择后端探测打印机，或连接浏览器打印机，再提交打印。")
-      return
-    }
-
-    const safeTextPayload = {
-      text: safeText,
-      title: "Safe Text Label",
-      renderOptions: {
-        ...renderOptions,
-        paperType: "continuous" as const,
-      },
-    }
-
-    if (selectedPrinter) {
-      const result = await postServerPrintWithRecovery(
-        "server-preview-and-print-safe-text",
-        selectedPrinter,
-        (printer) =>
-          client.printSafeText({
-            printerId: printer.id,
-            printerName: printer.name,
-            ...safeTextPayload,
-          })
-      )
-
-      if (result) {
-        if ("preview" in result && result.preview) {
-          setPreview(result.preview)
-        }
-        setPrintResult(result)
-      }
-      return
-    }
-
-    const result = await run("preview-and-print-safe-text", async () => {
-      if (browserPrinter) {
-        if (!canUseBrowserPrintPath) {
-          throw new Error(
-            "当前模式不提供服务端 packet 生成，因此浏览器蓝牙打印被 capability gate 禁用。"
-          )
-        }
-
-        const nextPreview = await client.previewSafeText(safeTextPayload)
-        const print = await printPreviewArtifact(browserPrinter, {
-          id: nextPreview.artifact.id,
-          pngUrl: client.previewImageUrl(nextPreview.artifact),
-          packetsUrl: client.artifactPacketsUrl(nextPreview.artifact.id),
-          renderOptions: nextPreview.artifact.renderOptions,
-        })
-
-        return { preview: nextPreview, print }
-      }
-
-      throw new Error("未找到可用打印目标。")
-    })
-
-    if (result) {
-      setPreview(result.preview)
-      setPrintResult(result.print)
+      await syncArtifactData(result)
     }
   }
 
@@ -504,28 +287,217 @@ export function App({ client: providedClient, context: providedContext }: AppPro
         },
       })
     )
-
     if (result) {
-      setPreview(result)
-      setPrintResult(null)
+      await syncArtifactData(result)
+    }
+  }
+
+  async function connectPhysicalPrinter() {
+    if (!canUseBrowserPrinter) {
+      setError("Demo mode 不会触发真实硬件连接。")
+      return
+    }
+    const result = await run("connect-browser-printer", () => connectBrowserPrinter())
+    if (result) {
+      setBrowserPrinter(result)
+    }
+  }
+
+  async function printThroughBrowser() {
+    if (!browserPrinter) {
+      setError("先连接当前浏览器中的打印机。")
+      return
+    }
+    if (!preview || !artifactData) {
+      setError("先生成一个预览，再提交打印。")
+      return
+    }
+    const result = await run("browser-print", () =>
+      printPreviewArtifact(browserPrinter, {
+        id: preview.artifact.id,
+        packets: artifactData.packets,
+      })
+    )
+    if (result) {
+      setPrintResult(result)
+    }
+  }
+
+  async function printThroughServer(artifactId: string) {
+    if (!selectedPrinter) {
+      setError("先选择一个后端打印机。")
+      return
+    }
+    const result = await run("server-print-artifact", () =>
+      client.printArtifact({
+        printerId: selectedPrinter.id,
+        printerName: selectedPrinter.name,
+        artifactId,
+      })
+    )
+    if (result) {
+      setPrintResult(result)
     }
   }
 
   async function printCurrentPreview() {
-    if (!hasPrintTarget(selectedServerPrinterId, browserPrinter)) {
-      setError("先选择后端探测打印机，或连接浏览器打印机，再提交打印。")
-      return
-    }
-
-    if (!preview?.artifact.id) {
+    if (!preview) {
       setError("先生成一个预览，再提交打印。")
       return
     }
 
-    await sendArtifactToSelectedPrinter(preview.artifact)
+    if (context.mode === "demo") {
+      const result = await run("demo-print-artifact", () =>
+        client.printArtifact({
+          printerId: selectedPrinter?.id ?? browserPrinter?.deviceId ?? "demo-printer",
+          printerName: selectedPrinter?.name ?? browserPrinter?.name ?? "Demo printer",
+          artifactId: preview.artifact.id,
+        })
+      )
+      if (result) {
+        setPrintResult(result)
+      }
+      return
+    }
+
+    if (hasServerPrinterFlow && selectedPrinter) {
+      await printThroughServer(preview.artifact.id)
+      return
+    }
+
+    await printThroughBrowser()
+  }
+
+  async function printTemplateDirectly() {
+    if (context.mode === "demo") {
+      const result = await run("demo-preview-and-print-template", () =>
+        client.printTemplate({
+          printerId: selectedPrinter?.id ?? browserPrinter?.deviceId ?? "demo-printer",
+          printerName: selectedPrinter?.name ?? browserPrinter?.name ?? "Demo printer",
+          templateId,
+          input,
+          renderOptions,
+        })
+      )
+      if (result?.preview) {
+        await syncArtifactData(result.preview)
+      }
+      if (result) {
+        setPrintResult(result)
+      }
+      return
+    }
+
+    if (hasServerPrinterFlow && selectedPrinter) {
+      const result = await run("server-preview-and-print-template", () =>
+        client.printTemplate({
+          printerId: selectedPrinter.id,
+          printerName: selectedPrinter.name,
+          templateId,
+          input,
+          renderOptions,
+        })
+      )
+      if (result?.preview) {
+        await syncArtifactData(result.preview)
+      }
+      if (result) {
+        setPrintResult(result)
+      }
+      return
+    }
+
+    const result = await run("preview-and-print-template", async () => {
+      const nextPreview = await client.previewTemplate({ templateId, input, renderOptions })
+      const nextData = await client.readArtifactData(nextPreview.artifact)
+      if (!browserPrinter) {
+        throw new Error("先连接当前浏览器中的打印机。")
+      }
+      const print = await printPreviewArtifact(browserPrinter, {
+        id: nextPreview.artifact.id,
+        packets: nextData.packets,
+      })
+      return { preview: nextPreview, data: nextData, print }
+    })
+
+    if (result) {
+      setPreview(result.preview)
+      setArtifactData(result.data)
+      setPrintResult(result.print)
+    }
+  }
+
+  async function printSafeTextDirectly() {
+    const safeTextPayload = {
+      text: safeText,
+      title: "Safe Text Label",
+      renderOptions: {
+        ...renderOptions,
+        paperType: "continuous" as const,
+      },
+    }
+
+    if (context.mode === "demo") {
+      const result = await run("demo-preview-and-print-safe-text", () =>
+        client.printSafeText({
+          printerId: selectedPrinter?.id ?? browserPrinter?.deviceId ?? "demo-printer",
+          printerName: selectedPrinter?.name ?? browserPrinter?.name ?? "Demo printer",
+          ...safeTextPayload,
+        })
+      )
+      if (result?.preview) {
+        await syncArtifactData(result.preview)
+      }
+      if (result) {
+        setPrintResult(result)
+      }
+      return
+    }
+
+    if (hasServerPrinterFlow && selectedPrinter) {
+      const result = await run("server-preview-and-print-safe-text", () =>
+        client.printSafeText({
+          printerId: selectedPrinter.id,
+          printerName: selectedPrinter.name,
+          ...safeTextPayload,
+        })
+      )
+      if (result?.preview) {
+        await syncArtifactData(result.preview)
+      }
+      if (result) {
+        setPrintResult(result)
+      }
+      return
+    }
+
+    const result = await run("preview-and-print-safe-text", async () => {
+      const nextPreview = await client.previewSafeText(safeTextPayload)
+      const nextData = await client.readArtifactData(nextPreview.artifact)
+      if (!browserPrinter) {
+        throw new Error("先连接当前浏览器中的打印机。")
+      }
+      const print = await printPreviewArtifact(browserPrinter, {
+        id: nextPreview.artifact.id,
+        packets: nextData.packets,
+      })
+      return { preview: nextPreview, data: nextData, print }
+    })
+
+    if (result) {
+      setPreview(result.preview)
+      setArtifactData(result.data)
+      setPrintResult(result.print)
+    }
   }
 
   const activeArtifact = preview?.artifact ?? null
+  const previewSrc =
+    artifactData?.preview.kind === "url"
+      ? artifactData.preview.url
+      : artifactData?.preview.kind === "data-url"
+        ? artifactData.preview.dataUrl
+        : null
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(178,106,58,0.14),transparent_32%),radial-gradient(circle_at_top_right,rgba(70,111,140,0.14),transparent_28%),linear-gradient(180deg,#fcfaf7_0%,#f3eee7_100%)]">
@@ -538,15 +510,19 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                   Tuckmark
                 </Badge>
                 <Badge variant="outline">base {context.basePath || "/"}</Badge>
-                <Badge variant="secondary">{buildModeLabel(context.mode)}</Badge>
+                <Badge variant="secondary">{buildSurfaceLabel(context.surface)}</Badge>
+                <Badge variant={context.mode === "demo" ? "default" : "outline"}>
+                  {buildModeLabel(context.mode)}
+                </Badge>
               </div>
               <div className="grid gap-3">
                 <CardTitle as="h1" className="max-w-3xl text-3xl sm:text-4xl">
                   单标签打印主链路
                 </CardTitle>
                 <CardDescription className="max-w-3xl text-base leading-7 text-muted-foreground">
-                  模板填充、单条安全文本、预览产物与打印提交全部共用同一份 artifact。Pages demo 和
-                  mock shell 只切换 API contract，不复制页面。
+                  模板填充、单条安全文本、预览产物与打印提交全部共用同一份 artifact。静态
+                  browser-runtime 走本地渲染与本地协议包生成；demo mode 继续通过 Mock API
+                  层返回成功仿真。
                 </CardDescription>
               </div>
             </CardHeader>
@@ -554,27 +530,35 @@ export function App({ client: providedClient, context: providedContext }: AppPro
               <StatCard
                 icon={<Boxes className="size-4" />}
                 title="Surface"
-                value={buildModeLabel(context.mode)}
-                description="正式路由与正式组件树在 runtime、Pages demo、mock shell 之间保持一致。"
+                value={buildSurfaceLabel(context.surface)}
+                description="server-http 与 browser-static 使用同一份正式页面和状态模型。"
               />
               <StatCard
                 icon={<Server className="size-4" />}
-                title="Server Contract"
-                value={buildServerPrintLabel(context)}
+                title="Mode"
+                value={buildModeLabel(context.mode)}
                 description={
-                  context.capabilities.serverPrint === "available"
-                    ? "当前环境直接走真实 /api 与后端打印能力。"
-                    : "当前环境通过 mock API layer 复用正式状态模型。"
+                  context.mode === "demo"
+                    ? "Demo mode 会保留正式表单与路由，但所有硬件动作都返回带延迟的成功仿真。"
+                    : "Runtime mode 使用真实 runtime surface：server-http 走 /api，browser-static 走浏览器本地链路。"
                 }
               />
               <StatCard
                 icon={<Bluetooth className="size-4" />}
                 title="Browser BLE"
-                value={browserPrintSupported ? "available" : "unsupported"}
+                value={
+                  browserPrintSupported
+                    ? canUseBrowserPrinter
+                      ? "available"
+                      : "disabled"
+                    : "unsupported"
+                }
                 description={
-                  canUseBrowserPrintPath
-                    ? "支持时可保留真实浏览器蓝牙连接与 packet 打印链路。"
-                    : "当前只保留真实连接能力，打印提交受 capability gate 限制。"
+                  context.mode === "demo"
+                    ? "Demo mode 禁用真实硬件调用，只保留产品级打印动作仿真。"
+                    : context.surface === "browser-static"
+                      ? "静态 runtime 在支持的浏览器中可连接并打印到当前浏览器打印机。"
+                      : "server-http surface 同时保留 /api 打印与浏览器直连路径。"
                 }
               />
             </CardContent>
@@ -589,25 +573,25 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                 Preview shares the print artifact
               </CardTitle>
               <CardDescription className="text-sm leading-7 text-zinc-300">
-                Server Render → Server Print / Browser BLE Print。所有 owner-facing demo 复用正式
-                app surface，不额外维护副本。
+                Runtime 页面只切换 surface 与 capability，不再通过 hostname/origin
+                猜测模式。静态构建使用相对 public base，适配 GitHub Pages 自定义域名根路径部署。
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 py-6 text-sm text-zinc-200">
               <div className="rounded-lg border border-white/10 bg-white/5 p-4">
                 <div className="font-medium">Print target</div>
                 <p className="mt-2 leading-6 text-zinc-300">
-                  {selectedPrinter?.name ?? browserPrinter?.name ?? "尚未选择"}
+                  {selectedPrinter?.name ??
+                    browserPrinter?.name ??
+                    (context.mode === "demo" ? "Demo printer" : "尚未选择")}
                 </p>
               </div>
               <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                <div className="font-medium">Capability gate</div>
+                <div className="font-medium">Artifact source</div>
                 <p className="mt-2 leading-6 text-zinc-300">
-                  {browserPrintSupported
-                    ? canUseBrowserPrintPath
-                      ? "Browser BLE 可直接参与 artifact packet 提交。"
-                      : "Browser BLE 只保留连接示意，packet 生成仍受服务端能力约束。"
-                    : "当前浏览器不支持 Web Bluetooth。"}
+                  {context.surface === "browser-static"
+                    ? "预览 PNG 与协议包都由浏览器本地生成，artifact 优先保存在 IndexedDB，失败时回退内存。"
+                    : "server-http 由 /api 负责预览 artifact 与协议包；UI 统一按数据型 artifact seam 消费。"}
                 </p>
               </div>
             </CardContent>
@@ -619,32 +603,32 @@ export function App({ client: providedClient, context: providedContext }: AppPro
             <Card className="border-border/60 bg-card/94">
               <CardHeader>
                 <CardTitle className="text-lg">打印配置</CardTitle>
-                <CardDescription>
-                  后端打印机、浏览器蓝牙打印机与渲染参数在这里统一控制。
-                </CardDescription>
+                <CardDescription>surface、浏览器打印机与渲染参数在这里统一控制。</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-5">
-                <FieldBlock label="后端探测打印机" htmlFor="printer-select">
-                  <Select value={printerId} onValueChange={rememberPrinterSelection}>
-                    <SelectTrigger id="printer-select" aria-label="后端探测打印机">
-                      <SelectValue
-                        placeholder={
-                          printers.length === 0 ? "当前模式没有后端打印机" : "请选择打印机"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {printers.length !== 1 ? (
-                        <SelectItem value="">请选择打印机</SelectItem>
-                      ) : null}
-                      {printers.map((printer) => (
-                        <SelectItem key={printer.id} value={printer.id}>
-                          {printer.name ?? printer.id}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </FieldBlock>
+                {hasServerPrinterFlow ? (
+                  <FieldBlock label="后端探测打印机" htmlFor="printer-select">
+                    <Select value={printerId} onValueChange={setPrinterId}>
+                      <SelectTrigger id="printer-select" aria-label="后端探测打印机">
+                        <SelectValue
+                          placeholder={
+                            printers.length === 0 ? "当前没有后端打印机" : "请选择打印机"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {printers.length !== 1 ? (
+                          <SelectItem value="">请选择打印机</SelectItem>
+                        ) : null}
+                        {printers.map((printer) => (
+                          <SelectItem key={printer.id} value={printer.id}>
+                            {printer.name ?? printer.id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FieldBlock>
+                ) : null}
 
                 <div className="flex flex-col gap-3">
                   <BusyButton
@@ -654,7 +638,7 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                     busyKey="refresh-setup"
                     onClick={() => void run("refresh-setup", refreshSetup)}
                   >
-                    刷新模板与打印机
+                    {context.mode === "demo" ? "刷新模板与仿真状态" : "刷新模板与打印机"}
                   </BusyButton>
                   <BusyButton
                     type="button"
@@ -662,9 +646,9 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                     busy={busy}
                     busyKey="connect-browser-printer"
                     onClick={connectPhysicalPrinter}
-                    disabled={!browserPrintSupported}
+                    disabled={!browserPrintSupported || !canUseBrowserPrinter}
                   >
-                    连接浏览器打印机
+                    连接当前浏览器打印机
                   </BusyButton>
                 </div>
 
@@ -721,31 +705,30 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                 <div className="grid gap-3">
                   <StatCard
                     icon={<Bluetooth className="size-4" />}
-                    title="浏览器实体打印机"
+                    title="当前浏览器打印机"
                     value={browserPrinter?.name ?? "未连接"}
                     description={
-                      browserPrintSupported
-                        ? browserPrinter
-                          ? `设备 ID ${browserPrinter.deviceId}`
-                          : "可选：用当前浏览器选择并连接真实蓝牙打印机。"
-                        : "当前浏览器不支持 Web Bluetooth。"
+                      context.mode === "demo"
+                        ? "Demo mode 不触发真实 Web Bluetooth / Serial 等硬件能力。"
+                        : browserPrintSupported
+                          ? browserPrinter
+                            ? `设备 ID ${browserPrinter.deviceId}`
+                            : "可选：用当前浏览器选择并连接真实蓝牙打印机。"
+                          : "当前浏览器不支持 Web Bluetooth。"
                     }
                   />
                   <StatCard
                     icon={<Server className="size-4" />}
-                    title="后端探测能力"
-                    value={
-                      selectedPrinter?.name ??
-                      (context.capabilities.serverPrint === "mocked" ? "mock contract" : "未选择")
-                    }
+                    title="Server capability"
+                    value={hasServerPrinterFlow ? (selectedPrinter?.name ?? "未选择") : "disabled"}
                     description={
-                      selectedPrinter
-                        ? `宽度 ${selectedPrinter.capabilities.printWidthDots} dots · 支持 ${selectedPrinter.capabilities.supportedPaperTypes.join(
-                            " / "
-                          )}`
-                        : context.capabilities.serverPrint === "mocked"
-                          ? "Pages 与 mock shell 通过 capability gating 复用正式路由，不依赖真实 /api。"
-                          : "需要先刷新并选中当前可见的后端打印机；浏览器直连能力可并存使用。"
+                      hasServerPrinterFlow
+                        ? selectedPrinter
+                          ? `宽度 ${selectedPrinter.capabilities.printWidthDots} dots · 支持 ${selectedPrinter.capabilities.supportedPaperTypes.join(
+                              " / "
+                            )}`
+                          : "需要先刷新并选中当前可见的后端打印机。"
+                        : "browser-static surface 不显示服务器打印机列表；demo mode 也不会暴露真实 server-print。"
                     }
                   />
                 </div>
@@ -755,10 +738,7 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                   busy={busy}
                   busyKey="server-print-artifact"
                   onClick={printCurrentPreview}
-                  disabled={
-                    !preview?.artifact?.id ||
-                    !hasPrintTarget(selectedServerPrinterId, browserPrinter)
-                  }
+                  disabled={!preview?.artifact?.id && context.mode !== "demo"}
                 >
                   打印当前预览
                 </BusyButton>
@@ -794,7 +774,6 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                         busy={busy}
                         busyKey="server-preview-and-print-template"
                         onClick={printTemplateDirectly}
-                        disabled={!hasPrintTarget(selectedServerPrinterId, browserPrinter)}
                       >
                         预览后打印
                       </BusyButton>
@@ -884,14 +863,13 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                         busy={busy}
                         busyKey="server-preview-and-print-safe-text"
                         onClick={printSafeTextDirectly}
-                        disabled={!hasPrintTarget(selectedServerPrinterId, browserPrinter)}
                       >
                         预览后打印
                       </BusyButton>
                     </div>
                   </div>
                   <CardDescription>
-                    安全文本标签强制使用连续纸，用来验证服务端渲染与浏览器蓝牙打印链路。
+                    安全文本标签强制使用连续纸，用来验证 artifact 持久化与打印提交 seam。
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-5">
@@ -905,8 +883,8 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                   </FieldBlock>
 
                   <div className="rounded-lg border border-dashed border-border bg-muted/25 p-4 text-sm leading-6 text-muted-foreground">
-                    `demo=false` 仍然走同一套页面与状态模型，只是 server-only 能力会通过
-                    mock/capability gate 明确表达。
+                    `?demo=true` 会进入 demo
+                    mode：刷新、预览、打印都返回带合理耗时的成功仿真，但仍保持正式页面和表单结构。
                   </div>
                 </CardContent>
               </Card>
@@ -941,11 +919,11 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-5">
-                  {activeArtifact ? (
+                  {activeArtifact && previewSrc ? (
                     <>
                       <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
                         <img
-                          src={client.previewImageUrl(activeArtifact)}
+                          src={previewSrc}
                           alt="preview artifact"
                           className="block h-auto w-full"
                         />
@@ -978,59 +956,46 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                       </div>
                     </>
                   ) : (
-                    <div className="rounded-xl border border-dashed border-border bg-muted/25 px-5 py-10 text-center text-sm leading-7 text-muted-foreground">
-                      先生成一个模板预览或安全文本预览，再检查产物并提交打印。
+                    <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center text-sm leading-7 text-muted-foreground">
+                      先生成一个模板预览或安全文本预览，artifact 面板会显示同一份可打印产物。
                     </div>
                   )}
                 </CardContent>
               </Card>
 
               <Card className="border-border/60 bg-card/94">
-                <CardHeader className="gap-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="grid gap-1">
-                      <Badge variant="outline" className="w-fit">
-                        Print job
-                      </Badge>
-                      <CardTitle className="text-lg">打印状态</CardTitle>
-                    </div>
-                    <Badge variant={busy ? "secondary" : "outline"}>{busy ?? "idle"}</Badge>
-                  </div>
+                <CardHeader>
+                  <CardTitle className="text-lg">Artifact seam</CardTitle>
                   <CardDescription>
-                    这里汇总主链路状态、capability gate 结果，以及最近一次打印返回。
+                    UI 只读取 preview source 与 packet data，不再依赖 HTTP-only URL helper。
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4">
-                  <div className="rounded-lg border border-border/70 bg-muted/35 p-4 text-sm leading-7 text-foreground">
+                  <StatCard
+                    icon={<Database className="size-4" />}
+                    title="Preview source"
+                    value={artifactData?.preview.kind ?? "empty"}
+                    description={
+                      artifactData?.preview.kind === "url"
+                        ? "server-http 通过 /api 暴露 PNG URL。"
+                        : artifactData?.preview.kind === "data-url"
+                          ? "browser-static 与 demo 直接读取浏览器本地 data URL。"
+                          : "尚未生成 artifact。"
+                    }
+                  />
+                  <StatCard
+                    icon={<Cable className="size-4" />}
+                    title="Packets"
+                    value={artifactData ? `${artifactData.packets.packetCount} packets` : "empty"}
+                    description={
+                      artifactData
+                        ? `${artifactData.packets.totalBytes} bytes · 统一由 artifact data seam 交给 server-print 或 browser BLE。`
+                        : "生成预览后这里会显示协议包信息。"
+                    }
+                  />
+                  <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
                     {summarizePrintResult(printResult)}
                   </div>
-                  <StatCard
-                    icon={<Server className="size-4" />}
-                    title="Mode"
-                    value={buildModeLabel(context.mode)}
-                    description={
-                      context.mode === "runtime"
-                        ? "真实 /api contract"
-                        : "Mock API layer over the formal app surface"
-                    }
-                  />
-                  <StatCard
-                    icon={<Bluetooth className="size-4" />}
-                    title="Capability gate"
-                    value={buildServerPrintLabel(context)}
-                    description={
-                      browserPrintSupported
-                        ? canUseBrowserPrintPath
-                          ? "Web Bluetooth path can stay real in supported browsers."
-                          : "Web Bluetooth connect stays real, but print submission is gated without packet generation."
-                        : "Browser BLE unavailable in this browser."
-                    }
-                  />
-                  {printResult ? (
-                    <pre className="overflow-auto rounded-lg border border-border bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">
-                      {JSON.stringify(printResult, null, 2)}
-                    </pre>
-                  ) : null}
                 </CardContent>
               </Card>
             </section>

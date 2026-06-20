@@ -1,69 +1,53 @@
-import type { AppContext, AppMode } from "./types.js"
+import type { AppContext, AppMode, AppSurface } from "./types.js"
+
+declare const __TUCKMARK_WEB_SURFACE__: AppSurface
 
 function trimTrailingSlash(value: string): string {
   return value.endsWith("/") && value !== "/" ? value.slice(0, -1) : value
 }
 
-function parseDemoParam(search: string): AppMode | null {
+function parseDemoParam(search: string): AppMode {
   const params = new URLSearchParams(search)
-  const value = params.get("demo")
-  if (value === "true") {
-    return "demo-seeded"
-  }
-  if (value === "false") {
-    return "mock-shell"
-  }
-  return null
+  return params.get("demo") === "true" ? "demo" : "runtime"
 }
 
 export function resolveBasePath(env: Record<string, string | undefined>): string {
   const explicit = env.TUCKMARK_WEB_BASE_PATH?.trim()
-  if (explicit) {
-    return trimTrailingSlash(explicit)
-  }
+  return explicit ? trimTrailingSlash(explicit) : ""
+}
 
-  const base = env.BASE_URL?.trim()
-  if (base) {
-    return trimTrailingSlash(base)
+export function resolveSurface(
+  env: Record<string, string | undefined>,
+  fallback: AppSurface = __TUCKMARK_WEB_SURFACE__
+): AppSurface {
+  const explicit = env.TUCKMARK_WEB_SURFACE?.trim()
+  if (explicit === "browser-static" || explicit === "server-http") {
+    return explicit
   }
-
-  return ""
+  return fallback
 }
 
 export function resolveAppContext(
   env: Record<string, string | undefined>,
   locationLike:
     | {
-        origin: string
-        pathname: string
         search: string
       }
     | undefined = typeof window !== "undefined" ? window.location : undefined
 ): AppContext {
+  const surface = resolveSurface(env)
+  const mode = parseDemoParam(locationLike?.search ?? "")
   const basePath = resolveBasePath(env)
-  const isPagesHost = locationLike?.origin.includes("github.io") ?? false
-  const demoOverride = parseDemoParam(locationLike?.search ?? "")
-
-  let mode: AppMode
-  if (demoOverride) {
-    mode = demoOverride
-  } else if (isPagesHost) {
-    mode = "demo-seeded"
-  } else {
-    mode = "runtime"
-  }
-
-  const apiBasePath = mode === "runtime" ? "/api" : `${basePath}/mock-api`
 
   return {
-    apiBasePath,
+    apiBasePath: surface === "server-http" ? "/api" : "",
     basePath,
-    isPages: isPagesHost,
     mode,
+    surface,
     capabilities: {
-      browserPrint: "available",
-      serverPrint: mode === "runtime" ? "available" : "mocked",
-      packetsSource: mode === "runtime" ? "http" : "mock",
+      browserPrint: mode === "demo" ? "disabled" : "available",
+      serverPrint: surface === "server-http" && mode === "runtime" ? "available" : "disabled",
+      mockHardware: mode === "demo",
     },
   }
 }

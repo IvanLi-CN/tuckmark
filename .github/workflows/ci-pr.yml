@@ -39,6 +39,8 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build Pages demo
+        env:
+          TUCKMARK_WEB_SURFACE: browser-static
         run: bun run build:web:pages
       - name: Build Storybook
         run: bun run --filter @tuckmark/web build:storybook
