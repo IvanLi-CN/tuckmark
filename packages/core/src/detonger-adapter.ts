@@ -725,7 +725,11 @@ export class DetongerAdapter {
       return index + 3 + (payload[index + 2] ?? 0)
     }
 
-    if ([0x29, 0x2c, 0x2d, 0x3c, 0x3d].includes(cmd)) {
+    if ([0x2c, 0x2d].includes(cmd)) {
+      return Math.min(payload.length, index + 1 + (payload[index + 2] ?? 0))
+    }
+
+    if ([0x29, 0x3c, 0x3d].includes(cmd)) {
       return index + 3 + (payload[index + 2] ?? 0)
     }
 
