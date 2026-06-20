@@ -10,6 +10,7 @@
       "test-results",
       ".tuckmark",
       "work",
+      "tools/**/target",
       "detonger",
       "detonger/**",
       "packages/core/src/**/*.d.ts",

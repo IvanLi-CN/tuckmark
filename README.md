@@ -18,7 +18,7 @@ Clone or sync with:
 
 - `git submodule update --init --recursive`
 
-By default, the core adapter runs `cargo run -q -p detonger -- ...` with `cwd=./detonger`.
+By default, the core adapter runs a Rust preview helper for packet generation and `cargo run -q -p detonger -- ...` for scan/print commands with `cwd=./detonger`.
 You can still override this with `TUCKMARK_DETONGER_COMMAND` or `TUCKMARK_DETONGER_REPO_ROOT`.
 
 ## Workspace
@@ -31,7 +31,7 @@ You can still override this with `TUCKMARK_DETONGER_COMMAND` or `TUCKMARK_DETONG
 
 ## Local Preview
 
-- Run `pnpm dev:preview` to start the HTTP API and the Web UI with a matched proxy configuration.
+- Run `bun run dev:preview` to start the HTTP API and the Web UI with a matched proxy configuration.
 - Default URLs:
   - Web UI: `http://127.0.0.1:5173/`
   - API health: `http://127.0.0.1:5210/health`

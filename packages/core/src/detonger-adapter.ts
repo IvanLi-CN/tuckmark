@@ -6,6 +6,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
+import { encodeArtifactWithDetongerRustPreview } from "./detonger-preview-encoder.js"
 import { encodeArtifactWithLpapiCompact } from "./lpapi-compact-encoder.js"
 import {
   type ArtifactPackets,
@@ -18,6 +19,10 @@ import {
 const execFileAsync = promisify(execFile)
 const moduleDir = path.dirname(fileURLToPath(import.meta.url))
 const defaultDetongerRepoRoot = path.resolve(moduleDir, "../../../detonger")
+const defaultPreviewEncoderManifestPath = path.resolve(
+  moduleDir,
+  "../../../tools/detonger-preview-encoder/Cargo.toml"
+)
 const printerNamePrefixes = ["P2-", "Detonger"]
 const printerCacheTtlMs = 60_000
 const packetEncoderEnvName = "TUCKMARK_DETONGER_PACKET_ENCODER"
@@ -48,6 +53,7 @@ export interface DetongerAdapterOptions {
 export class DetongerAdapter {
   private readonly command: string
   private readonly repoRoot: string
+  private readonly previewEncoderManifestPath: string
   private readonly mockEnabled: boolean
   private readonly lockRoot: string
   private readonly pngRowsPerChunk: number | undefined
@@ -60,6 +66,7 @@ export class DetongerAdapter {
       options?.detongerRepoRoot ??
       process.env.TUCKMARK_DETONGER_REPO_ROOT ??
       defaultDetongerRepoRoot
+    this.previewEncoderManifestPath = defaultPreviewEncoderManifestPath
     this.mockEnabled = process.env.TUCKMARK_MOCK_PRINTERS !== "0"
     this.lockRoot = path.join(os.tmpdir(), "tuckmark-printer-locks")
     this.pngRowsPerChunk = this.resolveRowsPerChunk()
@@ -481,6 +488,75 @@ export class DetongerAdapter {
     artifact: PreviewArtifact,
     packetsJsonPath: string
   ): Promise<ArtifactPackets> {
+    if (this.command !== "cargo") {
+      return this.encodeArtifactPacketsWithDetongerCli(artifact, packetsJsonPath)
+    }
+
+    const rowsPerChunk = this.rowsPerChunkForArtifact(artifact)
+    const packetsLogPath = path.join(path.dirname(artifact.pngPath), "packets-command.log")
+    const commandArgs = [
+      "run",
+      "-q",
+      "-p",
+      "detonger-preview-encoder",
+      "--",
+      "--png",
+      artifact.pngPath,
+      "--out",
+      packetsJsonPath,
+      "--width",
+      String(artifact.renderOptions.printWidthDots),
+      "--threshold",
+      String(artifact.renderOptions.threshold),
+      "--x-offset",
+      String(artifact.renderOptions.xOffsetDots),
+      "--paper-type",
+      artifact.renderOptions.paperType,
+    ]
+    if (rowsPerChunk !== undefined) {
+      commandArgs.push("--rows-per-chunk", String(rowsPerChunk))
+    }
+
+    let packets: string[]
+    let totalBytes: number
+    try {
+      const result = await encodeArtifactWithDetongerRustPreview(artifact, packetsJsonPath, {
+        cargoCommand: this.command,
+        repoRoot: this.repoRoot,
+        helperManifestPath: this.previewEncoderManifestPath,
+        ...(rowsPerChunk !== undefined ? { rowsPerChunk } : {}),
+      })
+      packets = result.packets
+      totalBytes = result.totalBytes
+      await this.writeCommandLog(packetsLogPath, commandArgs, "", "", true)
+    } catch (error) {
+      const nodeError = error as NodeJS.ErrnoException & {
+        stdout?: string | Buffer
+        stderr?: string | Buffer
+      }
+      const stdout = this.toUtf8(nodeError.stdout)
+      const stderr = this.toUtf8(nodeError.stderr)
+      await this.writeCommandLog(packetsLogPath, commandArgs, stdout, stderr, false)
+      throw this.normalizeDetongerCommandError(["preview", "packets"], {
+        ...nodeError,
+        stdout,
+        stderr,
+      })
+    }
+
+    return {
+      artifactId: artifact.id,
+      packetsJsonPath,
+      packets,
+      packetCount: packets.length,
+      totalBytes,
+    }
+  }
+
+  private async encodeArtifactPacketsWithDetongerCli(
+    artifact: PreviewArtifact,
+    packetsJsonPath: string
+  ): Promise<ArtifactPackets> {
     const rowsPerChunk = this.rowsPerChunkForArtifact(artifact)
     const args = [
       "preview",
@@ -511,7 +587,6 @@ export class DetongerAdapter {
     })
 
     const raw = await readFile(packetsJsonPath, "utf8")
-
     const packets = this.parsePacketsJson(raw, packetsJsonPath)
     const totalBytes = packets.reduce(
       (sum, packet) => sum + Buffer.from(packet, "base64").length,
