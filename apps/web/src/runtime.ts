@@ -2,6 +2,10 @@ import type { AppContext, AppMode, AppSurface } from "./types.js"
 
 declare const __TUCKMARK_WEB_SURFACE__: AppSurface
 
+function resolveInjectedSurfaceFallback(): AppSurface {
+  return typeof __TUCKMARK_WEB_SURFACE__ !== "undefined" ? __TUCKMARK_WEB_SURFACE__ : "server-http"
+}
+
 function trimTrailingSlash(value: string): string {
   return value.endsWith("/") && value !== "/" ? value.slice(0, -1) : value
 }
@@ -18,7 +22,7 @@ export function resolveBasePath(env: Record<string, string | undefined>): string
 
 export function resolveSurface(
   env: Record<string, string | undefined>,
-  fallback: AppSurface = __TUCKMARK_WEB_SURFACE__
+  fallback: AppSurface = resolveInjectedSurfaceFallback()
 ): AppSurface {
   const explicit = env.TUCKMARK_WEB_SURFACE?.trim()
   if (explicit === "browser-static" || explicit === "server-http") {

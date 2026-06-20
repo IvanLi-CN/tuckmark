@@ -60,6 +60,10 @@ describe("resolveSurface", () => {
     )
   })
 
+  it("does not crash when the injected surface global is absent", () => {
+    expect(resolveSurface({})).toBe("server-http")
+  })
+
   it("falls back to the injected surface for invalid values", () => {
     expect(resolveSurface({ TUCKMARK_WEB_SURFACE: "invalid" }, "server-http")).toBe("server-http")
   })
