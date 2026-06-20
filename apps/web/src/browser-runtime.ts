@@ -82,10 +82,7 @@ function renderSafeTextSvg(
   }
 }
 
-export function buildSafeTextBrowserSvgForTest(
-  text: string,
-  renderOptions: RenderOptions
-): string {
+export function buildSafeTextBrowserSvgForTest(text: string, renderOptions: RenderOptions): string {
   return renderSafeTextSvg(text, renderOptions).svg
 }
 
