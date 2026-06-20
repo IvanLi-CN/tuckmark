@@ -4,7 +4,12 @@ import { act } from "react"
 import ReactDOM from "react-dom/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { buildSafeTextBrowserSvgForTest } from "./browser-runtime.js"
+import {
+  buildSafeTextBrowserSvgForTest,
+  readBrowserArtifact,
+  resetBrowserArtifactStoreForTest,
+  writeBrowserArtifactForTest,
+} from "./browser-runtime.js"
 
 const browserPrinterMocks = vi.hoisted(() => ({
   connectBrowserPrinter: vi.fn(),
@@ -21,6 +26,167 @@ import { defaultRenderOptions, fallbackTemplates } from "./demo-data.js"
 import type { AppContext } from "./types.js"
 
 const fetchMock = vi.fn<typeof fetch>()
+
+function createFakeIndexedDb(): IDBFactory {
+  const databases = new Map<string, Map<string, Map<string, unknown>>>()
+
+  function createRequest<T>(): IDBRequest<T> {
+    return {
+      error: null,
+      onerror: null,
+      onsuccess: null,
+      readyState: "pending",
+      result: undefined as T,
+      source: null,
+      transaction: null,
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent() {
+        return true
+      },
+    } as unknown as IDBRequest<T>
+  }
+
+  return {
+    cmp() {
+      return 0
+    },
+    databases: async () => [],
+    deleteDatabase(name: string) {
+      databases.delete(name)
+      const request = createRequest<undefined>() as unknown as {
+        readyState: IDBRequestReadyState
+        error: DOMException | null
+        onerror: IDBRequest<undefined>["onerror"]
+        onsuccess: IDBRequest<undefined>["onsuccess"]
+        result: undefined
+        source: IDBRequest<undefined>["source"]
+        transaction: IDBRequest<undefined>["transaction"]
+      }
+      queueMicrotask(() => {
+        request.readyState = "done"
+        request.onsuccess?.call(request as unknown as IDBRequest<undefined>, new Event("success"))
+      })
+      return request as unknown as IDBOpenDBRequest
+    },
+    open(name: string) {
+      const request = createRequest<IDBDatabase>() as unknown as IDBOpenDBRequest & {
+        readyState: IDBRequestReadyState
+        result: IDBDatabase
+      }
+      queueMicrotask(() => {
+        const existing = databases.get(name)
+        const stores = existing ?? new Map<string, Map<string, unknown>>()
+        const database = {
+          close() {},
+          createObjectStore(storeName: string) {
+            if (!stores.has(storeName)) {
+              stores.set(storeName, new Map())
+            }
+            return {} as IDBObjectStore
+          },
+          deleteObjectStore() {},
+          transaction(storeName: string) {
+            if (!stores.has(storeName)) {
+              stores.set(storeName, new Map())
+            }
+            const store = stores.get(storeName) as Map<string, unknown>
+            const transaction = {
+              error: null,
+              onabort: null,
+              oncomplete: null,
+              onerror: null,
+              abort() {},
+              commit() {},
+              db: database,
+              durability: "default",
+              mode: "readwrite",
+              objectStoreNames: {} as DOMStringList,
+              objectStore() {
+                return {
+                  get(key: string) {
+                    const getRequest = createRequest<unknown>() as unknown as {
+                      readyState: IDBRequestReadyState
+                      error: DOMException | null
+                      onerror: IDBRequest<unknown>["onerror"]
+                      result: unknown
+                      onsuccess: IDBRequest<unknown>["onsuccess"]
+                      source: IDBRequest<unknown>["source"]
+                      transaction: IDBRequest<unknown>["transaction"]
+                    }
+                    queueMicrotask(() => {
+                      getRequest.readyState = "done"
+                      getRequest.result = store.get(key)
+                      getRequest.onsuccess?.call(
+                        getRequest as unknown as IDBRequest<unknown>,
+                        new Event("success")
+                      )
+                    })
+                    return getRequest
+                  },
+                  put(value: { artifact: { id: string } }) {
+                    const putRequest = createRequest<string>() as unknown as {
+                      readyState: IDBRequestReadyState
+                      error: DOMException | null
+                      onerror: IDBRequest<string>["onerror"]
+                      result: string
+                      onsuccess: IDBRequest<string>["onsuccess"]
+                      source: IDBRequest<string>["source"]
+                      transaction: IDBRequest<string>["transaction"]
+                    }
+                    queueMicrotask(() => {
+                      store.set(value.artifact.id, structuredClone(value))
+                      putRequest.readyState = "done"
+                      putRequest.result = value.artifact.id
+                      putRequest.onsuccess?.call(
+                        putRequest as unknown as IDBRequest<string>,
+                        new Event("success")
+                      )
+                      transaction.oncomplete?.(new Event("complete") as Event)
+                    })
+                    return putRequest
+                  },
+                } as IDBObjectStore
+              },
+              addEventListener() {},
+              removeEventListener() {},
+              dispatchEvent() {
+                return true
+              },
+            } as unknown as IDBTransaction
+            return transaction
+          },
+          onabort: null,
+          onclose: null,
+          onerror: null,
+          onversionchange: null,
+          addEventListener() {},
+          removeEventListener() {},
+          dispatchEvent() {
+            return true
+          },
+          name,
+          objectStoreNames: {} as DOMStringList,
+          version: 1,
+        } as unknown as IDBDatabase
+
+        request.result = database
+        if (!existing) {
+          databases.set(name, stores)
+          request.onupgradeneeded?.(new Event("upgradeneeded") as IDBVersionChangeEvent)
+        }
+        request.readyState = "done"
+        request.onsuccess?.(new Event("success") as Event)
+      })
+      return request
+    },
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() {
+      return true
+    },
+  } as unknown as IDBFactory
+}
 
 const serverRuntimeContext: AppContext = {
   apiBasePath: "/api",
@@ -61,6 +227,7 @@ const demoContext: AppContext = {
 beforeEach(() => {
   fetchMock.mockReset()
   vi.stubGlobal("fetch", fetchMock)
+  vi.stubGlobal("indexedDB", createFakeIndexedDb())
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   browserPrinterMocks.isBrowserPrintSupported.mockReturnValue(true)
   browserPrinterMocks.getSelectedBrowserPrinter.mockReturnValue({
@@ -85,10 +252,14 @@ beforeEach(() => {
     packetCount: 3,
     totalBytes: 128,
   })
+  resetBrowserArtifactStoreForTest()
+  globalThis.indexedDB?.deleteDatabase("tuckmark-browser-runtime")
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  resetBrowserArtifactStoreForTest()
+  globalThis.indexedDB?.deleteDatabase("tuckmark-browser-runtime")
 })
 
 function requireRootElement(): HTMLElement {
@@ -121,6 +292,42 @@ describe("web app", () => {
     expect(svg).toContain("A &amp; B &lt; C")
     expect(svg).not.toContain("&amp;amp;")
     expect(svg).not.toContain("&amp;lt;")
+  })
+
+  it("persists browser artifacts across store reinitialization when IndexedDB is available", async () => {
+    const entry = {
+      artifact: {
+        id: "artifact-persist-1",
+        name: "Persisted",
+        createdAt: "2026-06-20T00:00:00.000Z",
+        width: 384,
+        height: 120,
+        renderOptions: {
+          printWidthDots: 384,
+          previewScale: 4,
+          paperType: "continuous" as const,
+          threshold: 150,
+          xOffsetDots: 0,
+        },
+      },
+      data: {
+        preview: {
+          kind: "data-url" as const,
+          dataUrl: "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
+        },
+        packets: {
+          artifactId: "artifact-persist-1",
+          packets: ["AA=="],
+          packetCount: 1,
+          totalBytes: 1,
+        },
+      },
+    }
+
+    await writeBrowserArtifactForTest(entry)
+    resetBrowserArtifactStoreForTest()
+
+    await expect(readBrowserArtifact("artifact-persist-1")).resolves.toEqual(entry)
   })
 
   it("renders server-http runtime and submits current preview through /api", async () => {

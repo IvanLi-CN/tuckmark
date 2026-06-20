@@ -9,7 +9,7 @@ import type {
   Template,
 } from "./types.js"
 
-type StoredArtifact = {
+export type StoredArtifact = {
   artifact: PreviewArtifact
   data: ArtifactData
 }
@@ -479,10 +479,6 @@ async function resolveArtifactStore() {
             },
           },
         })
-        try {
-          const db = await indexedDB.open(DB_NAME, DB_VERSION)
-          db.result.close()
-        } catch {}
         return store
       } catch {
         return new MemoryArtifactStore()
@@ -532,6 +528,15 @@ async function persistArtifact(
 export async function readBrowserArtifact(artifactId: string): Promise<StoredArtifact> {
   const store = await resolveArtifactStore()
   return store.read(artifactId)
+}
+
+export async function writeBrowserArtifactForTest(entry: StoredArtifact): Promise<void> {
+  const store = await resolveArtifactStore()
+  await store.write(entry)
+}
+
+export function resetBrowserArtifactStoreForTest(): void {
+  artifactStorePromise = undefined
 }
 
 export async function previewTemplateInBrowser(input: {
