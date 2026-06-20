@@ -10,6 +10,13 @@ function trimTrailingSlash(value: string): string {
   return value.endsWith("/") && value !== "/" ? value.slice(0, -1) : value
 }
 
+function normalizeBasePath(value: string): string {
+  if (value === "./" || value === ".") {
+    return ""
+  }
+  return trimTrailingSlash(value)
+}
+
 function parseDemoParam(search: string): AppMode {
   const params = new URLSearchParams(search)
   return params.get("demo") === "true" ? "demo" : "runtime"
@@ -17,7 +24,12 @@ function parseDemoParam(search: string): AppMode {
 
 export function resolveBasePath(env: Record<string, string | undefined>): string {
   const explicit = env.TUCKMARK_WEB_BASE_PATH?.trim()
-  return explicit ? trimTrailingSlash(explicit) : ""
+  if (explicit) {
+    return normalizeBasePath(explicit)
+  }
+
+  const base = env.BASE_URL?.trim()
+  return base ? normalizeBasePath(base) : ""
 }
 
 export function resolveSurface(

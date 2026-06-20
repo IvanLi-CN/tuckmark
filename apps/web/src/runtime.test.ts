@@ -10,6 +10,22 @@ describe("resolveBasePath", () => {
       })
     ).toBe("/tuckmark")
   })
+
+  it("falls back to BASE_URL for non-root preview paths", () => {
+    expect(
+      resolveBasePath({
+        BASE_URL: "/preview/",
+      })
+    ).toBe("/preview")
+  })
+
+  it("normalizes relative vite base to an empty app base path", () => {
+    expect(
+      resolveBasePath({
+        BASE_URL: "./",
+      })
+    ).toBe("")
+  })
 })
 
 describe("resolveAppContext", () => {
