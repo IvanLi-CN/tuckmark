@@ -5,3 +5,7 @@ dist/
 coverage/
 .tmp/
 work/
+.env.local
+.storybook-static
+playwright-report
+test-results

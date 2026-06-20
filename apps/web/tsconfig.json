@@ -13,7 +13,6 @@
     "jsx": "react-jsx",
     "strict": true
   },
-  "include": ["src"],
+  "include": ["src", ".storybook", "playwright.config.ts"],
   "references": []
 }
-

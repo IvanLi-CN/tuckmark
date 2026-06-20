@@ -1,0 +1,16 @@
+name: label-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
+
+jobs:
+  label-gate:
+    name: Label Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release intent labels
+        run: node .github/scripts/label-gate.mjs
+        env:
+          PR_LABELS_JSON: ${{ toJson(github.event.pull_request.labels) }}

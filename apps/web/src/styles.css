@@ -1,8 +1,7 @@
 :root {
   color-scheme: light;
   font-family: "Avenir Next", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
-  background:
-    radial-gradient(circle at top left, rgba(214, 119, 77, 0.12), transparent 28%),
+  background: radial-gradient(circle at top left, rgba(214, 119, 77, 0.12), transparent 28%),
     radial-gradient(circle at bottom right, rgba(54, 116, 141, 0.1), transparent 24%),
     linear-gradient(180deg, #fcf8f1 0%, #efe6d9 100%);
   color: #181513;
@@ -112,14 +111,19 @@ textarea {
   display: grid;
   gap: 12px;
   align-content: end;
-  background:
-    linear-gradient(155deg, rgba(28, 22, 19, 0.9), rgba(74, 55, 45, 0.88)),
+  background: linear-gradient(155deg, rgba(28, 22, 19, 0.9), rgba(74, 55, 45, 0.88)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
   color: #f6efe6;
 }
 
 .hero-card strong {
   font-size: 1.2rem;
+}
+
+.mode-badges,
+.status-stack {
+  display: grid;
+  gap: 10px;
 }
 
 .workspace-grid {

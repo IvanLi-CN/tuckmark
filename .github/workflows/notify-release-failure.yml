@@ -1,0 +1,17 @@
+name: notify-release-failure
+
+on:
+  workflow_run:
+    workflows: ["release"]
+    types: [completed]
+
+jobs:
+  notify:
+    if: github.event.workflow_run.conclusion != 'success'
+    name: Notify Release Failure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Emit failure context
+        run: |
+          echo "Release workflow failed for run ${{ github.event.workflow_run.id }}"
+          echo "URL: ${{ github.event.workflow_run.html_url }}"

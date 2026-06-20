@@ -4,9 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "build": "bun run typecheck && vite build",
+    "build:pages": "bun run typecheck && TUCKMARK_WEB_BUILD_TARGET=pages vite build",
+    "build:storybook": "storybook build --output-dir ../../work/storybook-web",
     "dev": "vite",
-    "test": "vitest run"
+    "storybook": "storybook dev --port 6006",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "lpapi-ble": "1.5.260105",
@@ -14,6 +19,11 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.54.1",
+    "@storybook/react": "^8.6.14",
+    "@storybook/addon-essentials": "^8.6.14",
+    "@storybook/addon-interactions": "^8.6.14",
+    "@storybook/react-vite": "^8.6.14",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/web-bluetooth": "^0.0.21",
@@ -21,6 +31,7 @@
     "typescript": "^5.8.2",
     "vite": "^6.2.0",
     "vitest": "^3.2.6",
-    "jsdom": "^26.1.0"
+    "jsdom": "^26.1.0",
+    "storybook": "^8.6.14"
   }
 }

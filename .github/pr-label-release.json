@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "type_labels": ["type:major", "type:minor", "type:patch", "type:none"],
+  "channel_labels": ["channel:stable", "channel:preview"],
+  "rules": {
+    "require_exactly_one_type": true,
+    "require_exactly_one_channel_when_releasing": true,
+    "forbid_channel_when_type_none": true
+  },
+  "release_artifacts": ["runtime bundle", "CLI bundle"]
+}
