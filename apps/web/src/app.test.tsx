@@ -4,6 +4,8 @@ import { act } from "react"
 import ReactDOM from "react-dom/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { buildSafeTextBrowserSvgForTest } from "./browser-runtime.js"
+
 const browserPrinterMocks = vi.hoisted(() => ({
   connectBrowserPrinter: vi.fn(),
   getSelectedBrowserPrinter: vi.fn(),
@@ -108,6 +110,19 @@ function clickByText(text: string): HTMLButtonElement {
 }
 
 describe("web app", () => {
+  it("escapes browser-runtime safe text once when building preview SVG", () => {
+    const svg = buildSafeTextBrowserSvgForTest("A & B < C", {
+      printWidthDots: 384,
+      paperType: "continuous",
+      threshold: 150,
+      xOffsetDots: 0,
+    })
+
+    expect(svg).toContain("A &amp; B &lt; C")
+    expect(svg).not.toContain("&amp;amp;")
+    expect(svg).not.toContain("&amp;lt;")
+  })
+
   it("renders server-http runtime and submits current preview through /api", async () => {
     fetchMock
       .mockResolvedValueOnce(

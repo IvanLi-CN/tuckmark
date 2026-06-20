@@ -1,7 +1,7 @@
 import { PNG } from "pngjs"
 import { describe, expect, it } from "vitest"
 
-import { renderTemplateToPreview } from "../src/renderer.ts"
+import { renderSafeTextLabelPreview, renderTemplateToPreview } from "../src/renderer.ts"
 import { getTemplateById } from "../src/template-library.ts"
 
 function maxRowDarkBits(pngBuffer: Buffer, threshold = 150): number {
@@ -47,5 +47,21 @@ describe("renderTemplateToPreview continuous safety", () => {
     expect(maxRowDarkBits(gap.png)).toBeGreaterThan(320)
     expect(maxRowDarkBits(continuous.png)).toBeLessThanOrEqual(220)
     expect(maxRowDarkBits(continuous.png)).toBeLessThan(maxRowDarkBits(gap.png))
+  })
+
+  it("escapes safe text once when generating SVG text nodes", () => {
+    const preview = renderSafeTextLabelPreview({
+      text: "A & B < C",
+      title: "Safe Text Label",
+      renderOptions: {
+        printWidthDots: 384,
+        threshold: 150,
+        xOffsetDots: 0,
+      },
+    })
+
+    expect(preview.svg).toContain("A &amp; B &lt; C")
+    expect(preview.svg).not.toContain("&amp;amp;")
+    expect(preview.svg).not.toContain("&amp;lt;")
   })
 })

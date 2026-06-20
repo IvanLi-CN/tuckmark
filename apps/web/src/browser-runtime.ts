@@ -1,5 +1,5 @@
 import { presetTemplateData } from "../../../packages/core/src/preset-template-data.js"
-import { buildSvg, escapeXml, wrapText } from "../../../packages/core/src/svg-renderer.js"
+import { buildSvg, wrapText } from "../../../packages/core/src/svg-renderer.js"
 import type { TemplateDefinition } from "../../../packages/core/src/types.js"
 import type {
   ArtifactData,
@@ -60,7 +60,7 @@ function renderSafeTextSvg(
   const verticalPadding = 16
   const normalized = text.trimEnd() || "Tuckmark"
   const maxChars = Math.max(8, estimateCharsPerLine(24, width - horizontalPadding * 2))
-  const lines = wrapText(escapeXml(normalized), maxChars, 4)
+  const lines = wrapText(normalized, maxChars, 4)
   const height = Math.max(64, verticalPadding * 2 + lines.length * lineHeight)
   const elements = lines.map((line, index) => ({
     kind: "text" as const,
@@ -80,6 +80,13 @@ function renderSafeTextSvg(
     width,
     height,
   }
+}
+
+export function buildSafeTextBrowserSvgForTest(
+  text: string,
+  renderOptions: RenderOptions
+): string {
+  return renderSafeTextSvg(text, renderOptions).svg
 }
 
 function normalizeTemplateInput(

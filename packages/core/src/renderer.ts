@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto"
 import { Resvg } from "@resvg/resvg-js"
 import { PNG } from "pngjs"
 
-import { buildSvg, escapeXml, wrapText } from "./svg-renderer.js"
+import { buildSvg, wrapText } from "./svg-renderer.js"
 import type {
   DirectCanvasDefinition,
   PreviewArtifact,
@@ -239,7 +239,7 @@ export function renderSafeTextLabelPreview(request: SafeTextLabelInput): {
   const verticalPadding = 16
   const text = normalizedRequest.text.trimEnd() || "Tuckmark"
   const maxChars = Math.max(8, estimateCharsPerLine(24, width - horizontalPadding * 2))
-  const lines = wrapText(escapeXml(text), maxChars, 4)
+  const lines = wrapText(text, maxChars, 4)
   const height = Math.max(64, verticalPadding * 2 + lines.length * lineHeight)
 
   const elements: TemplateElement[] = lines.map((line, index) => ({
