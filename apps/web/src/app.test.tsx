@@ -512,7 +512,8 @@ describe("web app", () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            error: "Printer is no longer available: printer-1 (Mock P2). Refresh printers and retry.",
+            error:
+              "Printer is no longer available: printer-1 (Mock P2). Refresh printers and retry.",
           }),
           { status: 409 }
         )
@@ -583,7 +584,9 @@ describe("web app", () => {
       await Promise.resolve()
     })
 
-    const printArtifactCalls = fetchMock.mock.calls.filter((call) => call[0] === "/api/print/artifact")
+    const printArtifactCalls = fetchMock.mock.calls.filter(
+      (call) => call[0] === "/api/print/artifact"
+    )
     expect(printArtifactCalls).toHaveLength(2)
     expect(JSON.parse(String(printArtifactCalls[0]?.[1]?.body))).toMatchObject({
       printerId: "printer-1",

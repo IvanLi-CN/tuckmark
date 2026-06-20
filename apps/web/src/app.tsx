@@ -207,38 +207,41 @@ export function App({ client: providedClient, context: providedContext }: AppPro
     preferredPrinterNameRef.current = preferredPrinterName
   }, [preferredPrinterName])
 
-  const refreshSetup = React.useCallback(async (preferredPrinterName = preferredPrinterNameRef.current) => {
-    const nextTemplates = await client.listTemplates()
-    const setup = await loadSetup(client, [], preferredPrinterName)
+  const refreshSetup = React.useCallback(
+    async (preferredPrinterName = preferredPrinterNameRef.current) => {
+      const nextTemplates = await client.listTemplates()
+      const setup = await loadSetup(client, [], preferredPrinterName)
 
-    if (nextTemplates.length > 0) {
-      const fallbackTemplateId = nextTemplates[0]?.id ?? ""
-      setTemplates(nextTemplates)
-      setTemplateId((current) => {
-        const next = nextTemplates.find((template) => template.id === current)
-        return next?.id ?? fallbackTemplateId
-      })
-    }
+      if (nextTemplates.length > 0) {
+        const fallbackTemplateId = nextTemplates[0]?.id ?? ""
+        setTemplates(nextTemplates)
+        setTemplateId((current) => {
+          const next = nextTemplates.find((template) => template.id === current)
+          return next?.id ?? fallbackTemplateId
+        })
+      }
 
-    const nextPrinters = sortPrinters(setup.printers)
-    const nextSelectedPrinter = setup.selectedPrinter
-    const fallbackPrinterId = nextPrinters[0]?.id ?? ""
-    setPrinters(nextPrinters)
-    setPrinterId(nextSelectedPrinter?.id ?? (nextPrinters.length === 1 ? fallbackPrinterId : ""))
-    if (nextSelectedPrinter?.name) {
-      preferredPrinterNameRef.current = nextSelectedPrinter.name
-      setPreferredPrinterName(nextSelectedPrinter.name)
-    } else if (nextPrinters.length === 0) {
-      preferredPrinterNameRef.current = ""
-      setPreferredPrinterName("")
-    }
+      const nextPrinters = sortPrinters(setup.printers)
+      const nextSelectedPrinter = setup.selectedPrinter
+      const fallbackPrinterId = nextPrinters[0]?.id ?? ""
+      setPrinters(nextPrinters)
+      setPrinterId(nextSelectedPrinter?.id ?? (nextPrinters.length === 1 ? fallbackPrinterId : ""))
+      if (nextSelectedPrinter?.name) {
+        preferredPrinterNameRef.current = nextSelectedPrinter.name
+        setPreferredPrinterName(nextSelectedPrinter.name)
+      } else if (nextPrinters.length === 0) {
+        preferredPrinterNameRef.current = ""
+        setPreferredPrinterName("")
+      }
 
-    return {
-      templates: nextTemplates,
-      printers: nextPrinters,
-      selectedPrinter: nextSelectedPrinter,
-    }
-  }, [client])
+      return {
+        templates: nextTemplates,
+        printers: nextPrinters,
+        selectedPrinter: nextSelectedPrinter,
+      }
+    },
+    [client]
+  )
 
   React.useEffect(() => {
     void (async () => {
@@ -437,14 +440,16 @@ export function App({ client: providedClient, context: providedContext }: AppPro
     }
 
     if (hasServerPrinterFlow && selectedPrinter) {
-      const result = await runServerTaskWithRecovery("server-preview-and-print-template", (printer) =>
-        client.printTemplate({
-          printerId: printer.id,
-          printerName: printer.name,
-          templateId,
-          input,
-          renderOptions,
-        })
+      const result = await runServerTaskWithRecovery(
+        "server-preview-and-print-template",
+        (printer) =>
+          client.printTemplate({
+            printerId: printer.id,
+            printerName: printer.name,
+            templateId,
+            input,
+            renderOptions,
+          })
       )
       if (result?.preview) {
         await syncArtifactData(result.preview)
@@ -503,12 +508,14 @@ export function App({ client: providedClient, context: providedContext }: AppPro
     }
 
     if (hasServerPrinterFlow && selectedPrinter) {
-      const result = await runServerTaskWithRecovery("server-preview-and-print-safe-text", (printer) =>
-        client.printSafeText({
-          printerId: printer.id,
-          printerName: printer.name,
-          ...safeTextPayload,
-        })
+      const result = await runServerTaskWithRecovery(
+        "server-preview-and-print-safe-text",
+        (printer) =>
+          client.printSafeText({
+            printerId: printer.id,
+            printerName: printer.name,
+            ...safeTextPayload,
+          })
       )
       if (result?.preview) {
         await syncArtifactData(result.preview)
