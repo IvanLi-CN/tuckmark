@@ -1,38 +1,27 @@
-type PaperType = "continuous" | "gap";
+import type { BrowserPrintableArtifact } from "./browser-printer-config.js"
 
 export type BrowserPrinterSession = {
-  deviceId: string;
-  name: string;
-};
-
-export type BrowserPrintableArtifact = {
-  id: string;
-  pngUrl: string;
-  renderOptions: {
-    printWidthDots: number;
-    threshold: number;
-    xOffsetDots: number;
-    paperType: PaperType;
-  };
-};
+  deviceId: string
+  name: string
+}
 
 export type BrowserPrintResult = {
-  artifactId: string;
-  printer: BrowserPrinterSession;
-  statusCode: number;
-  printable?: number;
-  message: string;
-  packetCount?: number;
-  totalBytes?: number;
-};
+  artifactId: string
+  printer: BrowserPrinterSession
+  statusCode: number
+  printable?: number
+  message: string
+  packetCount?: number
+  totalBytes?: number
+}
 
 type PacketsResponse = {
-  artifactId: string;
-  packetsJsonPath: string;
-  packets: string[];
-  packetCount: number;
-  totalBytes: number;
-};
+  artifactId: string
+  packetsJsonPath: string
+  packets: string[]
+  packetCount: number
+  totalBytes: number
+}
 
 type PrintErrorCode =
   | "permission_denied"
@@ -40,74 +29,76 @@ type PrintErrorCode =
   | "service_not_found"
   | "char_not_found"
   | "write_failed"
-  | "unsupported";
+  | "unsupported"
 
-type PrintError = Error & { code: PrintErrorCode };
+type PrintError = Error & { code: PrintErrorCode }
 
-const PRINTER_SERVICE_UUID = "49535343-fe7d-4ae5-8fa9-9fafd205e455";
-const PRINTER_WRITE_CHARACTERISTIC_UUID = "49535343-8841-43f4-a8d4-ecbe34729bb3";
-const WRITE_DELAY_MS = 5;
+const PRINTER_SERVICE_UUID = "49535343-fe7d-4ae5-8fa9-9fafd205e455"
+const PRINTER_WRITE_CHARACTERISTIC_UUID = "49535343-8841-43f4-a8d4-ecbe34729bb3"
+const WRITE_DELAY_MS = 5
 
-let selectedPrinter: BrowserPrinterSession | null = null;
-let connectedDevice: BluetoothDevice | undefined;
-let connectedCharacteristic: BluetoothRemoteGATTCharacteristic | undefined;
+let selectedPrinter: BrowserPrinterSession | null = null
+let connectedDevice: BluetoothDevice | undefined
+let connectedCharacteristic: BluetoothRemoteGATTCharacteristic | undefined
 
 function createPrintError(code: PrintErrorCode, message: string): PrintError {
-  const error = new Error(message) as PrintError;
-  error.code = code;
-  return error;
+  const error = new Error(message) as PrintError
+  error.code = code
+  return error
 }
 
 function ensureBrowserEnvironment(): void {
   if (typeof window === "undefined" || typeof document === "undefined") {
-    throw new Error("当前环境不是浏览器，无法直接连接蓝牙打印机。");
+    throw new Error("当前环境不是浏览器，无法直接连接蓝牙打印机。")
   }
 
   if (!isBrowserPrintSupported()) {
     throw createPrintError(
       "unsupported",
       "当前浏览器不支持 Web Bluetooth。请使用 Chrome 桌面版并在 localhost/HTTPS 下访问。"
-    );
+    )
   }
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function detachDevice(device: BluetoothDevice | undefined, waitForDisconnectEvent = false): void {
   if (!device) {
-    return;
+    return
   }
   if (device.gatt?.connected) {
-    device.gatt.disconnect();
+    device.gatt.disconnect()
     if (waitForDisconnectEvent) {
-      return;
+      return
     }
   }
-  device.removeEventListener("gattserverdisconnected", handleDisconnected);
+  device.removeEventListener("gattserverdisconnected", handleDisconnected)
 }
 
 const handleDisconnected = () => {
-  detachDevice(connectedDevice);
-  connectedDevice = undefined;
-  connectedCharacteristic = undefined;
-};
+  detachDevice(connectedDevice)
+  connectedDevice = undefined
+  connectedCharacteristic = undefined
+}
 
 function describeDevice(device: BluetoothDevice): BrowserPrinterSession {
   return {
     deviceId: device.id,
-    name: device.name ?? device.id
-  };
+    name: device.name ?? device.id,
+  }
 }
 
-async function requestArtifactPackets(artifact: BrowserPrintableArtifact): Promise<PacketsResponse> {
-  const response = await fetch(`/api/artifacts/${artifact.id}/packets`);
+async function requestArtifactPackets(
+  artifact: BrowserPrintableArtifact
+): Promise<PacketsResponse> {
+  const response = await fetch(artifact.packetsUrl)
   if (!response.ok) {
-    throw new Error(`无法读取打印协议包: ${response.status}`);
+    throw new Error(`无法读取打印协议包: ${response.status}`)
   }
 
-  const json = (await response.json()) as Partial<PacketsResponse>;
+  const json = (await response.json()) as Partial<PacketsResponse>
   if (
     json.artifactId !== artifact.id ||
     !Array.isArray(json.packets) ||
@@ -115,7 +106,7 @@ async function requestArtifactPackets(artifact: BrowserPrintableArtifact): Promi
     typeof json.packetCount !== "number" ||
     typeof json.totalBytes !== "number"
   ) {
-    throw new Error("打印协议包响应不完整。");
+    throw new Error("打印协议包响应不完整。")
   }
 
   return {
@@ -123,28 +114,28 @@ async function requestArtifactPackets(artifact: BrowserPrintableArtifact): Promi
     packetsJsonPath: String(json.packetsJsonPath ?? ""),
     packets: json.packets,
     packetCount: json.packetCount,
-    totalBytes: json.totalBytes
-  };
+    totalBytes: json.totalBytes,
+  }
 }
 
 function decodePacket(packet: string, index: number): Uint8Array {
   try {
-    const binary = window.atob(packet);
-    const bytes = new Uint8Array(binary.length);
+    const binary = window.atob(packet)
+    const bytes = new Uint8Array(binary.length)
     for (let i = 0; i < binary.length; i += 1) {
-      bytes[i] = binary.charCodeAt(i);
+      bytes[i] = binary.charCodeAt(i)
     }
-    return bytes;
+    return bytes
   } catch (error) {
     throw new Error(
       `协议包 base64 解码失败（packet ${index + 1}）：${error instanceof Error ? error.message : String(error)}`
-    );
+    )
   }
 }
 
 async function ensureConnectedPrinter(session: BrowserPrinterSession): Promise<{
-  device: BluetoothDevice;
-  characteristic: BluetoothRemoteGATTCharacteristic;
+  device: BluetoothDevice
+  characteristic: BluetoothRemoteGATTCharacteristic
 }> {
   if (
     connectedDevice?.gatt?.connected &&
@@ -153,80 +144,80 @@ async function ensureConnectedPrinter(session: BrowserPrinterSession): Promise<{
   ) {
     return {
       device: connectedDevice,
-      characteristic: connectedCharacteristic
-    };
+      characteristic: connectedCharacteristic,
+    }
   }
 
-  throw createPrintError("device_not_found", "浏览器打印机会话已失效，请重新连接。");
+  throw createPrintError("device_not_found", "浏览器打印机会话已失效，请重新连接。")
 }
 
 export function isBrowserPrintSupported(): boolean {
-  return typeof navigator !== "undefined" && typeof navigator.bluetooth !== "undefined";
+  return typeof navigator !== "undefined" && typeof navigator.bluetooth !== "undefined"
 }
 
 export function getSelectedBrowserPrinter(): BrowserPrinterSession | null {
-  return selectedPrinter;
+  return selectedPrinter
 }
 
 export async function connectBrowserPrinter(): Promise<BrowserPrinterSession> {
-  ensureBrowserEnvironment();
+  ensureBrowserEnvironment()
 
   if (connectedCharacteristic && connectedDevice?.gatt?.connected) {
-    const printer = describeDevice(connectedDevice);
-    selectedPrinter = printer;
-    return printer;
+    const printer = describeDevice(connectedDevice)
+    selectedPrinter = printer
+    return printer
   }
 
-  let device: BluetoothDevice;
+  let device: BluetoothDevice
   try {
     device = await navigator.bluetooth.requestDevice({
       acceptAllDevices: true,
-      optionalServices: [PRINTER_SERVICE_UUID]
-    });
+      optionalServices: [PRINTER_SERVICE_UUID],
+    })
   } catch (error) {
     throw createPrintError(
       "permission_denied",
       `蓝牙授权被拒绝或取消：${error instanceof Error ? error.message : String(error)}`
-    );
+    )
   }
 
-  detachDevice(connectedDevice);
-  connectedCharacteristic = undefined;
-  device.addEventListener("gattserverdisconnected", handleDisconnected);
+  detachDevice(connectedDevice)
+  connectedCharacteristic = undefined
+  device.addEventListener("gattserverdisconnected", handleDisconnected)
 
   try {
-    const server = await device.gatt?.connect();
+    const server = await device.gatt?.connect()
     if (!server) {
-      throw createPrintError("device_not_found", "设备未建立 GATT 连接。请重试。");
+      throw createPrintError("device_not_found", "设备未建立 GATT 连接。请重试。")
     }
 
-    const service = await server.getPrimaryService(PRINTER_SERVICE_UUID).catch(() => undefined);
+    const service = await server.getPrimaryService(PRINTER_SERVICE_UUID).catch(() => undefined)
     if (!service) {
-      throw createPrintError("service_not_found", `未找到目标服务 UUID: ${PRINTER_SERVICE_UUID}`);
+      throw createPrintError("service_not_found", `未找到目标服务 UUID: ${PRINTER_SERVICE_UUID}`)
     }
 
     const characteristic = await service
       .getCharacteristic(PRINTER_WRITE_CHARACTERISTIC_UUID)
-      .catch(() => undefined);
+      .catch(() => undefined)
     if (!characteristic) {
       throw createPrintError(
         "char_not_found",
         `未找到写入特征 UUID: ${PRINTER_WRITE_CHARACTERISTIC_UUID}`
-      );
+      )
     }
 
-    connectedDevice = device;
-    connectedCharacteristic = characteristic;
-    selectedPrinter = describeDevice(device);
-    return selectedPrinter;
+    connectedDevice = device
+    connectedCharacteristic = characteristic
+    selectedPrinter = describeDevice(device)
+    return selectedPrinter
   } catch (error) {
-    detachDevice(device);
-    connectedDevice = undefined;
-    connectedCharacteristic = undefined;
+    detachDevice(device)
+    connectedDevice = undefined
+    connectedCharacteristic = undefined
     if (error instanceof Error) {
-      throw error;
+      throw error
     }
-    throw createPrintError("device_not_found", String(error));
+    throw createPrintError("device_not_found", String(error))
   }
 }
 
@@ -234,19 +225,19 @@ export async function printPreviewArtifact(
   session: BrowserPrinterSession,
   artifact: BrowserPrintableArtifact
 ): Promise<BrowserPrintResult> {
-  ensureBrowserEnvironment();
+  ensureBrowserEnvironment()
 
-  const packets = await requestArtifactPackets(artifact);
-  const { characteristic } = await ensureConnectedPrinter(session);
+  const packets = await requestArtifactPackets(artifact)
+  const { characteristic } = await ensureConnectedPrinter(session)
 
   for (const [index, packet] of packets.packets.entries()) {
-    const bytes = decodePacket(packet, index);
-    const payload = bytes as unknown as BufferSource;
+    const bytes = decodePacket(packet, index)
+    const payload = bytes as unknown as BufferSource
     try {
       if (typeof characteristic.writeValueWithResponse === "function") {
-        await characteristic.writeValueWithResponse(payload);
+        await characteristic.writeValueWithResponse(payload)
       } else {
-        await characteristic.writeValue(payload);
+        await characteristic.writeValue(payload)
       }
     } catch (error) {
       throw createPrintError(
@@ -254,11 +245,11 @@ export async function printPreviewArtifact(
         `写入 BLE 数据失败（packet ${index + 1}/${packets.packetCount}，${bytes.byteLength} bytes）：${
           error instanceof Error ? error.message : String(error)
         }`
-      );
+      )
     }
 
     if (WRITE_DELAY_MS > 0) {
-      await sleep(WRITE_DELAY_MS);
+      await sleep(WRITE_DELAY_MS)
     }
   }
 
@@ -269,6 +260,6 @@ export async function printPreviewArtifact(
     printable: 0,
     packetCount: packets.packetCount,
     totalBytes: packets.totalBytes,
-    message: "浏览器蓝牙打印已提交。"
-  };
+    message: "浏览器蓝牙打印已提交。",
+  }
 }

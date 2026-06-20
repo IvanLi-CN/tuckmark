@@ -3,20 +3,47 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "bun@1.3.14",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "build": "pnpm -r build",
-    "test": "pnpm -r test",
+    "build": "bun run build:packages && bun run build:web",
+    "build:packages": "bun run --filter @tuckmark/core build && bun run --filter @tuckmark/server build && bun run --filter @tuckmark/cli build && bun run --filter @tuckmark/mcp build",
+    "build:web": "bun run --filter @tuckmark/web build",
+    "build:web:pages": "bun run --filter @tuckmark/web build:pages",
+    "check": "bun run lint && bun run format:check && bun run typecheck && bun run test && bun run build",
+    "dev:cli": "bun run --filter @tuckmark/cli dev",
+    "dev:mcp": "bun run --filter @tuckmark/mcp dev",
     "dev:preview": "node scripts/dev-preview.mjs",
-    "dev:server": "pnpm --filter @tuckmark/server dev",
-    "dev:web": "pnpm --filter @tuckmark/web dev",
-    "dev:mcp": "pnpm --filter @tuckmark/mcp dev",
-    "dev:cli": "pnpm --filter @tuckmark/cli dev"
+    "dev:server": "bun run --filter @tuckmark/server dev",
+    "dev:storybook": "bun run --filter @tuckmark/web storybook",
+    "dev:web": "bun run --filter @tuckmark/web dev",
+    "preview:web:pages": "bun scripts/serve-pages-preview.ts --root apps/web/dist --base /tuckmark/ --port 4173",
+    "format": "bun scripts/run-biome.ts write",
+    "format:check": "bun scripts/run-biome.ts check",
+    "lint": "bun scripts/run-biome.ts lint",
+    "prepare": "lefthook install",
+    "setup": "bun run scripts/setup.ts",
+    "test": "bun run test:packages && bun run test:web",
+    "test:e2e:web": "bun run --filter @tuckmark/web test:e2e",
+    "test:packages": "bun run --filter @tuckmark/core test && bun run --filter @tuckmark/server test && bun run --filter @tuckmark/cli test && bun run --filter @tuckmark/mcp test",
+    "test:web": "bun run --filter @tuckmark/web test",
+    "test:worktree-bootstrap": "bun run scripts/test-worktree-bootstrap.ts",
+    "typecheck": "bun run typecheck:packages && bun run typecheck:web",
+    "typecheck:packages": "bun run --filter @tuckmark/core typecheck && bun run --filter @tuckmark/server typecheck && bun run --filter @tuckmark/cli typecheck && bun run --filter @tuckmark/mcp typecheck",
+    "typecheck:web": "bun run --filter @tuckmark/web typecheck"
   },
   "devDependencies": {
-    "@types/node": "^22.13.9",
-    "tsx": "^4.19.3",
-    "typescript": "^5.8.2",
-    "vitest": "^3.0.8"
+    "@biomejs/biome": "^2.5.0",
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
+    "@types/node": "^26.0.0",
+    "lefthook": "^2.1.9",
+    "playwright": "^1.61.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
   }
 }

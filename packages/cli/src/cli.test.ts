@@ -1,8 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest"
 
 describe("cli smoke", () => {
   it("loads", () => {
-    expect(true).toBe(true);
-  });
-});
-
+    expect(true).toBe(true)
+  })
+})

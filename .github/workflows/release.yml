@@ -1,0 +1,68 @@
+name: release
+
+on:
+  workflow_run:
+    workflows: ["ci-main"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    name: Release Publish
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - id: snapshot
+        name: Select release snapshot
+        run: node .github/scripts/select-release-snapshot.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Restore release snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.snapshot.outputs.artifact_name }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.snapshot.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: work/release/inbox
+      - name: Normalize release snapshot
+        run: |
+          SNAPSHOT="$(find work/release/inbox -name release-intent.json -print -quit)"
+          test -n "$SNAPSHOT"
+          mkdir -p work/release
+          cp "$SNAPSHOT" work/release/release-intent.json
+      - name: Build release plan
+        run: node .github/scripts/release-plan.mjs
+      - name: Build bundles
+        run: |
+          bun run build
+          mkdir -p work/release/bundles
+          tar -czf work/release/bundles/tuckmark-runtime-bundle.tgz packages packages/server package.json bun.lock README.md PRODUCT.md DESIGN.md CONTEXT.md
+          tar -czf work/release/bundles/tuckmark-cli-bundle.tgz packages/cli packages/core package.json bun.lock README.md
+      - name: Publish GitHub Release
+        run: |
+          VERSION="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).release_version")"
+          TYPE_LABEL="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).type_label")"
+          if [ "$TYPE_LABEL" = "type:none" ]; then
+            echo "Skipping release for type:none"
+            exit 0
+          fi
+          gh release create "$VERSION" \
+            work/release/bundles/tuckmark-runtime-bundle.tgz \
+            work/release/bundles/tuckmark-cli-bundle.tgz \
+            --title "$VERSION" \
+            --notes "Tuckmark release $VERSION"
+        env:
+          GH_TOKEN: ${{ github.token }}

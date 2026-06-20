@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0",
+    "noEmit": true,
+    "rootDir": "..",
+    "baseUrl": "../..",
+    "paths": {
+      "@tuckmark/core": ["packages/core/src/index.ts"],
+      "@tuckmark/core/*": ["packages/core/src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "../core/src/**/*.d.ts"]
+}
