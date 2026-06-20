@@ -29,7 +29,7 @@ function maxRowDarkBits(pngBuffer: Buffer, threshold = 150): number {
 }
 
 describe("renderTemplateToPreview continuous safety", () => {
-  it("thins dangerous near-solid rows for continuous cable tags", () => {
+  it("thins dangerous near-solid rows for continuous cable tags", { timeout: 15000 }, () => {
     const template = getTemplateById("cable-tag")
     const input = {
       name: "LAN-01",

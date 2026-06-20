@@ -24,22 +24,32 @@ not the product contract boundary.
 - `packages/mcp`: the MCP surface for agent integration
 - `packages/core`: the shared domain and rendering layer
 
-## Demo Contract
+## Web Runtime Contract
 
-The Web demo must reuse the same routes, component tree, and state model as the
-formal Web app.
+The owner-facing Web app reuses one route tree, one component tree, and one
+artifact seam across every runtime surface.
 
-The demo must never fork into a separate demo-only page tree.
+The product exposes two explicit Web surfaces:
 
-Demo behavior is controlled by runtime capability and seed contracts:
+- `browser-static`: static browser runtime for GitHub Pages and custom-domain
+  root deployment
+- `server-http`: server-backed runtime that exposes `/api`
 
-- `?demo=true`: owner-facing seeded demo contract
-- `?demo=false`: formal route shell backed by mock API and capability gating
-- no query parameter on GitHub Pages: default to demo-safe behavior
-- non-Pages runtime without a demo override: default to the real HTTP `/api`
-  contract
+The product exposes two explicit Web modes:
 
-GitHub Pages is an owner-facing demo surface. It is not a Storybook
+- `runtime`: the formal product path
+- `demo`: Mock API behavior with real hardware capability disabled
+
+Mode selection is explicit:
+
+- `?demo=true`: enter `demo`
+- `?demo=false`: stay on `runtime`
+- no query parameter: stay on `runtime`
+
+`browser-static` and `server-http` keep the same formal route structure. Demo
+behavior must never fork into a separate demo-only page tree.
+
+GitHub Pages is an owner-facing static Web runtime. It is not a Storybook
 replacement, not a docs site, and not a second product surface.
 
 ## Release Contract

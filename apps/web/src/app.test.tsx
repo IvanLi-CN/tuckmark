@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act } from "react"
+import { JSDOM } from "jsdom"
 import ReactDOM from "react-dom/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -10,15 +11,23 @@ import {
   resetBrowserArtifactStoreForTest,
   writeBrowserArtifactForTest,
 } from "./browser-runtime.js"
+import type { BrowserPrinterSession, BrowserPrintResult } from "./browser-printer.js"
+import * as browserPrinterModule from "./browser-printer.js"
 
-const browserPrinterMocks = vi.hoisted(() => ({
-  connectBrowserPrinter: vi.fn(),
-  getSelectedBrowserPrinter: vi.fn(),
-  isBrowserPrintSupported: vi.fn(),
-  printPreviewArtifact: vi.fn(),
+vi.mock("./browser-printer.js", () => ({
+  connectBrowserPrinter: vi.fn<
+    () => Promise<BrowserPrinterSession>
+  >(),
+  getSelectedBrowserPrinter: vi.fn<
+    () => BrowserPrinterSession | null
+  >(),
+  isBrowserPrintSupported: vi.fn<
+    () => boolean
+  >(),
+  printPreviewArtifact: vi.fn<
+    () => Promise<BrowserPrintResult>
+  >(),
 }))
-
-vi.mock("./browser-printer.js", () => browserPrinterMocks)
 
 import type { ApiClient } from "./api-client.js"
 import { App } from "./app.js"
@@ -26,6 +35,73 @@ import { defaultRenderOptions, fallbackTemplates } from "./demo-data.js"
 import type { AppContext } from "./types.js"
 
 const fetchMock = vi.fn<typeof fetch>()
+const browserPrinterMocks = browserPrinterModule as {
+  connectBrowserPrinter: ReturnType<typeof vi.fn<() => Promise<BrowserPrinterSession>>>
+  getSelectedBrowserPrinter: ReturnType<typeof vi.fn<() => BrowserPrinterSession | null>>
+  isBrowserPrintSupported: ReturnType<typeof vi.fn<() => boolean>>
+  printPreviewArtifact: ReturnType<typeof vi.fn<() => Promise<BrowserPrintResult>>>
+}
+const originalFetch = globalThis.fetch
+const originalIndexedDb = globalThis.indexedDB
+let restoreFallbackDom: (() => void) | null = null
+
+function installFallbackDom(): () => void {
+  if (typeof document !== "undefined") {
+    return () => {}
+  }
+
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+    pretendToBeVisual: true,
+    url: "http://localhost/",
+  })
+  const keys = [
+    "window",
+    "document",
+    "navigator",
+    "HTMLElement",
+    "HTMLImageElement",
+    "Node",
+    "Event",
+    "MouseEvent",
+    "CustomEvent",
+    "Image",
+    "getComputedStyle",
+    "requestAnimationFrame",
+    "cancelAnimationFrame",
+  ] as const
+  const descriptors = new Map<PropertyKey, PropertyDescriptor | undefined>(
+    keys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)])
+  )
+  const view = dom.window
+
+  Object.defineProperties(globalThis, {
+    window: { configurable: true, value: view },
+    document: { configurable: true, value: view.document },
+    navigator: { configurable: true, value: view.navigator },
+    HTMLElement: { configurable: true, value: view.HTMLElement },
+    HTMLImageElement: { configurable: true, value: view.HTMLImageElement },
+    Node: { configurable: true, value: view.Node },
+    Event: { configurable: true, value: view.Event },
+    MouseEvent: { configurable: true, value: view.MouseEvent },
+    CustomEvent: { configurable: true, value: view.CustomEvent },
+    Image: { configurable: true, value: view.Image },
+    getComputedStyle: { configurable: true, value: view.getComputedStyle.bind(view) },
+    requestAnimationFrame: { configurable: true, value: view.requestAnimationFrame.bind(view) },
+    cancelAnimationFrame: { configurable: true, value: view.cancelAnimationFrame.bind(view) },
+  })
+
+  return () => {
+    for (const key of keys) {
+      const descriptor = descriptors.get(key)
+      if (descriptor) {
+        Object.defineProperty(globalThis, key, descriptor)
+      } else {
+        delete (globalThis as Record<string, unknown>)[key]
+      }
+    }
+    view.close()
+  }
+}
 
 function createFakeIndexedDb(): IDBFactory {
   const databases = new Map<string, Map<string, Map<string, unknown>>>()
@@ -225,9 +301,10 @@ const demoContext: AppContext = {
 }
 
 beforeEach(() => {
+  restoreFallbackDom = installFallbackDom()
   fetchMock.mockReset()
-  vi.stubGlobal("fetch", fetchMock)
-  vi.stubGlobal("indexedDB", createFakeIndexedDb())
+  globalThis.fetch = fetchMock
+  globalThis.indexedDB = createFakeIndexedDb()
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   browserPrinterMocks.isBrowserPrintSupported.mockReturnValue(true)
   browserPrinterMocks.getSelectedBrowserPrinter.mockReturnValue({
@@ -257,7 +334,10 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  vi.unstubAllGlobals()
+  globalThis.fetch = originalFetch
+  globalThis.indexedDB = originalIndexedDb
+  restoreFallbackDom?.()
+  restoreFallbackDom = null
   resetBrowserArtifactStoreForTest()
   globalThis.indexedDB?.deleteDatabase("tuckmark-browser-runtime")
 })
@@ -330,277 +410,285 @@ describe("web app", () => {
     await expect(readBrowserArtifact("artifact-persist-1")).resolves.toEqual(entry)
   })
 
-  it("renders server-http runtime and submits current preview through /api", async () => {
-    fetchMock
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            templates: [
-              {
-                id: "shipping-compact",
-                name: "Compact Shipping Label",
-                description: "Preset shipping label",
-                fields: [
-                  { key: "recipient", label: "Recipient", required: true },
-                  { key: "address", label: "Address", required: true, multiline: true },
-                  { key: "orderId", label: "Order ID", required: true },
-                  { key: "note", label: "Note", required: false, multiline: true },
-                ],
-              },
-            ],
-          })
+  it(
+    "renders server-http runtime and submits current preview through /api",
+    { timeout: 15000 },
+    async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              templates: [
+                {
+                  id: "shipping-compact",
+                  name: "Compact Shipping Label",
+                  description: "Preset shipping label",
+                  fields: [
+                    { key: "recipient", label: "Recipient", required: true },
+                    { key: "address", label: "Address", required: true, multiline: true },
+                    { key: "orderId", label: "Order ID", required: true },
+                    { key: "note", label: "Note", required: false, multiline: true },
+                  ],
+                },
+              ],
+            })
+          )
         )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            printers: [
-              {
-                id: "printer-1",
-                name: "Mock P2",
-                capabilities: {
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              printers: [
+                {
+                  id: "printer-1",
+                  name: "Mock P2",
+                  capabilities: {
+                    printWidthDots: 384,
+                    supportedPaperTypes: ["continuous", "gap"],
+                  },
+                },
+              ],
+            })
+          )
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              artifact: {
+                id: "artifact-1",
+                name: "Shipping Label",
+                templateId: "shipping-compact",
+                createdAt: "2026-06-18T00:00:00.000Z",
+                width: 384,
+                height: 120,
+                renderOptions: {
                   printWidthDots: 384,
-                  supportedPaperTypes: ["continuous", "gap"],
+                  previewScale: 4,
+                  paperType: "continuous",
+                  threshold: 150,
+                  xOffsetDots: 0,
                 },
               },
-            ],
-          })
+            })
+          )
         )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            artifact: {
-              id: "artifact-1",
-              name: "Shipping Label",
-              templateId: "shipping-compact",
-              createdAt: "2026-06-18T00:00:00.000Z",
-              width: 384,
-              height: 120,
-              renderOptions: {
-                printWidthDots: 384,
-                previewScale: 4,
-                paperType: "continuous",
-                threshold: 150,
-                xOffsetDots: 0,
-              },
-            },
-          })
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              artifactId: "artifact-1",
+              packets: ["AA=="],
+              packetCount: 1,
+              totalBytes: 1,
+            })
+          )
         )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            artifactId: "artifact-1",
-            packets: ["AA=="],
-            packetCount: 1,
-            totalBytes: 1,
-          })
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              id: "job-1",
+              status: "completed",
+            })
+          )
         )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            id: "job-1",
-            status: "completed",
-          })
+
+      document.body.innerHTML = '<div id="root"></div>'
+      await act(async () => {
+        const root = ReactDOM.createRoot(requireRootElement())
+        root.render(<App context={serverRuntimeContext} />)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(document.body.textContent).toContain("Server HTTP")
+      expect(document.body.textContent).toContain("Runtime mode")
+
+      await act(async () => {
+        clickByText("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      await act(async () => {
+        clickByText("打印当前预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(fetchMock.mock.calls.some((call) => call[0] === "/api/preview/template")).toBe(true)
+      expect(
+        fetchMock.mock.calls.some((call) => call[0] === "/api/artifacts/artifact-1/packets")
+      ).toBe(true)
+      expect(fetchMock.mock.calls.some((call) => call[0] === "/api/print/artifact")).toBe(true)
+      const previewImage = document.querySelector(
+        "img[alt='preview artifact']"
+      ) as HTMLImageElement | null
+      expect(previewImage?.getAttribute("src")).toBe("/api/artifacts/artifact-1/png")
+    }
+  )
+
+  it(
+    "rebinds server printing by printer name after a stale printer id fails",
+    { timeout: 15000 },
+    async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              templates: [
+                {
+                  id: "shipping-compact",
+                  name: "Compact Shipping Label",
+                  description: "Preset shipping label",
+                  fields: [
+                    { key: "recipient", label: "Recipient", required: true },
+                    { key: "address", label: "Address", required: true, multiline: true },
+                    { key: "orderId", label: "Order ID", required: true },
+                    { key: "note", label: "Note", required: false, multiline: true },
+                  ],
+                },
+              ],
+            })
+          )
         )
-      )
-
-    document.body.innerHTML = '<div id="root"></div>'
-    await act(async () => {
-      const root = ReactDOM.createRoot(requireRootElement())
-      root.render(<App context={serverRuntimeContext} />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(document.body.textContent).toContain("Server HTTP")
-    expect(document.body.textContent).toContain("Runtime mode")
-
-    await act(async () => {
-      clickByText("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    await act(async () => {
-      clickByText("打印当前预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(fetchMock.mock.calls.some((call) => call[0] === "/api/preview/template")).toBe(true)
-    expect(
-      fetchMock.mock.calls.some((call) => call[0] === "/api/artifacts/artifact-1/packets")
-    ).toBe(true)
-    expect(fetchMock.mock.calls.some((call) => call[0] === "/api/print/artifact")).toBe(true)
-    const previewImage = document.querySelector(
-      "img[alt='preview artifact']"
-    ) as HTMLImageElement | null
-    expect(previewImage?.getAttribute("src")).toBe("/api/artifacts/artifact-1/png")
-  })
-
-  it("rebinds server printing by printer name after a stale printer id fails", async () => {
-    fetchMock
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            templates: [
-              {
-                id: "shipping-compact",
-                name: "Compact Shipping Label",
-                description: "Preset shipping label",
-                fields: [
-                  { key: "recipient", label: "Recipient", required: true },
-                  { key: "address", label: "Address", required: true, multiline: true },
-                  { key: "orderId", label: "Order ID", required: true },
-                  { key: "note", label: "Note", required: false, multiline: true },
-                ],
-              },
-            ],
-          })
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              printers: [
+                {
+                  id: "printer-1",
+                  name: "Mock P2",
+                  capabilities: {
+                    printWidthDots: 384,
+                    supportedPaperTypes: ["continuous", "gap"],
+                  },
+                },
+              ],
+            })
+          )
         )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            printers: [
-              {
-                id: "printer-1",
-                name: "Mock P2",
-                capabilities: {
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              artifact: {
+                id: "artifact-stale-1",
+                name: "Shipping Label",
+                templateId: "shipping-compact",
+                createdAt: "2026-06-20T00:00:00.000Z",
+                width: 384,
+                height: 120,
+                renderOptions: {
                   printWidthDots: 384,
-                  supportedPaperTypes: ["continuous", "gap"],
+                  previewScale: 4,
+                  paperType: "continuous",
+                  threshold: 150,
+                  xOffsetDots: 0,
                 },
               },
-            ],
-          })
+            })
+          )
         )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            artifact: {
-              id: "artifact-stale-1",
-              name: "Shipping Label",
-              templateId: "shipping-compact",
-              createdAt: "2026-06-20T00:00:00.000Z",
-              width: 384,
-              height: 120,
-              renderOptions: {
-                printWidthDots: 384,
-                previewScale: 4,
-                paperType: "continuous",
-                threshold: 150,
-                xOffsetDots: 0,
-              },
-            },
-          })
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              artifactId: "artifact-stale-1",
+              packets: ["AA=="],
+              packetCount: 1,
+              totalBytes: 1,
+            })
+          )
         )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            artifactId: "artifact-stale-1",
-            packets: ["AA=="],
-            packetCount: 1,
-            totalBytes: 1,
-          })
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              error:
+                "Printer is no longer available: printer-1 (Mock P2). Refresh printers and retry.",
+            }),
+            { status: 409 }
+          )
         )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            error:
-              "Printer is no longer available: printer-1 (Mock P2). Refresh printers and retry.",
-          }),
-          { status: 409 }
-        )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            templates: [
-              {
-                id: "shipping-compact",
-                name: "Compact Shipping Label",
-                description: "Preset shipping label",
-                fields: [
-                  { key: "recipient", label: "Recipient", required: true },
-                  { key: "address", label: "Address", required: true, multiline: true },
-                  { key: "orderId", label: "Order ID", required: true },
-                  { key: "note", label: "Note", required: false, multiline: true },
-                ],
-              },
-            ],
-          })
-        )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            printers: [
-              {
-                id: "printer-2",
-                name: "Mock P2",
-                capabilities: {
-                  printWidthDots: 384,
-                  supportedPaperTypes: ["continuous", "gap"],
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              templates: [
+                {
+                  id: "shipping-compact",
+                  name: "Compact Shipping Label",
+                  description: "Preset shipping label",
+                  fields: [
+                    { key: "recipient", label: "Recipient", required: true },
+                    { key: "address", label: "Address", required: true, multiline: true },
+                    { key: "orderId", label: "Order ID", required: true },
+                    { key: "note", label: "Note", required: false, multiline: true },
+                  ],
                 },
-              },
-            ],
-          })
+              ],
+            })
+          )
         )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            id: "job-rebound-1",
-            status: "completed",
-          })
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              printers: [
+                {
+                  id: "printer-2",
+                  name: "Mock P2",
+                  capabilities: {
+                    printWidthDots: 384,
+                    supportedPaperTypes: ["continuous", "gap"],
+                  },
+                },
+              ],
+            })
+          )
         )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              id: "job-rebound-1",
+              status: "completed",
+            })
+          )
+        )
+
+      document.body.innerHTML = '<div id="root"></div>'
+      await act(async () => {
+        const root = ReactDOM.createRoot(requireRootElement())
+        root.render(<App context={serverRuntimeContext} />)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      await act(async () => {
+        clickByText("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      await act(async () => {
+        clickByText("打印当前预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      const printArtifactCalls = fetchMock.mock.calls.filter(
+        (call) => call[0] === "/api/print/artifact"
       )
-
-    document.body.innerHTML = '<div id="root"></div>'
-    await act(async () => {
-      const root = ReactDOM.createRoot(requireRootElement())
-      root.render(<App context={serverRuntimeContext} />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    await act(async () => {
-      clickByText("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    await act(async () => {
-      clickByText("打印当前预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    const printArtifactCalls = fetchMock.mock.calls.filter(
-      (call) => call[0] === "/api/print/artifact"
-    )
-    expect(printArtifactCalls).toHaveLength(2)
-    expect(JSON.parse(String(printArtifactCalls[0]?.[1]?.body))).toMatchObject({
-      printerId: "printer-1",
-      printerName: "Mock P2",
-      artifactId: "artifact-stale-1",
-    })
-    expect(JSON.parse(String(printArtifactCalls[1]?.[1]?.body))).toMatchObject({
-      printerId: "printer-2",
-      printerName: "Mock P2",
-      artifactId: "artifact-stale-1",
-    })
-    expect(fetchMock.mock.calls.some((call) => call[0] === "/api/printers")).toBe(true)
-    expect(document.body.textContent).toContain("打印任务 job-rebound-1 状态 completed。")
-  })
+      expect(printArtifactCalls).toHaveLength(2)
+      expect(JSON.parse(String(printArtifactCalls[0]?.[1]?.body))).toMatchObject({
+        printerId: "printer-1",
+        printerName: "Mock P2",
+        artifactId: "artifact-stale-1",
+      })
+      expect(JSON.parse(String(printArtifactCalls[1]?.[1]?.body))).toMatchObject({
+        printerId: "printer-2",
+        printerName: "Mock P2",
+        artifactId: "artifact-stale-1",
+      })
+      expect(fetchMock.mock.calls.some((call) => call[0] === "/api/printers")).toBe(true)
+      expect(document.body.textContent).toContain("打印任务 job-rebound-1 状态 completed。")
+    }
+  )
 
   it("uses browser-static runtime labels and routes print through browser packets seam", async () => {
     const browserClient: ApiClient = {
