@@ -68,24 +68,24 @@ function ensureWasmTarget(toolchain) {
     throw new Error("rustup is required to provision the wasm32 target for detonger-wasm.")
   }
 
-  const installedTargets = execFileSync("rustup", ["target", "list", "--installed", "--toolchain", toolchain], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "inherit"],
-  })
+  const installedTargets = execFileSync(
+    "rustup",
+    ["target", "list", "--installed", "--toolchain", toolchain],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "inherit"],
+    }
+  )
 
   if (installedTargets.split(/\r?\n/).includes("wasm32-unknown-unknown")) {
     return
   }
 
-  execFileSync(
-    "rustup",
-    ["target", "add", "wasm32-unknown-unknown", "--toolchain", toolchain],
-    {
-      cwd: repoRoot,
-      stdio: "inherit",
-    }
-  )
+  execFileSync("rustup", ["target", "add", "wasm32-unknown-unknown", "--toolchain", toolchain], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  })
 }
 
 function sleep(ms) {
