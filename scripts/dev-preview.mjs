@@ -63,13 +63,13 @@ console.log(`- web:    http://127.0.0.1:${webPort}/`)
 console.log(`- server: http://127.0.0.1:${serverPort}/health`)
 console.log(`- proxy:  ${apiOrigin}`)
 
-startChild("server", ["--filter", "@tuckmark/server", "run", "dev"], {
+startChild("server", ["run", "--filter", "@tuckmark/server", "dev"], {
   PORT: serverPort,
 })
 
 startChild(
   "web",
-  ["--filter", "@tuckmark/web", "run", "dev", "--", "--host", "127.0.0.1", "--port", webPort],
+  ["run", "--filter", "@tuckmark/web", "dev", "--", "--host", "127.0.0.1", "--port", webPort],
   {
     TUCKMARK_API_ORIGIN: apiOrigin,
     TUCKMARK_SERVER_PORT: serverPort,

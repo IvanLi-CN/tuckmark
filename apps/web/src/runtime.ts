@@ -16,6 +16,18 @@ function parseDemoParam(search: string): AppMode | null {
   return null
 }
 
+function envFlagEnabled(
+  env: Record<string, string | undefined>,
+  name: string,
+  defaultValue: boolean
+): boolean {
+  const raw = env[name]?.trim()
+  if (!raw) {
+    return defaultValue
+  }
+  return raw !== "0" && raw.toLowerCase() !== "false"
+}
+
 export function resolveBasePath(env: Record<string, string | undefined>): string {
   const explicit = env.TUCKMARK_WEB_BASE_PATH?.trim()
   if (explicit) {
@@ -54,6 +66,8 @@ export function resolveAppContext(
   }
 
   const apiBasePath = mode === "runtime" ? "/api" : `${basePath}/mock-api`
+  const browserDirectEnabled = envFlagEnabled(env, "TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT", true)
+  const serviceApiEnabled = envFlagEnabled(env, "TUCKMARK_ENABLE_SERVER_SIDE_PRINT", true)
 
   return {
     apiBasePath,
@@ -61,9 +75,9 @@ export function resolveAppContext(
     isPages: isPagesHost,
     mode,
     capabilities: {
-      browserPrint: "available",
-      serverPrint: mode === "runtime" ? "available" : "mocked",
-      packetsSource: mode === "runtime" ? "http" : "mock",
+      browserDirectPrintPath: browserDirectEnabled ? "available" : "disabled",
+      serviceApiPrintPath:
+        mode === "runtime" ? (serviceApiEnabled ? "available" : "disabled") : "mocked",
     },
   }
 }

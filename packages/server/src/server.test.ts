@@ -16,8 +16,7 @@ import type {
   TuckmarkService,
 } from "@tuckmark/core"
 import { afterEach, describe, expect, it } from "vitest"
-
-import { createApp, type ServerService } from "./index.js"
+import { createApp, type ServerService, startServer } from "./index.js"
 
 const cleanupPaths: string[] = []
 
@@ -381,6 +380,30 @@ describe("server", () => {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve()))
     )
+  })
+
+  it("fails fast on startup when service-api print is enabled but detonger readiness is missing", async () => {
+    const previousEnabled = process.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT
+    const previousRoot = process.env.TUCKMARK_DETONGER_REPO_ROOT
+    process.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT = "1"
+    process.env.TUCKMARK_DETONGER_REPO_ROOT = "/tmp/tuckmark-missing-detonger"
+
+    try {
+      expect(() =>
+        startServer(new FakeServerService(createArtifact(os.tmpdir(), "artifact-fail")), 0)
+      ).toThrow(/Service-api print path is enabled, but detonger runtime is not ready/)
+    } finally {
+      if (previousEnabled === undefined) {
+        Reflect.deleteProperty(process.env, "TUCKMARK_ENABLE_SERVER_SIDE_PRINT")
+      } else {
+        process.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT = previousEnabled
+      }
+      if (previousRoot === undefined) {
+        Reflect.deleteProperty(process.env, "TUCKMARK_DETONGER_REPO_ROOT")
+      } else {
+        process.env.TUCKMARK_DETONGER_REPO_ROOT = previousRoot
+      }
+    }
   })
 
   it("exposes printer probe without sending print data", async () => {

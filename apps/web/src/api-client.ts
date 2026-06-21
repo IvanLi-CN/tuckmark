@@ -60,7 +60,6 @@ export interface ApiClient {
   printTemplate(input: PrintTemplateInput): Promise<PrintResult>
   printSafeText(input: PrintSafeTextInput): Promise<PrintResult>
   previewImageUrl(artifact: PreviewArtifact): string
-  artifactPacketsUrl(artifactId: string): string
 }
 
 async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
@@ -132,10 +131,6 @@ export class HttpApiClient implements ApiClient {
   previewImageUrl(artifact: PreviewArtifact): string {
     return `${this.context.apiBasePath}/artifacts/${artifact.id}/png`
   }
-
-  artifactPacketsUrl(artifactId: string): string {
-    return `${this.context.apiBasePath}/artifacts/${artifactId}/packets`
-  }
 }
 
 export class MockApiClient implements ApiClient {
@@ -205,10 +200,6 @@ export class MockApiClient implements ApiClient {
   previewImageUrl(artifact: PreviewArtifact): string {
     return createPreviewDataUrl(artifact.templateId)
   }
-
-  artifactPacketsUrl(artifactId: string): string {
-    return `${this.context.apiBasePath}/artifacts/${artifactId}/packets`
-  }
 }
 
 export function createApiClient(context: AppContext): ApiClient {
@@ -221,13 +212,39 @@ export async function loadSetup(
   preferredName: string
 ): Promise<SetupRefreshResult> {
   const nextPrinters = await client.listPrinters()
-  const nextSelectedPrinter =
-    nextPrinters.find((printer) => printer.name === preferredName) ??
-    nextPrinters.find((printer) => printers.some((item) => item.id === printer.id)) ??
-    (nextPrinters.length === 1 ? nextPrinters[0] : null)
+  const preferredPrinter = nextPrinters.find((printer) => printer.name === preferredName)
+  const matchingPrinter = nextPrinters.find((printer) =>
+    printers.some((item) => item.id === printer.id)
+  )
+  const singletonPrinter = nextPrinters.length === 1 ? nextPrinters[0] : null
+
+  if (preferredPrinter) {
+    return {
+      printers: nextPrinters,
+      selectedPrinter: preferredPrinter,
+      selectedPrinterReason: "preferred-name",
+    }
+  }
+
+  if (matchingPrinter) {
+    return {
+      printers: nextPrinters,
+      selectedPrinter: matchingPrinter,
+      selectedPrinterReason: "same-id",
+    }
+  }
+
+  if (singletonPrinter) {
+    return {
+      printers: nextPrinters,
+      selectedPrinter: singletonPrinter,
+      selectedPrinterReason: "singleton",
+    }
+  }
 
   return {
     printers: nextPrinters,
-    selectedPrinter: nextSelectedPrinter,
+    selectedPrinter: null,
+    selectedPrinterReason: "none",
   }
 }

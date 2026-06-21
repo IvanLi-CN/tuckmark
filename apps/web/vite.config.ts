@@ -20,9 +20,22 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "")
   const buildTarget = env.TUCKMARK_WEB_BUILD_TARGET ?? "runtime"
   const base = buildTarget === "pages" ? "/tuckmark/" : "/"
+  const clientEnv = {
+    "import.meta.env.TUCKMARK_API_ORIGIN": JSON.stringify(env.TUCKMARK_API_ORIGIN ?? ""),
+    "import.meta.env.TUCKMARK_SERVER_PORT": JSON.stringify(env.TUCKMARK_SERVER_PORT ?? ""),
+    "import.meta.env.TUCKMARK_WEB_PORT": JSON.stringify(env.TUCKMARK_WEB_PORT ?? ""),
+    "import.meta.env.TUCKMARK_WEB_BASE_PATH": JSON.stringify(env.TUCKMARK_WEB_BASE_PATH ?? ""),
+    "import.meta.env.TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT": JSON.stringify(
+      env.TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT ?? ""
+    ),
+    "import.meta.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT": JSON.stringify(
+      env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT ?? ""
+    ),
+  }
 
   return {
     base,
+    define: clientEnv,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

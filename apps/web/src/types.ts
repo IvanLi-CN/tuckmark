@@ -63,18 +63,16 @@ export type PrintResult = {
 export type SetupRefreshResult = {
   printers: Printer[]
   selectedPrinter: Printer | null
+  selectedPrinterReason: "preferred-name" | "same-id" | "singleton" | "none"
 }
 
-export type BrowserCapabilityState = "available" | "unsupported"
-
-export type ServerCapabilityState = "available" | "mocked"
+export type PrintPathState = "available" | "disabled" | "mocked" | "unsupported" | "unavailable"
 
 export type AppMode = "runtime" | "demo-seeded" | "mock-shell"
 
 export type AppCapabilities = {
-  browserPrint: BrowserCapabilityState
-  serverPrint: ServerCapabilityState
-  packetsSource: "http" | "mock"
+  browserDirectPrintPath: PrintPathState
+  serviceApiPrintPath: PrintPathState
 }
 
 export type AppContext = {

@@ -4,13 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "wasm:build": "node ../../scripts/build-detonger-wasm.mjs --release",
+    "wasm:build:dev": "node ../../scripts/build-detonger-wasm.mjs --dev",
+    "prebuild": "bun run wasm:build",
     "build": "bun run typecheck && vite build",
     "build:pages": "bun run typecheck && TUCKMARK_WEB_BUILD_TARGET=pages vite build",
     "build:storybook": "storybook build --output-dir ../../work/storybook-web",
+    "predev": "bun run wasm:build:dev",
     "dev": "vite",
+    "prestorybook": "bun run wasm:build:dev",
     "storybook": "storybook dev --port 6006",
+    "pretest": "bun run wasm:build:dev",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "pretypecheck": "bun run wasm:build:dev",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

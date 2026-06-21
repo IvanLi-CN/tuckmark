@@ -10,9 +10,8 @@ const demoContext: AppContext = {
   isPages: true,
   mode: "demo-seeded",
   capabilities: {
-    browserPrint: "available",
-    serverPrint: "mocked",
-    packetsSource: "mock",
+    browserDirectPrintPath: "available",
+    serviceApiPrintPath: "mocked",
   },
 }
 

@@ -24,6 +24,24 @@ not the product contract boundary.
 - `packages/mcp`: the MCP surface for agent integration
 - `packages/core`: the shared domain and rendering layer
 
+## Print Path Contract
+
+The Web product exposes two formal print paths:
+
+- `browser-direct print path`
+- `service-api print path`
+
+These are product-level capabilities with independent switches and independent
+dependency boundaries.
+
+The browser-direct path is a pure-browser path. In supported secure-context
+browsers, it renders, encodes, and sends print payloads without runtime server
+packet helpers.
+
+The service-api path is the runtime path that delegates hardware control to the
+service program API. When enabled, it must fail fast at startup if detonger or
+its required runtime assets are not ready.
+
 ## Demo Contract
 
 The Web demo must reuse the same routes, component tree, and state model as the

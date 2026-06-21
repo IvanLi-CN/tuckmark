@@ -25,6 +25,8 @@ describe("resolveAppContext", () => {
 
     expect(context.mode).toBe("demo-seeded")
     expect(context.apiBasePath).toBe("/tuckmark/mock-api")
+    expect(context.capabilities.browserDirectPrintPath).toBe("available")
+    expect(context.capabilities.serviceApiPrintPath).toBe("mocked")
   })
 
   it("lets demo=false switch pages into mock shell mode", () => {
@@ -52,5 +54,24 @@ describe("resolveAppContext", () => {
 
     expect(context.mode).toBe("runtime")
     expect(context.apiBasePath).toBe("/api")
+    expect(context.capabilities.browserDirectPrintPath).toBe("available")
+    expect(context.capabilities.serviceApiPrintPath).toBe("available")
+  })
+
+  it("lets the two print paths be gated independently", () => {
+    const context = resolveAppContext(
+      {
+        TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT: "0",
+        TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
+      },
+      {
+        origin: "http://127.0.0.1:5173",
+        pathname: "/",
+        search: "",
+      }
+    )
+
+    expect(context.capabilities.browserDirectPrintPath).toBe("disabled")
+    expect(context.capabilities.serviceApiPrintPath).toBe("available")
   })
 })

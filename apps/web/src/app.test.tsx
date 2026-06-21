@@ -9,6 +9,7 @@ const browserPrinterMocks = vi.hoisted(() => ({
   getSelectedBrowserPrinter: vi.fn(),
   isBrowserPrintSupported: vi.fn(),
   printPreviewArtifact: vi.fn(),
+  restoreBrowserPrinter: vi.fn(),
 }))
 
 vi.mock("./browser-printer.js", () => browserPrinterMocks)
@@ -23,9 +24,8 @@ const runtimeContext: AppContext = {
   isPages: false,
   mode: "runtime",
   capabilities: {
-    browserPrint: "available",
-    serverPrint: "available",
-    packetsSource: "http",
+    browserDirectPrintPath: "available",
+    serviceApiPrintPath: "available",
   },
 }
 
@@ -40,6 +40,8 @@ beforeEach(() => {
   })
   browserPrinterMocks.connectBrowserPrinter.mockReset()
   browserPrinterMocks.printPreviewArtifact.mockReset()
+  browserPrinterMocks.restoreBrowserPrinter.mockReset()
+  browserPrinterMocks.restoreBrowserPrinter.mockResolvedValue(null)
   browserPrinterMocks.printPreviewArtifact.mockResolvedValue({
     artifactId: "artifact-1",
     printer: {
@@ -72,6 +74,8 @@ function requireRootElement(): HTMLElement {
 
 describe("web app", () => {
   it("renders template workflow and prints current preview through server print when a backend printer is selected", async () => {
+    browserPrinterMocks.getSelectedBrowserPrinter.mockReturnValue(null)
+    browserPrinterMocks.restoreBrowserPrinter.mockResolvedValue(null)
     fetchMock
       .mockResolvedValueOnce(
         new Response(
@@ -149,7 +153,10 @@ describe("web app", () => {
     expect(document.body.textContent).toContain("单标签打印主链路")
     expect(document.body.textContent).toContain("模板标签")
     expect(document.body.textContent).toContain("打印当前预览")
-    expect(document.body.textContent).toContain("连接浏览器打印机")
+    expect(document.body.textContent).toContain("连接浏览器直连打印机")
+    expect(document.body.textContent).toContain("浏览器直连打印机")
+    expect(document.body.textContent).toContain("未连接")
+    expect(document.body.textContent).toContain("尚未选择设备")
 
     const previewButton = Array.from(document.querySelectorAll("button")).find((button) =>
       button.textContent?.includes("生成预览")
@@ -282,9 +289,175 @@ describe("web app", () => {
       expect.objectContaining({ method: "POST" })
     )
     expect(browserPrinterMocks.printPreviewArtifact).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/api/artifacts/"))).toBe(
+      false
+    )
+  })
+
+  it("restores the previously granted browser printer after a page reload", async () => {
+    browserPrinterMocks.getSelectedBrowserPrinter.mockReturnValue(null)
+    browserPrinterMocks.restoreBrowserPrinter.mockResolvedValue({
+      deviceId: "browser-printer-1",
+      name: "Browser P2",
+    })
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            templates: [
+              {
+                id: "shipping-compact",
+                name: "Compact Shipping Label",
+                description: "Preset shipping label",
+                fields: [
+                  { key: "recipient", label: "Recipient", required: true },
+                  { key: "address", label: "Address", required: true, multiline: true },
+                  { key: "orderId", label: "Order ID", required: true },
+                  { key: "note", label: "Note", required: false, multiline: true },
+                ],
+              },
+            ],
+          })
+        )
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ printers: [] })))
+
+    document.body.innerHTML = '<div id="root"></div>'
+    await act(async () => {
+      const root = ReactDOM.createRoot(requireRootElement())
+      root.render(<App context={runtimeContext} />)
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(browserPrinterMocks.restoreBrowserPrinter).toHaveBeenCalledOnce()
+    expect(document.body.textContent).toContain("重新连接浏览器直连打印机")
+    expect(document.body.textContent).toContain("已连接")
+    expect(document.body.textContent).toContain("Browser P2")
+  })
+
+  it("clears an auto-selected service-api printer after browser-direct connect and prints through BLE", async () => {
+    browserPrinterMocks.getSelectedBrowserPrinter.mockReturnValue(null)
+    browserPrinterMocks.restoreBrowserPrinter.mockResolvedValue(null)
+    browserPrinterMocks.connectBrowserPrinter.mockResolvedValue({
+      deviceId: "browser-printer-1",
+      name: "Browser P2",
+    })
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            templates: [
+              {
+                id: "shipping-compact",
+                name: "Compact Shipping Label",
+                description: "Preset shipping label",
+                fields: [
+                  { key: "recipient", label: "Recipient", required: true },
+                  { key: "address", label: "Address", required: true, multiline: true },
+                  { key: "orderId", label: "Order ID", required: true },
+                  { key: "note", label: "Note", required: false, multiline: true },
+                ],
+              },
+            ],
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            printers: [
+              {
+                id: "printer-1",
+                name: "Mock P2",
+                capabilities: {
+                  printWidthDots: 384,
+                  supportedPaperTypes: ["continuous", "gap"],
+                },
+              },
+            ],
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            artifact: {
+              id: "artifact-4",
+              name: "Shipping Label",
+              templateId: "shipping-compact",
+              createdAt: "2026-06-18T00:00:00.000Z",
+              width: 384,
+              height: 120,
+              renderOptions: {
+                printWidthDots: 384,
+                previewScale: 4,
+                paperType: "continuous",
+                threshold: 150,
+                xOffsetDots: 0,
+              },
+            },
+          })
+        )
+      )
+
+    document.body.innerHTML = '<div id="root"></div>'
+    await act(async () => {
+      const root = ReactDOM.createRoot(requireRootElement())
+      root.render(<App context={runtimeContext} />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const connectButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("连接浏览器直连打印机")
+    )
+    if (!connectButton) {
+      throw new Error("Missing browser printer connect button")
+    }
+    await act(async () => {
+      connectButton.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(document.body.textContent).toContain("重新连接浏览器直连打印机")
+    expect(document.body.textContent).toContain("已连接")
+    expect(document.body.textContent).toContain("Browser P2")
+
+    const previewButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("生成预览")
+    )
+    if (!previewButton) {
+      throw new Error("Missing template preview button")
+    }
+    await act(async () => {
+      previewButton.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const printCurrentPreviewButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("打印当前预览")
+    )
+    if (!printCurrentPreviewButton) {
+      throw new Error("Missing print current preview button")
+    }
+    await act(async () => {
+      printCurrentPreviewButton.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(browserPrinterMocks.connectBrowserPrinter).toHaveBeenCalledOnce()
+    expect(browserPrinterMocks.printPreviewArtifact).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls.some((call) => call[0] === "/api/print/artifact")).toBe(false)
   })
 
   it("refreshes backend printers and retries when the selected server printer instance has gone stale", async () => {
+    browserPrinterMocks.getSelectedBrowserPrinter.mockReturnValue(null)
+    browserPrinterMocks.restoreBrowserPrinter.mockResolvedValue(null)
     fetchMock
       .mockResolvedValueOnce(
         new Response(

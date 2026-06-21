@@ -5,7 +5,7 @@ test("pages demo and mock shell share the same formal app surface", async ({ pag
   await expect(page.getByRole("heading", { name: "单标签打印主链路" })).toBeVisible()
   await expect(page.getByText("Pages demo", { exact: true }).first()).toBeVisible()
   await expect(page.getByText("Server Contract", { exact: true })).toBeVisible()
-  await expect(page.getByText("server print mocked", { exact: true }).first()).toBeVisible()
+  await expect(page.getByText("mocked / available", { exact: true }).first()).toBeVisible()
 
   await page.goto("/tuckmark/?demo=false")
   await expect(page.getByRole("heading", { name: "单标签打印主链路" })).toBeVisible()
