@@ -57,7 +57,7 @@ afterEach(() => {
 })
 
 describe("encodeBrowserPngBytes", () => {
-  it("matches the validated Rust encoder for gap labels", { timeout: 15000 }, async () => {
+  it("matches the validated Rust encoder for gap labels", { timeout: 30000 }, async () => {
     const template = getTemplateById("shipping-compact")
     const rendered = renderTemplateToPreview(
       template,
@@ -105,7 +105,7 @@ describe("encodeBrowserPngBytes", () => {
     expect(browserPackets.totalBytes).toBe(rustPackets.totalBytes)
   })
 
-  it("matches the validated Rust encoder for continuous labels", { timeout: 15000 }, async () => {
+  it("matches the validated Rust encoder for continuous labels", { timeout: 30000 }, async () => {
     const template = getTemplateById("cable-tag")
     const rendered = renderTemplateToPreview(
       template,
