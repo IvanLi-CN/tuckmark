@@ -3,6 +3,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url))
+const repoRoot = path.resolve(moduleDir, "../../..")
 const defaultDetongerRepoRoot = path.resolve(moduleDir, "../../../detonger")
 const defaultPreviewEncoderManifestPath = path.resolve(
   moduleDir,
@@ -24,7 +25,10 @@ export function assertServerSidePrintRuntimeReady(env: NodeJS.ProcessEnv = proce
     return
   }
 
-  const repoRoot = env.TUCKMARK_DETONGER_REPO_ROOT ?? defaultDetongerRepoRoot
+  const resolvedRepoRoot = path.resolve(
+    repoRoot,
+    env.TUCKMARK_DETONGER_REPO_ROOT ?? defaultDetongerRepoRoot
+  )
   const manifestPath = defaultPreviewEncoderManifestPath
 
   const messageBase =
@@ -32,18 +36,18 @@ export function assertServerSidePrintRuntimeReady(env: NodeJS.ProcessEnv = proce
 
   const manifestDir = path.dirname(manifestPath)
   if (
-    !path.isAbsolute(repoRoot) ||
+    !path.isAbsolute(resolvedRepoRoot) ||
     !path.isAbsolute(manifestPath) ||
     !path.isAbsolute(manifestDir)
   ) {
     throw new Error(`${messageBase} Invalid detonger/runtime path configuration.`)
   }
 
-  if (!fs.existsSync(repoRoot)) {
-    throw new Error(`${messageBase} Missing detonger repo root: ${repoRoot}`)
+  if (!fs.existsSync(resolvedRepoRoot)) {
+    throw new Error(`${messageBase} Missing detonger repo root: ${resolvedRepoRoot}`)
   }
-  if (!fs.existsSync(path.join(repoRoot, "Cargo.toml"))) {
-    throw new Error(`${messageBase} Missing detonger Cargo.toml at ${repoRoot}`)
+  if (!fs.existsSync(path.join(resolvedRepoRoot, "Cargo.toml"))) {
+    throw new Error(`${messageBase} Missing detonger Cargo.toml at ${resolvedRepoRoot}`)
   }
   if (!fs.existsSync(manifestPath)) {
     throw new Error(`${messageBase} Missing preview encoder manifest: ${manifestPath}`)
