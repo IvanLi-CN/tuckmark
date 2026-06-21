@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url"
 
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { encodeArtifactWithDetongerRustPreview } from "../../../packages/core/dist/detonger-preview-encoder.js"
-import { renderTemplateToPreview } from "../../../packages/core/dist/renderer.js"
-import { getTemplateById } from "../../../packages/core/dist/template-library.js"
+import { encodeArtifactWithDetongerRustPreview } from "../../../packages/core/src/detonger-preview-encoder.js"
+import { renderTemplateToPreview } from "../../../packages/core/src/renderer.js"
+import { getTemplateById } from "../../../packages/core/src/template-library.js"
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
 const helperManifestPath = path.join(repoRoot, "tools/detonger-preview-encoder/Cargo.toml")
