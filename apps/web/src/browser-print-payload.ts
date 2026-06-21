@@ -7,6 +7,7 @@ import type {
   TemplateDefinition,
 } from "../../../packages/core/src/types.js"
 import { encodeBrowserPngMessages } from "./browser-print-wasm.js"
+import type { ArtifactData } from "./types.js"
 
 type BrowserRenderOptions = PreviewArtifact["renderOptions"]
 
@@ -29,6 +30,12 @@ export type BrowserPrintSource = TemplatePrintSource | SafeTextPrintSource
 type BrowserPreviewMaterialization = {
   artifact: PreviewArtifact
   dataUrl: string
+  source: BrowserPrintSource
+}
+
+export type BrowserArtifactMaterialization = {
+  artifact: PreviewArtifact
+  data: ArtifactData
   source: BrowserPrintSource
 }
 
@@ -152,7 +159,7 @@ function createSafeTextDefinition(request: SafeTextLabelInput): {
   const verticalPadding = 16
   const text = request.text.trimEnd() || "Tuckmark"
   const maxChars = Math.max(8, Math.floor((width - horizontalPadding * 2) / (24 * 0.6)))
-  const lines = wrapText(escapeXml(text), maxChars, 4)
+  const lines = wrapText(text, maxChars, 4)
   const height = Math.max(64, verticalPadding * 2 + lines.length * lineHeight)
 
   const elements = lines.map((line, index) => ({
@@ -422,6 +429,14 @@ export async function materializeBrowserPreview(
 export async function encodeBrowserPrintSource(
   source: BrowserPrintSource
 ): Promise<ArtifactPackets> {
+  const materialized = await materializeBrowserArtifactData(source)
+
+  return materialized.data.packets
+}
+
+export async function materializeBrowserArtifactData(
+  source: BrowserPrintSource
+): Promise<BrowserArtifactMaterialization> {
   const preview = await materializeBrowserPreview(source)
   const svg = decodeURIComponent(preview.dataUrl.split(",", 2)[1] ?? "")
   const pngBytes = await drawSvgToPngBytes(
@@ -433,8 +448,17 @@ export async function encodeBrowserPrintSource(
   )
   const packets = await encodeBrowserPngBytes(preview.artifact.renderOptions, pngBytes)
 
+  packets.artifactId = preview.artifact.id
+
   return {
-    ...packets,
-    artifactId: preview.artifact.id,
+    artifact: preview.artifact,
+    data: {
+      preview: {
+        kind: "data-url",
+        dataUrl: preview.dataUrl,
+      },
+      packets,
+    },
+    source,
   }
 }

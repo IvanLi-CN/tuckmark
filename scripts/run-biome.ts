@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { existsSync } from "node:fs"
 import { extname } from "node:path"
 
 const mode = process.argv[2]
@@ -41,6 +42,7 @@ const files = decoder
   .decode(listFiles.stdout)
   .split("\0")
   .filter(Boolean)
+  .filter((file) => existsSync(file))
   .filter((file) => supportedExtensions.has(extname(file)))
 
 if (files.length === 0) {

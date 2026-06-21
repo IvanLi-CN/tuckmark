@@ -16,26 +16,35 @@ export function resolveApiOrigin(env: Record<string, string | undefined>): strin
   return `http://127.0.0.1:${serverPort}`
 }
 
+export function resolveBuildSurface(
+  env: Record<string, string | undefined>
+): "server-http" | "browser-static" {
+  return env.TUCKMARK_WEB_SURFACE === "browser-static" ? "browser-static" : "server-http"
+}
+
+export function resolvePublicBase(env: Record<string, string | undefined>): string {
+  return resolveBuildSurface(env) === "browser-static" ? "./" : "/"
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "")
-  const buildTarget = env.TUCKMARK_WEB_BUILD_TARGET ?? "runtime"
-  const base = buildTarget === "pages" ? "/tuckmark/" : "/"
-  const clientEnv = {
-    "import.meta.env.TUCKMARK_API_ORIGIN": JSON.stringify(env.TUCKMARK_API_ORIGIN ?? ""),
-    "import.meta.env.TUCKMARK_SERVER_PORT": JSON.stringify(env.TUCKMARK_SERVER_PORT ?? ""),
-    "import.meta.env.TUCKMARK_WEB_PORT": JSON.stringify(env.TUCKMARK_WEB_PORT ?? ""),
-    "import.meta.env.TUCKMARK_WEB_BASE_PATH": JSON.stringify(env.TUCKMARK_WEB_BASE_PATH ?? ""),
-    "import.meta.env.TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT": JSON.stringify(
-      env.TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT ?? ""
-    ),
-    "import.meta.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT": JSON.stringify(
-      env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT ?? ""
-    ),
-  }
+  const surface = resolveBuildSurface(env)
 
   return {
-    base,
-    define: clientEnv,
+    base: resolvePublicBase(env),
+    define: {
+      __TUCKMARK_WEB_SURFACE__: JSON.stringify(surface),
+      "import.meta.env.TUCKMARK_API_ORIGIN": JSON.stringify(env.TUCKMARK_API_ORIGIN ?? ""),
+      "import.meta.env.TUCKMARK_SERVER_PORT": JSON.stringify(env.TUCKMARK_SERVER_PORT ?? ""),
+      "import.meta.env.TUCKMARK_WEB_PORT": JSON.stringify(env.TUCKMARK_WEB_PORT ?? ""),
+      "import.meta.env.TUCKMARK_WEB_BASE_PATH": JSON.stringify(env.TUCKMARK_WEB_BASE_PATH ?? ""),
+      "import.meta.env.TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT": JSON.stringify(
+        env.TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT ?? ""
+      ),
+      "import.meta.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT": JSON.stringify(
+        env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT ?? ""
+      ),
+    },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

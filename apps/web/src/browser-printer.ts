@@ -1,8 +1,13 @@
-import { type BrowserPrintSource, encodeBrowserPrintSource } from "./browser-print-payload.js"
+import type { ArtifactPackets } from "./types.js"
 
 export type BrowserPrinterSession = {
   deviceId: string
   name: string
+}
+
+export type BrowserPrintArtifact = {
+  id: string
+  packets: ArtifactPackets
 }
 
 export type BrowserPrintResult = {
@@ -159,7 +164,9 @@ async function reconnectGrantedPrinter(
   for (const device of orderedDevices) {
     try {
       return await connectGrantedPrinterDevice(device)
-    } catch {}
+    } catch {
+      // Try the next granted device.
+    }
   }
 
   return null
@@ -266,19 +273,16 @@ export async function connectBrowserPrinter(): Promise<BrowserPrinterSession> {
 
 export async function printPreviewArtifact(
   session: BrowserPrinterSession,
-  source: BrowserPrintSource
+  artifact: BrowserPrintArtifact
 ): Promise<BrowserPrintResult> {
   ensureBrowserEnvironment()
 
-  const packets = await encodeBrowserPrintSource(source)
   const { characteristic } = await ensureConnectedPrinter(session)
 
-  for (const [index, packet] of packets.packets.entries()) {
+  for (const [index, packet] of artifact.packets.packets.entries()) {
     const bytes = decodePacket(packet, index)
     const payload = bytes as unknown as BufferSource
     try {
-      // Match the detonger CLI's validated BLE path: prefer write-without-response with pacing,
-      // then fall back to write-with-response, then the legacy writeValue surface.
       if (typeof characteristic.writeValueWithoutResponse === "function") {
         await characteristic.writeValueWithoutResponse(payload)
       } else if (typeof characteristic.writeValueWithResponse === "function") {
@@ -289,7 +293,7 @@ export async function printPreviewArtifact(
     } catch (error) {
       throw createPrintError(
         "write_failed",
-        `写入 BLE 数据失败（packet ${index + 1}/${packets.packetCount}，${bytes.byteLength} bytes）：${
+        `写入 BLE 数据失败（packet ${index + 1}/${artifact.packets.packetCount}，${bytes.byteLength} bytes）：${
           error instanceof Error ? error.message : String(error)
         }`
       )
@@ -301,12 +305,12 @@ export async function printPreviewArtifact(
   }
 
   return {
-    artifactId: packets.artifactId,
+    artifactId: artifact.packets.artifactId,
     printer: session,
     statusCode: 0,
     printable: 0,
-    packetCount: packets.packetCount,
-    totalBytes: packets.totalBytes,
     message: "浏览器蓝牙打印已提交。",
+    packetCount: artifact.packets.packetCount,
+    totalBytes: artifact.packets.totalBytes,
   }
 }

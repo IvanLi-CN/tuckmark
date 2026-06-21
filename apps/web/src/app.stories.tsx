@@ -1,23 +1,29 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 
-import { MockApiClient } from "./api-client.js"
+import { DemoApiClient } from "./api-client.js"
 import { App } from "./app.js"
 import type { AppContext } from "./types.js"
 
-const demoContext: AppContext = {
-  apiBasePath: "/tuckmark/mock-api",
-  basePath: "/tuckmark",
-  isPages: true,
-  mode: "demo-seeded",
+const runtimeContext: AppContext = {
+  apiBasePath: "",
+  basePath: "",
+  surface: "browser-static",
+  mode: "runtime",
   capabilities: {
     browserDirectPrintPath: "available",
-    serviceApiPrintPath: "mocked",
+    serviceApiPrintPath: "disabled",
   },
 }
 
-const mockShellContext: AppContext = {
-  ...demoContext,
-  mode: "mock-shell",
+const demoContext: AppContext = {
+  apiBasePath: "",
+  basePath: "",
+  surface: "browser-static",
+  mode: "demo",
+  capabilities: {
+    browserDirectPrintPath: "mocked",
+    serviceApiPrintPath: "mocked",
+  },
 }
 
 const meta: Meta<typeof App> = {
@@ -29,7 +35,7 @@ const meta: Meta<typeof App> = {
     docs: {
       description: {
         component:
-          "Formal Tuckmark web surface rendered through the same route tree for runtime, Pages demo, and mock shell contracts.",
+          "Formal Tuckmark web surface rendered through the same route tree for browser runtime and demo contracts.",
       },
     },
   },
@@ -39,16 +45,15 @@ export default meta
 
 type Story = StoryObj<typeof App>
 
-export const PagesDemo: Story = {
+export const BrowserRuntime: Story = {
   args: {
-    context: demoContext,
-    client: new MockApiClient(demoContext),
+    context: runtimeContext,
   },
 }
 
-export const MockShell: Story = {
+export const DemoMode: Story = {
   args: {
-    context: mockShellContext,
-    client: new MockApiClient(mockShellContext),
+    context: demoContext,
+    client: new DemoApiClient(demoContext),
   },
 }

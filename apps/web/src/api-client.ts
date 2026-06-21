@@ -1,11 +1,13 @@
 import {
-  buildPreviewArtifact,
-  createPreviewDataUrl,
-  fallbackTemplates,
-  seededPrinters,
-} from "./demo-data.js"
+  listBrowserRuntimeTemplates,
+  previewSafeTextInBrowser,
+  previewTemplateInBrowser,
+  readBrowserArtifact,
+} from "./browser-runtime.js"
+import { fallbackTemplates, seededPrinters } from "./demo-data.js"
 import type {
   AppContext,
+  ArtifactData,
   PreviewArtifact,
   PreviewResult,
   Printer,
@@ -51,15 +53,8 @@ type PrintSafeTextInput = {
   renderOptions: RenderOptions
 }
 
-export interface ApiClient {
-  listTemplates(): Promise<Template[]>
-  listPrinters(): Promise<Printer[]>
-  previewTemplate(input: PreviewTemplateInput): Promise<PreviewResult>
-  previewSafeText(input: PreviewSafeTextInput): Promise<PreviewResult>
-  printArtifact(input: PrintArtifactInput): Promise<PrintResult>
-  printTemplate(input: PrintTemplateInput): Promise<PrintResult>
-  printSafeText(input: PrintSafeTextInput): Promise<PrintResult>
-  previewImageUrl(artifact: PreviewArtifact): string
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
@@ -69,6 +64,17 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
     throw new Error(json.error ?? `Request failed: ${response.status}`)
   }
   return json
+}
+
+export interface ApiClient {
+  listTemplates(): Promise<Template[]>
+  listPrinters(): Promise<Printer[]>
+  previewTemplate(input: PreviewTemplateInput): Promise<PreviewResult>
+  previewSafeText(input: PreviewSafeTextInput): Promise<PreviewResult>
+  printArtifact(input: PrintArtifactInput): Promise<PrintResult>
+  printTemplate(input: PrintTemplateInput): Promise<PrintResult>
+  printSafeText(input: PrintSafeTextInput): Promise<PrintResult>
+  readArtifactData(artifact: PreviewArtifact): Promise<ArtifactData>
 }
 
 export class HttpApiClient implements ApiClient {
@@ -128,12 +134,70 @@ export class HttpApiClient implements ApiClient {
     })
   }
 
-  previewImageUrl(artifact: PreviewArtifact): string {
-    return `${this.context.apiBasePath}/artifacts/${artifact.id}/png`
+  async readArtifactData(artifact: PreviewArtifact): Promise<ArtifactData> {
+    const packets = await requestJson<{
+      artifactId: string
+      packetsJsonPath: string
+      packets: string[]
+      packetCount: number
+      totalBytes: number
+    }>(`${this.context.apiBasePath}/artifacts/${artifact.id}/packets`)
+
+    return {
+      preview: {
+        kind: "url",
+        url: `${this.context.apiBasePath}/artifacts/${artifact.id}/png`,
+      },
+      packets,
+    }
   }
 }
 
-export class MockApiClient implements ApiClient {
+export class BrowserRuntimeApiClient implements ApiClient {
+  async listTemplates(): Promise<Template[]> {
+    return listBrowserRuntimeTemplates()
+  }
+
+  async listPrinters(): Promise<Printer[]> {
+    return []
+  }
+
+  previewTemplate(input: PreviewTemplateInput): Promise<PreviewResult> {
+    return previewTemplateInBrowser(input)
+  }
+
+  previewSafeText(input: PreviewSafeTextInput): Promise<PreviewResult> {
+    return previewSafeTextInBrowser(input)
+  }
+
+  async printArtifact(input: PrintArtifactInput): Promise<PrintResult> {
+    return {
+      id: `browser-artifact-${input.artifactId}`,
+      status: "ready",
+    }
+  }
+
+  async printTemplate(input: PrintTemplateInput): Promise<PrintResult> {
+    return {
+      preview: await this.previewTemplate(input),
+      status: "ready",
+    }
+  }
+
+  async printSafeText(input: PrintSafeTextInput): Promise<PrintResult> {
+    return {
+      preview: await this.previewSafeText(input),
+      status: "ready",
+    }
+  }
+
+  async readArtifactData(artifact: PreviewArtifact): Promise<ArtifactData> {
+    const stored = await readBrowserArtifact(artifact.id)
+    return stored.data
+  }
+}
+
+export class DemoApiClient implements ApiClient {
   constructor(private readonly context: AppContext) {}
 
   async listTemplates(): Promise<Template[]> {
@@ -141,42 +205,34 @@ export class MockApiClient implements ApiClient {
   }
 
   async listPrinters(): Promise<Printer[]> {
-    return this.context.mode === "demo-seeded" ? seededPrinters : []
+    return this.context.surface === "server-http" ? seededPrinters : []
   }
 
   async previewTemplate(input: PreviewTemplateInput): Promise<PreviewResult> {
-    return {
-      artifact: buildPreviewArtifact(
-        input.templateId,
-        input.renderOptions,
-        `${input.templateId}-${this.context.mode}`
-      ),
-    }
+    await sleep(420)
+    return previewTemplateInBrowser(input)
   }
 
   async previewSafeText(input: PreviewSafeTextInput): Promise<PreviewResult> {
-    return {
-      artifact: buildPreviewArtifact(
-        undefined,
-        input.renderOptions,
-        `safe-text-${this.context.mode}`
-      ),
-    }
+    await sleep(360)
+    return previewSafeTextInBrowser(input)
   }
 
   async printArtifact(input: PrintArtifactInput): Promise<PrintResult> {
+    await sleep(980)
     return {
-      id: `mock-job-${input.artifactId}`,
+      id: `demo-artifact-${input.artifactId}`,
       status: "completed",
     }
   }
 
   async printTemplate(input: PrintTemplateInput): Promise<PrintResult> {
     const preview = await this.previewTemplate(input)
+    await sleep(980)
     return {
       preview,
       job: {
-        id: `mock-template-${input.templateId}`,
+        id: `demo-template-${input.templateId}`,
         status: "completed",
         artifactId: preview.artifact.id,
         printerId: input.printerId,
@@ -186,10 +242,11 @@ export class MockApiClient implements ApiClient {
 
   async printSafeText(input: PrintSafeTextInput): Promise<PrintResult> {
     const preview = await this.previewSafeText(input)
+    await sleep(980)
     return {
       preview,
       job: {
-        id: "mock-safe-text",
+        id: "demo-safe-text",
         status: "completed",
         artifactId: preview.artifact.id,
         printerId: input.printerId,
@@ -197,13 +254,19 @@ export class MockApiClient implements ApiClient {
     }
   }
 
-  previewImageUrl(artifact: PreviewArtifact): string {
-    return createPreviewDataUrl(artifact.templateId)
+  async readArtifactData(artifact: PreviewArtifact): Promise<ArtifactData> {
+    const stored = await readBrowserArtifact(artifact.id)
+    return stored.data
   }
 }
 
 export function createApiClient(context: AppContext): ApiClient {
-  return context.mode === "runtime" ? new HttpApiClient(context) : new MockApiClient(context)
+  if (context.mode === "demo") {
+    return new DemoApiClient(context)
+  }
+  return context.surface === "browser-static"
+    ? new BrowserRuntimeApiClient()
+    : new HttpApiClient(context)
 }
 
 export async function loadSetup(

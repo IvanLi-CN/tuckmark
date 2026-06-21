@@ -1,6 +1,7 @@
 export type PaperType = "continuous" | "gap"
 
 export type RenderOptions = {
+  printWidthDots: number
   paperType: PaperType
   threshold: number
   xOffsetDots: number
@@ -68,7 +69,32 @@ export type SetupRefreshResult = {
 
 export type PrintPathState = "available" | "disabled" | "mocked" | "unsupported" | "unavailable"
 
-export type AppMode = "runtime" | "demo-seeded" | "mock-shell"
+export type AppMode = "runtime" | "demo"
+
+export type AppSurface = "server-http" | "browser-static"
+
+export type ArtifactPackets = {
+  artifactId: string
+  packetsJsonPath: string
+  packets: string[]
+  packetCount: number
+  totalBytes: number
+}
+
+export type ArtifactPreviewSource =
+  | {
+      kind: "url"
+      url: string
+    }
+  | {
+      kind: "data-url"
+      dataUrl: string
+    }
+
+export type ArtifactData = {
+  preview: ArtifactPreviewSource
+  packets: ArtifactPackets
+}
 
 export type AppCapabilities = {
   browserDirectPrintPath: PrintPathState
@@ -78,7 +104,7 @@ export type AppCapabilities = {
 export type AppContext = {
   apiBasePath: string
   basePath: string
-  isPages: boolean
   mode: AppMode
+  surface: AppSurface
   capabilities: AppCapabilities
 }

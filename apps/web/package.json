@@ -8,7 +8,7 @@
     "wasm:build:dev": "node ../../scripts/build-detonger-wasm.mjs --dev",
     "prebuild": "bun run wasm:build",
     "build": "bun run typecheck && vite build",
-    "build:pages": "bun run typecheck && TUCKMARK_WEB_BUILD_TARGET=pages vite build",
+    "build:pages": "bun run typecheck && TUCKMARK_WEB_SURFACE=browser-static vite build",
     "build:storybook": "storybook build --output-dir ../../work/storybook-web",
     "predev": "bun run wasm:build:dev",
     "dev": "vite",
