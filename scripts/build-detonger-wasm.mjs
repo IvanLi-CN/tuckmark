@@ -7,6 +7,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(scriptDir, "..")
 const outDir = path.join(repoRoot, "apps/web/src/wasm/pkg")
 const wasmCrateDir = path.join(repoRoot, "detonger/crates/detonger-wasm")
+const detongerToolchainFile = path.join(repoRoot, "detonger/rust-toolchain.toml")
 const wasmPackRoot = path.join(repoRoot, ".tuckmark/tools/wasm-pack")
 const wasmPackBin = path.join(
   wasmPackRoot,
@@ -56,6 +57,37 @@ function ensureWasmPack() {
   return wasmPackBin
 }
 
+function resolveDetongerToolchain() {
+  const contents = fs.readFileSync(detongerToolchainFile, "utf8")
+  const match = contents.match(/channel\s*=\s*"([^"]+)"/)
+  return match?.[1] ?? "stable"
+}
+
+function ensureWasmTarget(toolchain) {
+  if (!commandExists("rustup", ["--version"])) {
+    throw new Error("rustup is required to provision the wasm32 target for detonger-wasm.")
+  }
+
+  const installedTargets = execFileSync("rustup", ["target", "list", "--installed", "--toolchain", toolchain], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "inherit"],
+  })
+
+  if (installedTargets.split(/\r?\n/).includes("wasm32-unknown-unknown")) {
+    return
+  }
+
+  execFileSync(
+    "rustup",
+    ["target", "add", "wasm32-unknown-unknown", "--toolchain", toolchain],
+    {
+      cwd: repoRoot,
+      stdio: "inherit",
+    }
+  )
+}
+
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
@@ -100,6 +132,7 @@ let buildLockFd
 try {
   buildLockFd = acquireBuildLock()
   const wasmPackCommand = ensureWasmPack()
+  ensureWasmTarget(resolveDetongerToolchain())
   fs.rmSync(outDir, { recursive: true, force: true })
   execFileSync(
     wasmPackCommand,
