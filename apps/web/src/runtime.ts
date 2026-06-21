@@ -67,7 +67,7 @@ export function resolveAppContext(
   const mode = parseDemoParam(locationLike?.search ?? "")
   const basePath = resolveBasePath(env)
   const browserDirectEnabled = envFlagEnabled(env, "TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT", true)
-  const serviceApiEnabled = envFlagEnabled(env, "TUCKMARK_ENABLE_SERVER_SIDE_PRINT", true)
+  const serviceApiEnabled = envFlagEnabled(env, "TUCKMARK_ENABLE_SERVER_SIDE_PRINT", false)
 
   return {
     apiBasePath: surface === "server-http" ? "/api" : "",

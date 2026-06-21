@@ -12,7 +12,7 @@ const defaultPreviewEncoderManifestPath = path.resolve(
 
 export function isServerSidePrintEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT?.trim()
-  return raw !== "0" && raw?.toLowerCase() !== "false"
+  return raw === "1" || raw?.toLowerCase() === "true"
 }
 
 export function assertServerSidePrintRuntimeReady(env: NodeJS.ProcessEnv = process.env): void {

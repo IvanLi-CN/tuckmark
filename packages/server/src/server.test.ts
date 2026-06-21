@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import type { Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import os from "node:os"
 import path from "node:path"
@@ -393,6 +394,35 @@ describe("server", () => {
         startServer(new FakeServerService(createArtifact(os.tmpdir(), "artifact-fail")), 0)
       ).toThrow(/Service-api print path is enabled, but detonger runtime is not ready/)
     } finally {
+      if (previousEnabled === undefined) {
+        Reflect.deleteProperty(process.env, "TUCKMARK_ENABLE_SERVER_SIDE_PRINT")
+      } else {
+        process.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT = previousEnabled
+      }
+      if (previousRoot === undefined) {
+        Reflect.deleteProperty(process.env, "TUCKMARK_DETONGER_REPO_ROOT")
+      } else {
+        process.env.TUCKMARK_DETONGER_REPO_ROOT = previousRoot
+      }
+    }
+  })
+
+  it("still starts when service-api print is not explicitly enabled", async () => {
+    const previousEnabled = process.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT
+    const previousRoot = process.env.TUCKMARK_DETONGER_REPO_ROOT
+    Reflect.deleteProperty(process.env, "TUCKMARK_ENABLE_SERVER_SIDE_PRINT")
+    process.env.TUCKMARK_DETONGER_REPO_ROOT = "/tmp/tuckmark-missing-detonger"
+
+    let server: Server | undefined
+    try {
+      expect(() => {
+        server = startServer(new FakeServerService(createArtifact(os.tmpdir(), "artifact-ok")), 0)
+      }).not.toThrow()
+    } finally {
+      await new Promise<void>(
+        (resolve, reject) =>
+          server?.close((error) => (error ? reject(error) : resolve())) ?? resolve()
+      )
       if (previousEnabled === undefined) {
         Reflect.deleteProperty(process.env, "TUCKMARK_ENABLE_SERVER_SIDE_PRINT")
       } else {

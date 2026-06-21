@@ -67,6 +67,10 @@ afterEach(async () => {
 })
 
 describe("TuckmarkService", () => {
+  function enableServerSidePrint(): void {
+    process.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT = "1"
+  }
+
   it("renders and stores a template preview artifact", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-core-"))
     cleanupPaths.push(root)
@@ -91,6 +95,7 @@ describe("TuckmarkService", () => {
   })
 
   it("supports batch preview and print by artifact", async () => {
+    enableServerSidePrint()
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-core-"))
     cleanupPaths.push(root)
     const fake = new FakeDetongerAdapter()
@@ -115,6 +120,7 @@ describe("TuckmarkService", () => {
   })
 
   it("supports direct template print through preview unification", async () => {
+    enableServerSidePrint()
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-core-"))
     cleanupPaths.push(root)
     const fake = new FakeDetongerAdapter()
@@ -140,6 +146,7 @@ describe("TuckmarkService", () => {
   })
 
   it("supports safe text label preview and print", async () => {
+    enableServerSidePrint()
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-core-"))
     cleanupPaths.push(root)
     const fake = new FakeDetongerAdapter()
@@ -163,6 +170,7 @@ describe("TuckmarkService", () => {
   })
 
   it("supports batch printing with existing artifacts", async () => {
+    enableServerSidePrint()
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-core-"))
     cleanupPaths.push(root)
     const fake = new FakeDetongerAdapter()
@@ -240,6 +248,7 @@ describe("TuckmarkService", () => {
   })
 
   it("rejects printing when the selected backend printer is no longer discoverable", async () => {
+    enableServerSidePrint()
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-core-"))
     cleanupPaths.push(root)
     const fake = new FakeDetongerAdapter()
@@ -271,6 +280,7 @@ describe("TuckmarkService", () => {
   })
 
   it("rebinds by printer name when the backend printer instance id changes", async () => {
+    enableServerSidePrint()
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-core-"))
     cleanupPaths.push(root)
     const fake = new FakeDetongerAdapter()

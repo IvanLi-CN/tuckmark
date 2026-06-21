@@ -57,9 +57,27 @@ describe("resolveAppContext", () => {
     expect(context.capabilities.serviceApiPrintPath).toBe("mocked")
   })
 
-  it("uses server-http runtime when the injected surface targets /api", () => {
+  it("keeps service-api disabled by default on server-http until explicitly enabled", () => {
     const context = resolveAppContext(
       { TUCKMARK_WEB_SURFACE: "server-http" },
+      {
+        search: "",
+      }
+    )
+
+    expect(context.mode).toBe("runtime")
+    expect(context.surface).toBe("server-http")
+    expect(context.apiBasePath).toBe("/api")
+    expect(context.capabilities.browserDirectPrintPath).toBe("available")
+    expect(context.capabilities.serviceApiPrintPath).toBe("disabled")
+  })
+
+  it("uses server-http service-api path when explicitly enabled", () => {
+    const context = resolveAppContext(
+      {
+        TUCKMARK_WEB_SURFACE: "server-http",
+        TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
+      },
       {
         search: "",
       }
