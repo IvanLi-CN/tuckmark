@@ -1,29 +1,12 @@
 import { presetTemplateData } from "../../../packages/core/src/preset-template-data.js"
 import { buildSvg, wrapText } from "../../../packages/core/src/svg-renderer.js"
 import type { TemplateDefinition } from "../../../packages/core/src/types.js"
-import type {
-  ArtifactData,
-  ArtifactPackets,
-  PreviewArtifact,
-  RenderOptions,
-  Template,
-} from "./types.js"
+import { encodeBrowserPngBytes } from "./browser-print-payload.js"
+import type { ArtifactData, PreviewArtifact, RenderOptions, Template } from "./types.js"
 
 export type StoredArtifact = {
   artifact: PreviewArtifact
   data: ArtifactData
-}
-
-type LpapiPacket = {
-  getAllBytes(): Uint8Array
-}
-
-type LpapiPrintPackage = {
-  print(input: Record<string, unknown>): LpapiPacket[]
-}
-
-type LpapiModule = {
-  PrintPackage: new () => LpapiPrintPackage
 }
 
 const DB_NAME = "tuckmark-browser-runtime"
@@ -33,8 +16,6 @@ const CONTINUOUS_ROW_DENSITY_THRESHOLD = 320
 const CONTINUOUS_TARGET_DARK_BITS = 220
 const CONTINUOUS_MIN_RUN_LENGTH = 64
 const CONTINUOUS_EDGE_PRESERVE_DOTS = 12
-
-let lpapiModulePromise: Promise<LpapiModule> | undefined
 
 function createArtifactId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -105,30 +86,6 @@ function normalizeTemplateInput(
     }
   }
   return resolved
-}
-
-function ensureGlobalsForLpapiBle(): void {
-  if (!globalThis.window) {
-    ;(globalThis as typeof globalThis & { window: Window & typeof globalThis }).window =
-      globalThis as unknown as Window & typeof globalThis
-  }
-  if (!globalThis.navigator) {
-    ;(globalThis as typeof globalThis & { navigator: Navigator }).navigator = {
-      userAgent: "browser",
-    } as Navigator
-  }
-  if (!globalThis.window.navigator) {
-    ;(globalThis.window as typeof globalThis.window & { navigator: Navigator }).navigator =
-      globalThis.navigator as Navigator
-  }
-}
-
-async function loadLpapiModule(): Promise<LpapiModule> {
-  if (!lpapiModulePromise) {
-    ensureGlobalsForLpapiBle()
-    lpapiModulePromise = import("lpapi-ble/lib/index.esm.js") as Promise<LpapiModule>
-  }
-  return lpapiModulePromise
 }
 
 async function svgToImageData(svg: string, width: number, height: number): Promise<ImageData> {
@@ -284,98 +241,28 @@ function toPngDataUrl(imageData: ImageData): string {
   return canvas.toDataURL("image/png")
 }
 
-function shiftImageDataToPrinterWidth(
-  imageData: { data: Uint8ClampedArray; width: number; height: number },
-  printerWidth: number,
-  xOffsetDots: number
-): { data: Uint8ClampedArray; width: number; height: number } {
-  const dx = Number(xOffsetDots ?? 0)
-  if (!Number.isFinite(dx) || dx === 0) {
-    return imageData
+async function imageDataToPngBytes(imageData: ImageData): Promise<Uint8Array> {
+  if (typeof document === "undefined") {
+    throw new Error("浏览器渲染只支持在 DOM 环境中运行。")
   }
 
-  const width = Number(printerWidth)
-  if (!Number.isFinite(width) || width <= 0) {
-    throw new Error(`Invalid printerWidth for x-offset: ${printerWidth}`)
+  const canvas = document.createElement("canvas")
+  canvas.width = imageData.width
+  canvas.height = imageData.height
+  const context = canvas.getContext("2d")
+  if (!context) {
+    throw new Error("当前浏览器无法创建 2D canvas。")
   }
+  context.putImageData(imageData, 0, 0)
 
-  const dst = new Uint8ClampedArray(width * imageData.height * 4)
-  dst.fill(255)
-
-  for (let y = 0; y < imageData.height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const sx = x - dx
-      if (sx < 0 || sx >= imageData.width) {
-        continue
-      }
-      const sIdx = (imageData.width * y + sx) << 2
-      const dIdx = (width * y + x) << 2
-      dst[dIdx] = imageData.data[sIdx] ?? 255
-      dst[dIdx + 1] = imageData.data[sIdx + 1] ?? 255
-      dst[dIdx + 2] = imageData.data[sIdx + 2] ?? 255
-      dst[dIdx + 3] = imageData.data[sIdx + 3] ?? 255
-    }
-  }
-
-  return { data: dst, width, height: imageData.height }
-}
-
-async function encodePackets(
-  imageData: ImageData,
-  renderOptions: PreviewArtifact["renderOptions"]
-): Promise<ArtifactPackets> {
-  const { PrintPackage } = await loadLpapiModule()
-  const pp = new PrintPackage()
-  const shifted = shiftImageDataToPrinterWidth(
-    {
-      data: imageData.data,
-      width: imageData.width,
-      height: imageData.height,
-    },
-    renderOptions.printWidthDots,
-    renderOptions.xOffsetDots
-  )
-
-  const buffers = pp.print({
-    printerDPI: 203,
-    printerWidth: renderOptions.printWidthDots,
-    hardwareFlags: 0,
-    softwareFlags: 0x0010,
-    softwareVersion: "",
-    deviceName: "P2",
-    deviceVersion: "",
-    printable: 0,
-    isPrPageKey: -1,
-    imageData: shifted,
-    threshold: renderOptions.threshold,
-    orientation: 0,
-    pageKey: 1,
-    pageNo: 1,
-    PageCount: 1,
-    gapType: renderOptions.paperType === "continuous" ? 0 : 2,
-    enableSuperBitmap: true,
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, "image/png")
   })
-
-  if (!buffers || buffers.length === 0) {
-    throw new Error("lpapi-ble returned no packets")
+  if (!blob) {
+    throw new Error("浏览器无法导出 PNG 预览。")
   }
 
-  const packets = buffers.map((buffer) => {
-    const bytes = buffer.getAllBytes()
-    let binary = ""
-    for (const value of bytes) {
-      binary += String.fromCharCode(value)
-    }
-    return btoa(binary)
-  })
-
-  const totalBytes = buffers.reduce((sum, buffer) => sum + buffer.getAllBytes().byteLength, 0)
-  return {
-    artifactId: "",
-    packets,
-    packetCount: packets.length,
-    totalBytes,
-  }
+  return new Uint8Array(await blob.arrayBuffer())
 }
 
 class MemoryArtifactStore {
@@ -473,6 +360,7 @@ async function resolveArtifactStore() {
             preview: { kind: "data-url", dataUrl: "data:image/gif;base64,R0lGODlhAQABAAAAACw=" },
             packets: {
               artifactId: "__ping__",
+              packetsJsonPath: "browser://packets",
               packets: ["AA=="],
               packetCount: 1,
               totalBytes: 1,
@@ -539,6 +427,25 @@ export function resetBrowserArtifactStoreForTest(): void {
   artifactStorePromise = undefined
 }
 
+async function persistRasterArtifact(
+  artifact: PreviewArtifact,
+  rasterized: ImageData
+): Promise<void> {
+  const packets = await encodeBrowserPngBytes(
+    artifact.renderOptions,
+    await imageDataToPngBytes(rasterized)
+  )
+  packets.artifactId = artifact.id
+
+  await persistArtifact(artifact, {
+    preview: {
+      kind: "data-url",
+      dataUrl: toPngDataUrl(rasterized),
+    },
+    packets,
+  })
+}
+
 export async function previewTemplateInBrowser(input: {
   templateId: string
   input: Record<string, string>
@@ -547,7 +454,7 @@ export async function previewTemplateInBrowser(input: {
   const template = getTemplateById(input.templateId)
   const normalizedInput = normalizeTemplateInput(template, input.input)
   const renderOptions = {
-    printWidthDots: 384,
+    printWidthDots: input.renderOptions.printWidthDots,
     previewScale: 4,
     paperType: input.renderOptions.paperType,
     threshold: input.renderOptions.threshold,
@@ -567,15 +474,8 @@ export async function previewTemplateInBrowser(input: {
     height: template.height,
     renderOptions,
   }
-  const packets = await encodePackets(normalizedImage, artifact.renderOptions)
-  packets.artifactId = artifact.id
-  await persistArtifact(artifact, {
-    preview: {
-      kind: "data-url",
-      dataUrl: toPngDataUrl(normalizedImage),
-    },
-    packets,
-  })
+
+  await persistRasterArtifact(artifact, normalizedImage)
   return { artifact }
 }
 
@@ -605,14 +505,7 @@ export async function previewSafeTextInBrowser(input: {
     height,
     renderOptions,
   }
-  const packets = await encodePackets(normalizedImage, artifact.renderOptions)
-  packets.artifactId = artifact.id
-  await persistArtifact(artifact, {
-    preview: {
-      kind: "data-url",
-      dataUrl: toPngDataUrl(normalizedImage),
-    },
-    packets,
-  })
+
+  await persistRasterArtifact(artifact, normalizedImage)
   return { artifact }
 }

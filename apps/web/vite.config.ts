@@ -34,6 +34,16 @@ export default defineConfig(({ mode }) => {
     base: resolvePublicBase(env),
     define: {
       __TUCKMARK_WEB_SURFACE__: JSON.stringify(surface),
+      "import.meta.env.TUCKMARK_API_ORIGIN": JSON.stringify(env.TUCKMARK_API_ORIGIN ?? ""),
+      "import.meta.env.TUCKMARK_SERVER_PORT": JSON.stringify(env.TUCKMARK_SERVER_PORT ?? ""),
+      "import.meta.env.TUCKMARK_WEB_PORT": JSON.stringify(env.TUCKMARK_WEB_PORT ?? ""),
+      "import.meta.env.TUCKMARK_WEB_BASE_PATH": JSON.stringify(env.TUCKMARK_WEB_BASE_PATH ?? ""),
+      "import.meta.env.TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT": JSON.stringify(
+        env.TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT ?? ""
+      ),
+      "import.meta.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT": JSON.stringify(
+        env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT ?? ""
+      ),
     },
     plugins: [react(), tailwindcss()],
     resolve: {

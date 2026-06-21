@@ -137,6 +137,7 @@ export class HttpApiClient implements ApiClient {
   async readArtifactData(artifact: PreviewArtifact): Promise<ArtifactData> {
     const packets = await requestJson<{
       artifactId: string
+      packetsJsonPath: string
       packets: string[]
       packetCount: number
       totalBytes: number
@@ -274,13 +275,39 @@ export async function loadSetup(
   preferredName: string
 ): Promise<SetupRefreshResult> {
   const nextPrinters = await client.listPrinters()
-  const nextSelectedPrinter =
-    nextPrinters.find((printer) => printer.name === preferredName) ??
-    nextPrinters.find((printer) => printers.some((item) => item.id === printer.id)) ??
-    (nextPrinters.length === 1 ? nextPrinters[0] : null)
+  const preferredPrinter = nextPrinters.find((printer) => printer.name === preferredName)
+  const matchingPrinter = nextPrinters.find((printer) =>
+    printers.some((item) => item.id === printer.id)
+  )
+  const singletonPrinter = nextPrinters.length === 1 ? nextPrinters[0] : null
+
+  if (preferredPrinter) {
+    return {
+      printers: nextPrinters,
+      selectedPrinter: preferredPrinter,
+      selectedPrinterReason: "preferred-name",
+    }
+  }
+
+  if (matchingPrinter) {
+    return {
+      printers: nextPrinters,
+      selectedPrinter: matchingPrinter,
+      selectedPrinterReason: "same-id",
+    }
+  }
+
+  if (singletonPrinter) {
+    return {
+      printers: nextPrinters,
+      selectedPrinter: singletonPrinter,
+      selectedPrinterReason: "singleton",
+    }
+  }
 
   return {
     printers: nextPrinters,
-    selectedPrinter: nextSelectedPrinter,
+    selectedPrinter: null,
+    selectedPrinterReason: "none",
   }
 }

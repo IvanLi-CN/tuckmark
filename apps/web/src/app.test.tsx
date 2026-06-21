@@ -1,98 +1,40 @@
 // @vitest-environment jsdom
 
-import { JSDOM } from "jsdom"
 import { act } from "react"
 import ReactDOM from "react-dom/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { BrowserPrinterSession, BrowserPrintResult } from "./browser-printer.js"
-import * as browserPrinterModule from "./browser-printer.js"
+
+import type { ApiClient } from "./api-client.js"
+import { App } from "./app.js"
 import {
   buildSafeTextBrowserSvgForTest,
   readBrowserArtifact,
   resetBrowserArtifactStoreForTest,
   writeBrowserArtifactForTest,
 } from "./browser-runtime.js"
+import { fallbackTemplates } from "./demo-data.js"
+import type { AppContext, PreviewArtifact } from "./types.js"
 
-vi.mock("./browser-printer.js", () => ({
-  connectBrowserPrinter: vi.fn<() => Promise<BrowserPrinterSession>>(),
-  getSelectedBrowserPrinter: vi.fn<() => BrowserPrinterSession | null>(),
-  isBrowserPrintSupported: vi.fn<() => boolean>(),
-  printPreviewArtifact: vi.fn<() => Promise<BrowserPrintResult>>(),
+const browserPrinterMocks = vi.hoisted(() => ({
+  connectBrowserPrinter: vi.fn(),
+  getSelectedBrowserPrinter: vi.fn(),
+  isBrowserPrintSupported: vi.fn(),
+  printPreviewArtifact: vi.fn(),
+  restoreBrowserPrinter: vi.fn(),
 }))
 
-import type { ApiClient } from "./api-client.js"
-import { App } from "./app.js"
-import { defaultRenderOptions, fallbackTemplates } from "./demo-data.js"
-import type { AppContext } from "./types.js"
+const browserPayloadMocks = vi.hoisted(() => ({
+  materializeBrowserArtifactData: vi.fn(),
+  encodeBrowserPngBytes: vi.fn(),
+}))
+
+vi.mock("./browser-printer.js", () => browserPrinterMocks)
+vi.mock("./browser-print-payload.js", () => browserPayloadMocks)
 
 const fetchMock = vi.fn<typeof fetch>()
-const browserPrinterMocks = browserPrinterModule as {
-  connectBrowserPrinter: ReturnType<typeof vi.fn<() => Promise<BrowserPrinterSession>>>
-  getSelectedBrowserPrinter: ReturnType<typeof vi.fn<() => BrowserPrinterSession | null>>
-  isBrowserPrintSupported: ReturnType<typeof vi.fn<() => boolean>>
-  printPreviewArtifact: ReturnType<typeof vi.fn<() => Promise<BrowserPrintResult>>>
-}
 const originalFetch = globalThis.fetch
 const originalIndexedDb = globalThis.indexedDB
-let restoreFallbackDom: (() => void) | null = null
-
-function installFallbackDom(): () => void {
-  if (typeof document !== "undefined") {
-    return () => {}
-  }
-
-  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-    pretendToBeVisual: true,
-    url: "http://localhost/",
-  })
-  const keys = [
-    "window",
-    "document",
-    "navigator",
-    "HTMLElement",
-    "HTMLImageElement",
-    "Node",
-    "Event",
-    "MouseEvent",
-    "CustomEvent",
-    "Image",
-    "getComputedStyle",
-    "requestAnimationFrame",
-    "cancelAnimationFrame",
-  ] as const
-  const descriptors = new Map<PropertyKey, PropertyDescriptor | undefined>(
-    keys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)])
-  )
-  const view = dom.window
-
-  Object.defineProperties(globalThis, {
-    window: { configurable: true, value: view },
-    document: { configurable: true, value: view.document },
-    navigator: { configurable: true, value: view.navigator },
-    HTMLElement: { configurable: true, value: view.HTMLElement },
-    HTMLImageElement: { configurable: true, value: view.HTMLImageElement },
-    Node: { configurable: true, value: view.Node },
-    Event: { configurable: true, value: view.Event },
-    MouseEvent: { configurable: true, value: view.MouseEvent },
-    CustomEvent: { configurable: true, value: view.CustomEvent },
-    Image: { configurable: true, value: view.Image },
-    getComputedStyle: { configurable: true, value: view.getComputedStyle.bind(view) },
-    requestAnimationFrame: { configurable: true, value: view.requestAnimationFrame.bind(view) },
-    cancelAnimationFrame: { configurable: true, value: view.cancelAnimationFrame.bind(view) },
-  })
-
-  return () => {
-    for (const key of keys) {
-      const descriptor = descriptors.get(key)
-      if (descriptor) {
-        Object.defineProperty(globalThis, key, descriptor)
-      } else {
-        delete (globalThis as Record<string, unknown>)[key]
-      }
-    }
-    view.close()
-  }
-}
+let mountedRoot: ReturnType<typeof ReactDOM.createRoot> | null = null
 
 function createFakeIndexedDb(): IDBFactory {
   const databases = new Map<string, Map<string, Map<string, unknown>>>()
@@ -123,12 +65,7 @@ function createFakeIndexedDb(): IDBFactory {
       databases.delete(name)
       const request = createRequest<undefined>() as unknown as {
         readyState: IDBRequestReadyState
-        error: DOMException | null
-        onerror: IDBRequest<undefined>["onerror"]
         onsuccess: IDBRequest<undefined>["onsuccess"]
-        result: undefined
-        source: IDBRequest<undefined>["source"]
-        transaction: IDBRequest<undefined>["transaction"]
       }
       queueMicrotask(() => {
         request.readyState = "done"
@@ -174,12 +111,8 @@ function createFakeIndexedDb(): IDBFactory {
                   get(key: string) {
                     const getRequest = createRequest<unknown>() as unknown as {
                       readyState: IDBRequestReadyState
-                      error: DOMException | null
-                      onerror: IDBRequest<unknown>["onerror"]
                       result: unknown
                       onsuccess: IDBRequest<unknown>["onsuccess"]
-                      source: IDBRequest<unknown>["source"]
-                      transaction: IDBRequest<unknown>["transaction"]
                     }
                     queueMicrotask(() => {
                       getRequest.readyState = "done"
@@ -194,12 +127,8 @@ function createFakeIndexedDb(): IDBFactory {
                   put(value: { artifact: { id: string } }) {
                     const putRequest = createRequest<string>() as unknown as {
                       readyState: IDBRequestReadyState
-                      error: DOMException | null
-                      onerror: IDBRequest<string>["onerror"]
                       result: string
                       onsuccess: IDBRequest<string>["onsuccess"]
-                      source: IDBRequest<string>["source"]
-                      transaction: IDBRequest<string>["transaction"]
                     }
                     queueMicrotask(() => {
                       store.set(value.artifact.id, structuredClone(value))
@@ -261,9 +190,8 @@ const serverRuntimeContext: AppContext = {
   surface: "server-http",
   mode: "runtime",
   capabilities: {
-    browserPrint: "available",
-    serverPrint: "available",
-    mockHardware: false,
+    browserDirectPrintPath: "available",
+    serviceApiPrintPath: "available",
   },
 }
 
@@ -273,9 +201,8 @@ const browserRuntimeContext: AppContext = {
   surface: "browser-static",
   mode: "runtime",
   capabilities: {
-    browserPrint: "available",
-    serverPrint: "disabled",
-    mockHardware: false,
+    browserDirectPrintPath: "available",
+    serviceApiPrintPath: "disabled",
   },
 }
 
@@ -285,14 +212,114 @@ const demoContext: AppContext = {
   surface: "browser-static",
   mode: "demo",
   capabilities: {
-    browserPrint: "disabled",
-    serverPrint: "disabled",
-    mockHardware: true,
+    browserDirectPrintPath: "mocked",
+    serviceApiPrintPath: "mocked",
   },
 }
 
+function makeArtifact(artifactId: string, templateId = "shipping-compact"): PreviewArtifact {
+  return {
+    id: artifactId,
+    name: templateId === "safe-text-label" ? "Safe Text Label" : "Shipping Label",
+    templateId,
+    createdAt: "2026-06-20T00:00:00.000Z",
+    width: 384,
+    height: 120,
+    renderOptions: {
+      printWidthDots: 384,
+      previewScale: 4,
+      paperType: templateId === "safe-text-label" ? "continuous" : "gap",
+      threshold: 150,
+      xOffsetDots: 0,
+    },
+  }
+}
+
+function makeBrowserMaterialization(kind: "template" | "safe-text" = "template") {
+  const artifact = makeArtifact(
+    kind === "template" ? "artifact-browser-1" : "artifact-browser-safe-1",
+    kind === "template" ? "shipping-compact" : "safe-text-label"
+  )
+  return {
+    artifact,
+    data: {
+      preview: {
+        kind: "data-url" as const,
+        dataUrl: "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
+      },
+      packets: {
+        artifactId: artifact.id,
+        packetsJsonPath: "browser://packets",
+        packets: ["AA=="],
+        packetCount: 1,
+        totalBytes: 1,
+      },
+    },
+    source:
+      kind === "template"
+        ? {
+            kind: "template" as const,
+            templateId: "shipping-compact",
+            input: {
+              recipient: "Koha Cat",
+              address: "Moon Street 42\nShanghai",
+              orderId: "TM-001",
+              note: "fragile",
+            },
+            renderOptions: {
+              printWidthDots: 384,
+              previewScale: 4,
+              paperType: "gap" as const,
+              threshold: 150,
+              xOffsetDots: 0,
+            },
+          }
+        : {
+            kind: "safe-text" as const,
+            text: "Tuckmark\nPrint OK",
+            title: "Safe Text Label",
+            renderOptions: {
+              printWidthDots: 384,
+              previewScale: 4,
+              paperType: "continuous" as const,
+              threshold: 150,
+              xOffsetDots: 0,
+            },
+          },
+  }
+}
+
+async function flush(times = 3): Promise<void> {
+  for (let index = 0; index < times; index += 1) {
+    await Promise.resolve()
+  }
+}
+
+function clickByText(text: string): HTMLButtonElement {
+  const button = Array.from(document.querySelectorAll("button")).find((item) =>
+    item.textContent?.includes(text)
+  ) as HTMLButtonElement | undefined
+  if (!button) {
+    throw new Error(`Missing button: ${text}`)
+  }
+  return button
+}
+
+async function renderApp(context: AppContext, client?: ApiClient): Promise<void> {
+  document.body.innerHTML = '<div id="root"></div>'
+  const rootElement = document.getElementById("root")
+  if (!rootElement) {
+    throw new Error("Missing root element")
+  }
+
+  await act(async () => {
+    mountedRoot = ReactDOM.createRoot(rootElement)
+    mountedRoot.render(<App context={context} client={client} />)
+    await flush()
+  })
+}
+
 beforeEach(() => {
-  restoreFallbackDom = installFallbackDom()
   fetchMock.mockReset()
   globalThis.fetch = fetchMock
   globalThis.indexedDB = createFakeIndexedDb()
@@ -309,7 +336,7 @@ beforeEach(() => {
   })
   browserPrinterMocks.printPreviewArtifact.mockReset()
   browserPrinterMocks.printPreviewArtifact.mockResolvedValue({
-    artifactId: "artifact-1",
+    artifactId: "artifact-browser-1",
     printer: {
       deviceId: "browser-printer-1",
       name: "Browser P2",
@@ -317,39 +344,32 @@ beforeEach(() => {
     statusCode: 0,
     printable: 0,
     message: "浏览器蓝牙打印已提交。",
-    packetCount: 3,
-    totalBytes: 128,
+    packetCount: 1,
+    totalBytes: 1,
   })
+  browserPrinterMocks.restoreBrowserPrinter.mockReset()
+  browserPrinterMocks.restoreBrowserPrinter.mockResolvedValue(null)
+  browserPayloadMocks.materializeBrowserArtifactData.mockReset()
+  browserPayloadMocks.materializeBrowserArtifactData.mockImplementation(async (source) =>
+    makeBrowserMaterialization(source.kind)
+  )
   resetBrowserArtifactStoreForTest()
   globalThis.indexedDB?.deleteDatabase("tuckmark-browser-runtime")
 })
 
-afterEach(() => {
+afterEach(async () => {
+  if (mountedRoot) {
+    await act(async () => {
+      mountedRoot?.unmount()
+      await flush(1)
+    })
+  }
+  mountedRoot = null
   globalThis.fetch = originalFetch
   globalThis.indexedDB = originalIndexedDb
-  restoreFallbackDom?.()
-  restoreFallbackDom = null
   resetBrowserArtifactStoreForTest()
-  globalThis.indexedDB?.deleteDatabase("tuckmark-browser-runtime")
+  document.body.innerHTML = ""
 })
-
-function requireRootElement(): HTMLElement {
-  const rootElement = document.getElementById("root")
-  if (!rootElement) {
-    throw new Error("Missing root element")
-  }
-  return rootElement
-}
-
-function clickByText(text: string): HTMLButtonElement {
-  const button = Array.from(document.querySelectorAll("button")).find((item) =>
-    item.textContent?.includes(text)
-  ) as HTMLButtonElement | undefined
-  if (!button) {
-    throw new Error(`Missing button: ${text}`)
-  }
-  return button
-}
 
 describe("web app", () => {
   it("escapes browser-runtime safe text once when building preview SVG", () => {
@@ -367,20 +387,7 @@ describe("web app", () => {
 
   it("persists browser artifacts across store reinitialization when IndexedDB is available", async () => {
     const entry = {
-      artifact: {
-        id: "artifact-persist-1",
-        name: "Persisted",
-        createdAt: "2026-06-20T00:00:00.000Z",
-        width: 384,
-        height: 120,
-        renderOptions: {
-          printWidthDots: 384,
-          previewScale: 4,
-          paperType: "continuous" as const,
-          threshold: 150,
-          xOffsetDots: 0,
-        },
-      },
+      artifact: makeArtifact("artifact-persist-1"),
       data: {
         preview: {
           kind: "data-url" as const,
@@ -388,6 +395,7 @@ describe("web app", () => {
         },
         packets: {
           artifactId: "artifact-persist-1",
+          packetsJsonPath: "browser://packets",
           packets: ["AA=="],
           packetCount: 1,
           totalBytes: 1,
@@ -401,29 +409,11 @@ describe("web app", () => {
     await expect(readBrowserArtifact("artifact-persist-1")).resolves.toEqual(entry)
   })
 
-  it("renders server-http runtime and submits current preview through /api", {
-    timeout: 15000,
-  }, async () => {
+  it("renders server-http runtime and submits current preview through /api", async () => {
+    browserPrinterMocks.getSelectedBrowserPrinter.mockReturnValue(null)
+
     fetchMock
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            templates: [
-              {
-                id: "shipping-compact",
-                name: "Compact Shipping Label",
-                description: "Preset shipping label",
-                fields: [
-                  { key: "recipient", label: "Recipient", required: true },
-                  { key: "address", label: "Address", required: true, multiline: true },
-                  { key: "orderId", label: "Order ID", required: true },
-                  { key: "note", label: "Note", required: false, multiline: true },
-                ],
-              },
-            ],
-          })
-        )
-      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: fallbackTemplates })))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
@@ -440,67 +430,33 @@ describe("web app", () => {
           })
         )
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            artifact: {
-              id: "artifact-1",
-              name: "Shipping Label",
-              templateId: "shipping-compact",
-              createdAt: "2026-06-18T00:00:00.000Z",
-              width: 384,
-              height: 120,
-              renderOptions: {
-                printWidthDots: 384,
-                previewScale: 4,
-                paperType: "continuous",
-                threshold: 150,
-                xOffsetDots: 0,
-              },
-            },
-          })
-        )
-      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ artifact: makeArtifact("artifact-1") })))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
             artifactId: "artifact-1",
+            packetsJsonPath: "/tmp/artifact-1.packets.json",
             packets: ["AA=="],
             packetCount: 1,
             totalBytes: 1,
           })
         )
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            id: "job-1",
-            status: "completed",
-          })
-        )
-      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "job-1", status: "completed" })))
 
-    document.body.innerHTML = '<div id="root"></div>'
-    await act(async () => {
-      const root = ReactDOM.createRoot(requireRootElement())
-      root.render(<App context={serverRuntimeContext} />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await renderApp(serverRuntimeContext)
 
     expect(document.body.textContent).toContain("Server HTTP")
     expect(document.body.textContent).toContain("Runtime mode")
 
     await act(async () => {
       clickByText("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
+      await flush()
     })
 
     await act(async () => {
       clickByText("打印当前预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
+      await flush()
     })
 
     expect(fetchMock.mock.calls.some((call) => call[0] === "/api/preview/template")).toBe(true)
@@ -508,35 +464,87 @@ describe("web app", () => {
       fetchMock.mock.calls.some((call) => call[0] === "/api/artifacts/artifact-1/packets")
     ).toBe(true)
     expect(fetchMock.mock.calls.some((call) => call[0] === "/api/print/artifact")).toBe(true)
+    expect(browserPrinterMocks.printPreviewArtifact).not.toHaveBeenCalled()
     const previewImage = document.querySelector(
       "img[alt='preview artifact']"
     ) as HTMLImageElement | null
     expect(previewImage?.getAttribute("src")).toBe("/api/artifacts/artifact-1/png")
   })
 
-  it("rebinds server printing by printer name after a stale printer id fails", {
-    timeout: 15000,
-  }, async () => {
+  it("restores the previously granted browser printer after a page reload", async () => {
+    browserPrinterMocks.getSelectedBrowserPrinter.mockReturnValue(null)
+    browserPrinterMocks.restoreBrowserPrinter.mockResolvedValue({
+      deviceId: "browser-printer-1",
+      name: "Browser P2",
+    })
+
+    await renderApp(browserRuntimeContext)
+    await flush()
+
+    expect(browserPrinterMocks.restoreBrowserPrinter).toHaveBeenCalledOnce()
+    expect(document.body.textContent).toContain("重新连接浏览器直连打印机")
+    expect(document.body.textContent).toContain("已连接")
+    expect(document.body.textContent).toContain("Browser P2")
+  })
+
+  it("clears an auto-selected service-api printer after browser-direct connect and prints through BLE", async () => {
+    browserPrinterMocks.getSelectedBrowserPrinter.mockReturnValue(null)
+
     fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: fallbackTemplates })))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            templates: [
+            printers: [
               {
-                id: "shipping-compact",
-                name: "Compact Shipping Label",
-                description: "Preset shipping label",
-                fields: [
-                  { key: "recipient", label: "Recipient", required: true },
-                  { key: "address", label: "Address", required: true, multiline: true },
-                  { key: "orderId", label: "Order ID", required: true },
-                  { key: "note", label: "Note", required: false, multiline: true },
-                ],
+                id: "printer-1",
+                name: "Mock P2",
+                capabilities: {
+                  printWidthDots: 384,
+                  supportedPaperTypes: ["continuous", "gap"],
+                },
               },
             ],
           })
         )
       )
+
+    await renderApp(serverRuntimeContext)
+
+    await act(async () => {
+      clickByText("连接浏览器直连打印机").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush()
+    })
+
+    expect(document.body.textContent).toContain("重新连接浏览器直连打印机")
+    expect(document.body.textContent).toContain("已连接")
+    expect(document.body.textContent).toContain("Browser P2")
+
+    await act(async () => {
+      clickByText("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush()
+    })
+
+    await act(async () => {
+      clickByText("打印当前预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush()
+    })
+
+    expect(browserPrinterMocks.connectBrowserPrinter).toHaveBeenCalledOnce()
+    expect(browserPrinterMocks.printPreviewArtifact).toHaveBeenCalledOnce()
+    expect(browserPayloadMocks.materializeBrowserArtifactData).toHaveBeenCalled()
+    expect(fetchMock.mock.calls.some((call) => call[0] === "/api/preview/template")).toBe(false)
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/api/artifacts/"))).toBe(
+      false
+    )
+    expect(fetchMock.mock.calls.some((call) => call[0] === "/api/print/artifact")).toBe(false)
+  })
+
+  it("rebinds server printing by printer name after a stale printer id fails", async () => {
+    browserPrinterMocks.getSelectedBrowserPrinter.mockReturnValue(null)
+
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: fallbackTemplates })))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
@@ -554,30 +562,13 @@ describe("web app", () => {
         )
       )
       .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            artifact: {
-              id: "artifact-stale-1",
-              name: "Shipping Label",
-              templateId: "shipping-compact",
-              createdAt: "2026-06-20T00:00:00.000Z",
-              width: 384,
-              height: 120,
-              renderOptions: {
-                printWidthDots: 384,
-                previewScale: 4,
-                paperType: "continuous",
-                threshold: 150,
-                xOffsetDots: 0,
-              },
-            },
-          })
-        )
+        new Response(JSON.stringify({ artifact: makeArtifact("artifact-stale-1") }))
       )
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
             artifactId: "artifact-stale-1",
+            packetsJsonPath: "/tmp/artifact-stale-1.packets.json",
             packets: ["AA=="],
             packetCount: 1,
             totalBytes: 1,
@@ -593,25 +584,7 @@ describe("web app", () => {
           { status: 409 }
         )
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            templates: [
-              {
-                id: "shipping-compact",
-                name: "Compact Shipping Label",
-                description: "Preset shipping label",
-                fields: [
-                  { key: "recipient", label: "Recipient", required: true },
-                  { key: "address", label: "Address", required: true, multiline: true },
-                  { key: "orderId", label: "Order ID", required: true },
-                  { key: "note", label: "Note", required: false, multiline: true },
-                ],
-              },
-            ],
-          })
-        )
-      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: fallbackTemplates })))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
@@ -629,34 +602,19 @@ describe("web app", () => {
         )
       )
       .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            id: "job-rebound-1",
-            status: "completed",
-          })
-        )
+        new Response(JSON.stringify({ id: "job-rebound-1", status: "completed" }))
       )
 
-    document.body.innerHTML = '<div id="root"></div>'
-    await act(async () => {
-      const root = ReactDOM.createRoot(requireRootElement())
-      root.render(<App context={serverRuntimeContext} />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await renderApp(serverRuntimeContext)
 
     await act(async () => {
       clickByText("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
+      await flush()
     })
 
     await act(async () => {
       clickByText("打印当前预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
+      await flush(5)
     })
 
     const printArtifactCalls = fetchMock.mock.calls.filter(
@@ -678,104 +636,33 @@ describe("web app", () => {
   })
 
   it("uses browser-static runtime labels and routes print through browser packets seam", async () => {
-    const browserClient: ApiClient = {
-      async listTemplates() {
-        return [
-          {
-            id: "shipping-compact",
-            name: "Compact Shipping Label",
-            description: "Preset shipping label",
-            fields: [
-              { key: "recipient", label: "Recipient", required: true },
-              { key: "address", label: "Address", required: true, multiline: true },
-              { key: "orderId", label: "Order ID", required: true },
-              { key: "note", label: "Note", required: false, multiline: true },
-            ],
-          },
-        ]
-      },
-      async listPrinters() {
-        return []
-      },
-      async previewTemplate() {
-        return {
-          artifact: {
-            id: "artifact-browser-1",
-            name: "Shipping Label",
-            templateId: "shipping-compact",
-            createdAt: "2026-06-20T00:00:00.000Z",
-            width: 384,
-            height: 120,
-            renderOptions: {
-              printWidthDots: 384,
-              previewScale: 4,
-              paperType: "continuous",
-              threshold: 150,
-              xOffsetDots: 0,
-            },
-          },
-        }
-      },
-      async previewSafeText() {
-        throw new Error("not implemented")
-      },
-      async printArtifact() {
-        return { id: "browser-print", status: "ready" }
-      },
-      async printTemplate() {
-        throw new Error("not implemented")
-      },
-      async printSafeText() {
-        throw new Error("not implemented")
-      },
-      async readArtifactData() {
-        return {
-          preview: {
-            kind: "data-url" as const,
-            dataUrl: "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
-          },
-          packets: {
-            artifactId: "artifact-browser-1",
-            packets: ["AA=="],
-            packetCount: 1,
-            totalBytes: 1,
-          },
-        }
-      },
-    }
+    browserPrinterMocks.getSelectedBrowserPrinter.mockReturnValue(null)
 
-    document.body.innerHTML = '<div id="root"></div>'
-    await act(async () => {
-      const root = ReactDOM.createRoot(requireRootElement())
-      root.render(<App context={browserRuntimeContext} client={browserClient} />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await renderApp(browserRuntimeContext)
 
     expect(document.body.textContent).toContain("Browser static")
-    expect(document.body.textContent).not.toContain("后端探测打印机")
+    expect(document.body.textContent).not.toContain("Service API 打印机")
 
     await act(async () => {
       clickByText("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
+      await flush()
     })
 
     await act(async () => {
-      clickByText("连接当前浏览器打印机").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
+      clickByText("连接浏览器直连打印机").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush()
     })
+
+    expect(clickByText("打印当前预览").disabled).toBe(false)
 
     await act(async () => {
       clickByText("打印当前预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
+      await flush()
     })
 
     expect(browserPrinterMocks.connectBrowserPrinter).toHaveBeenCalledOnce()
     expect(browserPrinterMocks.printPreviewArtifact).toHaveBeenCalledOnce()
+    expect(browserPayloadMocks.materializeBrowserArtifactData).toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -788,42 +675,10 @@ describe("web app", () => {
         return []
       },
       async previewTemplate() {
-        return {
-          artifact: {
-            id: "artifact-demo-1",
-            name: "Shipping Label",
-            templateId: "shipping-compact",
-            createdAt: "2026-06-20T00:00:00.000Z",
-            width: 384,
-            height: 120,
-            renderOptions: {
-              printWidthDots: 384,
-              previewScale: 4,
-              paperType: "continuous",
-              threshold: 150,
-              xOffsetDots: 0,
-            },
-          },
-        }
+        return { artifact: makeArtifact("artifact-demo-1") }
       },
       async previewSafeText() {
-        return {
-          artifact: {
-            id: "artifact-demo-safe-1",
-            name: "Safe Text Label",
-            templateId: "safe-text-label",
-            createdAt: "2026-06-20T00:00:00.000Z",
-            width: 384,
-            height: 120,
-            renderOptions: {
-              printWidthDots: 384,
-              previewScale: 4,
-              paperType: "continuous",
-              threshold: 150,
-              xOffsetDots: 0,
-            },
-          },
-        }
+        return { artifact: makeArtifact("artifact-demo-safe-1", "safe-text-label") }
       },
       async printArtifact() {
         return {
@@ -833,11 +688,7 @@ describe("web app", () => {
       },
       async printTemplate() {
         return {
-          preview: await this.previewTemplate({
-            templateId: "shipping-compact",
-            input: {},
-            renderOptions: defaultRenderOptions,
-          }),
+          preview: { artifact: makeArtifact("artifact-demo-1") },
           job: {
             id: "demo-template-1",
             status: "completed",
@@ -848,11 +699,7 @@ describe("web app", () => {
       },
       async printSafeText() {
         return {
-          preview: await this.previewSafeText({
-            text: "safe",
-            title: "Safe Text Label",
-            renderOptions: defaultRenderOptions,
-          }),
+          preview: { artifact: makeArtifact("artifact-demo-safe-1", "safe-text-label") },
           job: {
             id: "demo-safe-1",
             status: "completed",
@@ -865,13 +712,11 @@ describe("web app", () => {
         return {
           preview: {
             kind: "data-url",
-            dataUrl:
-              artifact.id === "artifact-demo-safe-1"
-                ? "data:image/gif;base64,R0lGODlhAQABAAAAACw="
-                : "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
+            dataUrl: "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
           },
           packets: {
             artifactId: artifact.id,
+            packetsJsonPath: "browser://packets",
             packets: ["AA=="],
             packetCount: 1,
             totalBytes: 1,
@@ -880,30 +725,22 @@ describe("web app", () => {
       },
     }
 
-    document.body.innerHTML = '<div id="root"></div>'
-    await act(async () => {
-      const root = ReactDOM.createRoot(requireRootElement())
-      root.render(<App context={demoContext} client={demoClient} />)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await renderApp(demoContext, demoClient)
 
     expect(document.body.textContent).toContain("Demo mode")
     expect(document.body.textContent).toContain("成功仿真")
 
     await act(async () => {
       clickByText("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
+      await flush()
     })
 
     await act(async () => {
       clickByText("打印当前预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await Promise.resolve()
-      await Promise.resolve()
+      await flush()
     })
 
+    expect(browserPrinterMocks.restoreBrowserPrinter).not.toHaveBeenCalled()
     expect(browserPrinterMocks.connectBrowserPrinter).not.toHaveBeenCalled()
     expect(browserPrinterMocks.printPreviewArtifact).not.toHaveBeenCalled()
   })

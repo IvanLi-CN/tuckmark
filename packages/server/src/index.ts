@@ -3,6 +3,7 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import {
   type ArtifactPackets,
+  assertServerSidePrintRuntimeReady,
   type BatchPreviewRequest,
   type DirectCanvasPreviewRequest,
   directCanvasSchema,
@@ -328,6 +329,7 @@ export function startServer(
   service: ServerService = new TuckmarkService(),
   port = Number(process.env.PORT ?? 5210)
 ) {
+  assertServerSidePrintRuntimeReady()
   const app = createApp(service)
   return app.listen(port, () => {
     console.log(`tuckmark server listening on http://localhost:${port}`)

@@ -40,6 +40,8 @@ describe("resolveAppContext", () => {
     expect(context.mode).toBe("runtime")
     expect(context.surface).toBe("browser-static")
     expect(context.apiBasePath).toBe("")
+    expect(context.capabilities.browserDirectPrintPath).toBe("available")
+    expect(context.capabilities.serviceApiPrintPath).toBe("disabled")
   })
 
   it("lets demo=true switch static runtime into demo mode", () => {
@@ -51,11 +53,11 @@ describe("resolveAppContext", () => {
     )
 
     expect(context.mode).toBe("demo")
-    expect(context.capabilities.mockHardware).toBe(true)
-    expect(context.capabilities.browserPrint).toBe("disabled")
+    expect(context.capabilities.browserDirectPrintPath).toBe("mocked")
+    expect(context.capabilities.serviceApiPrintPath).toBe("mocked")
   })
 
-  it("uses server-http runtime when the injected surface targets /api", () => {
+  it("keeps service-api disabled by default on server-http until explicitly enabled", () => {
     const context = resolveAppContext(
       { TUCKMARK_WEB_SURFACE: "server-http" },
       {
@@ -66,6 +68,57 @@ describe("resolveAppContext", () => {
     expect(context.mode).toBe("runtime")
     expect(context.surface).toBe("server-http")
     expect(context.apiBasePath).toBe("/api")
+    expect(context.capabilities.browserDirectPrintPath).toBe("available")
+    expect(context.capabilities.serviceApiPrintPath).toBe("disabled")
+  })
+
+  it("uses server-http service-api path when explicitly enabled", () => {
+    const context = resolveAppContext(
+      {
+        TUCKMARK_WEB_SURFACE: "server-http",
+        TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
+      },
+      {
+        search: "",
+      }
+    )
+
+    expect(context.mode).toBe("runtime")
+    expect(context.surface).toBe("server-http")
+    expect(context.apiBasePath).toBe("/api")
+    expect(context.capabilities.browserDirectPrintPath).toBe("available")
+    expect(context.capabilities.serviceApiPrintPath).toBe("available")
+  })
+
+  it("lets the two print paths be gated independently", () => {
+    const context = resolveAppContext(
+      {
+        TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT: "0",
+        TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
+        TUCKMARK_WEB_SURFACE: "server-http",
+      },
+      {
+        search: "",
+      }
+    )
+
+    expect(context.capabilities.browserDirectPrintPath).toBe("disabled")
+    expect(context.capabilities.serviceApiPrintPath).toBe("available")
+  })
+
+  it("keeps service-api disabled on browser-static even when the env flag is on", () => {
+    const context = resolveAppContext(
+      {
+        TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
+        TUCKMARK_WEB_SURFACE: "browser-static",
+      },
+      {
+        search: "",
+      }
+    )
+
+    expect(context.capabilities.browserDirectPrintPath).toBe("available")
+    expect(context.capabilities.serviceApiPrintPath).toBe("disabled")
   })
 })
 

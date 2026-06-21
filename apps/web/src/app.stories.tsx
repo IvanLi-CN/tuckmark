@@ -10,9 +10,8 @@ const runtimeContext: AppContext = {
   surface: "browser-static",
   mode: "runtime",
   capabilities: {
-    browserPrint: "available",
-    serverPrint: "disabled",
-    mockHardware: false,
+    browserDirectPrintPath: "available",
+    serviceApiPrintPath: "disabled",
   },
 }
 
@@ -22,9 +21,8 @@ const demoContext: AppContext = {
   surface: "browser-static",
   mode: "demo",
   capabilities: {
-    browserPrint: "disabled",
-    serverPrint: "disabled",
-    mockHardware: true,
+    browserDirectPrintPath: "mocked",
+    serviceApiPrintPath: "mocked",
   },
 }
 

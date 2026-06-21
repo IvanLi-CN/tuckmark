@@ -183,7 +183,7 @@ export function renderSafeTextLabelPreview(request) {
     const png = renderSvgToPng(svg);
     const bitmap = thresholdPngToBitmap(png, width, height);
     const artifact = createPreviewArtifactBase({
-        source: "template",
+        source: "safe_text",
         name: normalizedRequest.title,
         templateId: "safe-text-label",
         renderOptions,

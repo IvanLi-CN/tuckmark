@@ -132,7 +132,7 @@ export const directCanvasSchema = z.object({
 })
 export type DirectCanvasDefinition = z.infer<typeof directCanvasSchema>
 
-export const previewSourceSchema = z.enum(["template", "canvas", "batch_row"])
+export const previewSourceSchema = z.enum(["template", "canvas", "batch_row", "safe_text"])
 export type PreviewSource = z.infer<typeof previewSourceSchema>
 
 export const safeTextLabelSchema = z.object({

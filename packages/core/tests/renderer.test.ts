@@ -63,5 +63,6 @@ describe("renderTemplateToPreview continuous safety", () => {
     expect(preview.svg).toContain("A &amp; B &lt; C")
     expect(preview.svg).not.toContain("&amp;amp;")
     expect(preview.svg).not.toContain("&amp;lt;")
+    expect(preview.artifact.source).toBe("safe_text")
   })
 })

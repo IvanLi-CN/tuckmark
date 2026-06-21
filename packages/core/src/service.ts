@@ -42,7 +42,8 @@ export class TuckmarkService {
   constructor(options?: TuckmarkServiceOptions) {
     this.artifactStore = options?.artifactStore ?? new ArtifactStore()
     this.detonger = options?.detonger ?? new DetongerAdapter()
-    this.serverSidePrintEnabled = process.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT !== "0"
+    const serverSidePrintFlag = process.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT?.trim().toLowerCase()
+    this.serverSidePrintEnabled = serverSidePrintFlag === "1" || serverSidePrintFlag === "true"
   }
 
   async listTemplates(): Promise<TemplateDefinition[]> {

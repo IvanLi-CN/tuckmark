@@ -64,18 +64,18 @@ export type PrintResult = {
 export type SetupRefreshResult = {
   printers: Printer[]
   selectedPrinter: Printer | null
+  selectedPrinterReason: "preferred-name" | "same-id" | "singleton" | "none"
 }
+
+export type PrintPathState = "available" | "disabled" | "mocked" | "unsupported" | "unavailable"
 
 export type AppMode = "runtime" | "demo"
 
 export type AppSurface = "server-http" | "browser-static"
 
-export type BrowserCapabilityState = "available" | "unsupported" | "disabled"
-
-export type ServerCapabilityState = "available" | "disabled"
-
 export type ArtifactPackets = {
   artifactId: string
+  packetsJsonPath: string
   packets: string[]
   packetCount: number
   totalBytes: number
@@ -97,9 +97,8 @@ export type ArtifactData = {
 }
 
 export type AppCapabilities = {
-  browserPrint: BrowserCapabilityState
-  serverPrint: ServerCapabilityState
-  mockHardware: boolean
+  browserDirectPrintPath: PrintPathState
+  serviceApiPrintPath: PrintPathState
 }
 
 export type AppContext = {

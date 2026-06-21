@@ -87,6 +87,91 @@ function describeDevice(device: BluetoothDevice): BrowserPrinterSession {
   }
 }
 
+function rememberConnectedPrinter(
+  device: BluetoothDevice,
+  characteristic: BluetoothRemoteGATTCharacteristic
+): BrowserPrinterSession {
+  connectedDevice = device
+  connectedCharacteristic = characteristic
+  selectedPrinter = describeDevice(device)
+  return selectedPrinter
+}
+
+async function connectGrantedPrinterDevice(
+  device: BluetoothDevice
+): Promise<BrowserPrinterSession> {
+  if (connectedDevice && connectedDevice.id !== device.id) {
+    detachDevice(connectedDevice)
+    connectedDevice = undefined
+    connectedCharacteristic = undefined
+  }
+
+  device.removeEventListener("gattserverdisconnected", handleDisconnected)
+  device.addEventListener("gattserverdisconnected", handleDisconnected)
+
+  try {
+    const server = device.gatt?.connected ? device.gatt : await device.gatt?.connect()
+    if (!server) {
+      throw createPrintError("device_not_found", "设备未建立 GATT 连接。请重试。")
+    }
+
+    const service = await server.getPrimaryService(PRINTER_SERVICE_UUID).catch(() => undefined)
+    if (!service) {
+      throw createPrintError("service_not_found", `未找到目标服务 UUID: ${PRINTER_SERVICE_UUID}`)
+    }
+
+    const characteristic = await service
+      .getCharacteristic(PRINTER_WRITE_CHARACTERISTIC_UUID)
+      .catch(() => undefined)
+    if (!characteristic) {
+      throw createPrintError(
+        "char_not_found",
+        `未找到写入特征 UUID: ${PRINTER_WRITE_CHARACTERISTIC_UUID}`
+      )
+    }
+
+    return rememberConnectedPrinter(device, characteristic)
+  } catch (error) {
+    detachDevice(device)
+    if (connectedDevice?.id === device.id) {
+      connectedDevice = undefined
+      connectedCharacteristic = undefined
+    }
+    throw error
+  }
+}
+
+async function reconnectGrantedPrinter(
+  targetDeviceId?: string
+): Promise<BrowserPrinterSession | null> {
+  const getDevices = navigator.bluetooth.getDevices
+  if (typeof getDevices !== "function") {
+    return null
+  }
+
+  const grantedDevices = await getDevices.call(navigator.bluetooth)
+  if (grantedDevices.length === 0) {
+    return null
+  }
+
+  const orderedDevices = targetDeviceId
+    ? [
+        ...grantedDevices.filter((device) => device.id === targetDeviceId),
+        ...grantedDevices.filter((device) => device.id !== targetDeviceId),
+      ]
+    : grantedDevices
+
+  for (const device of orderedDevices) {
+    try {
+      return await connectGrantedPrinterDevice(device)
+    } catch {
+      // Try the next granted device.
+    }
+  }
+
+  return null
+}
+
 function decodePacket(packet: string, index: number): Uint8Array {
   try {
     const binary = window.atob(packet)
@@ -117,6 +202,19 @@ async function ensureConnectedPrinter(session: BrowserPrinterSession): Promise<{
     }
   }
 
+  const restored = await reconnectGrantedPrinter(session.deviceId)
+  if (
+    restored &&
+    connectedDevice?.gatt?.connected &&
+    connectedCharacteristic &&
+    restored.deviceId === session.deviceId
+  ) {
+    return {
+      device: connectedDevice,
+      characteristic: connectedCharacteristic,
+    }
+  }
+
   throw createPrintError("device_not_found", "浏览器打印机会话已失效，请重新连接。")
 }
 
@@ -126,6 +224,19 @@ export function isBrowserPrintSupported(): boolean {
 
 export function getSelectedBrowserPrinter(): BrowserPrinterSession | null {
   return selectedPrinter
+}
+
+export async function restoreBrowserPrinter(): Promise<BrowserPrinterSession | null> {
+  ensureBrowserEnvironment()
+
+  if (connectedCharacteristic && connectedDevice?.gatt?.connected) {
+    const printer = describeDevice(connectedDevice)
+    selectedPrinter = printer
+    return printer
+  }
+
+  selectedPrinter = null
+  return reconnectGrantedPrinter()
 }
 
 export async function connectBrowserPrinter(): Promise<BrowserPrinterSession> {
@@ -150,39 +261,9 @@ export async function connectBrowserPrinter(): Promise<BrowserPrinterSession> {
     )
   }
 
-  detachDevice(connectedDevice)
-  connectedCharacteristic = undefined
-  device.addEventListener("gattserverdisconnected", handleDisconnected)
-
   try {
-    const server = await device.gatt?.connect()
-    if (!server) {
-      throw createPrintError("device_not_found", "设备未建立 GATT 连接。请重试。")
-    }
-
-    const service = await server.getPrimaryService(PRINTER_SERVICE_UUID).catch(() => undefined)
-    if (!service) {
-      throw createPrintError("service_not_found", `未找到目标服务 UUID: ${PRINTER_SERVICE_UUID}`)
-    }
-
-    const characteristic = await service
-      .getCharacteristic(PRINTER_WRITE_CHARACTERISTIC_UUID)
-      .catch(() => undefined)
-    if (!characteristic) {
-      throw createPrintError(
-        "char_not_found",
-        `未找到写入特征 UUID: ${PRINTER_WRITE_CHARACTERISTIC_UUID}`
-      )
-    }
-
-    connectedDevice = device
-    connectedCharacteristic = characteristic
-    selectedPrinter = describeDevice(device)
-    return selectedPrinter
+    return await connectGrantedPrinterDevice(device)
   } catch (error) {
-    detachDevice(device)
-    connectedDevice = undefined
-    connectedCharacteristic = undefined
     if (error instanceof Error) {
       throw error
     }
@@ -202,7 +283,9 @@ export async function printPreviewArtifact(
     const bytes = decodePacket(packet, index)
     const payload = bytes as unknown as BufferSource
     try {
-      if (typeof characteristic.writeValueWithResponse === "function") {
+      if (typeof characteristic.writeValueWithoutResponse === "function") {
+        await characteristic.writeValueWithoutResponse(payload)
+      } else if (typeof characteristic.writeValueWithResponse === "function") {
         await characteristic.writeValueWithResponse(payload)
       } else {
         await characteristic.writeValue(payload)
@@ -222,7 +305,7 @@ export async function printPreviewArtifact(
   }
 
   return {
-    artifactId: artifact.id,
+    artifactId: artifact.packets.artifactId,
     printer: session,
     statusCode: 0,
     printable: 0,

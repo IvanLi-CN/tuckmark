@@ -82,7 +82,7 @@ export const directCanvasSchema = z.object({
     height: z.number().positive(),
     elements: z.array(templateElementSchema)
 });
-export const previewSourceSchema = z.enum(["template", "canvas", "batch_row"]);
+export const previewSourceSchema = z.enum(["template", "canvas", "batch_row", "safe_text"]);
 export const safeTextLabelSchema = z.object({
     text: z.string().min(1),
     title: z.string().default("Safe Text Label"),

@@ -1,4 +1,4 @@
-import type { AppContext, AppMode, AppSurface } from "./types.js"
+import type { AppContext, AppSurface } from "./types.js"
 
 declare const __TUCKMARK_WEB_SURFACE__: AppSurface
 
@@ -17,9 +17,21 @@ function normalizeBasePath(value: string): string {
   return trimTrailingSlash(value)
 }
 
-function parseDemoParam(search: string): AppMode {
+function parseDemoParam(search: string): AppContext["mode"] {
   const params = new URLSearchParams(search)
   return params.get("demo") === "true" ? "demo" : "runtime"
+}
+
+function envFlagEnabled(
+  env: Record<string, string | undefined>,
+  name: string,
+  defaultValue: boolean
+): boolean {
+  const raw = env[name]?.trim()
+  if (!raw) {
+    return defaultValue
+  }
+  return raw !== "0" && raw.toLowerCase() !== "false"
 }
 
 export function resolveBasePath(env: Record<string, string | undefined>): string {
@@ -54,6 +66,8 @@ export function resolveAppContext(
   const surface = resolveSurface(env)
   const mode = parseDemoParam(locationLike?.search ?? "")
   const basePath = resolveBasePath(env)
+  const browserDirectEnabled = envFlagEnabled(env, "TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT", true)
+  const serviceApiEnabled = envFlagEnabled(env, "TUCKMARK_ENABLE_SERVER_SIDE_PRINT", false)
 
   return {
     apiBasePath: surface === "server-http" ? "/api" : "",
@@ -61,9 +75,16 @@ export function resolveAppContext(
     mode,
     surface,
     capabilities: {
-      browserPrint: mode === "demo" ? "disabled" : "available",
-      serverPrint: surface === "server-http" && mode === "runtime" ? "available" : "disabled",
-      mockHardware: mode === "demo",
+      browserDirectPrintPath:
+        mode === "demo" ? "mocked" : browserDirectEnabled ? "available" : "disabled",
+      serviceApiPrintPath:
+        mode === "demo"
+          ? "mocked"
+          : surface === "server-http"
+            ? serviceApiEnabled
+              ? "available"
+              : "disabled"
+            : "disabled",
     },
   }
 }

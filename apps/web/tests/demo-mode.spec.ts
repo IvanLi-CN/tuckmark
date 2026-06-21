@@ -7,7 +7,7 @@ test("browser-static root path defaults to runtime and supports explicit demo mo
   await expect(page.getByRole("heading", { name: "单标签打印主链路" })).toBeVisible()
   await expect(page.getByText("Browser static", { exact: false }).first()).toBeVisible()
   await expect(page.getByText("Runtime mode", { exact: false }).first()).toBeVisible()
-  await expect(page.getByRole("button", { name: "连接当前浏览器打印机" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "连接浏览器直连打印机" })).toBeVisible()
 
   await page.goto("/?demo=true")
   await expect(page.getByRole("heading", { name: "单标签打印主链路" })).toBeVisible()

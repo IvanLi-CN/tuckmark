@@ -1,5 +1,6 @@
 interface BluetoothRemoteGATTCharacteristic {
   writeValue(value: BufferSource): Promise<void>
+  writeValueWithoutResponse?(value: BufferSource): Promise<void>
   writeValueWithResponse?(value: BufferSource): Promise<void>
 }
 
@@ -32,6 +33,7 @@ interface BluetoothDevice extends EventTarget {
 
 interface Bluetooth {
   requestDevice(options?: RequestDeviceOptions): Promise<BluetoothDevice>
+  getDevices?(): Promise<BluetoothDevice[]>
 }
 
 interface RequestDeviceOptions {
