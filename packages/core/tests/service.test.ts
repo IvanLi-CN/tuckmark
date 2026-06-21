@@ -154,6 +154,7 @@ describe("TuckmarkService", () => {
     })
 
     expect(result.preview.artifact.templateId).toBe("safe-text-label")
+    expect(result.preview.artifact.source).toBe("safe_text")
     expect(result.preview.artifact.height).toBeGreaterThanOrEqual(64)
     expect(result.preview.artifact.renderOptions.paperType).toBe("continuous")
     expect(result.job.status).toBe("completed")

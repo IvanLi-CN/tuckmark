@@ -20,10 +20,8 @@ export function assertServerSidePrintRuntimeReady(env: NodeJS.ProcessEnv = proce
     return
   }
 
-  const command = env.TUCKMARK_DETONGER_COMMAND ?? "cargo"
-  if (command !== "cargo") {
-    return
-  }
+  const command = env.TUCKMARK_DETONGER_COMMAND?.trim() || "cargo"
+  const packetEncoder = env.TUCKMARK_DETONGER_PACKET_ENCODER?.trim().toLowerCase() || "rust"
 
   const resolvedRepoRoot = path.resolve(
     repoRoot,
@@ -49,7 +47,9 @@ export function assertServerSidePrintRuntimeReady(env: NodeJS.ProcessEnv = proce
   if (!fs.existsSync(path.join(resolvedRepoRoot, "Cargo.toml"))) {
     throw new Error(`${messageBase} Missing detonger Cargo.toml at ${resolvedRepoRoot}`)
   }
-  if (!fs.existsSync(manifestPath)) {
+
+  const requiresPreviewEncoderManifest = command === "cargo" && packetEncoder === "rust"
+  if (requiresPreviewEncoderManifest && !fs.existsSync(manifestPath)) {
     throw new Error(`${messageBase} Missing preview encoder manifest: ${manifestPath}`)
   }
 }

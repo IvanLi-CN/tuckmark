@@ -151,4 +151,23 @@ describe("encodeBrowserPngBytes", () => {
     expect(browserPackets.packetCount).toBe(rustPackets.packets.length)
     expect(browserPackets.totalBytes).toBe(rustPackets.totalBytes)
   })
+
+  it("keeps safe-text previews marked as safe_text artifacts", async () => {
+    const { materializeBrowserPreview } = await import("./browser-print-payload.js")
+    const preview = await materializeBrowserPreview({
+      kind: "safe-text",
+      text: "Tuckmark\nPrint OK",
+      title: "Safe Text Label",
+      renderOptions: {
+        paperType: "continuous",
+        threshold: 150,
+        printWidthDots: 384,
+        xOffsetDots: 0,
+        previewScale: 4,
+      },
+    })
+
+    expect(preview.artifact.source).toBe("safe_text")
+    expect(preview.artifact.templateId).toBe("safe-text-label")
+  })
 })

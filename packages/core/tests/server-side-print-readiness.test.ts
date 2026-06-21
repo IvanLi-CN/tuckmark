@@ -30,4 +30,51 @@ describe("server-side print readiness", () => {
     expect(existsSync).toHaveBeenCalledWith(detongerRoot)
     expect(existsSync).toHaveBeenCalledWith(path.resolve(detongerRoot, "Cargo.toml"))
   })
+
+  it("still validates detonger repo roots for custom commands", () => {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
+    const detongerRoot = path.resolve(repoRoot, "./detonger")
+    const existsSync = vi.spyOn(fs, "existsSync").mockImplementation((target) => {
+      const resolved = String(target)
+      return resolved === detongerRoot || resolved === path.resolve(detongerRoot, "Cargo.toml")
+    })
+
+    expect(() =>
+      assertServerSidePrintRuntimeReady({
+        TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
+        TUCKMARK_DETONGER_COMMAND: "/usr/local/bin/detonger",
+        TUCKMARK_DETONGER_REPO_ROOT: "./detonger",
+      })
+    ).not.toThrow()
+
+    expect(existsSync).toHaveBeenCalledWith(detongerRoot)
+    expect(existsSync).toHaveBeenCalledWith(path.resolve(detongerRoot, "Cargo.toml"))
+  })
+
+  it("skips preview encoder manifest checks for custom commands", () => {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
+    const detongerRoot = path.resolve(repoRoot, "./detonger")
+    const manifestPath = path.resolve(repoRoot, "tools/detonger-preview-encoder/Cargo.toml")
+    const existsSync = vi.spyOn(fs, "existsSync").mockImplementation((target) => {
+      const resolved = String(target)
+      return resolved === detongerRoot || resolved === path.resolve(detongerRoot, "Cargo.toml")
+    })
+
+    expect(() =>
+      assertServerSidePrintRuntimeReady({
+        TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
+        TUCKMARK_DETONGER_COMMAND: "/usr/local/bin/detonger",
+        TUCKMARK_DETONGER_REPO_ROOT: "./detonger",
+      })
+    ).not.toThrow()
+
+    existsSync.mockClear()
+    assertServerSidePrintRuntimeReady({
+      TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
+      TUCKMARK_DETONGER_COMMAND: "/usr/local/bin/detonger",
+      TUCKMARK_DETONGER_REPO_ROOT: "./detonger",
+    })
+
+    expect(existsSync).not.toHaveBeenCalledWith(manifestPath)
+  })
 })

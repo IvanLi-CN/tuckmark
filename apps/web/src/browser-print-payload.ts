@@ -410,7 +410,7 @@ export async function materializeBrowserPreview(
   const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
   const artifact: PreviewArtifact = {
     id: `browser-${crypto.randomUUID()}`,
-    source: "template",
+    source: "safe_text",
     name: source.title,
     templateId: "safe-text-label",
     createdAt: new Date().toISOString(),
