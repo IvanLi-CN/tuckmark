@@ -653,6 +653,8 @@ describe("web app", () => {
       await flush()
     })
 
+    expect(clickByText("打印当前预览").disabled).toBe(false)
+
     await act(async () => {
       clickByText("打印当前预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
       await flush()

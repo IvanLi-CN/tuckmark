@@ -229,8 +229,7 @@ export function App({ client: providedClient, context: providedContext }: AppPro
 
   const browserPrintSupported = React.useMemo(() => isBrowserPrintSupported(), [])
   const browserDirectConfigured = context.capabilities.browserDirectPrintPath !== "disabled"
-  const browserDirectAvailable =
-    context.mode !== "demo" && browserDirectConfigured && browserPrintSupported
+  const browserDirectAvailable = browserDirectConfigured && browserPrintSupported
   const serviceApiLive = context.capabilities.serviceApiPrintPath === "available"
   const serviceApiUsable =
     context.capabilities.serviceApiPrintPath === "available" ||
@@ -318,7 +317,7 @@ export function App({ client: providedClient, context: providedContext }: AppPro
   }, [activeTemplate])
 
   React.useEffect(() => {
-    if (!browserDirectAvailable || browserPrinter !== null) {
+    if (context.mode === "demo" || !browserDirectAvailable || browserPrinter !== null) {
       return
     }
 
@@ -336,7 +335,7 @@ export function App({ client: providedClient, context: providedContext }: AppPro
     return () => {
       cancelled = true
     }
-  }, [browserDirectAvailable, browserPrinter])
+  }, [browserDirectAvailable, browserPrinter, context.mode])
 
   React.useEffect(() => {
     if (!browserPrinter || serverPrinterSelectionMode !== "auto") {
