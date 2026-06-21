@@ -11,10 +11,7 @@ import {
 import React from "react"
 
 import { type ApiClient, createApiClient, loadSetup } from "./api-client.js"
-import {
-  type BrowserPrintSource,
-  materializeBrowserArtifactData,
-} from "./browser-print-payload.js"
+import { type BrowserPrintSource, materializeBrowserArtifactData } from "./browser-print-payload.js"
 import {
   type BrowserPrinterSession,
   type BrowserPrintResult,
@@ -121,10 +118,7 @@ function buildServiceApiLabel(context: AppContext): string {
   return `service-api ${context.capabilities.serviceApiPrintPath}`
 }
 
-function buildBrowserDirectPathLabel(
-  context: AppContext,
-  browserPrintSupported: boolean
-): string {
+function buildBrowserDirectPathLabel(context: AppContext, browserPrintSupported: boolean): string {
   if (context.capabilities.browserDirectPrintPath === "disabled") {
     return "browser-direct disabled"
   }
@@ -905,10 +899,10 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                   context.mode === "demo"
                     ? "Demo mode 保留正式能力合同，但不会触发真实浏览器硬件调用。"
                     : browserDirectConfigured
-                    ? browserPrintSupported
-                      ? "支持的 secure-context 浏览器可在前端本地完成渲染、编码与 BLE 发包。"
-                      : "当前浏览器不支持 Web Bluetooth。"
-                    : "浏览器直连链路已被产品开关关闭。"
+                      ? browserPrintSupported
+                        ? "支持的 secure-context 浏览器可在前端本地完成渲染、编码与 BLE 发包。"
+                        : "当前浏览器不支持 Web Bluetooth。"
+                      : "浏览器直连链路已被产品开关关闭。"
                 }
               />
             </CardContent>
@@ -964,7 +958,9 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                       <SelectTrigger id="printer-select" aria-label="Service API 打印机">
                         <SelectValue
                           placeholder={
-                            printers.length === 0 ? "当前模式没有 service-api 打印机" : "请选择打印机"
+                            printers.length === 0
+                              ? "当前模式没有 service-api 打印机"
+                              : "请选择打印机"
                           }
                         />
                       </SelectTrigger>
@@ -998,7 +994,9 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                     busy={busy}
                     busyKey="connect-browser-printer"
                     onClick={() => void connectPhysicalPrinter()}
-                    disabled={!browserDirectConfigured || !browserPrintSupported || context.mode === "demo"}
+                    disabled={
+                      !browserDirectConfigured || !browserPrintSupported || context.mode === "demo"
+                    }
                   >
                     {browserPrinter ? "重新连接浏览器直连打印机" : "连接浏览器直连打印机"}
                   </BusyButton>
@@ -1020,12 +1018,12 @@ export function App({ client: providedClient, context: providedContext }: AppPro
                       {context.mode === "demo"
                         ? "Demo mode 不会恢复或连接真实浏览器打印机。"
                         : browserDirectConfigured
-                        ? browserPrintSupported
-                          ? browserPrinter
-                            ? `设备 ID ${browserPrinter.deviceId}`
-                            : "连接成功后会在这里直接显示当前浏览器选中的蓝牙打印机。"
-                          : "当前浏览器不支持 Web Bluetooth。"
-                        : "浏览器直连打印链路已被产品开关关闭。"}
+                          ? browserPrintSupported
+                            ? browserPrinter
+                              ? `设备 ID ${browserPrinter.deviceId}`
+                              : "连接成功后会在这里直接显示当前浏览器选中的蓝牙打印机。"
+                            : "当前浏览器不支持 Web Bluetooth。"
+                          : "浏览器直连打印链路已被产品开关关闭。"}
                     </p>
                   </div>
                 </div>

@@ -2,12 +2,7 @@ import { presetTemplateData } from "../../../packages/core/src/preset-template-d
 import { buildSvg, wrapText } from "../../../packages/core/src/svg-renderer.js"
 import type { TemplateDefinition } from "../../../packages/core/src/types.js"
 import { encodeBrowserPngBytes } from "./browser-print-payload.js"
-import type {
-  ArtifactData,
-  PreviewArtifact,
-  RenderOptions,
-  Template,
-} from "./types.js"
+import type { ArtifactData, PreviewArtifact, RenderOptions, Template } from "./types.js"
 
 export type StoredArtifact = {
   artifact: PreviewArtifact

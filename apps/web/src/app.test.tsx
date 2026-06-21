@@ -413,9 +413,7 @@ describe("web app", () => {
     browserPrinterMocks.getSelectedBrowserPrinter.mockReturnValue(null)
 
     fetchMock
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ templates: fallbackTemplates }))
-      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: fallbackTemplates })))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
@@ -514,9 +512,7 @@ describe("web app", () => {
     await renderApp(serverRuntimeContext)
 
     await act(async () => {
-      clickByText("连接浏览器直连打印机").dispatchEvent(
-        new MouseEvent("click", { bubbles: true })
-      )
+      clickByText("连接浏览器直连打印机").dispatchEvent(new MouseEvent("click", { bubbles: true }))
       await flush()
     })
 
@@ -653,9 +649,7 @@ describe("web app", () => {
     })
 
     await act(async () => {
-      clickByText("连接浏览器直连打印机").dispatchEvent(
-        new MouseEvent("click", { bubbles: true })
-      )
+      clickByText("连接浏览器直连打印机").dispatchEvent(new MouseEvent("click", { bubbles: true }))
       await flush()
     })
 

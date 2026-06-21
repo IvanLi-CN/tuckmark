@@ -76,11 +76,7 @@ export function resolveAppContext(
     surface,
     capabilities: {
       browserDirectPrintPath:
-        mode === "demo"
-          ? "mocked"
-          : browserDirectEnabled
-            ? "available"
-            : "disabled",
+        mode === "demo" ? "mocked" : browserDirectEnabled ? "available" : "disabled",
       serviceApiPrintPath:
         mode === "demo"
           ? "mocked"
