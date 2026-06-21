@@ -73,7 +73,12 @@ function acquireBuildLock() {
     } catch (error) {
       const nodeError = error
       if (
-        !(nodeError && typeof nodeError === "object" && "code" in nodeError && nodeError.code === "EEXIST")
+        !(
+          nodeError &&
+          typeof nodeError === "object" &&
+          "code" in nodeError &&
+          nodeError.code === "EEXIST"
+        )
       ) {
         throw error
       }
