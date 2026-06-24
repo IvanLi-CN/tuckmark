@@ -149,20 +149,25 @@ artifact pipeline.
 
 - `1440×900` homepage shell
 
+  PR: include
   ![Homepage shell](./assets/home-1440x900.png)
 
 - `1100×820` template workspace in narrow single-outlet mode with a disabled preview/print rail before template selection
 
+  PR: include
   ![Template workspace](./assets/templates-1100x820-disabled-rail.png)
 
 - `1280×800` template large-card grid remains two-up inside the left workspace pane
 
+  PR: include
   ![Template large grid](./assets/templates-large-grid-1280x800.png)
 
 - `1280×800` canvas workspace in compact three-column mode
 
+  PR: include
   ![Canvas workspace](./assets/canvas-1280x800.png)
 
 - `1600×1024` system page in wide three-column mode
 
+  PR: include
   ![System workspace](./assets/system-1600x1024.png)
