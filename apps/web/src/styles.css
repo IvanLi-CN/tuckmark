@@ -271,7 +271,6 @@
     .tm-pane-grid--focus-right .tm-pane--right {
       display: flex;
     }
-
   }
 
   @media (min-width: 1280px) {

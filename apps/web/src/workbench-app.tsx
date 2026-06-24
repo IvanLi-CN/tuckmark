@@ -527,8 +527,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     fieldKey: string
   } | null>(null)
   const [templateFocus, setTemplateFocus] = React.useState<TemplateFocus>("left-center")
-  const [templateNarrowStage, setTemplateNarrowStage] =
-    React.useState<TemplateNarrowStage>("list")
+  const [templateNarrowStage, setTemplateNarrowStage] = React.useState<TemplateNarrowStage>("list")
 
   React.useEffect(() => {
     if (!activeTemplate) {
@@ -1277,7 +1276,8 @@ function TemplatesPage({
     usesSingleOutletFlow && state.templateNarrowStage === "list" && stacksPreviewBelowTable
   const showTemplateListPane = !usesSingleOutletFlow || state.templateNarrowStage === "list"
   const showTemplateTablePane = !usesSingleOutletFlow || showsTableStage
-  const showTemplatePreviewPane = !usesSingleOutletFlow || showsTableStage || showsDisabledPreviewRail
+  const showTemplatePreviewPane =
+    !usesSingleOutletFlow || showsTableStage || showsDisabledPreviewRail
   const [listMode, setListMode] = React.useState<TemplateListMode>("large")
   const [tableShellElement, setTableShellElement] = React.useState<HTMLDivElement | null>(null)
   const tableShellWidth = useElementClientWidth(tableShellElement)
@@ -1403,7 +1403,10 @@ function TemplatesPage({
             />
             <div className="tm-pane__body tm-pane__body--table">
               <div className="tm-table-shell" ref={setTableShellElement}>
-                <table className="tm-table" style={{ width: `${templateColumnLayout.tableWidth}px` }}>
+                <table
+                  className="tm-table"
+                  style={{ width: `${templateColumnLayout.tableWidth}px` }}
+                >
                   <colgroup>
                     <col style={{ width: `${TEMPLATE_INDEX_COLUMN_WIDTH}px` }} />
                     {state.activeTemplate?.fields.map((field) => (
@@ -1851,7 +1854,11 @@ function TemplatesPrintRail({
         }
       />
       <div className="tm-pane__body">
-        <RenderOptionsForm controller={controller} disabled={disabled} onFocusRight={onFocusRight} />
+        <RenderOptionsForm
+          controller={controller}
+          disabled={disabled}
+          onFocusRight={onFocusRight}
+        />
         <PreviewCard
           controller={controller}
           disabled={disabled}

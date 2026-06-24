@@ -269,7 +269,9 @@ test("template page collapses to a single outlet flow on narrow widths", async (
   await expect(page.getByText("批量录入表")).toBeVisible()
   await expect(page.getByText("模板列表")).toHaveCount(0)
   await expect(page.getByRole("button", { name: "返回模板" })).toBeVisible()
-  await expect(page.locator(".tm-pane--right").getByText("预览与打印", { exact: true })).toBeVisible()
+  await expect(
+    page.locator(".tm-pane--right").getByText("预览与打印", { exact: true })
+  ).toBeVisible()
 
   await page.getByRole("button", { name: "返回模板" }).click()
   await expect(page.getByText("模板列表")).toBeVisible()
