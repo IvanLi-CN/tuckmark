@@ -1,4 +1,7 @@
-import { PrintPackage } from "lpapi-ble/lib/index.esm.js"
+import initDetongerWasm, {
+  encodePngJobMessages,
+  initSync as initDetongerWasmSync,
+} from "./wasm/pkg/detonger_wasm.js"
 
 type BrowserEncoderOptions = {
   threshold: number
@@ -7,25 +10,28 @@ type BrowserEncoderOptions = {
   paperType: "continuous" | "gap"
 }
 
-function ensureBrowserGlobals(): void {
-  const scopedGlobal = globalThis as typeof globalThis & {
-    window?: Window & typeof globalThis
-    navigator?: Navigator
-  }
-
-  if (!scopedGlobal.window) {
-    scopedGlobal.window = scopedGlobal as unknown as Window & typeof globalThis
-  }
-
-  if (!scopedGlobal.navigator) {
-    scopedGlobal.navigator = { userAgent: "browser-static" } as Navigator
-  }
-}
-
 type RasterImage = {
   data: Uint8ClampedArray
   width: number
   height: number
+}
+
+let detongerInitPromise: Promise<unknown> | undefined
+
+async function ensureDetongerWasmReady(): Promise<void> {
+  if (!detongerInitPromise) {
+    detongerInitPromise =
+      typeof document === "undefined"
+        ? (async () => {
+            const { readFile } = await import("node:fs/promises")
+            const wasmBytes = await readFile(
+              new URL("./wasm/pkg/detonger_wasm_bg.wasm", import.meta.url)
+            )
+            initDetongerWasmSync(wasmBytes)
+          })()
+        : initDetongerWasm()
+  }
+  await detongerInitPromise
 }
 
 async function decodePngInNode(pngBytes: Uint8Array): Promise<RasterImage> {
@@ -40,8 +46,7 @@ async function decodePngInNode(pngBytes: Uint8Array): Promise<RasterImage> {
 }
 
 async function decodePngInBrowser(pngBytes: Uint8Array): Promise<RasterImage> {
-  const normalizedBytes = new Uint8Array(pngBytes)
-  const blob = new Blob([normalizedBytes], { type: "image/png" })
+  const blob = new Blob([new Uint8Array(pngBytes)], { type: "image/png" })
   const blobUrl = URL.createObjectURL(blob)
 
   try {
@@ -80,10 +85,10 @@ async function decodePng(pngBytes: Uint8Array): Promise<RasterImage> {
 }
 
 function shiftImageDataToPrinterWidth(
-  imageData: { data: Uint8ClampedArray; width: number; height: number },
+  imageData: RasterImage,
   printerWidth: number,
   xOffsetDots: number
-) {
+): RasterImage {
   const dx = Number(xOffsetDots ?? 0)
   if (!Number.isFinite(dx) || dx === 0) {
     return imageData
@@ -119,64 +124,65 @@ function shiftImageDataToPrinterWidth(
   }
 }
 
-function normalizeGapType(paperType: BrowserEncoderOptions["paperType"]): number {
-  return paperType === "continuous" ? 0 : 2
-}
-
-function buildPrinterInfo(printWidthDots: number) {
-  return {
-    printerDPI: 203,
-    printerWidth: printWidthDots,
-    hardwareFlags: 0,
-    softwareFlags: 0x0010,
-    softwareVersion: "",
-    deviceName: "P2",
-    deviceVersion: "",
-    printable: 0,
-    isPrPageKey: -1,
+async function encodeRasterToPngBytes(image: RasterImage): Promise<Uint8Array> {
+  if (typeof document === "undefined") {
+    const { PNG } = await import("pngjs")
+    return PNG.sync.write({
+      width: image.width,
+      height: image.height,
+      data: Buffer.from(image.data),
+    })
   }
+
+  const canvas = document.createElement("canvas")
+  canvas.width = image.width
+  canvas.height = image.height
+  const context = canvas.getContext("2d")
+  if (!context) {
+    throw new Error("Current browser cannot create a 2D canvas.")
+  }
+
+  context.putImageData(
+    new ImageData(new Uint8ClampedArray(image.data), image.width, image.height),
+    0,
+    0
+  )
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, "image/png")
+  })
+  if (!blob) {
+    throw new Error("Browser failed to encode PNG bytes.")
+  }
+  return new Uint8Array(await blob.arrayBuffer())
 }
 
 export async function encodeBrowserPngMessages(
   pngBytes: Uint8Array,
   options: BrowserEncoderOptions
 ): Promise<Uint8Array[]> {
-  ensureBrowserGlobals()
+  await ensureDetongerWasmReady()
 
-  const png = await decodePng(pngBytes)
-  const printerInfo = buildPrinterInfo(options.printWidthDots)
-  const imageData = shiftImageDataToPrinterWidth(
-    {
-      data: png.data,
-      width: png.width,
-      height: png.height,
-    },
-    printerInfo.printerWidth,
+  const shiftedImage = shiftImageDataToPrinterWidth(
+    await decodePng(pngBytes),
+    options.printWidthDots,
     options.xOffsetDots
   )
-
-  const printPackage = new PrintPackage()
-  const buffers = printPackage.print({
-    ...printerInfo,
-    imageData,
+  const normalizedPngBytes = await encodeRasterToPngBytes(shiftedImage)
+  const messages = encodePngJobMessages(normalizedPngBytes, {
     threshold: options.threshold,
-    orientation: 0,
-    pageKey: 1,
-    pageNo: 1,
-    PageCount: 1,
-    gapType: normalizeGapType(options.paperType),
-    enableSuperBitmap: true,
+    xOffsetDots: 0,
+    printWidthDots: options.printWidthDots,
+    paperType: options.paperType,
   })
 
-  if (!buffers || buffers.length === 0) {
-    throw new Error("lpapi-ble returned no packets")
+  if (!Array.isArray(messages) || messages.length === 0) {
+    throw new Error("detonger-wasm returned no packets")
   }
 
-  return buffers.map((buffer, index) => {
-    const packet = buffer.getAllBytes()
-    if (!(packet instanceof Uint8Array)) {
-      throw new Error(`unexpected packet type at index ${index}`)
+  return messages.map((message, index) => {
+    if (!(message instanceof Uint8Array)) {
+      throw new Error(`unexpected detonger-wasm packet type at index ${index}`)
     }
-    return packet
+    return message
   })
 }
