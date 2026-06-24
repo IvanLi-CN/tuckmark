@@ -210,3 +210,34 @@ test("template large mode uses a two-column grid layout", async ({ page }) => {
   expect(gridMetrics.firstTwo[0]?.left).not.toBe(gridMetrics.firstTwo[1]?.left)
   expect(gridMetrics.firstTwo[0]?.width).toBeGreaterThan(140)
 })
+
+test("template large mode keeps two columns in the standard three-pane width", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto("/templates?demo=true")
+
+  await page.getByRole("button", { name: "大图" }).click()
+
+  const gridMetrics = await page.locator(".tm-template-list").evaluate((list) => {
+    const cards = Array.from(list.querySelectorAll(".tm-template-card"))
+    const firstTwo = cards.slice(0, 2).map((card) => {
+      const rect = card.getBoundingClientRect()
+      return {
+        top: Math.round(rect.top),
+        left: Math.round(rect.left),
+        width: Math.round(rect.width),
+      }
+    })
+
+    return {
+      templateColumns: getComputedStyle(list).gridTemplateColumns,
+      cardCount: cards.length,
+      firstTwo,
+    }
+  })
+
+  expect(gridMetrics.cardCount).toBeGreaterThanOrEqual(2)
+  expect(gridMetrics.templateColumns.split(" ").length).toBe(2)
+  expect(gridMetrics.firstTwo[0]?.top).toBe(gridMetrics.firstTwo[1]?.top)
+  expect(gridMetrics.firstTwo[0]?.left).not.toBe(gridMetrics.firstTwo[1]?.left)
+  expect(gridMetrics.firstTwo[0]?.width).toBeGreaterThan(120)
+})

@@ -412,7 +412,7 @@
     border-radius: 10px;
   }
 
-  @media (max-width: 1180px) {
+  @media (max-width: 720px) {
     .tm-template-list--grid {
       grid-template-columns: minmax(0, 1fr);
     }

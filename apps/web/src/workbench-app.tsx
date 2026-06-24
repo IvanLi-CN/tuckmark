@@ -586,7 +586,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   const [canvasDraft, setCanvasDraft] = React.useState<CanvasDraft>(() =>
     createDraftFromPreset(
       CANVAS_PRESETS[0] ??
-        CANVAS_PRESETS.at(0) ?? {
+        CANVAS_PRESETS[0] ?? {
           id: "fallback",
           name: "Fallback",
           width: 384,

@@ -151,6 +151,10 @@ artifact pipeline.
 
   ![Template workspace](./assets/templates-1024x768.png)
 
+- `1280×800` template large-card grid remains two-up inside the left workspace pane
+
+  ![Template large grid](./assets/templates-large-grid-1280x800.png)
+
 - `1280×800` canvas workspace in compact three-column mode
 
   ![Canvas workspace](./assets/canvas-1280x800.png)
