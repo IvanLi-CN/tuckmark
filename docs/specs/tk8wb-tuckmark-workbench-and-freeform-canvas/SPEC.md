@@ -85,15 +85,19 @@ artifact pipeline.
 ### Focus-paired dual-pane contract
 
 - At `>=1280px`, template and canvas workspaces remain three-column layouts.
-- At `1024-1279px`, template and canvas workspaces enter `focus-paired
-  dual-pane`.
+- Canvas workspace keeps `focus-paired dual-pane` at `1024-1279px`.
+- Template workspace switches to a route-owned narrow fallback:
+  - at `960-1279px`, the list stage shows `template list + disabled
+    preview/print rail`; selecting a template swaps the left pane into the
+    batch table while keeping the right preview/print rail visible and
+    interactive, and the table view exposes an explicit return action back to
+    the template list
+  - below `960px`, preview and print move below the batch table instead of
+    remaining in a side rail
 - `focus-paired dual-pane` rules:
   - the center workspace remains visible at all times
   - only one side pair is expanded at a time
   - the hidden side collapses to a `44-48px` edge rail with icon and label
-- Template workspace switching:
-  - template selection or data-table editing shows `left + center`
-  - preview, print settings, or print action focus shows `center + right`
 - Canvas workspace switching:
   - tool, preset, or layer focus shows `left + center`
   - property, preview, or print focus shows `center + right`
@@ -147,9 +151,9 @@ artifact pipeline.
 
   ![Homepage shell](./assets/home-1440x900.png)
 
-- `1024×768` template workspace in list mode
+- `1100×820` template workspace in narrow single-outlet mode with a disabled preview/print rail before template selection
 
-  ![Template workspace](./assets/templates-1024x768.png)
+  ![Template workspace](./assets/templates-1100x820-disabled-rail.png)
 
 - `1280×800` template large-card grid remains two-up inside the left workspace pane
 

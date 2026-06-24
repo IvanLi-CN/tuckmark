@@ -102,24 +102,6 @@ test("template table stretches its columns to fill the available table width", a
   }
 })
 
-test("template table keeps horizontal scrolling when the allocated pane becomes narrower than its columns", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1024, height: 768 })
-  await page.goto("/templates?demo=true")
-
-  await page.getByRole("button", { name: "列表" }).click()
-
-  const overflow = await page.locator(".tm-table-shell").evaluate((shell) => ({
-    clientWidth: shell.clientWidth,
-    scrollWidth: shell.scrollWidth,
-    overflowX: getComputedStyle(shell).overflowX,
-  }))
-
-  expect(overflow.overflowX).toBe("auto")
-  expect(overflow.scrollWidth).toBeGreaterThan(overflow.clientWidth)
-})
-
 test("template table auto-generates preview when a row is clicked or a cell is focused", async ({
   page,
 }) => {
@@ -240,4 +222,91 @@ test("template large mode keeps two columns in the standard three-pane width", a
   expect(gridMetrics.firstTwo[0]?.top).toBe(gridMetrics.firstTwo[1]?.top)
   expect(gridMetrics.firstTwo[0]?.left).not.toBe(gridMetrics.firstTwo[1]?.left)
   expect(gridMetrics.firstTwo[0]?.width).toBeGreaterThan(120)
+})
+
+test("template page keeps a disabled preview rail beside the list before a template is chosen on narrow widths", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 820 })
+  await page.goto("/templates?demo=true")
+
+  const layout = await page.locator("section.tm-workspace").evaluate((workspace) => {
+    const leftPane = workspace.querySelector(".tm-pane--left")
+    const rightPane = workspace.querySelector(".tm-pane--right")
+    if (!leftPane || !rightPane) {
+      return null
+    }
+
+    const leftRect = leftPane.getBoundingClientRect()
+    const rightRect = rightPane.getBoundingClientRect()
+
+    return {
+      leftWidth: Math.round(leftRect.width),
+      rightWidth: Math.round(rightRect.width),
+    }
+  })
+
+  expect(layout).not.toBeNull()
+  expect(layout?.leftWidth ?? 0).toBeGreaterThan(260)
+  expect(layout?.rightWidth ?? 0).toBeGreaterThan(260)
+  const rightPane = page.locator(".tm-pane--right")
+  await expect(rightPane.getByText("预览与打印", { exact: true })).toBeVisible()
+  await expect(rightPane.getByText("先选择模板后查看预览与打印。")).toBeVisible()
+  await expect(rightPane.getByRole("button", { name: "生成预览" })).toBeDisabled()
+  await expect(rightPane.getByRole("button", { name: "直接打印" })).toBeDisabled()
+  await expect(page.getByText("批量录入表")).toHaveCount(0)
+})
+
+test("template page collapses to a single outlet flow on narrow widths", async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 820 })
+  await page.goto("/templates?demo=true")
+
+  await expect(page.getByText("模板列表")).toBeVisible()
+  await expect(page.getByText("批量录入表")).toHaveCount(0)
+
+  await page.getByRole("button", { name: /Compact Shipping Label/ }).click()
+
+  await expect(page.getByText("批量录入表")).toBeVisible()
+  await expect(page.getByText("模板列表")).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "返回模板" })).toBeVisible()
+  await expect(page.locator(".tm-pane--right").getByText("预览与打印", { exact: true })).toBeVisible()
+
+  await page.getByRole("button", { name: "返回模板" }).click()
+  await expect(page.getByText("模板列表")).toBeVisible()
+  await expect(page.getByText("批量录入表")).toHaveCount(0)
+})
+
+test("template page moves preview and print below the table on extra narrow widths", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 930, height: 820 })
+  await page.goto("/templates?demo=true")
+
+  await page.getByRole("button", { name: /Compact Shipping Label/ }).click()
+
+  const layout = await page.locator("section.tm-workspace").evaluate((workspace) => {
+    const centerPane = workspace.querySelector(".tm-pane--center")
+    const rightPane = workspace.querySelector(".tm-pane--right")
+    if (!centerPane || !rightPane) {
+      return null
+    }
+
+    const centerRect = centerPane.getBoundingClientRect()
+    const rightRect = rightPane.getBoundingClientRect()
+
+    return {
+      centerBottom: Math.round(centerRect.bottom),
+      rightTop: Math.round(rightRect.top),
+      rightLeft: Math.round(rightRect.left),
+      centerLeft: Math.round(centerRect.left),
+      rightWidth: Math.round(rightRect.width),
+      centerWidth: Math.round(centerRect.width),
+    }
+  })
+
+  expect(layout).not.toBeNull()
+  expect(layout?.rightTop ?? 0).toBeGreaterThanOrEqual((layout?.centerBottom ?? 0) - 1)
+  expect(Math.abs((layout?.rightLeft ?? 0) - (layout?.centerLeft ?? 0))).toBeLessThanOrEqual(2)
+  expect(Math.abs((layout?.rightWidth ?? 0) - (layout?.centerWidth ?? 0))).toBeLessThanOrEqual(2)
+  await expect(page.getByText("预览与打印")).toBeVisible()
 })

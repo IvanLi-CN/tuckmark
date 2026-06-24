@@ -11,7 +11,7 @@ test("browser-static root path defaults to runtime and supports explicit demo mo
   await expect(page.getByRole("button", { name: /选择设备|Studio P2|Browser P2/ })).toBeVisible()
 
   await page.getByRole("link", { name: "模板" }).click()
-  await expect(page.getByRole("heading", { name: "模板" })).toBeVisible()
+  await expect(page.getByText("模板列表")).toBeVisible()
   await expect(page.getByRole("button", { name: "生成预览" })).toBeVisible()
 
   await page.goto("/?demo=true")

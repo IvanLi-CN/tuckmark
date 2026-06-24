@@ -177,8 +177,7 @@
   }
 
   .tm-hero__copy,
-  .tm-hero__facts,
-  .tm-workspace__intro {
+  .tm-hero__facts {
     border: 1px solid color-mix(in oklab, var(--border) 78%, white);
     background:
       radial-gradient(
@@ -194,13 +193,11 @@
     border-radius: 28px;
   }
 
-  .tm-hero__copy,
-  .tm-workspace__intro {
+  .tm-hero__copy {
     @apply flex flex-col gap-3 px-6 py-6;
   }
 
-  .tm-hero__copy h1,
-  .tm-workspace__intro h1 {
+  .tm-hero__copy h1 {
     font-family: "Nunito", "DM Sans", sans-serif;
     @apply text-[2rem] font-extrabold tracking-tight text-foreground md:text-[2.35rem];
   }
@@ -226,13 +223,41 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .tm-pane-grid--template {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tm-pane-grid--template .tm-pane--right {
+    display: none;
+  }
+
+  .tm-pane-grid--single-pane {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tm-pane-grid--preview-side .tm-pane--right {
+    display: flex;
+  }
+
   @media (min-width: 1024px) {
     .tm-pane-grid {
       grid-template-columns: minmax(260px, 0.92fr) minmax(0, 1.4fr);
     }
 
+    .tm-pane-grid--single-pane {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .tm-pane-grid--preview-side {
+      grid-template-columns: minmax(260px, 0.92fr) minmax(280px, 0.92fr);
+    }
+
     .tm-pane-grid .tm-pane--right {
       display: none;
+    }
+
+    .tm-pane-grid--preview-side .tm-pane--right {
+      display: flex;
     }
 
     .tm-pane-grid--focus-right {
@@ -246,6 +271,7 @@
     .tm-pane-grid--focus-right .tm-pane--right {
       display: flex;
     }
+
   }
 
   @media (min-width: 1280px) {
@@ -255,6 +281,10 @@
 
     .tm-pane-grid--triple .tm-pane--left,
     .tm-pane-grid--triple .tm-pane--right {
+      display: flex;
+    }
+
+    .tm-pane-grid--template.tm-pane-grid--triple .tm-pane--right {
       display: flex;
     }
   }
@@ -278,6 +308,14 @@
 
   .tm-pane__body--table {
     @apply overflow-hidden;
+  }
+
+  .tm-pane-grid--stacked-preview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tm-pane-grid--stacked-preview .tm-pane--right {
+    display: flex;
   }
 
   .tm-choice {

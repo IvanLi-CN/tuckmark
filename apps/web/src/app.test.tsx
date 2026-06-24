@@ -27,7 +27,38 @@ vi.mock("./browser-print-payload.js", () => browserPayloadMocks)
 const fetchMock = vi.fn<typeof fetch>()
 const originalFetch = globalThis.fetch
 const originalIndexedDb = globalThis.indexedDB
+const originalMatchMedia = window.matchMedia
 let mountedRoot: ReturnType<typeof ReactDOM.createRoot> | null = null
+let viewportWidth = 1440
+
+function matchesMediaQuery(query: string, width: number) {
+  const minMatch = query.match(/\(min-width:\s*(\d+)px\)/)
+  if (minMatch) {
+    return width >= Number(minMatch[1])
+  }
+
+  const maxMatch = query.match(/\(max-width:\s*(\d+)px\)/)
+  if (maxMatch) {
+    return width <= Number(maxMatch[1])
+  }
+
+  return false
+}
+
+function createMatchMediaResult(query: string): MediaQueryList {
+  return {
+    matches: matchesMediaQuery(query, viewportWidth),
+    media: query,
+    onchange: null,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent() {
+      return true
+    },
+  } as MediaQueryList
+}
 
 function createFakeIndexedDb(): IDBFactory {
   const databases = new Map<string, Map<string, Map<string, unknown>>>()
@@ -306,6 +337,8 @@ beforeEach(() => {
   fetchMock.mockReset()
   globalThis.fetch = fetchMock
   globalThis.indexedDB = createFakeIndexedDb()
+  viewportWidth = 1440
+  window.matchMedia = vi.fn((query: string) => createMatchMediaResult(query))
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
   browserPrinterMocks.isBrowserPrintSupported.mockReturnValue(true)
@@ -347,6 +380,7 @@ afterEach(async () => {
   mountedRoot = null
   globalThis.fetch = originalFetch
   globalThis.indexedDB = originalIndexedDb
+  window.matchMedia = originalMatchMedia
   document.body.innerHTML = ""
   window.history.replaceState({}, "", "/")
   vi.useRealTimers()

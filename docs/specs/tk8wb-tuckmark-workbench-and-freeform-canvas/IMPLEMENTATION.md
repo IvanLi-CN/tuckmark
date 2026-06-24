@@ -11,6 +11,13 @@
     demo surfaces
 - Template workspace is implemented as a left template browser, center batch
   table, and right preview/print rail.
+- Template workspace now adds a narrow route-owned fallback:
+  - `960-1279px` keeps a two-pane shell: the initial state shows the template
+    list beside a disabled preview/print rail, then swaps the left pane from
+    list to batch table after selection while keeping the right rail visible
+    and exposing a return action
+  - below `960px`, preview and print stack below the batch table instead of
+    staying in a side rail
 - Template list supports:
   - large grid mode
   - compact list mode

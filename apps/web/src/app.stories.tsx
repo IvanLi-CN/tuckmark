@@ -128,3 +128,59 @@ export const TemplatesLargeGridLongTitle: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "大图" }))
   },
 }
+
+export const TemplatesDisabledRailNarrow: Story = {
+  args: {
+    context: demoContext,
+    client: new DemoApiClient(demoContext),
+    initialEntries: ["/templates"],
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "template-single-outlet",
+    },
+  },
+  globals: {
+    viewport: { value: "template-single-outlet", isRotated: false },
+  },
+}
+
+export const TemplatesSingleOutletNarrow: Story = {
+  args: {
+    context: demoContext,
+    client: new DemoApiClient(demoContext),
+    initialEntries: ["/templates"],
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "template-single-outlet",
+    },
+  },
+  globals: {
+    viewport: { value: "template-single-outlet", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: /Compact Shipping Label/ }))
+  },
+}
+
+export const TemplatesStackedPreviewNarrow: Story = {
+  args: {
+    context: demoContext,
+    client: new DemoApiClient(demoContext),
+    initialEntries: ["/templates"],
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "template-stacked-preview",
+    },
+  },
+  globals: {
+    viewport: { value: "template-stacked-preview", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: /Compact Shipping Label/ }))
+  },
+}

@@ -17,3 +17,8 @@ while the workbench was being productized:
 - template cards no longer use decorative chevron arrows
 - top navigation uses a clearer active state because current-page orientation is
   a primary product affordance, not a subtle decorative hint
+- template workspace narrow fallback was refined again: the `960-1279px` list
+  stage keeps a disabled preview/print rail visible instead of leaving that
+  side empty, while the batch table still takes over the left pane after
+  template selection; only the narrower `<960px` state stacks preview/print
+  below the table

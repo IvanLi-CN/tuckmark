@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Layers3,
   LayoutTemplate,
@@ -71,6 +72,7 @@ type TemplateRow = {
 type TemplateFocus = "left-center" | "center-right"
 type CanvasFocus = "left-center" | "center-right"
 type TemplateListMode = "large" | "list"
+type TemplateNarrowStage = "list" | "table"
 
 type CanvasDraft = {
   id: string
@@ -127,6 +129,7 @@ const CANVAS_TOOL_LABELS: Record<CanvasElement["kind"], string> = {
 
 const WIDE_TRIPLE_THRESHOLD = 1280
 const SUPPORTED_MIN_WIDTH = 1024
+const TEMPLATE_STACKED_PREVIEW_THRESHOLD = 960
 const TEMPLATE_INDEX_COLUMN_WIDTH = 44
 const TEMPLATE_PREVIEW_DEBOUNCE_MS = 320
 
@@ -524,6 +527,8 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     fieldKey: string
   } | null>(null)
   const [templateFocus, setTemplateFocus] = React.useState<TemplateFocus>("left-center")
+  const [templateNarrowStage, setTemplateNarrowStage] =
+    React.useState<TemplateNarrowStage>("list")
 
   React.useEffect(() => {
     if (!activeTemplate) {
@@ -647,6 +652,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       activeTemplate.fields[0] ? { rowId: row.id, fieldKey: activeTemplate.fields[0].key } : null
     )
     setTemplateFocus("left-center")
+    setTemplateNarrowStage("table")
   }, [activeTemplate])
 
   const duplicateTemplateRow = React.useCallback(() => {
@@ -671,6 +677,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       activeTemplate?.fields[0] ? { rowId: row.id, fieldKey: activeTemplate.fields[0].key } : null
     )
     setTemplateFocus("left-center")
+    setTemplateNarrowStage("table")
   }, [activeTemplate, selectedTemplateRow])
 
   const deleteTemplateRow = React.useCallback(() => {
@@ -680,6 +687,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     setTemplateRows((currentRows) => currentRows.filter((row) => row.id !== selectedTemplateRow.id))
     setEditingTemplateCell(null)
     setTemplateFocus("left-center")
+    setTemplateNarrowStage("table")
   }, [selectedTemplateRow])
 
   const previewTemplateRow = React.useCallback(
@@ -766,6 +774,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
         }, TEMPLATE_PREVIEW_DEBOUNCE_MS)
       }
       setTemplateFocus("left-center")
+      setTemplateNarrowStage("table")
     },
     [autoPreviewTemplateRow, clearTemplateAutoPreviewTimer, selectedTemplateRow]
   )
@@ -867,7 +876,9 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     setSelectedRowId,
     setTemplateFocus,
     setTemplateId,
+    setTemplateNarrowStage,
     templateFocus,
+    templateNarrowStage,
     templateId,
     templateRows,
     updateCanvasElement,
@@ -1253,7 +1264,20 @@ function TemplatesPage({
   state: ReturnType<typeof useWorkbenchPages>
 }) {
   const isTriple = useMediaQuery(`(min-width: ${WIDE_TRIPLE_THRESHOLD}px)`)
-  const supportsFormal = useMediaQuery(`(min-width: ${SUPPORTED_MIN_WIDTH}px)`)
+  const stacksPreviewBelowTable = !useMediaQuery(
+    `(min-width: ${TEMPLATE_STACKED_PREVIEW_THRESHOLD}px)`
+  )
+  const usesSingleOutletFlow = !isTriple
+  const showsTableStage = state.templateNarrowStage === "table"
+  const showsDisabledPreviewRail =
+    usesSingleOutletFlow && state.templateNarrowStage === "list" && !stacksPreviewBelowTable
+  const usesSplitTableAndPreview =
+    usesSingleOutletFlow && showsTableStage && !stacksPreviewBelowTable
+  const showsListOnlyPane =
+    usesSingleOutletFlow && state.templateNarrowStage === "list" && stacksPreviewBelowTable
+  const showTemplateListPane = !usesSingleOutletFlow || state.templateNarrowStage === "list"
+  const showTemplateTablePane = !usesSingleOutletFlow || showsTableStage
+  const showTemplatePreviewPane = !usesSingleOutletFlow || showsTableStage || showsDisabledPreviewRail
   const [listMode, setListMode] = React.useState<TemplateListMode>("large")
   const [tableShellElement, setTableShellElement] = React.useState<HTMLDivElement | null>(null)
   const tableShellWidth = useElementClientWidth(tableShellElement)
@@ -1269,257 +1293,263 @@ function TemplatesPage({
 
   return (
     <section className="tm-workspace">
-      <WorkspaceIntro title="模板" />
-      {!isTriple && supportsFormal ? (
-        <FocusPairSwitch
-          leftLabel="模板"
-          rightLabel="预览"
-          value={state.templateFocus}
-          onChange={state.setTemplateFocus}
-        />
-      ) : null}
-
       <div
         className={cn(
           "tm-pane-grid",
+          "tm-pane-grid--template",
+          showsListOnlyPane && "tm-pane-grid--single-pane",
+          showsDisabledPreviewRail && "tm-pane-grid--preview-side",
+          usesSplitTableAndPreview && "tm-pane-grid--focus-right",
           isTriple && "tm-pane-grid--triple",
-          !isTriple &&
-            supportsFormal &&
-            state.templateFocus === "center-right" &&
-            "tm-pane-grid--focus-right"
+          stacksPreviewBelowTable && "tm-pane-grid--stacked-preview"
         )}
       >
-        <aside className="tm-pane tm-pane--left">
-          <PaneHeader
-            icon={LayoutTemplate}
-            title="模板列表"
-            actions={
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={listMode === "large" ? "default" : "outline"}
-                  onClick={() => setListMode("large")}
-                >
-                  大图
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={listMode === "list" ? "default" : "outline"}
-                  onClick={() => setListMode("list")}
-                >
-                  列表
-                </Button>
-              </div>
-            }
-          />
-          <div
-            className={cn(
-              "tm-pane__body",
-              "tm-template-list",
-              listMode === "large" ? "tm-template-list--grid" : "tm-template-list--list"
-            )}
-          >
-            {controller.templates.map((template) => (
-              <TemplateCard
-                key={template.id}
-                template={template}
-                active={state.activeTemplate?.id === template.id}
-                mode={listMode}
-                onClick={() => {
-                  state.setTemplateId(template.id)
-                  state.setTemplateFocus("left-center")
-                }}
-              />
-            ))}
-          </div>
-        </aside>
-
-        <section className="tm-pane tm-pane--center">
-          <PaneHeader
-            icon={Rows3}
-            title="批量录入表"
-            actions={
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={state.addTemplateRow}>
-                  <Plus className="size-4" />
-                  <span>新增行</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={state.duplicateTemplateRow}
-                >
-                  <Rows3 className="size-4" />
-                  <span>复制行</span>
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={state.deleteTemplateRow}>
-                  <Trash2 className="size-4" />
-                  <span>删除行</span>
-                </Button>
-              </div>
-            }
-          />
-          <div className="tm-pane__body tm-pane__body--table">
-            <div className="tm-table-shell" ref={setTableShellElement}>
-              <table className="tm-table" style={{ width: `${templateColumnLayout.tableWidth}px` }}>
-                <colgroup>
-                  <col style={{ width: `${TEMPLATE_INDEX_COLUMN_WIDTH}px` }} />
-                  {state.activeTemplate?.fields.map((field) => (
-                    <col
-                      key={field.key}
-                      style={{
-                        width: `${templateColumnLayout.columnWidths[field.key] ?? getTemplateColumnWidthRange(field).minWidth}px`,
-                      }}
-                    />
-                  ))}
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>
-                      <span className="tm-table__header-label">行</span>
-                    </th>
-                    {state.activeTemplate?.fields.map((field) => (
-                      <th key={field.key}>
-                        <span className="tm-table__header-label">{field.label}</span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.templateRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={(state.activeTemplate?.fields.length ?? 0) + 1}>
-                        <EmptyMini text="当前模板还没有数据行。" />
-                      </td>
-                    </tr>
-                  ) : (
-                    state.templateRows.map((row, rowIndex) => (
-                      <tr
-                        key={row.id}
-                        className={cn(row.id === state.selectedRowId && "tm-table__row--active")}
-                        onClick={() => {
-                          state.setSelectedRowId(row.id)
-                          state.setTemplateFocus("left-center")
-                          void state.autoPreviewTemplateRow(row)
-                        }}
-                      >
-                        <td>
-                          <span className="tm-table__row-index">{rowIndex + 1}</span>
-                        </td>
-                        {state.activeTemplate?.fields.map((field) => {
-                          const value = toSingleLineFieldValue(row.values[field.key] ?? "")
-                          const isEditing =
-                            state.editingTemplateCell?.rowId === row.id &&
-                            state.editingTemplateCell?.fieldKey === field.key
-                          const columnWidth =
-                            templateColumnLayout.columnWidths[field.key] ??
-                            getTemplateColumnWidthRange(field).minWidth
-                          const columnStyle = {
-                            width: `${columnWidth}px`,
-                            minWidth: `${columnWidth}px`,
-                            maxWidth: `${columnWidth}px`,
-                          } satisfies React.CSSProperties
-
-                          return (
-                            <td key={field.key}>
-                              {isEditing ? (
-                                <Input
-                                  value={value}
-                                  className="tm-table__input tm-table__input--editing"
-                                  density="compact"
-                                  size="xs"
-                                  style={columnStyle}
-                                  autoFocus
-                                  onFocus={() => {
-                                    state.setSelectedRowId(row.id)
-                                    state.setTemplateFocus("left-center")
-                                    void state.autoPreviewTemplateRow(row)
-                                  }}
-                                  onBlur={() => {
-                                    state.setEditingTemplateCell(null)
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter" || event.key === "Escape") {
-                                      event.currentTarget.blur()
-                                    }
-                                  }}
-                                  onChange={(event) =>
-                                    state.updateTemplateField(
-                                      row.id,
-                                      field.key,
-                                      event.currentTarget.value
-                                    )
-                                  }
-                                />
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="tm-table__cell"
-                                  style={columnStyle}
-                                  onFocus={() => {
-                                    state.setSelectedRowId(row.id)
-                                    state.setTemplateFocus("left-center")
-                                    void state.autoPreviewTemplateRow(row)
-                                  }}
-                                  onClick={() => {
-                                    state.setSelectedRowId(row.id)
-                                    state.setEditingTemplateCell({
-                                      rowId: row.id,
-                                      fieldKey: field.key,
-                                    })
-                                    state.setTemplateFocus("left-center")
-                                  }}
-                                >
-                                  {value || "—"}
-                                </button>
-                              )}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+        {showTemplateListPane ? (
+          <aside className="tm-pane tm-pane--left">
+            <PaneHeader
+              icon={LayoutTemplate}
+              title="模板列表"
+              actions={
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={listMode === "large" ? "default" : "outline"}
+                    onClick={() => setListMode("large")}
+                  >
+                    大图
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={listMode === "list" ? "default" : "outline"}
+                    onClick={() => setListMode("list")}
+                  >
+                    列表
+                  </Button>
+                </div>
+              }
+            />
+            <div
+              className={cn(
+                "tm-pane__body",
+                "tm-template-list",
+                listMode === "large" ? "tm-template-list--grid" : "tm-template-list--list"
+              )}
+            >
+              {controller.templates.map((template) => (
+                <TemplateCard
+                  key={template.id}
+                  template={template}
+                  active={state.activeTemplate?.id === template.id}
+                  mode={listMode}
+                  onClick={() => {
+                    state.setTemplateId(template.id)
+                    if (usesSingleOutletFlow) {
+                      state.setTemplateNarrowStage("table")
+                      void state.previewSelectedTemplateRow()
+                      return
+                    }
+                    state.setTemplateFocus("left-center")
+                  }}
+                />
+              ))}
             </div>
-          </div>
-        </section>
+          </aside>
+        ) : null}
 
-        <aside className="tm-pane tm-pane--right">
-          <PaneHeader
-            icon={Printer}
-            title="预览与打印"
-            actions={
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void state.previewSelectedTemplateRow()}
-                >
-                  生成预览
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => void state.printSelectedTemplateRow()}
-                >
-                  直接打印
-                </Button>
+        {showTemplateTablePane ? (
+          <section className="tm-pane tm-pane--center">
+            <PaneHeader
+              icon={Rows3}
+              title="批量录入表"
+              actions={
+                <div className="flex flex-wrap gap-2">
+                  {usesSingleOutletFlow ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => state.setTemplateNarrowStage("list")}
+                    >
+                      <ChevronLeft className="size-4" />
+                      返回模板
+                    </Button>
+                  ) : null}
+                  <Button type="button" variant="outline" size="sm" onClick={state.addTemplateRow}>
+                    <Plus className="size-4" />
+                    <span>新增行</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={state.duplicateTemplateRow}
+                  >
+                    <Rows3 className="size-4" />
+                    <span>复制行</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={state.deleteTemplateRow}
+                  >
+                    <Trash2 className="size-4" />
+                    <span>删除行</span>
+                  </Button>
+                </div>
+              }
+            />
+            <div className="tm-pane__body tm-pane__body--table">
+              <div className="tm-table-shell" ref={setTableShellElement}>
+                <table className="tm-table" style={{ width: `${templateColumnLayout.tableWidth}px` }}>
+                  <colgroup>
+                    <col style={{ width: `${TEMPLATE_INDEX_COLUMN_WIDTH}px` }} />
+                    {state.activeTemplate?.fields.map((field) => (
+                      <col
+                        key={field.key}
+                        style={{
+                          width: `${templateColumnLayout.columnWidths[field.key] ?? getTemplateColumnWidthRange(field).minWidth}px`,
+                        }}
+                      />
+                    ))}
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>
+                        <span className="tm-table__header-label">行</span>
+                      </th>
+                      {state.activeTemplate?.fields.map((field) => (
+                        <th key={field.key}>
+                          <span className="tm-table__header-label">{field.label}</span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.templateRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={(state.activeTemplate?.fields.length ?? 0) + 1}>
+                          <EmptyMini text="当前模板还没有数据行。" />
+                        </td>
+                      </tr>
+                    ) : (
+                      state.templateRows.map((row, rowIndex) => (
+                        <tr
+                          key={row.id}
+                          className={cn(row.id === state.selectedRowId && "tm-table__row--active")}
+                          onClick={() => {
+                            state.setSelectedRowId(row.id)
+                            state.setTemplateNarrowStage("table")
+                            void state.autoPreviewTemplateRow(row)
+                          }}
+                        >
+                          <td>
+                            <span className="tm-table__row-index">{rowIndex + 1}</span>
+                          </td>
+                          {state.activeTemplate?.fields.map((field) => {
+                            const value = toSingleLineFieldValue(row.values[field.key] ?? "")
+                            const isEditing =
+                              state.editingTemplateCell?.rowId === row.id &&
+                              state.editingTemplateCell?.fieldKey === field.key
+                            const columnWidth =
+                              templateColumnLayout.columnWidths[field.key] ??
+                              getTemplateColumnWidthRange(field).minWidth
+                            const columnStyle = {
+                              width: `${columnWidth}px`,
+                              minWidth: `${columnWidth}px`,
+                              maxWidth: `${columnWidth}px`,
+                            } satisfies React.CSSProperties
+
+                            return (
+                              <td key={field.key}>
+                                {isEditing ? (
+                                  <Input
+                                    value={value}
+                                    className="tm-table__input tm-table__input--editing"
+                                    density="compact"
+                                    size="xs"
+                                    style={columnStyle}
+                                    autoFocus
+                                    onFocus={() => {
+                                      state.setSelectedRowId(row.id)
+                                      state.setTemplateNarrowStage("table")
+                                      void state.autoPreviewTemplateRow(row)
+                                    }}
+                                    onBlur={() => {
+                                      state.setEditingTemplateCell(null)
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter" || event.key === "Escape") {
+                                        event.currentTarget.blur()
+                                      }
+                                    }}
+                                    onChange={(event) =>
+                                      state.updateTemplateField(
+                                        row.id,
+                                        field.key,
+                                        event.currentTarget.value
+                                      )
+                                    }
+                                  />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="tm-table__cell"
+                                    style={columnStyle}
+                                    onFocus={() => {
+                                      state.setSelectedRowId(row.id)
+                                      state.setTemplateNarrowStage("table")
+                                      void state.autoPreviewTemplateRow(row)
+                                    }}
+                                    onClick={() => {
+                                      state.setSelectedRowId(row.id)
+                                      state.setEditingTemplateCell({
+                                        rowId: row.id,
+                                        fieldKey: field.key,
+                                      })
+                                      state.setTemplateNarrowStage("table")
+                                    }}
+                                  >
+                                    {value || "—"}
+                                  </button>
+                                )}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
-            }
-          />
-          <div className="tm-pane__body">
-            <RenderOptionsForm
+            </div>
+          </section>
+        ) : null}
+
+        {showTemplatePreviewPane && !stacksPreviewBelowTable ? (
+          <aside className="tm-pane tm-pane--right">
+            <TemplatesPrintRail
               controller={controller}
+              state={state}
+              disabled={showsDisabledPreviewRail}
+              unavailableMessage="先选择模板后查看预览与打印。"
               onFocusRight={() => state.setTemplateFocus("center-right")}
             />
-            <PreviewCard controller={controller} />
-          </div>
-        </aside>
+          </aside>
+        ) : null}
+
+        {showTemplatePreviewPane && stacksPreviewBelowTable ? (
+          <aside className="tm-pane tm-pane--right">
+            <TemplatesPrintRail
+              controller={controller}
+              state={state}
+              disabled={false}
+              onFocusRight={() => state.setTemplateFocus("center-right")}
+            />
+          </aside>
+        ) : null}
       </div>
     </section>
   )
@@ -1537,7 +1567,6 @@ function CanvasPage({
 
   return (
     <section className="tm-workspace">
-      <WorkspaceIntro title="画布" />
       {!isTriple && supportsFormal ? (
         <FocusPairSwitch
           leftLabel="工具"
@@ -1688,7 +1717,6 @@ function CanvasPage({
 function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbenchController> }) {
   return (
     <section className="tm-system">
-      <WorkspaceIntro title="系统" />
       <div className="tm-system__grid">
         <Card className="tm-panel">
           <CardHeader>
@@ -1760,16 +1788,6 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
   )
 }
 
-function WorkspaceIntro({ title }: { title: string }) {
-  return (
-    <div className="tm-workspace__intro">
-      <div>
-        <h1>{title}</h1>
-      </div>
-    </div>
-  )
-}
-
 function PaneHeader({
   icon: Icon,
   title,
@@ -1789,6 +1807,58 @@ function PaneHeader({
       </div>
       {actions}
     </div>
+  )
+}
+
+function TemplatesPrintRail({
+  controller,
+  state,
+  disabled = false,
+  unavailableMessage,
+  onFocusRight,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>
+  state: ReturnType<typeof useWorkbenchPages>
+  disabled?: boolean
+  unavailableMessage?: string
+  onFocusRight: () => void
+}) {
+  return (
+    <>
+      <PaneHeader
+        icon={Printer}
+        title="预览与打印"
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={disabled}
+              onClick={() => void state.previewSelectedTemplateRow()}
+            >
+              生成预览
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={disabled}
+              onClick={() => void state.printSelectedTemplateRow()}
+            >
+              直接打印
+            </Button>
+          </div>
+        }
+      />
+      <div className="tm-pane__body">
+        <RenderOptionsForm controller={controller} disabled={disabled} onFocusRight={onFocusRight} />
+        <PreviewCard
+          controller={controller}
+          disabled={disabled}
+          emptyText={unavailableMessage ?? "先生成一个预览。"}
+        />
+      </div>
+    </>
   )
 }
 
@@ -1881,10 +1951,12 @@ function RenderOptionsForm({
   controller,
   onFocusRight,
   compact = false,
+  disabled = false,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
   onFocusRight: () => void
   compact?: boolean
+  disabled?: boolean
 }) {
   const options = controller.renderOptions
 
@@ -1903,6 +1975,7 @@ function RenderOptionsForm({
               id="print-width"
               type="number"
               value={String(options.printWidthDots)}
+              disabled={disabled}
               onFocus={onFocusRight}
               onChange={(event) =>
                 controller.setRenderOptions((current) => ({
@@ -1916,11 +1989,12 @@ function RenderOptionsForm({
             <Label htmlFor="paper-type">纸张类型</Label>
             <Select
               value={options.paperType}
+              disabled={disabled}
               onValueChange={(value: "continuous" | "gap") =>
                 controller.setRenderOptions((current) => ({ ...current, paperType: value }))
               }
             >
-              <SelectTrigger id="paper-type" onFocus={onFocusRight}>
+              <SelectTrigger id="paper-type" disabled={disabled} onFocus={onFocusRight}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1935,6 +2009,7 @@ function RenderOptionsForm({
               id="threshold"
               type="number"
               value={String(options.threshold)}
+              disabled={disabled}
               onFocus={onFocusRight}
               onChange={(event) =>
                 controller.setRenderOptions((current) => ({
@@ -1950,6 +2025,7 @@ function RenderOptionsForm({
               id="x-offset"
               type="number"
               value={String(options.xOffsetDots)}
+              disabled={disabled}
               onFocus={onFocusRight}
               onChange={(event) =>
                 controller.setRenderOptions((current) => ({
@@ -1965,7 +2041,15 @@ function RenderOptionsForm({
   )
 }
 
-function PreviewCard({ controller }: { controller: ReturnType<typeof useWorkbenchController> }) {
+function PreviewCard({
+  controller,
+  disabled = false,
+  emptyText = "先生成一个预览。",
+}: {
+  controller: ReturnType<typeof useWorkbenchController>
+  disabled?: boolean
+  emptyText?: string
+}) {
   const printStatus = React.useMemo(() => {
     const result = controller.printResult
     if (!result) {
@@ -1995,7 +2079,7 @@ function PreviewCard({ controller }: { controller: ReturnType<typeof useWorkbenc
         </CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
-        {controller.artifactData ? (
+        {!disabled && controller.artifactData ? (
           <div className="tm-preview-shell">
             <img
               alt="preview artifact"
@@ -2008,10 +2092,10 @@ function PreviewCard({ controller }: { controller: ReturnType<typeof useWorkbenc
             />
           </div>
         ) : (
-          <EmptyMini text="先生成一个预览。" />
+          <EmptyMini text={emptyText} />
         )}
 
-        {controller.error ? (
+        {!disabled && controller.error ? (
           <Alert variant="destructive">
             <AlertCircle className="mt-0.5 size-4" />
             <AlertTitle>操作失败</AlertTitle>
@@ -2019,7 +2103,7 @@ function PreviewCard({ controller }: { controller: ReturnType<typeof useWorkbenc
           </Alert>
         ) : null}
 
-        {printStatus ? (
+        {!disabled && printStatus ? (
           <Alert>
             <CheckCircle2 className="mt-0.5 size-4" />
             <AlertTitle>打印状态</AlertTitle>
