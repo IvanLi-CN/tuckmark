@@ -58,6 +58,9 @@ function ensureWasmPack() {
 }
 
 function resolveDetongerToolchain() {
+  if (!fs.existsSync(detongerToolchainFile)) {
+    return null
+  }
   const contents = fs.readFileSync(detongerToolchainFile, "utf8")
   const match = contents.match(/channel\s*=\s*"([^"]+)"/)
   return match?.[1] ?? "stable"
@@ -130,9 +133,18 @@ function releaseBuildLock(fd) {
 let buildLockFd
 
 try {
+  if (!fs.existsSync(wasmCrateDir) || !fs.existsSync(detongerToolchainFile)) {
+    console.warn("detonger submodule is unavailable; skipping detonger-wasm build.")
+    process.exit(0)
+  }
   buildLockFd = acquireBuildLock()
   const wasmPackCommand = ensureWasmPack()
-  ensureWasmTarget(resolveDetongerToolchain())
+  const toolchain = resolveDetongerToolchain()
+  if (!toolchain) {
+    console.warn("detonger toolchain metadata is unavailable; skipping detonger-wasm build.")
+    process.exit(0)
+  }
+  ensureWasmTarget(toolchain)
   fs.rmSync(outDir, { recursive: true, force: true })
   execFileSync(
     wasmPackCommand,

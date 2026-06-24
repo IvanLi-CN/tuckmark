@@ -75,6 +75,16 @@ export const shippingLabelTemplate: TemplateDefinition = {
       align: "left",
     },
     {
+      kind: "barcode",
+      key: "orderId",
+      x: 224,
+      y: 22,
+      width: 130,
+      height: 46,
+      format: "CODE128",
+      showValue: false,
+    },
+    {
       kind: "text",
       key: "note",
       x: 220,
@@ -122,6 +132,14 @@ export const cableLabelTemplate: TemplateDefinition = {
       fontSize: 20,
       fontWeight: "normal",
       align: "right",
+    },
+    {
+      kind: "qr",
+      key: "name",
+      x: 282,
+      y: 24,
+      size: 72,
+      errorCorrectionLevel: "M",
     },
   ],
 }

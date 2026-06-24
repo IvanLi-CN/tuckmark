@@ -31,16 +31,49 @@ You can still override this with `TUCKMARK_DETONGER_COMMAND` or `TUCKMARK_DETONG
 
 ## Local Preview
 
-- Run `bun run dev:preview` to start the HTTP API and the Web UI with a matched proxy configuration.
-- Default URLs:
-  - Web UI: `http://127.0.0.1:5173/`
-  - API health: `http://127.0.0.1:5210/health`
-- Override ports with:
-  - `TUCKMARK_SERVER_PORT`
-  - `TUCKMARK_WEB_PORT`
-  - `TUCKMARK_API_ORIGIN`
-  - `TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT`
-  - `TUCKMARK_ENABLE_SERVER_SIDE_PRINT`
+### Recommended startup path
+
+Use `bun run dev:preview` for normal product development.
+
+This is the default developer entrypoint because it starts:
+
+- the HTTP API from `packages/server`
+- the Vite Web dev server from `apps/web`
+- the matching `/api` proxy wiring between them
+
+Default URLs:
+
+- Web UI: `http://127.0.0.1:5173/`
+- API health: `http://127.0.0.1:5210/health`
+
+### When to use each command
+
+- `bun run dev:preview`
+  - use for normal Web app development
+  - use when the page needs the runtime `/api`
+  - use when you want Vite HMR together with the real local server flow
+- `bun run dev:web`
+  - use only when you intentionally want the standalone Vite dev server
+  - this does not start `packages/server`
+  - `/api` requests will fail unless you start the server separately or point `TUCKMARK_API_ORIGIN` at a live runtime
+- `bun run dev:server`
+  - use when you only need the HTTP API process
+- `bun run dev:storybook`
+  - use for isolated component and fragment work
+  - do not use this as the main product app development entrypoint
+- `bun run preview:web:pages`
+  - use only to verify the built static Pages bundle from `apps/web/dist`
+  - do not use this for active Web development or HMR
+
+### Configuration knobs
+
+Override ports or runtime wiring with:
+
+- `TUCKMARK_SERVER_PORT`
+- `TUCKMARK_WEB_PORT`
+- `TUCKMARK_API_ORIGIN`
+- `TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT`
+- `TUCKMARK_ENABLE_SERVER_SIDE_PRINT`
 
 ## Web Print Paths
 

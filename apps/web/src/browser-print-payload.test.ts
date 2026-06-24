@@ -1,9 +1,9 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
 import { encodeArtifactWithDetongerRustPreview } from "../../../packages/core/src/detonger-preview-encoder.js"
 import { renderTemplateToPreview } from "../../../packages/core/src/renderer.js"
@@ -11,34 +11,11 @@ import { getTemplateById } from "../../../packages/core/src/template-library.js"
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
 const helperManifestPath = path.join(repoRoot, "tools/detonger-preview-encoder/Cargo.toml")
+const detongerProtocolManifestPath = path.join(
+  repoRoot,
+  "detonger/crates/detonger-protocol/Cargo.toml"
+)
 const tempDirs: string[] = []
-
-vi.mock("./browser-print-wasm.js", async () => {
-  const { readFileSync } = await import("node:fs")
-  const wasmModule = await import("./wasm/pkg/detonger_wasm.js")
-  const wasmBytes = readFileSync(
-    fileURLToPath(new URL("./wasm/pkg/detonger_wasm_bg.wasm", import.meta.url))
-  )
-  await wasmModule.default(wasmBytes)
-
-  return {
-    encodeBrowserPngMessages: async (
-      pngBytes: Uint8Array,
-      options: {
-        threshold: number
-        xOffsetDots: number
-        printWidthDots: number
-        paperType: "continuous" | "gap"
-      }
-    ) =>
-      Array.from(wasmModule.encodePngJobMessages(pngBytes, options), (message, index) => {
-        if (!(message instanceof Uint8Array)) {
-          throw new Error(`unexpected wasm message type at index ${index}`)
-        }
-        return message
-      }),
-  }
-})
 
 function createTempDir(): string {
   const dir = mkdtempSync(path.join(tmpdir(), "tuckmark-browser-print-"))
@@ -58,6 +35,9 @@ afterEach(() => {
 
 describe("encodeBrowserPngBytes", () => {
   it("matches the validated Rust encoder for gap labels", { timeout: 30000 }, async () => {
+    if (!existsSync(detongerProtocolManifestPath)) {
+      return
+    }
     const template = getTemplateById("shipping-compact")
     const rendered = renderTemplateToPreview(
       template,
@@ -106,6 +86,9 @@ describe("encodeBrowserPngBytes", () => {
   })
 
   it("matches the validated Rust encoder for continuous labels", { timeout: 30000 }, async () => {
+    if (!existsSync(detongerProtocolManifestPath)) {
+      return
+    }
     const template = getTemplateById("cable-tag")
     const rendered = renderTemplateToPreview(
       template,

@@ -1,11 +1,11 @@
-import { getTemplateById } from "../../../packages/core/src/template-library.js"
 import type {
   ArtifactPackets,
+  DirectCanvasDefinition,
   PreviewArtifact,
   RenderOptions,
   SafeTextLabelInput,
-  TemplateDefinition,
-} from "../../../packages/core/src/types.js"
+} from "../../../packages/core/src/web.js"
+import { buildSvg, getTemplateById } from "../../../packages/core/src/web.js"
 import { encodeBrowserPngMessages } from "./browser-print-wasm.js"
 import type { ArtifactData } from "./types.js"
 
@@ -14,6 +14,7 @@ type BrowserRenderOptions = PreviewArtifact["renderOptions"]
 type TemplatePrintSource = {
   kind: "template"
   templateId: string
+  rowId?: string
   input: Record<string, string>
   renderOptions: BrowserRenderOptions
 }
@@ -25,7 +26,13 @@ type SafeTextPrintSource = {
   renderOptions: BrowserRenderOptions
 }
 
-export type BrowserPrintSource = TemplatePrintSource | SafeTextPrintSource
+type CanvasPrintSource = {
+  kind: "canvas"
+  canvas: DirectCanvasDefinition
+  renderOptions: BrowserRenderOptions
+}
+
+export type BrowserPrintSource = TemplatePrintSource | SafeTextPrintSource | CanvasPrintSource
 
 type BrowserPreviewMaterialization = {
   artifact: PreviewArtifact
@@ -39,22 +46,11 @@ export type BrowserArtifactMaterialization = {
   source: BrowserPrintSource
 }
 
-const WHITE = 255
-const BLACK = 0
 const DEFAULT_PREVIEW_SCALE = 4
 const continuousSafetyRowDensityThreshold = 320
 const continuousSafetyTargetDarkBits = 220
 const continuousSafetyMinRunLength = 64
 const continuousSafetyEdgePreserveDots = 12
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;")
-}
 
 function wrapText(text: string, maxCharsPerLine: number, maxLines?: number): string[] {
   const normalized = text.replace(/\r\n/g, "\n").split("\n")
@@ -84,73 +80,17 @@ function wrapText(text: string, maxCharsPerLine: number, maxLines?: number): str
   return maxLines ? lines.slice(0, maxLines) : lines
 }
 
-function estimateCharsPerLine(fontSize: number, width?: number): number {
+function _estimateCharsPerLine(fontSize: number, width?: number): number {
   if (!width) {
     return 100
   }
   return Math.max(4, Math.floor(width / (fontSize * 0.6)))
 }
 
-function renderTextElement(
-  element: TemplateDefinition["elements"][number] & { kind: "text" },
-  input: Record<string, string>
-): string {
-  const resolved = element.value ?? input[element.key] ?? ""
-  const escaped = escapeXml(resolved)
-  const lines = wrapText(
-    escaped,
-    estimateCharsPerLine(element.fontSize, element.width),
-    element.maxLines
-  )
-  const anchor = element.align === "center" ? "middle" : element.align === "right" ? "end" : "start"
-  const x =
-    element.align === "center" && element.width
-      ? element.x + element.width / 2
-      : element.align === "right" && element.width
-        ? element.x + element.width
-        : element.x
-
-  return lines
-    .map((line, index) => {
-      const y = element.y + index * (element.fontSize + 4)
-      return `<text x="${x}" y="${y}" font-size="${element.fontSize}" font-weight="${element.fontWeight}" text-anchor="${anchor}" font-family="ui-sans-serif, system-ui, sans-serif" fill="#111111">${line}</text>`
-    })
-    .join("")
-}
-
-function renderElement(
-  element: TemplateDefinition["elements"][number],
-  input: Record<string, string>
-): string {
-  switch (element.kind) {
-    case "text":
-      return renderTextElement(element, input)
-    case "rect":
-      return `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" rx="${element.radius}" ry="${element.radius}" fill="${element.fill}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`
-    case "line":
-      return `<line x1="${element.x1}" y1="${element.y1}" x2="${element.x2}" y2="${element.y2}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`
-  }
-}
-
-function buildSvg(
-  width: number,
-  height: number,
-  elements: TemplateDefinition["elements"],
-  input: Record<string, string>
-): string {
-  return [
-    `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
-    `<rect width="${width}" height="${height}" fill="white" />`,
-    elements.map((element) => renderElement(element, input)).join(""),
-    "</svg>",
-  ].join("")
-}
-
 function createSafeTextDefinition(request: SafeTextLabelInput): {
   width: number
   height: number
-  elements: TemplateDefinition["elements"]
+  elements: DirectCanvasDefinition["elements"]
   input: Record<string, string>
 } {
   const width = request.renderOptions?.printWidthDots ?? 384
@@ -239,12 +179,12 @@ function pixelIsBlack(
   threshold: number
 ) {
   const idx = (width * y + x) << 2
-  const r = data[idx] ?? WHITE
-  const g = data[idx + 1] ?? WHITE
-  const b = data[idx + 2] ?? WHITE
-  const a = data[idx + 3] ?? WHITE
+  const r = data[idx] ?? 255
+  const g = data[idx + 1] ?? 255
+  const b = data[idx + 2] ?? 255
+  const a = data[idx + 3] ?? 255
   const lum = (r * 77 + g * 150 + b * 29) >> 8
-  const composited = (lum * a + WHITE * (WHITE - a)) / WHITE
+  const composited = (lum * a + 255 * (255 - a)) / 255
   return composited < threshold
 }
 
@@ -256,11 +196,11 @@ function setMonoPixel(
   isBlack: boolean
 ) {
   const idx = (width * y + x) << 2
-  const value = isBlack ? BLACK : WHITE
+  const value = isBlack ? 0 : 255
   data[idx] = value
   data[idx + 1] = value
   data[idx + 2] = value
-  data[idx + 3] = WHITE
+  data[idx + 3] = 255
 }
 
 function normalizeContinuousPaperImageData(
@@ -396,6 +336,27 @@ export async function materializeBrowserPreview(
       svgPath: "browser://preview.svg",
       width: template.width,
       height: template.height,
+    }
+
+    return { artifact, dataUrl, source }
+  }
+
+  if (source.kind === "canvas") {
+    const svg = buildSvg(source.canvas.width, source.canvas.height, source.canvas.elements, {})
+    const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    const artifact: PreviewArtifact = {
+      id: `browser-${crypto.randomUUID()}`,
+      source: "canvas",
+      name: source.canvas.name,
+      templateId: source.canvas.id,
+      createdAt: new Date().toISOString(),
+      renderOptions,
+      input: {},
+      pngPath: "browser://preview.png",
+      bitmapPath: "browser://preview.bin",
+      svgPath: "browser://preview.svg",
+      width: source.canvas.width,
+      height: source.canvas.height,
     }
 
     return { artifact, dataUrl, source }

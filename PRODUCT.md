@@ -24,6 +24,26 @@ not the product contract boundary.
 - `packages/mcp`: the MCP surface for agent integration
 - `packages/core`: the shared domain and rendering layer
 
+## Canonical Web Experience
+
+The canonical owner-facing Web surface is a desktop workbench with four formal
+pages:
+
+- `home`
+- `templates`
+- `canvas`
+- `system`
+
+The shell uses a single route tree and a single layout contract:
+
+- top: shared header with product mark, navigation, and device entry
+- middle: routed workspace content
+- bottom: shared status footer
+
+The `templates` and `canvas` pages are the formal production workspaces. They
+share the same print artifact seam even though they expose different editing
+models.
+
 ## Print Path Contract
 
 The Web product exposes two formal print paths:
@@ -66,6 +86,9 @@ Mode selection is explicit:
 
 `browser-static` and `server-http` keep the same formal route structure. Demo
 behavior must never fork into a separate demo-only page tree.
+
+Static deployments keep browser history routing semantics and must ship a
+`404.html` fallback for deep-link recovery.
 
 GitHub Pages is an owner-facing static Web runtime. It is not a Storybook
 replacement, not a docs site, and not a second product surface.

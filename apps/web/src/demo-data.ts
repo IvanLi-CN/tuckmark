@@ -5,6 +5,8 @@ export const fallbackTemplates: Template[] = [
     id: "shipping-compact",
     name: "Compact Shipping Label",
     description: "用于收件人与订单信息的紧凑模板。",
+    width: 384,
+    height: 224,
     fields: [
       { key: "recipient", label: "Recipient", required: true },
       { key: "address", label: "Address", required: true, multiline: true },
@@ -16,6 +18,8 @@ export const fallbackTemplates: Template[] = [
     id: "cable-tag",
     name: "Cable Tag",
     description: "用于线缆、设备和端口整理的标签模板。",
+    width: 384,
+    height: 160,
     fields: [
       { key: "name", label: "Name", required: true },
       { key: "port", label: "Port", required: false },

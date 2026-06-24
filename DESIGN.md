@@ -23,6 +23,27 @@ The owner-facing capability contract is expressed as two print paths:
 The UI must not expose packet-helper details such as HTTP packet sources as
 product capabilities.
 
+## Workbench Architecture
+
+The canonical Web layout is a shared product shell with a nested route outlet.
+The shell owns the following cross-route concerns:
+
+- primary navigation
+- device drawer
+- runtime capability disclosure
+- shared status footer
+
+Route pages own their workspace-specific state, but preview and print actions
+must still flow through the shared artifact seam.
+
+The two formal workspaces are:
+
+- `template workspace`
+- `canvas workspace`
+
+They are intentionally parallel surfaces with different editing affordances but
+the same preview and print contracts.
+
 ## Web Modes
 
 The Web surface supports two operational modes without cloning routes:
@@ -45,6 +66,15 @@ The only variation points are the `surface` and capability contract.
 GitHub Pages publishes the static Web runtime with Vite `base: "./"` so the
 generated HTML, JS, CSS, and asset URLs remain relative.
 
+Developer startup contract:
+
+- normal Web development uses `bun run dev:preview`
+- the active development surface is the Vite dev server, not the built Pages
+  preview
+- `preview:web:pages` is a post-build verification surface only
+- `base: "./"` is a static bundle rule for Pages builds, not the dev-server
+  rule
+
 Pages must remain static:
 
 - no server-side API dependency
@@ -57,6 +87,24 @@ may remain live in supported browsers because it is a pure-browser capability.
 Server-only capabilities stay on `server-http`. `demo mode` reuses the Mock API
 layer and returns successful simulated preview / refresh / print actions with
 explicit hardware gating.
+
+`browser-static` keeps BrowserRouter semantics. It must not switch to hash
+routing as a deployment workaround.
+
+## Responsive Contract
+
+The formal desktop support band is `1024-1920w × 720-1280h`.
+
+Benchmark layouts:
+
+- `1024×768`: `focus-paired dual-pane`
+- `1280×800`: compact three-column workspace
+- `1440×900`: standard three-column workspace
+- `1600×1024`: relaxed three-column workspace
+
+At `1024-1279px`, the template and canvas routes enter `focus-paired dual-pane`
+mode. The center workspace remains persistent while the active side pair changes
+based on user focus. This is a route contract, not a user preference setting.
 
 ## Runtime Readiness Contract
 

@@ -22,16 +22,29 @@ export function resolveBuildSurface(
   return env.TUCKMARK_WEB_SURFACE === "browser-static" ? "browser-static" : "server-http"
 }
 
-export function resolvePublicBase(env: Record<string, string | undefined>): string {
+export function resolveServeBase(
+  env: Record<string, string | undefined>,
+  command: "serve" | "build"
+): string {
+  if (command === "serve") {
+    return "/"
+  }
   return resolveBuildSurface(env) === "browser-static" ? "./" : "/"
 }
 
-export default defineConfig(({ mode }) => {
+export function resolvePublicBase(
+  env: Record<string, string | undefined>,
+  command: "serve" | "build" = "build"
+): string {
+  return resolveServeBase(env, command)
+}
+
+export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "")
   const surface = resolveBuildSurface(env)
 
   return {
-    base: resolvePublicBase(env),
+    base: resolvePublicBase(env, command),
     define: {
       __TUCKMARK_WEB_SURFACE__: JSON.stringify(surface),
       "import.meta.env.TUCKMARK_API_ORIGIN": JSON.stringify(env.TUCKMARK_API_ORIGIN ?? ""),

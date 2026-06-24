@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tuckmark</title>
+    <script>
+      (() => {
+        var redirect = window.location.pathname + window.location.search + window.location.hash
+        var url = new URL("/", window.location.origin)
+        url.searchParams.set("__tuckmark_redirect__", encodeURIComponent(redirect))
+        window.location.replace(url.toString())
+      })()
+    </script>
+  </head>
+  <body></body>
+</html>

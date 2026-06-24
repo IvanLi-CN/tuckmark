@@ -15,6 +15,17 @@
   explicit hardware simulation
 - `server runtime`: the `/api`-backed Web deployment surface
 - `browser runtime`: the pure browser-local Web runtime surface
+- `template workspace`: the route-owned template workbench with template list,
+  batch data table, preview rail, and print rail
+- `canvas workspace`: the route-owned freeform canvas workbench with Konva
+  stage, tools, layers, property rail, preview rail, and print rail
+- `device drawer`: the shared right-side drawer for device selection, print-path
+  status, and device actions
+- `recent activity registry`: the browser-local metadata registry that records
+  recent templates and recent prints
+- `focus-paired dual-pane`: the narrow desktop responsive contract that keeps
+  the center workspace visible and swaps the active side pair based on user
+  focus
 
 ## Current Product Truth
 
@@ -40,6 +51,17 @@ by / lower-layer attribution, not as the user-facing brand.
 ## UI Truth
 
 The canonical user interface lives in `apps/web`.
+
+The canonical Web product is a four-page desktop workbench:
+
+- `home`
+- `templates`
+- `canvas`
+- `system`
+
+The canonical shell is top-middle-bottom with one shared route tree, one shared
+device drawer, and one shared artifact seam across `server-http`,
+`browser-static`, and `demo`.
 
 Storybook and Playwright are QA surfaces. They support component-state review,
 browser validation, and visual evidence. They do not replace the static runtime
