@@ -74,10 +74,9 @@ function renderTextElement(
     .join("")
 }
 
-function resolveElementValue(
-  element: Extract<TemplateElement, { key: string; value?: string }>,
-  input: RenderInput
-): string {
+type ValueBackedElement = Extract<TemplateElement, { kind: "text" | "barcode" | "qr" }>
+
+function resolveElementValue(element: ValueBackedElement, input: RenderInput): string {
   return (element.value ?? input[element.key] ?? "").trim()
 }
 
