@@ -104,10 +104,34 @@ export const lineElementSchema = z.object({
   stroke: z.string().default("#111111"),
 })
 
+export const barcodeElementSchema = z.object({
+  kind: z.literal("barcode"),
+  key: z.string().min(1),
+  x: z.number(),
+  y: z.number(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+  value: z.string().optional(),
+  format: z.literal("CODE128").default("CODE128"),
+  showValue: z.boolean().default(false),
+})
+
+export const qrElementSchema = z.object({
+  kind: z.literal("qr"),
+  key: z.string().min(1),
+  x: z.number(),
+  y: z.number(),
+  size: z.number().positive(),
+  value: z.string().optional(),
+  errorCorrectionLevel: z.enum(["L", "M", "Q", "H"]).default("M"),
+})
+
 export const templateElementSchema = z.discriminatedUnion("kind", [
   textElementSchema,
   rectElementSchema,
   lineElementSchema,
+  barcodeElementSchema,
+  qrElementSchema,
 ])
 export type TemplateElement = z.infer<typeof templateElementSchema>
 

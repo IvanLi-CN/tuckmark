@@ -19,7 +19,75 @@ export type Template = {
   id: string
   name: string
   description: string
+  width?: number
+  height?: number
   fields: TemplateField[]
+}
+
+export type CanvasElementKind = "text" | "rect" | "line" | "barcode" | "qr"
+
+export type CanvasElement =
+  | {
+      id: string
+      kind: "text"
+      x: number
+      y: number
+      width: number
+      fontSize: number
+      fontWeight: "normal" | "bold"
+      align: "left" | "center" | "right"
+      value: string
+      maxLines?: number
+    }
+  | {
+      id: string
+      kind: "rect"
+      x: number
+      y: number
+      width: number
+      height: number
+      strokeWidth: number
+      fill: string
+      stroke: string
+      radius: number
+    }
+  | {
+      id: string
+      kind: "line"
+      x: number
+      y: number
+      x2: number
+      y2: number
+      strokeWidth: number
+      stroke: string
+    }
+  | {
+      id: string
+      kind: "barcode"
+      x: number
+      y: number
+      width: number
+      height: number
+      value: string
+      format: "CODE128"
+      showValue: boolean
+    }
+  | {
+      id: string
+      kind: "qr"
+      x: number
+      y: number
+      size: number
+      value: string
+      errorCorrectionLevel: "L" | "M" | "Q" | "H"
+    }
+
+export type CanvasDocumentPreset = {
+  id: string
+  name: string
+  width: number
+  height: number
+  description: string
 }
 
 export type Printer = {
@@ -35,11 +103,14 @@ export type Printer = {
 export type PreviewArtifact = {
   id: string
   name: string
+  source?: "template" | "canvas" | "batch_row" | "safe_text"
   templateId?: string
+  batchIndex?: number
   renderOptions: RenderOptions & {
     printWidthDots: number
     previewScale: number
   }
+  input?: Record<string, string>
   width: number
   height: number
   createdAt: string

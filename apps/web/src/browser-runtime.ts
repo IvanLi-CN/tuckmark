@@ -1,6 +1,5 @@
-import { presetTemplateData } from "../../../packages/core/src/preset-template-data.js"
-import { buildSvg, wrapText } from "../../../packages/core/src/svg-renderer.js"
-import type { TemplateDefinition } from "../../../packages/core/src/types.js"
+import type { DirectCanvasDefinition, TemplateDefinition } from "../../../packages/core/src/web.js"
+import { buildSvg, presetTemplateData, wrapText } from "../../../packages/core/src/web.js"
 import { encodeBrowserPngBytes } from "./browser-print-payload.js"
 import type { ArtifactData, PreviewArtifact, RenderOptions, Template } from "./types.js"
 
@@ -381,6 +380,8 @@ function toTemplateSurface(template: TemplateDefinition): Template {
     id: template.id,
     name: template.name,
     description: template.description,
+    width: template.width,
+    height: template.height,
     fields: template.fields.map((field) => ({
       key: field.key,
       label: field.label,
@@ -467,12 +468,46 @@ export async function previewTemplateInBrowser(input: {
   )
   const artifact: PreviewArtifact = {
     id: createArtifactId(),
+    source: "template",
     name: template.name,
     templateId: template.id,
     createdAt: new Date().toISOString(),
     width: template.width,
     height: template.height,
     renderOptions,
+    input: normalizedInput,
+  }
+
+  await persistRasterArtifact(artifact, normalizedImage)
+  return { artifact }
+}
+
+export async function previewCanvasInBrowser(input: {
+  canvas: DirectCanvasDefinition
+  renderOptions: RenderOptions
+}): Promise<{ artifact: PreviewArtifact }> {
+  const renderOptions = {
+    printWidthDots: input.renderOptions.printWidthDots,
+    previewScale: 4,
+    paperType: input.renderOptions.paperType,
+    threshold: input.renderOptions.threshold,
+    xOffsetDots: input.renderOptions.xOffsetDots,
+  }
+  const svg = buildSvg(input.canvas.width, input.canvas.height, input.canvas.elements, {})
+  const normalizedImage = normalizeContinuousPaperImageData(
+    await svgToImageData(svg, input.canvas.width, input.canvas.height),
+    input.renderOptions
+  )
+  const artifact: PreviewArtifact = {
+    id: createArtifactId(),
+    source: "canvas",
+    name: input.canvas.name,
+    templateId: input.canvas.id,
+    createdAt: new Date().toISOString(),
+    width: input.canvas.width,
+    height: input.canvas.height,
+    renderOptions,
+    input: {},
   }
 
   await persistRasterArtifact(artifact, normalizedImage)
@@ -498,12 +533,14 @@ export async function previewSafeTextInBrowser(input: {
   )
   const artifact: PreviewArtifact = {
     id: createArtifactId(),
+    source: "safe_text",
     name: input.title,
     templateId: "safe-text-label",
     createdAt: new Date().toISOString(),
     width,
     height,
     renderOptions,
+    input: { text: input.text },
   }
 
   await persistRasterArtifact(artifact, normalizedImage)

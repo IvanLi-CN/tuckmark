@@ -1,3 +1,6 @@
+import JsBarcode from "jsbarcode"
+import QRCode from "qrcode"
+
 import type { TemplateElement } from "./types.js"
 
 type RenderInput = Record<string, string>
@@ -71,6 +74,111 @@ function renderTextElement(
     .join("")
 }
 
+type ValueBackedElement = Extract<TemplateElement, { kind: "text" | "barcode" | "qr" }>
+
+function resolveElementValue(element: ValueBackedElement, input: RenderInput): string {
+  return (element.value ?? input[element.key] ?? "").trim()
+}
+
+function buildBarcodeMarkup(
+  element: Extract<TemplateElement, { kind: "barcode" }>,
+  input: RenderInput
+): string {
+  const value = resolveElementValue(element, input)
+  if (value.length === 0) {
+    throw new Error(`Barcode value is required for key: ${element.key}`)
+  }
+
+  try {
+    const encoded: {
+      encodings?: Array<{
+        data: string
+        options: {
+          width: number
+          marginLeft?: number
+          marginTop?: number
+          height: number
+        }
+      }>
+    } = {}
+
+    JsBarcode(encoded, value, {
+      format: element.format,
+      displayValue: element.showValue,
+      margin: 0,
+      background: "#ffffff",
+      lineColor: "#111111",
+      width: 2,
+      height: Math.max(8, Math.round(element.height)),
+      fontSize: Math.max(10, Math.round(element.height * 0.18)),
+      textMargin: Math.max(2, Math.round(element.height * 0.05)),
+    })
+    const barcode = encoded.encodings?.[0]
+    if (!barcode) {
+      throw new Error("JsBarcode returned no encodings")
+    }
+
+    const bars: string[] = []
+    const marginLeft = barcode.options.marginLeft ?? 0
+    const marginTop = barcode.options.marginTop ?? 0
+    let cursor = marginLeft
+
+    for (const bit of barcode.data) {
+      if (bit === "1") {
+        bars.push(
+          `<rect x="${cursor}" y="${marginTop}" width="${barcode.options.width}" height="${barcode.options.height}" fill="#111111" />`
+        )
+      }
+      cursor += barcode.options.width
+    }
+
+    const viewWidth = cursor + marginLeft
+    const viewHeight = barcode.options.height + marginTop * 2
+    return `<svg x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" viewBox="0 0 ${viewWidth} ${viewHeight}" preserveAspectRatio="none"><rect width="${viewWidth}" height="${viewHeight}" fill="#ffffff" />${bars.join("")}</svg>`
+  } catch (cause) {
+    throw new Error(
+      `Failed to render CODE128 barcode "${element.key}": ${cause instanceof Error ? cause.message : String(cause)}`
+    )
+  }
+}
+
+function buildQrMarkup(
+  element: Extract<TemplateElement, { kind: "qr" }>,
+  input: RenderInput
+): string {
+  const value = resolveElementValue(element, input)
+  if (value.length === 0) {
+    throw new Error(`QR value is required for key: ${element.key}`)
+  }
+
+  try {
+    const qr = QRCode.create(value, {
+      errorCorrectionLevel: element.errorCorrectionLevel,
+    })
+    const moduleSize = qr.modules.size
+    const modules = qr.modules.data
+    const cell = element.size / moduleSize
+    const rects: string[] = []
+
+    for (let row = 0; row < moduleSize; row += 1) {
+      for (let column = 0; column < moduleSize; column += 1) {
+        if (!modules[row * moduleSize + column]) {
+          continue
+        }
+        rects.push(
+          `<rect x="${(column * cell).toFixed(4)}" y="${(row * cell).toFixed(4)}" width="${cell.toFixed(4)}" height="${cell.toFixed(4)}" fill="#111111" />`
+        )
+      }
+    }
+
+    return `<svg x="${element.x}" y="${element.y}" width="${element.size}" height="${element.size}" viewBox="0 0 ${element.size} ${element.size}" preserveAspectRatio="none"><rect width="${element.size}" height="${element.size}" fill="#ffffff" />${rects.join("")}</svg>`
+  } catch (cause) {
+    throw new Error(
+      `Failed to render QR "${element.key}": ${cause instanceof Error ? cause.message : String(cause)}`
+    )
+  }
+}
+
 function renderElement(element: TemplateElement, input: RenderInput): string {
   switch (element.kind) {
     case "text":
@@ -79,6 +187,10 @@ function renderElement(element: TemplateElement, input: RenderInput): string {
       return `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" rx="${element.radius}" ry="${element.radius}" fill="${element.fill}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`
     case "line":
       return `<line x1="${element.x1}" y1="${element.y1}" x2="${element.x2}" y2="${element.y2}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`
+    case "barcode":
+      return buildBarcodeMarkup(element, input)
+    case "qr":
+      return buildQrMarkup(element, input)
   }
 }
 

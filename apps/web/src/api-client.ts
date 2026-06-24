@@ -1,5 +1,7 @@
+import type { DirectCanvasDefinition, PrinterProbeResult } from "../../../packages/core/src/web.js"
 import {
   listBrowserRuntimeTemplates,
+  previewCanvasInBrowser,
   previewSafeTextInBrowser,
   previewTemplateInBrowser,
   readBrowserArtifact,
@@ -53,6 +55,18 @@ type PrintSafeTextInput = {
   renderOptions: RenderOptions
 }
 
+type PreviewCanvasInput = {
+  canvas: DirectCanvasDefinition
+  renderOptions: RenderOptions
+}
+
+type PrintCanvasInput = {
+  printerId: string
+  printerName?: string
+  canvas: DirectCanvasDefinition
+  renderOptions: RenderOptions
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -69,10 +83,13 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
 export interface ApiClient {
   listTemplates(): Promise<Template[]>
   listPrinters(): Promise<Printer[]>
+  probePrinter(input: { printerId: string; printerName?: string }): Promise<PrinterProbeResult>
   previewTemplate(input: PreviewTemplateInput): Promise<PreviewResult>
+  previewCanvas(input: PreviewCanvasInput): Promise<PreviewResult>
   previewSafeText(input: PreviewSafeTextInput): Promise<PreviewResult>
   printArtifact(input: PrintArtifactInput): Promise<PrintResult>
   printTemplate(input: PrintTemplateInput): Promise<PrintResult>
+  printCanvas(input: PrintCanvasInput): Promise<PrintResult>
   printSafeText(input: PrintSafeTextInput): Promise<PrintResult>
   readArtifactData(artifact: PreviewArtifact): Promise<ArtifactData>
 }
@@ -94,8 +111,24 @@ export class HttpApiClient implements ApiClient {
     return response.printers
   }
 
+  probePrinter(input: { printerId: string; printerName?: string }): Promise<PrinterProbeResult> {
+    return requestJson(`${this.context.apiBasePath}/printers/probe`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    })
+  }
+
   previewTemplate(input: PreviewTemplateInput): Promise<PreviewResult> {
     return requestJson(`${this.context.apiBasePath}/preview/template`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    })
+  }
+
+  previewCanvas(input: PreviewCanvasInput): Promise<PreviewResult> {
+    return requestJson(`${this.context.apiBasePath}/preview/canvas`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
@@ -120,6 +153,14 @@ export class HttpApiClient implements ApiClient {
 
   printTemplate(input: PrintTemplateInput): Promise<PrintResult> {
     return requestJson(`${this.context.apiBasePath}/print/template`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    })
+  }
+
+  printCanvas(input: PrintCanvasInput): Promise<PrintResult> {
+    return requestJson(`${this.context.apiBasePath}/print/canvas`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
@@ -162,8 +203,16 @@ export class BrowserRuntimeApiClient implements ApiClient {
     return []
   }
 
+  async probePrinter(): Promise<PrinterProbeResult> {
+    throw new Error("browser-static surface does not expose service-api printer probing.")
+  }
+
   previewTemplate(input: PreviewTemplateInput): Promise<PreviewResult> {
     return previewTemplateInBrowser(input)
+  }
+
+  previewCanvas(input: PreviewCanvasInput): Promise<PreviewResult> {
+    return previewCanvasInBrowser(input)
   }
 
   previewSafeText(input: PreviewSafeTextInput): Promise<PreviewResult> {
@@ -184,6 +233,13 @@ export class BrowserRuntimeApiClient implements ApiClient {
     }
   }
 
+  async printCanvas(input: PrintCanvasInput): Promise<PrintResult> {
+    return {
+      preview: await this.previewCanvas(input),
+      status: "ready",
+    }
+  }
+
   async printSafeText(input: PrintSafeTextInput): Promise<PrintResult> {
     return {
       preview: await this.previewSafeText(input),
@@ -198,19 +254,45 @@ export class BrowserRuntimeApiClient implements ApiClient {
 }
 
 export class DemoApiClient implements ApiClient {
-  constructor(private readonly context: AppContext) {}
+  constructor(readonly _context: AppContext) {}
 
   async listTemplates(): Promise<Template[]> {
     return fallbackTemplates
   }
 
   async listPrinters(): Promise<Printer[]> {
-    return this.context.surface === "server-http" ? seededPrinters : []
+    return seededPrinters
+  }
+
+  async probePrinter(input: {
+    printerId: string
+    printerName?: string
+  }): Promise<PrinterProbeResult> {
+    await sleep(360)
+    return {
+      ok: true,
+      printerId: input.printerId,
+      printerName: input.printerName,
+      stage: "complete",
+      message: "Demo probe completed successfully.",
+      log: ["demo: open", "demo: connect", "demo: complete"],
+      timingsMs: {
+        connectMs: 320,
+        discoverServiceMs: 140,
+        discoverCharacteristicMs: 120,
+        disconnectMs: 80,
+      },
+    }
   }
 
   async previewTemplate(input: PreviewTemplateInput): Promise<PreviewResult> {
     await sleep(420)
     return previewTemplateInBrowser(input)
+  }
+
+  async previewCanvas(input: PreviewCanvasInput): Promise<PreviewResult> {
+    await sleep(420)
+    return previewCanvasInBrowser(input)
   }
 
   async previewSafeText(input: PreviewSafeTextInput): Promise<PreviewResult> {
@@ -233,6 +315,20 @@ export class DemoApiClient implements ApiClient {
       preview,
       job: {
         id: `demo-template-${input.templateId}`,
+        status: "completed",
+        artifactId: preview.artifact.id,
+        printerId: input.printerId,
+      },
+    }
+  }
+
+  async printCanvas(input: PrintCanvasInput): Promise<PrintResult> {
+    const preview = await this.previewCanvas(input)
+    await sleep(980)
+    return {
+      preview,
+      job: {
+        id: `demo-canvas-${input.canvas.id}`,
         status: "completed",
         artifactId: preview.artifact.id,
         printerId: input.printerId,

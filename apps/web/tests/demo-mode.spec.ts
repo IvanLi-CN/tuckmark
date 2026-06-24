@@ -4,15 +4,21 @@ test("browser-static root path defaults to runtime and supports explicit demo mo
   page,
 }) => {
   await page.goto("/")
-  await expect(page.getByRole("heading", { name: "单标签打印主链路" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "打印工作台" })).toBeVisible()
   await expect(page.getByText("Browser static", { exact: false }).first()).toBeVisible()
   await expect(page.getByText("Runtime mode", { exact: false }).first()).toBeVisible()
-  await expect(page.getByRole("button", { name: "连接浏览器直连打印机" })).toBeVisible()
+  await expect(page.getByRole("link", { name: "模板" })).toBeVisible()
+  await expect(page.getByRole("button", { name: /选择设备|Studio P2|Browser P2/ })).toBeVisible()
+
+  await page.getByRole("link", { name: "模板" }).click()
+  await expect(page.getByText("模板列表")).toBeVisible()
+  await expect(page.getByRole("button", { name: "生成预览" })).toBeVisible()
 
   await page.goto("/?demo=true")
-  await expect(page.getByRole("heading", { name: "单标签打印主链路" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "打印工作台" })).toBeVisible()
   await expect(page.getByText("Demo mode", { exact: false }).first()).toBeVisible()
-  await expect(
-    page.getByText("刷新、预览、打印都返回带合理耗时的成功仿真", { exact: false })
-  ).toBeVisible()
+
+  await page.getByRole("button", { name: /选择设备|Studio P2|Browser P2/ }).click()
+  await expect(page.getByText("设备与打印路径")).toBeVisible()
+  await expect(page.getByText("Service API", { exact: false }).first()).toBeVisible()
 })

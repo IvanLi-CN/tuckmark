@@ -1,8 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { userEvent, within } from "storybook/test"
 
+import type { ApiClient } from "./api-client.js"
 import { DemoApiClient } from "./api-client.js"
-import { App } from "./app.js"
+import { fallbackTemplates } from "./demo-data.js"
 import type { AppContext } from "./types.js"
+import { WorkbenchAppStory } from "./workbench-app.js"
 
 const runtimeContext: AppContext = {
   apiBasePath: "",
@@ -26,16 +29,32 @@ const demoContext: AppContext = {
   },
 }
 
-const meta: Meta<typeof App> = {
-  title: "Tuckmark/App Surface",
-  component: App,
+const longTitleTemplates = fallbackTemplates.map((template, index) =>
+  index === 0
+    ? {
+        ...template,
+        name: "Compact Shipping Label For Warehouse Returns And International Forwarding",
+      }
+    : template
+)
+
+const longTitleDemoBaseClient = new DemoApiClient(demoContext)
+const longTitleDemoClient = Object.assign(Object.create(longTitleDemoBaseClient), {
+  async listTemplates() {
+    return longTitleTemplates
+  },
+}) as ApiClient
+
+const meta: Meta<typeof WorkbenchAppStory> = {
+  title: "Tuckmark/Workbench",
+  component: WorkbenchAppStory,
   tags: ["autodocs"],
   parameters: {
     layout: "fullscreen",
     docs: {
       description: {
         component:
-          "Formal Tuckmark web surface rendered through the same route tree for browser runtime and demo contracts.",
+          "Formal Tuckmark multi-page workbench shell. Storybook uses MemoryRouter fallback while preserving the same page components and shared workbench controller.",
       },
     },
   },
@@ -43,11 +62,50 @@ const meta: Meta<typeof App> = {
 
 export default meta
 
-type Story = StoryObj<typeof App>
+type Story = StoryObj<typeof WorkbenchAppStory>
 
-export const BrowserRuntime: Story = {
+export const Home: Story = {
   args: {
     context: runtimeContext,
+    initialEntries: ["/"],
+  },
+}
+
+export const TemplatesWorkspace: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+  },
+}
+
+export const TemplatesList: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: "列表" }))
+  },
+}
+
+export const TemplatesListEditing: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: "列表" }))
+    const [firstRecipientButton] = canvas.getAllByRole("button", { name: "Koha Cat" })
+    await userEvent.click(firstRecipientButton)
+  },
+}
+
+export const CanvasWorkspace: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
   },
 }
 
@@ -55,5 +113,74 @@ export const DemoMode: Story = {
   args: {
     context: demoContext,
     client: new DemoApiClient(demoContext),
+    initialEntries: ["/templates"],
+  },
+}
+
+export const TemplatesLargeGridLongTitle: Story = {
+  args: {
+    context: demoContext,
+    client: longTitleDemoClient,
+    initialEntries: ["/templates"],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: "大图" }))
+  },
+}
+
+export const TemplatesDisabledRailNarrow: Story = {
+  args: {
+    context: demoContext,
+    client: new DemoApiClient(demoContext),
+    initialEntries: ["/templates"],
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "template-single-outlet",
+    },
+  },
+  globals: {
+    viewport: { value: "template-single-outlet", isRotated: false },
+  },
+}
+
+export const TemplatesSingleOutletNarrow: Story = {
+  args: {
+    context: demoContext,
+    client: new DemoApiClient(demoContext),
+    initialEntries: ["/templates"],
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "template-single-outlet",
+    },
+  },
+  globals: {
+    viewport: { value: "template-single-outlet", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: /Compact Shipping Label/ }))
+  },
+}
+
+export const TemplatesStackedPreviewNarrow: Story = {
+  args: {
+    context: demoContext,
+    client: new DemoApiClient(demoContext),
+    initialEntries: ["/templates"],
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "template-stacked-preview",
+    },
+  },
+  globals: {
+    viewport: { value: "template-stacked-preview", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: /Compact Shipping Label/ }))
   },
 }

@@ -2,6 +2,7 @@ import React from "react"
 import ReactDOM from "react-dom/client"
 
 import { App } from "./app.js"
+import { restoreSpaRedirectLocation } from "./spa-fallback.js"
 import "./styles.css"
 
 export function mountApp(element: HTMLElement, useStrictMode = true) {
@@ -20,5 +21,6 @@ export function mountApp(element: HTMLElement, useStrictMode = true) {
 
 const rootElement = document.getElementById("root")
 if (rootElement) {
+  restoreSpaRedirectLocation()
   mountApp(rootElement, true)
 }
