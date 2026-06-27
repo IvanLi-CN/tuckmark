@@ -13,14 +13,25 @@ shell uses a top-middle-bottom layout with a shared header, shared footer, and
 one right-side device drawer across `server-http`, `browser-static`, and
 `demo`.
 
-The `templates` and `canvas` routes are formal three-panel workspaces. At
-`1024-1279px`, they switch into `focus-paired dual-pane` mode and keep the
-center workspace visible while swapping the active side pair based on user
-focus.
+The `templates` and `canvas` routes are formal workspaces that preserve the
+shared shell while specializing their inner tool surfaces. `templates` keeps
+its route-owned narrow fallback. `/canvas` is now an editor-first label tool
+with a stable three-column desktop layout and a route-local narrow desktop
+mode that keeps the stage visible while switching one contextual side rail.
 
-The freeform canvas uses `react-konva` for editing only. Preview and print
-continue to normalize back into the shared canvas schema and the existing
-artifact pipeline.
+The freeform canvas uses `react-konva` for interactive editing only. Preview
+and print continue to normalize back into the shared canvas schema and the
+existing artifact pipeline through `toCanvasPrintSource`.
+
+The stage now separates three layers explicitly:
+
+- a white label-paper base
+- a non-printing editor grid above the paper
+- printable SVG content above the grid
+
+This keeps label boundaries readable inside the editor while preserving visible
+grid guidance and a single shared content truth between stage preview and final
+output.
 
 ## Requirements
 
@@ -70,9 +81,9 @@ artifact pipeline.
   - center: multi-row batch-entry table
   - right: preview, print parameters, and print actions
 - `canvas` workspace layout:
-  - left: tools, document presets, and layers
-  - center: editable stage
-  - right: selection properties, print parameters, preview, and print actions
+  - left: document presets, quick-add actions, and layer management
+  - center: stage, editor toolbar, zoom state, and stage hints
+  - right: `属性 / 输出` inspector with explicit tab switching
 - `system` page contains:
   - app settings
   - default print settings
@@ -82,10 +93,15 @@ artifact pipeline.
   - recent prints
   - quick entry points to template and canvas workspaces
 
-### Focus-paired dual-pane contract
+### Responsive workspace contract
 
 - At `>=1280px`, template and canvas workspaces remain three-column layouts.
-- Canvas workspace keeps `focus-paired dual-pane` at `1024-1279px`.
+- At `>=1280px`, template workspace keeps the left template rail wide enough to
+  preserve a readable two-up large-card grid instead of collapsing card width
+  as a side effect of the three-pane shell.
+- Template workspace keeps its existing route-owned narrow behavior.
+- Canvas workspace does not reuse template-style `focus-paired dual-pane`.
+  Instead it uses a route-local narrow desktop editor mode.
 - Template workspace switches to a route-owned narrow fallback:
   - at `960-1279px`, the list stage shows `template list + disabled
     preview/print rail`; selecting a template swaps the left pane into the
@@ -94,15 +110,14 @@ artifact pipeline.
     the template list
   - below `960px`, preview and print move below the batch table instead of
     remaining in a side rail
-- `focus-paired dual-pane` rules:
-  - the center workspace remains visible at all times
-  - only one side pair is expanded at a time
-  - the hidden side collapses to a `44-48px` edge rail with icon and label
-- Canvas workspace switching:
-  - tool, preset, or layer focus shows `left + center`
-  - property, preview, or print focus shows `center + right`
-  - stage dragging, panning, and zooming must not trigger focus switching
-- No manual lock or user override state is introduced in v1.
+- Canvas narrow desktop rules:
+  - active range is `960-1279px`
+  - the center stage stays visible at all times
+  - the user explicitly switches between `工具与图层` and `属性与输出`
+  - the inactive side rail is fully hidden instead of collapsing to decorative
+    micro-rails
+  - below `960px`, `/canvas` is outside the first-pass professional editor
+    support target
 
 ### Canvas and artifact seam contract
 
@@ -118,10 +133,61 @@ artifact pipeline.
   - generated through `JsBarcode`
 - QR scope in v1:
   - generated through `qrcode`
+- Stage rendering uses the same barcode / QR semantic inputs as preview and
+  print. Barcode and QR elements must render as real encoded graphics inside
+  the editor instead of placeholder boxes.
+- Invalid barcode / QR content must degrade safely inside the editor:
+  - the stage shows a clear invalid-state placeholder instead of crashing
+  - the inspector explains the issue in plain language
+  - preview / direct print actions stay blocked until the issue is resolved
+- Canvas content is monochrome-only. Editor selection chrome may use product
+  accent colors, but printable label elements themselves render only in black
+  and white and do not expose color editing.
+- Shared schema extensions:
+  - `rotation` is supported on `text`, `rect`, `barcode`, and `qr`
+  - `line` keeps endpoint-based geometry and does not add rotation as a first
+    class print contract
 - Preview and print normalize editor state into `DirectCanvasDefinition` and
   then flow through shared renderer, preview, and print seams.
+- Rotated multiline text in preview and print must rotate around the rendered
+  text box center so output stays aligned with the stage editing bounds.
 - `browser-static` must support canvas preview and print without `/api` packet
   helpers.
+
+### Canvas interaction and draft contract
+
+- The editor state is versioned as a Web draft document with:
+  - document metadata
+  - per-layer metadata (`name`, `visible`, `locked`)
+  - editor metadata (`gridEnabled`, `snapEnabled`)
+- Draft persistence uses `localStorage` keys namespaced by preset id.
+- Refresh restores only the latest draft snapshot for the active preset.
+- Resetting the draft clears the stored draft for that preset and rebuilds from
+  the built-in preset.
+- Undo / redo keeps an in-memory history stack capped at `50` snapshots and
+  does not restore history across refreshes.
+- Canvas interaction baseline:
+  - single selection
+  - Shift multi-selection
+  - marquee selection
+  - drag move
+  - wheel zoom relative to pointer
+  - `Space + drag` stage pan
+  - `fit to view`
+  - transformer-based resize / rotation
+  - `Delete`, `Duplicate`, `Undo`, `Redo`, and `Escape`
+- Text elements support double-click inline editing on the stage.
+- Layer rail supports:
+  - rename
+  - reorder
+  - lock / unlock
+  - show / hide
+  - duplicate
+  - delete
+- Multi-select inspector behavior:
+  - zero selection shows a focused onboarding hint
+  - multi-selection shows batch actions and does not silently edit the first
+    selected element as if it were a single-selection state
 
 ### Recent activity and persistence contract
 
@@ -129,6 +195,8 @@ artifact pipeline.
 - The browser-local registry uses `localStorage` metadata and may enrich itself
   from the current browser artifact store.
 - No remote history service or `/api/history` endpoint is introduced.
+- Canvas drafts stay browser-local only. No remote document store or account
+  sync is introduced.
 
 ## Acceptance
 
@@ -138,12 +206,18 @@ artifact pipeline.
   focus to the trigger.
 - `browser-static` supports deep-link refresh through `404.html`.
 - Template workspace supports `0`, `1`, and `20` rows without layout breakage.
-- Canvas workspace supports create, select, move, resize, and delete for
-  `text`, `rect`, `line`, `barcode`, and `qr`.
+- Canvas workspace supports create, select, move, resize, rotate, duplicate,
+  reorder, visibility toggle, lock toggle, and delete for `text`, `rect`,
+  `line`, `barcode`, and `qr`.
+- Canvas workspace supports marquee selection, Shift multi-select, stage pan,
+  wheel zoom, and fit-to-view without horizontal shell breakage.
+- Text supports inline stage editing via double click.
+- Refresh restores the latest preset-scoped draft and reset clears it.
 - Invalid barcode or QR payloads surface as user-visible errors.
-- `1024×768` enters `focus-paired dual-pane`.
-- `1280×800`, `1440×900`, and `1600×1024` remain stable three-column layouts
-  without horizontal overflow.
+- `1100×820` keeps the `/canvas` stage visible while one contextual side rail
+  is hidden.
+- `1280×800`, `1440×900`, and `1600×1024` keep the professional three-column
+  editor without horizontal overflow.
 
 ## Visual Evidence
 
@@ -162,10 +236,25 @@ artifact pipeline.
   PR: include
   ![Template large grid](./assets/templates-large-grid-1280x800.png)
 
-- `1280×800` canvas workspace in compact three-column mode
+- `1280×800` canvas workspace in professional three-column editor mode
 
   PR: include
-  ![Canvas workspace](./assets/canvas-1280x800.png)
+  ![Canvas workspace](./assets/canvas-wide-1280x800.png)
+
+- `1100×820` canvas workspace in narrow desktop single-side mode with stage always visible
+
+  PR: include
+  ![Canvas narrow workspace](./assets/canvas-narrow-1100x820.png)
+
+- `1280×800` canvas workspace with real barcode selection and inspector editing state
+
+  PR: include
+  ![Canvas barcode workspace](./assets/canvas-barcode-selected-1280x800.png)
+
+- `1280×800` canvas workspace output rail after preview generation, with stage and preview sharing the same monochrome content semantics
+
+  PR: include
+  ![Canvas output preview workspace](./assets/canvas-output-preview-1280x800.png)
 
 - `1600×1024` system page in wide three-column mode
 

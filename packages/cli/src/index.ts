@@ -119,6 +119,7 @@ async function handlePreview(args: string[]): Promise<void> {
             fill: "white",
             stroke: "#111111",
             radius: 8,
+            rotation: 0,
           },
           {
             kind: "text",
@@ -131,6 +132,7 @@ async function handlePreview(args: string[]): Promise<void> {
             align: "left",
             width: canvas.width - 36,
             maxLines: 8,
+            rotation: 0,
           },
         ],
       },

@@ -24,6 +24,20 @@ const preview: Preview = {
             height: "820px",
           },
         },
+        "canvas-wide-editor": {
+          name: "Canvas Editor 1280",
+          styles: {
+            width: "1280px",
+            height: "800px",
+          },
+        },
+        "canvas-narrow-editor": {
+          name: "Canvas Editor 1100",
+          styles: {
+            width: "1100px",
+            height: "820px",
+          },
+        },
       },
     },
   },

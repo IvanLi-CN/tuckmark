@@ -5,6 +5,23 @@ import type { TemplateElement } from "./types.js"
 
 type RenderInput = Record<string, string>
 
+function formatNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/\.?0+$/, "")
+}
+
+function wrapMarkupWithRotation(
+  markup: string,
+  rotation: number | undefined,
+  originX: number,
+  originY: number
+): string {
+  if (!rotation) {
+    return markup
+  }
+
+  return `<g transform="rotate(${formatNumber(rotation)} ${formatNumber(originX)} ${formatNumber(originY)})">${markup}</g>`
+}
+
 export function escapeXml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -57,6 +74,7 @@ function renderTextElement(
     estimateCharsPerLine(element.fontSize, element.width),
     element.maxLines
   )
+  const renderedLines = lines.length > 0 ? lines : [""]
 
   const anchor = element.align === "center" ? "middle" : element.align === "right" ? "end" : "start"
   const x =
@@ -66,12 +84,24 @@ function renderTextElement(
         ? element.x + element.width
         : element.x
 
-  return lines
+  const markup = renderedLines
     .map((line, index) => {
       const y = element.y + index * (element.fontSize + 4)
       return `<text x="${x}" y="${y}" font-size="${element.fontSize}" font-weight="${element.fontWeight}" text-anchor="${anchor}" font-family="ui-sans-serif, system-ui, sans-serif" fill="#111111">${line}</text>`
     })
     .join("")
+
+  const width =
+    element.width ??
+    Math.max(...renderedLines.map((line) => line.length), 1) * element.fontSize * 0.6
+  const lineHeight = element.fontSize + 4
+  const lineCount = renderedLines.length
+  const originX = element.x + width / 2
+  const top = element.y - element.fontSize
+  const height = Math.max(lineHeight, element.fontSize + (lineCount - 1) * lineHeight)
+  const originY = top + height / 2
+
+  return wrapMarkupWithRotation(markup, element.rotation, originX, originY)
 }
 
 type ValueBackedElement = Extract<TemplateElement, { kind: "text" | "barcode" | "qr" }>
@@ -134,7 +164,13 @@ function buildBarcodeMarkup(
 
     const viewWidth = cursor + marginLeft
     const viewHeight = barcode.options.height + marginTop * 2
-    return `<svg x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" viewBox="0 0 ${viewWidth} ${viewHeight}" preserveAspectRatio="none"><rect width="${viewWidth}" height="${viewHeight}" fill="#ffffff" />${bars.join("")}</svg>`
+    const markup = `<svg x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" viewBox="0 0 ${viewWidth} ${viewHeight}" preserveAspectRatio="none"><rect width="${viewWidth}" height="${viewHeight}" fill="#ffffff" />${bars.join("")}</svg>`
+    return wrapMarkupWithRotation(
+      markup,
+      element.rotation,
+      element.x + element.width / 2,
+      element.y + element.height / 2
+    )
   } catch (cause) {
     throw new Error(
       `Failed to render CODE128 barcode "${element.key}": ${cause instanceof Error ? cause.message : String(cause)}`
@@ -171,7 +207,13 @@ function buildQrMarkup(
       }
     }
 
-    return `<svg x="${element.x}" y="${element.y}" width="${element.size}" height="${element.size}" viewBox="0 0 ${element.size} ${element.size}" preserveAspectRatio="none"><rect width="${element.size}" height="${element.size}" fill="#ffffff" />${rects.join("")}</svg>`
+    const markup = `<svg x="${element.x}" y="${element.y}" width="${element.size}" height="${element.size}" viewBox="0 0 ${element.size} ${element.size}" preserveAspectRatio="none"><rect width="${element.size}" height="${element.size}" fill="#ffffff" />${rects.join("")}</svg>`
+    return wrapMarkupWithRotation(
+      markup,
+      element.rotation,
+      element.x + element.size / 2,
+      element.y + element.size / 2
+    )
   } catch (cause) {
     throw new Error(
       `Failed to render QR "${element.key}": ${cause instanceof Error ? cause.message : String(cause)}`
@@ -184,7 +226,12 @@ function renderElement(element: TemplateElement, input: RenderInput): string {
     case "text":
       return renderTextElement(element, input)
     case "rect":
-      return `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" rx="${element.radius}" ry="${element.radius}" fill="${element.fill}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`
+      return wrapMarkupWithRotation(
+        `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" rx="${element.radius}" ry="${element.radius}" fill="${element.fill}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`,
+        element.rotation,
+        element.x + element.width / 2,
+        element.y + element.height / 2
+      )
     case "line":
       return `<line x1="${element.x1}" y1="${element.y1}" x2="${element.x2}" y2="${element.y2}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`
     case "barcode":

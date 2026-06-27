@@ -253,6 +253,7 @@ export function renderSafeTextLabelPreview(request: SafeTextLabelInput): {
     fontWeight: "normal",
     align: "left",
     maxLines: 1,
+    rotation: 0,
   }))
 
   const svg = buildSvg(width, height, elements, {})

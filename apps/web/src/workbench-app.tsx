@@ -33,6 +33,8 @@ import { buildSvg, getTemplateById } from "../../../packages/core/src/web.js"
 
 import type { ApiClient } from "./api-client.js"
 import type { BrowserPrintSource } from "./browser-print-payload.js"
+import type { CanvasStoryScenario } from "./canvas-editor-model.js"
+import { CanvasWorkspace } from "./canvas-page.js"
 import { ProductMark } from "./components/product-mark.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
@@ -62,6 +64,7 @@ import { createInitialTemplateRows, useWorkbenchController } from "./workbench-c
 type AppProps = {
   client?: ApiClient
   context?: AppContext
+  canvasScenario?: CanvasStoryScenario
 }
 
 type TemplateRow = {
@@ -274,8 +277,8 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         width: 152,
         height: 68,
         strokeWidth: 2,
-        fill: "#fffaf4",
-        stroke: "#7a5538",
+        fill: "#ffffff",
+        stroke: "#111111",
         radius: 14,
       }
     case "line":
@@ -287,7 +290,7 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         x2: seedX + 160,
         y2: seedY + 10,
         strokeWidth: 3,
-        stroke: "#433024",
+        stroke: "#111111",
       }
     case "barcode":
       return {
@@ -455,6 +458,7 @@ function toCanvasPrintSource(
               align: element.align,
               value: element.value,
               maxLines: element.maxLines,
+              rotation: element.rotation ?? 0,
             }
           case "rect":
             return {
@@ -467,6 +471,7 @@ function toCanvasPrintSource(
               fill: element.fill,
               stroke: element.stroke,
               radius: element.radius,
+              rotation: element.rotation ?? 0,
             }
           case "line":
             return {
@@ -489,6 +494,7 @@ function toCanvasPrintSource(
               value: element.value,
               format: element.format,
               showValue: element.showValue,
+              rotation: element.rotation ?? 0,
             }
           case "qr":
             return {
@@ -499,6 +505,7 @@ function toCanvasPrintSource(
               size: element.size,
               value: element.value,
               errorCorrectionLevel: element.errorCorrectionLevel,
+              rotation: element.rotation ?? 0,
             }
           default:
             return element satisfies never
@@ -892,13 +899,14 @@ function WorkbenchLayout({
 }) {
   const location = useLocation()
   const [drawerOpen, setDrawerOpen] = React.useState(false)
+  const isCanvasRoute = location.pathname === "/canvas"
 
   const surfaceLabel =
     controller.context.surface === "server-http" ? "Server HTTP" : "Browser static"
   const modeLabel = controller.context.mode === "demo" ? "Demo mode" : "Runtime mode"
 
   return (
-    <div className="tm-shell">
+    <div className={cn("tm-shell", isCanvasRoute && "tm-shell--canvas")}>
       <header className="tm-header">
         <div className="tm-header__left">
           <ProductMark />
@@ -942,7 +950,7 @@ function WorkbenchLayout({
         </div>
       </header>
 
-      <main className="tm-main">
+      <main className={cn("tm-main", isCanvasRoute && "tm-main--canvas")}>
         <Outlet />
       </main>
 
@@ -1558,7 +1566,8 @@ function TemplatesPage({
   )
 }
 
-function CanvasPage({
+// biome-ignore lint/correctness/noUnusedVariables: legacy canvas surface remains as reference while /canvas uses CanvasWorkspace.
+function CanvasPageLegacy({
   controller,
   state,
 }: {
@@ -2442,8 +2451,10 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
 
 function WorkbenchRouter({
   controller,
+  canvasScenario,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
+  canvasScenario?: CanvasStoryScenario
 }) {
   const pageState = useWorkbenchPages(controller)
 
@@ -2455,22 +2466,25 @@ function WorkbenchRouter({
           path="/templates"
           element={<TemplatesPage controller={controller} state={pageState} />}
         />
-        <Route path="/canvas" element={<CanvasPage controller={controller} state={pageState} />} />
+        <Route
+          path="/canvas"
+          element={<CanvasWorkspace controller={controller} initialScenario={canvasScenario} />}
+        />
         <Route path="/system" element={<SystemPage controller={controller} />} />
       </Route>
     </Routes>
   )
 }
 
-export function WorkbenchApp({ client, context }: AppProps) {
+export function WorkbenchApp({ client, context, canvasScenario }: AppProps) {
   const controller = useWorkbenchController({ client, context })
   const router = controller.context.basePath ? (
     <BrowserRouter basename={controller.context.basePath}>
-      <WorkbenchRouter controller={controller} />
+      <WorkbenchRouter controller={controller} canvasScenario={canvasScenario} />
     </BrowserRouter>
   ) : (
     <BrowserRouter>
-      <WorkbenchRouter controller={controller} />
+      <WorkbenchRouter controller={controller} canvasScenario={canvasScenario} />
     </BrowserRouter>
   )
 
@@ -2480,6 +2494,7 @@ export function WorkbenchApp({ client, context }: AppProps) {
 export function WorkbenchAppStory({
   client,
   context,
+  canvasScenario,
   initialEntries = ["/"],
 }: AppProps & {
   initialEntries?: string[]
@@ -2487,7 +2502,7 @@ export function WorkbenchAppStory({
   const controller = useWorkbenchController({ client, context })
   return (
     <MemoryRouter initialEntries={initialEntries}>
-      <WorkbenchRouter controller={controller} />
+      <WorkbenchRouter controller={controller} canvasScenario={canvasScenario} />
     </MemoryRouter>
   )
 }
