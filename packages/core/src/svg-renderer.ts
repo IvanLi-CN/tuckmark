@@ -74,6 +74,7 @@ function renderTextElement(
     estimateCharsPerLine(element.fontSize, element.width),
     element.maxLines
   )
+  const renderedLines = lines.length > 0 ? lines : [""]
 
   const anchor = element.align === "center" ? "middle" : element.align === "right" ? "end" : "start"
   const x =
@@ -83,18 +84,22 @@ function renderTextElement(
         ? element.x + element.width
         : element.x
 
-  const markup = lines
+  const markup = renderedLines
     .map((line, index) => {
       const y = element.y + index * (element.fontSize + 4)
       return `<text x="${x}" y="${y}" font-size="${element.fontSize}" font-weight="${element.fontWeight}" text-anchor="${anchor}" font-family="ui-sans-serif, system-ui, sans-serif" fill="#111111">${line}</text>`
     })
     .join("")
 
-  const width = element.width ?? Math.max(1, estimateCharsPerLine(element.fontSize, element.width))
+  const width =
+    element.width ??
+    Math.max(...renderedLines.map((line) => line.length), 1) * element.fontSize * 0.6
   const lineHeight = element.fontSize + 4
-  const lineCount = Math.max(lines.length, 1)
+  const lineCount = renderedLines.length
   const originX = element.x + width / 2
-  const originY = element.y + (lineCount * lineHeight - 4) / 2
+  const top = element.y - element.fontSize
+  const height = Math.max(lineHeight, element.fontSize + (lineCount - 1) * lineHeight)
+  const originY = top + height / 2
 
   return wrapMarkupWithRotation(markup, element.rotation, originX, originY)
 }

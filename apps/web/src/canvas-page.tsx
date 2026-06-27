@@ -46,6 +46,7 @@ import {
   createDraftFromPreset,
   duplicateDraftElement,
   getElementBounds,
+  getElementGeometry,
   getPresetById,
   loadStoredDraftDocument,
   persistDraftDocument,
@@ -511,12 +512,18 @@ function applyTransformedNodeToElement(
   if (element.kind === "text") {
     node.scaleX(1)
     node.scaleY(1)
+    const nextWidth = Math.max(24, element.width * scaleX)
+    const nextFontSize = Math.max(8, element.fontSize * scaleY)
+    const nextHeight = Math.max(
+      nextFontSize + 4,
+      nextFontSize + (Math.max(element.maxLines ?? 1, 1) - 1) * (nextFontSize + 4)
+    )
     return {
       ...element,
-      x: node.x(),
-      y: node.y(),
-      width: Math.max(24, element.width * scaleX),
-      fontSize: Math.max(8, element.fontSize * scaleY),
+      x: node.x() - nextWidth / 2,
+      y: node.y() - (-nextFontSize + nextHeight / 2),
+      width: nextWidth,
+      fontSize: nextFontSize,
       rotation: node.rotation(),
     }
   }
@@ -524,12 +531,14 @@ function applyTransformedNodeToElement(
   if (element.kind === "rect") {
     node.scaleX(1)
     node.scaleY(1)
+    const nextWidth = Math.max(16, element.width * scaleX)
+    const nextHeight = Math.max(16, element.height * scaleY)
     return {
       ...element,
-      x: node.x(),
-      y: node.y(),
-      width: Math.max(16, element.width * scaleX),
-      height: Math.max(16, element.height * scaleY),
+      x: node.x() - nextWidth / 2,
+      y: node.y() - nextHeight / 2,
+      width: nextWidth,
+      height: nextHeight,
       rotation: node.rotation(),
     }
   }
@@ -537,23 +546,26 @@ function applyTransformedNodeToElement(
   if (element.kind === "barcode") {
     node.scaleX(1)
     node.scaleY(1)
+    const nextWidth = Math.max(36, element.width * scaleX)
+    const nextHeight = Math.max(18, element.height * scaleY)
     return {
       ...element,
-      x: node.x(),
-      y: node.y(),
-      width: Math.max(36, element.width * scaleX),
-      height: Math.max(18, element.height * scaleY),
+      x: node.x() - nextWidth / 2,
+      y: node.y() - nextHeight / 2,
+      width: nextWidth,
+      height: nextHeight,
       rotation: node.rotation(),
     }
   }
 
   node.scaleX(1)
   node.scaleY(1)
+  const nextSize = Math.max(24, element.size * Math.max(scaleX, scaleY))
   return {
     ...element,
-    x: node.x(),
-    y: node.y(),
-    size: Math.max(24, element.size * Math.max(scaleX, scaleY)),
+    x: node.x() - nextSize / 2,
+    y: node.y() - nextSize / 2,
+    size: nextSize,
     rotation: node.rotation(),
   }
 }
@@ -1452,7 +1464,7 @@ function CanvasInspector({
                 "text-font-size"
               )
             : null}
-          {"rotation" in element
+          {element.kind !== "line" && "rotation" in element
             ? renderNumberField(
                 "旋转",
                 element.rotation ?? 0,
@@ -2267,7 +2279,8 @@ function CanvasStageView({
                 if (!element.meta.visible) {
                   return null
                 }
-                const bounds = getElementBounds(element)
+                const geometry = getElementGeometry(element)
+                const bounds = geometry.bounds
                 const issue = getElementIssue(element)
                 return (
                   <Group
@@ -2276,8 +2289,10 @@ function CanvasStageView({
                     ref={(node) => {
                       nodeRefs.current[element.id] = node
                     }}
-                    x={element.x}
-                    y={element.y}
+                    x={geometry.stagePosition.x}
+                    y={geometry.stagePosition.y}
+                    offsetX={geometry.rotationOrigin.x}
+                    offsetY={geometry.rotationOrigin.y}
                     rotation={element.kind === "line" ? 0 : (element.rotation ?? 0)}
                     draggable={!element.meta.locked && !state.spacePressed}
                     onClick={(event) =>
@@ -2312,8 +2327,8 @@ function CanvasStageView({
                     onDragEnd={(event) => {
                       const position = snapElementPosition(
                         element,
-                        event.target.x(),
-                        event.target.y(),
+                        event.target.x() - geometry.rotationOrigin.x,
+                        event.target.y() - geometry.rotationOrigin.y,
                         state.snapEnabled
                       )
                       onChange((current) =>
@@ -2329,13 +2344,13 @@ function CanvasStageView({
                     }}
                   >
                     <KonvaRect
-                      x={bounds.x - element.x}
-                      y={bounds.y - element.y}
+                      x={geometry.localBounds.x}
+                      y={geometry.localBounds.y}
                       width={Math.max(bounds.width, 1)}
                       height={Math.max(bounds.height, 1)}
                       fill="rgba(255,255,255,0.001)"
                     />
-                    {issue ? renderElementNode(element) : null}
+                    {!issue ? renderElementNode(element) : null}
                   </Group>
                 )
               })}

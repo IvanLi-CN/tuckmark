@@ -23,6 +23,8 @@
   - compact list mode
   - preview thumbnail, name, and size metadata
   - one-line title truncation with fade masking
+  - a widened triple-pane left rail so `>=1280px` large-card mode keeps a
+    readable two-up grid instead of collapsing card width under shell pressure
 - Template table supports:
   - row add, duplicate, delete, and select
   - adaptive column widths with min/max limits
@@ -70,6 +72,10 @@
   - in-memory undo/redo history capped to `50`
 - Shared schema coverage now includes `rotation` on `text`, `rect`, `barcode`,
   and `qr`, while `line` remains endpoint-based.
+- Line rotation remains an editor-side endpoint transform only:
+  - transformer rotation rewrites the line endpoints immediately
+  - shared draft/core schemas do not persist a separate `line.rotation` field
+  - printed output therefore stays aligned to the stored endpoint geometry
 - Browser-static preview and print seams are wired through the shared canvas
   normalization path instead of a separate editor-only print path.
 - Canvas stage and output preview now share one SVG-backed content seam:
@@ -77,6 +83,14 @@
   - the editor grid is rendered above that paper and never enters print output
   - printable content is rendered from the same normalized SVG semantics used
     by preview generation
+- Shared output rendering was tightened again during PR convergence:
+  - rotated multiline SVG text now uses the rendered text-box center as its
+    rotation origin instead of a looser baseline-derived midpoint
+  - CLI direct-canvas preview samples now provide explicit `rotation: 0` fields
+    so the expanded schema stays type-safe in CI
+  - the new canvas draft monochrome tests now provide a stable in-memory
+    storage fallback so package-level test runners without an ambient browser
+    global still execute the same draft persistence assertions
 - Home page recent templates and recent prints are backed by browser-local
   recent-activity storage.
 - `404.html` SPA fallback is present for static Pages deep links.
@@ -102,11 +116,14 @@
 - Current validation status for this round:
   - `bun run --filter @tuckmark/web typecheck` passed
   - `bun run --filter @tuckmark/web test` passed
-  - `bun run build:web` passed
   - `bun run build:web:pages` passed
-  - `bun run --filter @tuckmark/web build:storybook` passed
+  - `bun run --filter @tuckmark/web test:e2e -- --grep "template large mode"` passed
+  - `bun run --filter @tuckmark/cli typecheck` passed
+  - `bun run --filter @tuckmark/core typecheck` passed
+  - `bun run --filter @tuckmark/core test tests/renderer.test.ts` passed
   - browser verification passed for:
     - grid visibility over the white label-paper base
     - canvas pan / zoom remaining decoupled from pointer-only panning
     - output preview generation using the same content semantics as the stage
-  - `bun run test:e2e:web` not run in this round
+  - broader package test suites still retain unrelated environment-sensitive
+    coverage outside this convergence patch

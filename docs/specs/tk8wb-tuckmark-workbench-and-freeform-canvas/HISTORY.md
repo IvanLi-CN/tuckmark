@@ -54,3 +54,11 @@ while the workbench was being productized:
   - stage content and output preview now read from the same normalized SVG
     content seam so visual drift no longer depends on separate editor-only
     drawing logic
+- A later PR convergence pass corrected follow-on regressions from that editor
+  tightening:
+  - the template triple-pane layout restored enough left-rail width for the
+    `大图` two-up grid at standard desktop widths
+  - rotated multiline SVG text now uses the rendered text-box center so preview
+    and print stay aligned with stage geometry
+  - CLI direct-canvas preview fixtures were updated to include explicit
+    `rotation` fields after the shared canvas schema expansion

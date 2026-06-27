@@ -1,4 +1,8 @@
-import type { DirectCanvasDefinition } from "../../../packages/core/src/web.js"
+import {
+  type DirectCanvasDefinition,
+  estimateCharsPerLine,
+  wrapText,
+} from "../../../packages/core/src/web.js"
 
 import type { BrowserPrintSource } from "./browser-print-payload.js"
 import type {
@@ -56,6 +60,18 @@ type CanvasBounds = {
   y: number
   width: number
   height: number
+}
+
+type CanvasPoint = {
+  x: number
+  y: number
+}
+
+export type CanvasElementGeometry = {
+  bounds: CanvasBounds
+  localBounds: CanvasBounds
+  rotationOrigin: CanvasPoint
+  stagePosition: CanvasPoint
 }
 
 function cloneValue<T>(value: T): T {
@@ -428,15 +444,33 @@ export function duplicateDraftElement(
   return clone
 }
 
+function getTextRenderMetrics(element: Extract<CanvasDraftElement, { kind: "text" }>) {
+  const lines = wrapText(
+    element.value,
+    estimateCharsPerLine(element.fontSize, element.width),
+    element.maxLines
+  )
+  const lineCount = Math.max(lines.length, 1)
+  const lineHeight = element.fontSize + 4
+  const height = Math.max(lineHeight, element.fontSize + (lineCount - 1) * lineHeight)
+  return {
+    lineCount,
+    lineHeight,
+    height,
+  }
+}
+
 export function getElementBounds(element: CanvasDraftElement): CanvasBounds {
   switch (element.kind) {
-    case "text":
+    case "text": {
+      const metrics = getTextRenderMetrics(element)
       return {
         x: element.x,
         y: element.y - element.fontSize,
         width: element.width,
-        height: Math.max(element.fontSize * (element.maxLines ?? 1), element.fontSize + 4),
+        height: metrics.height,
       }
+    }
     case "rect":
       return {
         x: element.x,
@@ -465,6 +499,111 @@ export function getElementBounds(element: CanvasDraftElement): CanvasBounds {
         width: element.size,
         height: element.size,
       }
+  }
+}
+
+export function getElementGeometry(element: CanvasDraftElement): CanvasElementGeometry {
+  const bounds = getElementBounds(element)
+
+  switch (element.kind) {
+    case "text": {
+      const localBounds = {
+        x: 0,
+        y: -element.fontSize,
+        width: element.width,
+        height: bounds.height,
+      }
+      const rotationOrigin = {
+        x: localBounds.width / 2,
+        y: localBounds.y + localBounds.height / 2,
+      }
+      return {
+        bounds,
+        localBounds,
+        rotationOrigin,
+        stagePosition: {
+          x: element.x + rotationOrigin.x,
+          y: element.y + rotationOrigin.y,
+        },
+      }
+    }
+    case "rect": {
+      const localBounds = {
+        x: 0,
+        y: 0,
+        width: element.width,
+        height: element.height,
+      }
+      const rotationOrigin = {
+        x: element.width / 2,
+        y: element.height / 2,
+      }
+      return {
+        bounds,
+        localBounds,
+        rotationOrigin,
+        stagePosition: {
+          x: element.x + rotationOrigin.x,
+          y: element.y + rotationOrigin.y,
+        },
+      }
+    }
+    case "line": {
+      const localBounds = {
+        x: Math.min(0, element.x2 - element.x),
+        y: Math.min(0, element.y2 - element.y),
+        width: Math.abs(element.x2 - element.x) || element.strokeWidth,
+        height: Math.abs(element.y2 - element.y) || element.strokeWidth,
+      }
+      return {
+        bounds,
+        localBounds,
+        rotationOrigin: { x: 0, y: 0 },
+        stagePosition: { x: element.x, y: element.y },
+      }
+    }
+    case "barcode": {
+      const localBounds = {
+        x: 0,
+        y: 0,
+        width: element.width,
+        height: element.height,
+      }
+      const rotationOrigin = {
+        x: element.width / 2,
+        y: element.height / 2,
+      }
+      return {
+        bounds,
+        localBounds,
+        rotationOrigin,
+        stagePosition: {
+          x: element.x + rotationOrigin.x,
+          y: element.y + rotationOrigin.y,
+        },
+      }
+    }
+    case "qr": {
+      const localBounds = {
+        x: 0,
+        y: 0,
+        width: element.size,
+        height: element.size,
+      }
+      const rotationOrigin = {
+        x: element.size / 2,
+        y: element.size / 2,
+      }
+      return {
+        bounds,
+        localBounds,
+        rotationOrigin,
+        stagePosition: {
+          x: element.x + rotationOrigin.x,
+          y: element.y + rotationOrigin.y,
+        },
+      }
+    }
   }
 }
 

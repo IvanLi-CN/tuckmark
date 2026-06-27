@@ -339,6 +339,10 @@
     .tm-pane-grid--template.tm-pane-grid--triple .tm-pane--right {
       display: flex;
     }
+
+    .tm-pane-grid--template.tm-pane-grid--triple {
+      grid-template-columns: minmax(300px, 0.92fr) minmax(0, 1.42fr) minmax(312px, 0.96fr);
+    }
   }
 
   .tm-pane {

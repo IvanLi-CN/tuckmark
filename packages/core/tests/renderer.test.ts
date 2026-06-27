@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 
 import { renderSafeTextLabelPreview, renderTemplateToPreview } from "../src/renderer.ts"
 import { getTemplateById } from "../src/template-library.ts"
+import { buildSvg } from "../src/web.ts"
 
 function maxRowDarkBits(pngBuffer: Buffer, threshold = 150): number {
   const png = PNG.sync.read(pngBuffer)
@@ -64,5 +65,30 @@ describe("renderTemplateToPreview continuous safety", () => {
     expect(preview.svg).not.toContain("&amp;amp;")
     expect(preview.svg).not.toContain("&amp;lt;")
     expect(preview.artifact.source).toBe("safe_text")
+  })
+
+  it("rotates multiline text around its rendered box center", () => {
+    const svg = buildSvg(
+      240,
+      120,
+      [
+        {
+          kind: "text",
+          key: "body",
+          value: "Koha Cat\nBrowser City",
+          x: 20,
+          y: 40,
+          width: 160,
+          fontSize: 20,
+          fontWeight: "normal",
+          align: "left",
+          maxLines: 2,
+          rotation: 90,
+        },
+      ],
+      {}
+    )
+
+    expect(svg).toContain('transform="rotate(90 100 42)"')
   })
 })

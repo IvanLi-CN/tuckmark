@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url"
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
+  directCanvasSchema,
   safeTextLabelSchema,
   TuckmarkService,
   type TuckmarkService as TuckmarkServiceType,
@@ -35,49 +36,6 @@ const renderOptionsSchema = z.object({
   xOffsetDots: z.number().int().optional(),
   paperType: z.enum(["continuous", "gap"]).optional(),
   previewScale: z.number().int().min(1).max(16).optional(),
-})
-
-const directCanvasSchema = z.object({
-  id: z.string().default("canvas"),
-  name: z.string().default("Canvas"),
-  width: z.number().positive(),
-  height: z.number().positive(),
-  elements: z.array(
-    z.discriminatedUnion("kind", [
-      z.object({
-        kind: z.literal("text"),
-        key: z.string().min(1),
-        x: z.number(),
-        y: z.number(),
-        width: z.number().positive().optional(),
-        fontSize: z.number().positive(),
-        fontWeight: z.enum(["normal", "bold"]).default("normal"),
-        align: z.enum(["left", "center", "right"]).default("left"),
-        value: z.string().optional(),
-        maxLines: z.number().int().positive().optional(),
-      }),
-      z.object({
-        kind: z.literal("rect"),
-        x: z.number(),
-        y: z.number(),
-        width: z.number().positive(),
-        height: z.number().positive(),
-        strokeWidth: z.number().nonnegative().default(1),
-        fill: z.string().default("none"),
-        stroke: z.string().default("#111111"),
-        radius: z.number().nonnegative().default(0),
-      }),
-      z.object({
-        kind: z.literal("line"),
-        x1: z.number(),
-        y1: z.number(),
-        x2: z.number(),
-        y2: z.number(),
-        strokeWidth: z.number().positive().default(1),
-        stroke: z.string().default("#111111"),
-      }),
-    ])
-  ),
 })
 
 function readTemplateVariable(value: string | string[] | undefined, name: string): string {

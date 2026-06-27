@@ -7,6 +7,8 @@ import {
   compileDraftToCanvasDefinition,
   createCanvasElement,
   createDraftFromPreset,
+  getElementBounds,
+  getElementGeometry,
   getPresetById,
   loadStoredDraftDocument,
   persistDraftDocument,
@@ -17,6 +19,73 @@ type CompiledCanvasElement = ReturnType<typeof compileDraftToCanvasDefinition>["
 type AnyCanvasElement = CanvasDraftElement | CompiledCanvasElement
 type AnyRectElement = Extract<AnyCanvasElement, { kind: "rect" }>
 type AnyLineElement = Extract<AnyCanvasElement, { kind: "line" }>
+
+function getStorage() {
+  const globalScope = globalThis as typeof globalThis & {
+    localStorage?: Storage
+  }
+  const windowScope =
+    typeof window !== "undefined" ? (window as Window & typeof globalThis) : undefined
+
+  const windowStorage = windowScope?.localStorage
+  if (windowStorage) {
+    return windowStorage
+  }
+
+  if (globalScope.localStorage) {
+    if (windowScope) {
+      Object.defineProperty(windowScope, "localStorage", {
+        value: globalScope.localStorage,
+        configurable: true,
+      })
+    } else {
+      Object.defineProperty(globalScope, "window", {
+        value: globalThis as Window & typeof globalThis,
+        configurable: true,
+      })
+    }
+    return globalScope.localStorage
+  }
+
+  const store = new Map<string, string>()
+  const memoryStorage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key) {
+      return store.get(key) ?? null
+    },
+    key(index) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key) {
+      store.delete(key)
+    },
+    setItem(key, value) {
+      store.set(key, value)
+    },
+  }
+
+  Object.defineProperty(globalScope, "localStorage", {
+    value: memoryStorage,
+    configurable: true,
+  })
+  if (windowScope) {
+    Object.defineProperty(windowScope, "localStorage", {
+      value: memoryStorage,
+      configurable: true,
+    })
+  } else {
+    Object.defineProperty(globalScope, "window", {
+      value: globalThis as Window & typeof globalThis,
+      configurable: true,
+    })
+  }
+  return memoryStorage
+}
 
 function assertRectElement(
   element: AnyCanvasElement | undefined
@@ -43,8 +112,10 @@ function withLegacyRectColors(
 }
 
 describe("canvas-editor-model monochrome contract", () => {
+  const storage = getStorage()
+
   beforeEach(() => {
-    window.localStorage.clear()
+    storage.clear()
   })
 
   it("creates monochrome defaults for printable shapes", () => {
@@ -68,7 +139,7 @@ describe("canvas-editor-model monochrome contract", () => {
       { ...legacyLine, stroke: "#433024" },
     ]
 
-    window.localStorage.setItem(`tuckmark:canvas-draft:v1:${preset.id}`, JSON.stringify(draft))
+    storage.setItem(`tuckmark:canvas-draft:v1:${preset.id}`, JSON.stringify(draft))
 
     const restored = loadStoredDraftDocument(preset.id)
     expect(restored).not.toBeNull()
@@ -111,12 +182,46 @@ describe("canvas-editor-model monochrome contract", () => {
     )
 
     persistDraftDocument(draft)
-    const stored = window.localStorage.getItem(`tuckmark:canvas-draft:v1:${preset.id}`)
+    const stored = storage.getItem(`tuckmark:canvas-draft:v1:${preset.id}`)
     expect(stored).not.toBeNull()
     expect(stored).toContain('"fill":"none"')
     expect(stored).toContain('"stroke":"#111111"')
 
     clearStoredDraftDocument(preset.id)
-    expect(window.localStorage.getItem(`tuckmark:canvas-draft:v1:${preset.id}`)).toBeNull()
+    expect(storage.getItem(`tuckmark:canvas-draft:v1:${preset.id}`)).toBeNull()
+  })
+
+  it("aligns stage rotation origin with printable bounds center", () => {
+    const text = createCanvasElement("text", 0, {
+      x: 34,
+      y: 90,
+      width: 214,
+      fontSize: 16,
+      fontWeight: "normal",
+      value: "Moon St 42\nBrowser City",
+      maxLines: 3,
+      rotation: 90,
+    })
+    const rect = createCanvasElement("rect", 1, {
+      x: 20,
+      y: 18,
+      width: 344,
+      height: 184,
+      rotation: 12,
+    })
+
+    const textBounds = getElementBounds(text)
+    const textGeometry = getElementGeometry(text)
+    expect(textGeometry.stagePosition).toEqual({
+      x: textBounds.x + textBounds.width / 2,
+      y: textBounds.y + textBounds.height / 2,
+    })
+
+    const rectBounds = getElementBounds(rect)
+    const rectGeometry = getElementGeometry(rect)
+    expect(rectGeometry.stagePosition).toEqual({
+      x: rectBounds.x + rectBounds.width / 2,
+      y: rectBounds.y + rectBounds.height / 2,
+    })
   })
 })

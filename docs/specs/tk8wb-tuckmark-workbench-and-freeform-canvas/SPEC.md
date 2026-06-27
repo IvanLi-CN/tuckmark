@@ -96,6 +96,9 @@ output.
 ### Responsive workspace contract
 
 - At `>=1280px`, template and canvas workspaces remain three-column layouts.
+- At `>=1280px`, template workspace keeps the left template rail wide enough to
+  preserve a readable two-up large-card grid instead of collapsing card width
+  as a side effect of the three-pane shell.
 - Template workspace keeps its existing route-owned narrow behavior.
 - Canvas workspace does not reuse template-style `focus-paired dual-pane`.
   Instead it uses a route-local narrow desktop editor mode.
@@ -146,6 +149,8 @@ output.
     class print contract
 - Preview and print normalize editor state into `DirectCanvasDefinition` and
   then flow through shared renderer, preview, and print seams.
+- Rotated multiline text in preview and print must rotate around the rendered
+  text box center so output stays aligned with the stage editing bounds.
 - `browser-static` must support canvas preview and print without `/api` packet
   helpers.
 

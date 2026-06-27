@@ -62,7 +62,6 @@ export type CanvasElement =
       y2: number
       strokeWidth: number
       stroke: string
-      rotation?: number
     }
   | {
       id: string
