@@ -80,6 +80,7 @@ export const textElementSchema = z.object({
   align: z.enum(["left", "center", "right"]).default("left"),
   value: z.string().optional(),
   maxLines: z.number().int().positive().optional(),
+  rotation: z.number().default(0),
 })
 
 export const rectElementSchema = z.object({
@@ -92,6 +93,7 @@ export const rectElementSchema = z.object({
   fill: z.string().default("none"),
   stroke: z.string().default("#111111"),
   radius: z.number().nonnegative().default(0),
+  rotation: z.number().default(0),
 })
 
 export const lineElementSchema = z.object({
@@ -114,6 +116,7 @@ export const barcodeElementSchema = z.object({
   value: z.string().optional(),
   format: z.literal("CODE128").default("CODE128"),
   showValue: z.boolean().default(false),
+  rotation: z.number().default(0),
 })
 
 export const qrElementSchema = z.object({
@@ -124,6 +127,7 @@ export const qrElementSchema = z.object({
   size: z.number().positive(),
   value: z.string().optional(),
   errorCorrectionLevel: z.enum(["L", "M", "Q", "H"]).default("M"),
+  rotation: z.number().default(0),
 })
 
 export const templateElementSchema = z.discriminatedUnion("kind", [

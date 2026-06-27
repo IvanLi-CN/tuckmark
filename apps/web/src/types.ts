@@ -38,6 +38,7 @@ export type CanvasElement =
       align: "left" | "center" | "right"
       value: string
       maxLines?: number
+      rotation?: number
     }
   | {
       id: string
@@ -50,6 +51,7 @@ export type CanvasElement =
       fill: string
       stroke: string
       radius: number
+      rotation?: number
     }
   | {
       id: string
@@ -60,6 +62,7 @@ export type CanvasElement =
       y2: number
       strokeWidth: number
       stroke: string
+      rotation?: number
     }
   | {
       id: string
@@ -71,6 +74,7 @@ export type CanvasElement =
       value: string
       format: "CODE128"
       showValue: boolean
+      rotation?: number
     }
   | {
       id: string
@@ -80,7 +84,32 @@ export type CanvasElement =
       size: number
       value: string
       errorCorrectionLevel: "L" | "M" | "Q" | "H"
+      rotation?: number
     }
+
+export type CanvasLayerMeta = {
+  name: string
+  visible: boolean
+  locked: boolean
+}
+
+export type CanvasDraftElement = CanvasElement & {
+  meta: CanvasLayerMeta
+}
+
+export type CanvasDraftDocument = {
+  version: 1
+  id: string
+  presetId: string
+  name: string
+  width: number
+  height: number
+  elements: CanvasDraftElement[]
+  editor: {
+    gridEnabled: boolean
+    snapEnabled: boolean
+  }
+}
 
 export type CanvasDocumentPreset = {
   id: string

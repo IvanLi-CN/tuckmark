@@ -53,6 +53,7 @@ function renderSafeTextSvg(
     fontWeight: "normal" as const,
     align: "left" as const,
     maxLines: 1,
+    rotation: 0,
   }))
 
   return {

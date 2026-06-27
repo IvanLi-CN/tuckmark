@@ -22,3 +22,35 @@ while the workbench was being productized:
   side empty, while the batch table still takes over the left pane after
   template selection; only the narrower `<960px` state stacks preview/print
   below the table
+- `/canvas` was later re-scoped from a branded demo-like canvas into a
+  professional label editor:
+  - the shared shell stayed intact
+  - the route-local inner workspace was rebuilt around tools, stage, and
+    inspector
+  - printing moved behind an explicit `输出` tab instead of permanently sharing
+    the same rail as editing controls
+- Canvas document semantics were also upgraded in the same round:
+  - Web now owns a versioned draft document with per-preset local persistence
+  - shared printable schema gained `rotation` for `text`, `rect`, `barcode`,
+    and `qr`
+  - barcode and QR became first-class stage renderers instead of preview-only
+    output artifacts
+- The canvas editor was later tightened again around the actual printer
+  capability boundary:
+  - printable label content is monochrome-only
+  - warm brand accents remain editor chrome only and do not bleed into canvas
+    content or restored drafts
+- The editor shell was then distilled again to remove demo-like noise:
+  - inner workspace cards were flattened into denser tool sections
+  - layer actions moved back to the layer rail instead of competing with the
+    property inspector
+  - output terminology was rewritten into product-facing Chinese labels
+  - invalid barcode / QR content became an explicit recoverable editor state
+- The canvas convergence round also clarified stage-versus-preview semantics:
+  - the editor now renders a distinct white label-paper base instead of making
+    the full stage surface look like printable paper
+  - the alignment grid stays visible above the paper base but outside printable
+    content
+  - stage content and output preview now read from the same normalized SVG
+    content seam so visual drift no longer depends on separate editor-only
+    drawing logic

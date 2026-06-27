@@ -24,6 +24,7 @@ export const shippingLabelTemplate: TemplateDefinition = {
       fill: "white",
       stroke: "#111111",
       radius: 8,
+      rotation: 0,
     },
     {
       kind: "text",
@@ -34,6 +35,7 @@ export const shippingLabelTemplate: TemplateDefinition = {
       fontSize: 18,
       fontWeight: "bold",
       align: "left",
+      rotation: 0,
     },
     {
       kind: "text",
@@ -43,6 +45,7 @@ export const shippingLabelTemplate: TemplateDefinition = {
       fontSize: 26,
       fontWeight: "bold",
       align: "left",
+      rotation: 0,
     },
     {
       kind: "text",
@@ -53,6 +56,7 @@ export const shippingLabelTemplate: TemplateDefinition = {
       fontWeight: "normal",
       align: "left",
       maxLines: 3,
+      rotation: 0,
     },
     { kind: "line", x1: 18, y1: 166, x2: 366, y2: 166, strokeWidth: 2, stroke: "#111111" },
     {
@@ -64,6 +68,7 @@ export const shippingLabelTemplate: TemplateDefinition = {
       fontSize: 14,
       fontWeight: "bold",
       align: "left",
+      rotation: 0,
     },
     {
       kind: "text",
@@ -73,6 +78,7 @@ export const shippingLabelTemplate: TemplateDefinition = {
       fontSize: 14,
       fontWeight: "normal",
       align: "left",
+      rotation: 0,
     },
     {
       kind: "barcode",
@@ -83,6 +89,7 @@ export const shippingLabelTemplate: TemplateDefinition = {
       height: 46,
       format: "CODE128",
       showValue: false,
+      rotation: 0,
     },
     {
       kind: "text",
@@ -93,6 +100,7 @@ export const shippingLabelTemplate: TemplateDefinition = {
       fontWeight: "normal",
       align: "right",
       width: 140,
+      rotation: 0,
     },
   ],
 }
@@ -120,9 +128,28 @@ export const cableLabelTemplate: TemplateDefinition = {
       fill: "white",
       stroke: "#111111",
       radius: 12,
+      rotation: 0,
     },
-    { kind: "text", key: "name", x: 20, y: 56, fontSize: 34, fontWeight: "bold", align: "left" },
-    { kind: "text", key: "port", x: 20, y: 104, fontSize: 20, fontWeight: "normal", align: "left" },
+    {
+      kind: "text",
+      key: "name",
+      x: 20,
+      y: 56,
+      fontSize: 34,
+      fontWeight: "bold",
+      align: "left",
+      rotation: 0,
+    },
+    {
+      kind: "text",
+      key: "port",
+      x: 20,
+      y: 104,
+      fontSize: 20,
+      fontWeight: "normal",
+      align: "left",
+      rotation: 0,
+    },
     {
       kind: "text",
       key: "location",
@@ -132,6 +159,7 @@ export const cableLabelTemplate: TemplateDefinition = {
       fontSize: 20,
       fontWeight: "normal",
       align: "right",
+      rotation: 0,
     },
     {
       kind: "qr",
@@ -140,6 +168,7 @@ export const cableLabelTemplate: TemplateDefinition = {
       y: 24,
       size: 72,
       errorCorrectionLevel: "M",
+      rotation: 0,
     },
   ],
 }
