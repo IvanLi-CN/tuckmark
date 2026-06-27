@@ -9,6 +9,7 @@ import {
   createDraftFromPreset,
   getElementBounds,
   getElementGeometry,
+  getElementSelectionBounds,
   getPresetById,
   loadStoredDraftDocument,
   persistDraftDocument,
@@ -223,5 +224,26 @@ describe("canvas-editor-model monochrome contract", () => {
       x: rectBounds.x + rectBounds.width / 2,
       y: rectBounds.y + rectBounds.height / 2,
     })
+  })
+
+  it("expands selection bounds for rotated stage elements", () => {
+    const text = createCanvasElement("text", 0, {
+      x: 34,
+      y: 90,
+      width: 214,
+      fontSize: 16,
+      fontWeight: "normal",
+      value: "Moon St 42\nBrowser City",
+      maxLines: 3,
+      rotation: 90,
+    })
+
+    const bounds = getElementBounds(text)
+    const selectionBounds = getElementSelectionBounds(text)
+
+    expect(selectionBounds.x).toBeGreaterThan(bounds.x)
+    expect(selectionBounds.y).toBeLessThan(bounds.y)
+    expect(selectionBounds.width).toBeCloseTo(bounds.height, 5)
+    expect(selectionBounds.height).toBeCloseTo(bounds.width, 5)
   })
 })

@@ -47,6 +47,7 @@ import {
   duplicateDraftElement,
   getElementBounds,
   getElementGeometry,
+  getElementSelectionBounds,
   getPresetById,
   loadStoredDraftDocument,
   persistDraftDocument,
@@ -2170,7 +2171,7 @@ function CanvasStageView({
           ? current.selectedIds
           : current.draft.elements
               .filter((element) => {
-                const bounds = getElementBounds(element)
+                const bounds = getElementSelectionBounds(element)
                 return (
                   bounds.x >= box.x &&
                   bounds.y >= box.y &&

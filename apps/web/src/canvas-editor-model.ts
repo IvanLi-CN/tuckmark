@@ -74,6 +74,23 @@ export type CanvasElementGeometry = {
   stagePosition: CanvasPoint
 }
 
+function rotatePoint(point: CanvasPoint, origin: CanvasPoint, rotation: number): CanvasPoint {
+  if (!rotation) {
+    return point
+  }
+
+  const radians = (rotation * Math.PI) / 180
+  const cos = Math.cos(radians)
+  const sin = Math.sin(radians)
+  const offsetX = point.x - origin.x
+  const offsetY = point.y - origin.y
+
+  return {
+    x: origin.x + offsetX * cos - offsetY * sin,
+    y: origin.y + offsetX * sin + offsetY * cos,
+  }
+}
+
 function cloneValue<T>(value: T): T {
   if (typeof structuredClone === "function") {
     return structuredClone(value)
@@ -607,12 +624,63 @@ export function getElementGeometry(element: CanvasDraftElement): CanvasElementGe
   }
 }
 
+export function getElementSelectionBounds(element: CanvasDraftElement): CanvasBounds {
+  if (element.kind === "line") {
+    return getElementBounds(element)
+  }
+
+  const geometry = getElementGeometry(element)
+  const rotation =
+    element.kind === "text" ||
+    element.kind === "rect" ||
+    element.kind === "barcode" ||
+    element.kind === "qr"
+      ? normalizeRotation(element.rotation)
+      : 0
+
+  if (!rotation) {
+    return geometry.bounds
+  }
+
+  const localLeft = geometry.localBounds.x
+  const localTop = geometry.localBounds.y
+  const localRight = localLeft + geometry.localBounds.width
+  const localBottom = localTop + geometry.localBounds.height
+  const corners = [
+    { x: localLeft, y: localTop },
+    { x: localRight, y: localTop },
+    { x: localRight, y: localBottom },
+    { x: localLeft, y: localBottom },
+  ].map((corner) =>
+    rotatePoint(
+      {
+        x: geometry.stagePosition.x + corner.x - geometry.rotationOrigin.x,
+        y: geometry.stagePosition.y + corner.y - geometry.rotationOrigin.y,
+      },
+      geometry.stagePosition,
+      rotation
+    )
+  )
+
+  const left = Math.min(...corners.map((corner) => corner.x))
+  const top = Math.min(...corners.map((corner) => corner.y))
+  const right = Math.max(...corners.map((corner) => corner.x))
+  const bottom = Math.max(...corners.map((corner) => corner.y))
+
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  }
+}
+
 export function getSelectionBounds(elements: CanvasDraftElement[]): CanvasBounds | null {
   if (elements.length === 0) {
     return null
   }
 
-  const bounds = elements.map(getElementBounds)
+  const bounds = elements.map(getElementSelectionBounds)
   const left = Math.min(...bounds.map((item) => item.x))
   const top = Math.min(...bounds.map((item) => item.y))
   const right = Math.max(...bounds.map((item) => item.x + item.width))
