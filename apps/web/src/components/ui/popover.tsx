@@ -7,6 +7,10 @@ function Popover(props: React.ComponentProps<typeof PopoverPrimitive.Root>) {
   return <PopoverPrimitive.Root {...props} />
 }
 
+function PopoverAnchor(props: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
+  return <PopoverPrimitive.Anchor {...props} />
+}
+
 function PopoverTrigger(props: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
   return <PopoverPrimitive.Trigger {...props} />
 }
@@ -37,4 +41,4 @@ function PopoverClose(props: React.ComponentProps<typeof PopoverPrimitive.Close>
   return <PopoverPrimitive.Close {...props} />
 }
 
-export { Popover, PopoverClose, PopoverContent, PopoverTrigger }
+export { Popover, PopoverAnchor, PopoverClose, PopoverContent, PopoverTrigger }

@@ -62,3 +62,11 @@ while the workbench was being productized:
     and print stay aligned with stage geometry
   - CLI direct-canvas preview fixtures were updated to include explicit
     `rotation` fields after the shared canvas schema expansion
+- The browser-local template round was then simplified again around actual
+  desktop usage:
+  - template cards now enter structured print flow directly on click, while
+    template editing stays as the secondary explicit action
+  - version history moved out of the always-visible inspector rail into a
+    save-adjacent right-side drawer
+  - replaceable field editing collapsed into a single field-name autocomplete
+    input instead of separate binding and naming controls

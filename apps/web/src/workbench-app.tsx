@@ -1514,13 +1514,7 @@ function TemplatesPage({
                 </div>
               }
             />
-            <div
-              className={cn(
-                "tm-pane__body",
-                "tm-template-list",
-                listMode === "large" ? "tm-template-list--grid" : "tm-template-list--list"
-              )}
-            >
+            <div className={cn("tm-pane__body", "tm-template-list")}>
               <TemplateGroup
                 title="系统模板"
                 entries={state.templateEntries.filter((entry) => entry.kind === "system")}
@@ -2013,10 +2007,10 @@ function PaneHeader({
 }) {
   return (
     <div className="tm-pane__header">
-      <div>
+      <div className="tm-pane__headline">
         <div className="tm-pane__eyebrow">
           <Icon className="size-4" />
-          <span>{title}</span>
+          <h2>{title}</h2>
         </div>
       </div>
       {actions}
@@ -2145,7 +2139,7 @@ function TemplateCard({
   const previewSrc = previewSvg ? toDataUrl(previewSvg) : null
 
   return (
-    <div
+    <article
       className={cn(
         "tm-template-card",
         mode === "large" && "tm-template-card--grid",
@@ -2153,7 +2147,7 @@ function TemplateCard({
         active && "tm-template-card--active"
       )}
     >
-      <button type="button" className="contents" onClick={onClick}>
+      <button type="button" className="tm-template-card__surface" onClick={onClick}>
         <div className="tm-template-card__preview">
           {previewSrc ? (
             <img
@@ -2174,15 +2168,12 @@ function TemplateCard({
           </div>
         </div>
       </button>
-      <div className="flex gap-2 px-3 pb-3">
-        <Button type="button" size="sm" className="flex-1" onClick={onClick}>
-          录入打印
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onEdit}>
+      <div className="tm-template-card__actions">
+        <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={onEdit}>
           编辑模板
         </Button>
       </div>
-    </div>
+    </article>
   )
 }
 
@@ -2204,7 +2195,7 @@ function TemplateGroup({
   onEdit: (entryId: string) => void
 }) {
   return (
-    <>
+    <section className="tm-template-group">
       <div className="tm-template-list__section-title text-sm font-medium text-muted-foreground">
         {title}
       </div>
@@ -2213,18 +2204,27 @@ function TemplateGroup({
           <EmptyMini text={emptyText} />
         </div>
       ) : (
-        entries.map((entry) => (
-          <TemplateCard
-            key={entry.id}
-            entry={entry}
-            active={activeEntryId === entry.id}
-            mode={listMode}
-            onClick={() => onSelect(entry.id)}
-            onEdit={() => onEdit(entry.id)}
-          />
-        ))
+        <div
+          className={cn(
+            "tm-template-group__grid",
+            listMode === "large"
+              ? "tm-template-group__grid--large"
+              : "tm-template-group__grid--list"
+          )}
+        >
+          {entries.map((entry) => (
+            <TemplateCard
+              key={entry.id}
+              entry={entry}
+              active={activeEntryId === entry.id}
+              mode={listMode}
+              onClick={() => onSelect(entry.id)}
+              onEdit={() => onEdit(entry.id)}
+            />
+          ))}
+        </div>
       )}
-    </>
+    </section>
   )
 }
 

@@ -83,7 +83,8 @@ output.
 - `canvas` workspace layout:
   - left: document presets, quick-add actions, and layer management
   - center: stage, editor toolbar, zoom state, and stage hints
-  - right: `属性 / 输出 / 版本` inspector with explicit tab switching
+  - right: `属性 / 输出` inspector with explicit tab switching
+  - version history opens from the save-action area into a right-side drawer
 - `system` page contains:
   - app settings
   - default print settings
@@ -220,11 +221,15 @@ output.
     field default value
   - v1 field metadata is limited to `label`, `key`, `defaultValue`,
     `multiline`, and the current binding list
+  - replaceable-element editing only exposes one field-name input with
+    autocomplete and dropdown selection over existing fields; it does not add a
+    second binding selector
 - Template list contract:
   - `/templates` groups cards into `系统模板` and `我的模板`
-  - system templates keep `录入打印` and add an explicit `编辑模板` route into
-    `/canvas?source=preset-template&templateId=...`
-  - browser-local user templates expose both `录入打印` and `编辑模板`
+  - clicking a system-template card enters the structured print-entry flow
+  - clicking a browser-local user-template card enters the structured
+    print-entry flow
+  - both groups keep an explicit `编辑模板` route into `/canvas`
   - browser-local user template rows compile client-side into a concrete canvas
     definition before preview or print, so `browser-static` and `server-http`
     reuse the existing canvas artifact seam without a new template persistence
@@ -232,7 +237,10 @@ output.
 - Canvas editor contract:
   - system template elements with fixed keys such as `__title` stay static when
     imported into the editor
-  - the `版本` tab lists saved versions and a collapsed autosave section
+  - the toolbar save-action cluster exposes a `版本历史` entry that opens a
+    right-side drawer
+  - the version-history drawer lists saved versions and a collapsed autosave
+    section
   - opening a historical version makes the stage read-only
   - read-only historical mode only exposes `恢复`, `另存为`, and `返回当前草稿`
   - restoring a historical version creates a new current working copy instead
@@ -313,7 +321,7 @@ output.
   PR: include
   ![Template grouped user templates](./assets/templates-user-groups-1280x800.png)
 
-- `1280×800` canvas workspace on a browser-local user template with the `版本` tab open and saved/autosave history visible
+- `1280×800` canvas workspace on a browser-local user template with the version-history drawer open and saved/autosave history visible
 
   PR: include
   ![Canvas version history workspace](./assets/canvas-version-history-1280x800.png)

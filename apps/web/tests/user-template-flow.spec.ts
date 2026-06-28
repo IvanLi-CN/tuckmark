@@ -13,8 +13,9 @@ test("preset templates can be saved into browser-local user templates and reused
   await page.getByRole("button", { name: "保存" }).click()
 
   await expect(page.getByText("已保存为用户模板。")).toBeVisible()
-  await expect(page.getByRole("button", { name: "版本", exact: true })).toBeVisible()
-  await expect(page.getByText("已保存版本 1 个")).toBeVisible()
+  await expect(page.getByRole("dialog")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "版本历史" })).toBeVisible()
+  await expect(page.locator(".tm-version-list__item").first()).toBeVisible()
 
   await page.goto("/templates")
 
@@ -24,7 +25,7 @@ test("preset templates can be saved into browser-local user templates and reused
   const userCard = page.locator(".tm-template-card").filter({ hasText: "E2E Cable Tag" })
   await expect(userCard).toBeVisible()
 
-  await userCard.getByRole("button", { name: "录入打印" }).click()
+  await userCard.getByRole("button").first().click()
   await expect(page.getByRole("table")).toBeVisible()
   await expect(page.getByRole("columnheader", { name: "Name" })).toBeVisible()
 

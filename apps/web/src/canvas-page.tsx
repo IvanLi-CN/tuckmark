@@ -36,25 +36,20 @@ import {
   Transformer,
 } from "react-konva"
 import { useNavigate, useSearchParams } from "react-router-dom"
-import { buildSvg } from "../../../packages/core/src/web.js"
 import {
   bindElementToExistingField,
   buildStoryScenarioDocument,
-  buildTemplateFieldsFromDraft,
   CANVAS_HISTORY_LIMIT,
   CANVAS_PRESETS,
   CANVAS_TOOL_LABELS,
   CANVAS_WIDE_THRESHOLD,
   type CanvasStoryScenario,
   clearStoredDraftDocument,
-  compileDraftToCanvasDefinition,
-  compileDraftToFilledCanvasDefinition,
   createCanvasElement,
   createDraftFromPreset,
   createDraftFromSystemTemplate,
   duplicateDraftAsTemplate,
   duplicateDraftElement,
-  getElementBounds,
   getElementGeometry,
   getElementSelectionBounds,
   getPresetById,
@@ -63,8 +58,6 @@ import {
   persistDraftDocument,
   renameDraftField,
   reorderDraftElements,
-  setDraftFieldMultiline,
-  setDraftFieldValue,
   toCanvasPrintSource,
   toggleElementBinding,
   translateElement,
@@ -73,6 +66,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
 import { Button } from "./components/ui/button.js"
+import { Combobox } from "./components/ui/combobox.js"
 import { Input } from "./components/ui/input.js"
 import { Label } from "./components/ui/label.js"
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "./components/ui/popover.js"
@@ -83,6 +77,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select.js"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
 import { cn } from "./lib/utils.js"
 import type {
@@ -95,7 +97,6 @@ import type {
 import {
   clearTemplateAutosaves,
   clearWorkingCopy,
-  getAutosaveIntervalMs,
   loadWorkingCopy,
   readUserTemplateHistory,
   saveUserTemplate,
@@ -135,7 +136,7 @@ type CanvasPageState = {
   versionHistory: UserTemplateHistory | null
   readOnlyVersion: UserTemplateVersionSnapshot | null
   selectedIds: string[]
-  activePanel: "attributes" | "output" | "versions"
+  activePanel: "attributes" | "output"
   focus: "left-center" | "center-right"
   gridEnabled: boolean
   snapEnabled: boolean
@@ -147,6 +148,7 @@ type CanvasPageState = {
   editingId: string | null
   outputStatus: string
   autosavesExpanded: boolean
+  versionsOpen: boolean
   loading: boolean
 }
 
@@ -239,6 +241,7 @@ function createCanvasStateFromDraft(
     outputStatus?: string
     loading?: boolean
     versionHistory?: UserTemplateHistory | null
+    versionsOpen?: boolean
   }
 ): CanvasPageState {
   return {
@@ -261,6 +264,7 @@ function createCanvasStateFromDraft(
     editingId: null,
     outputStatus: options?.outputStatus ?? "",
     autosavesExpanded: false,
+    versionsOpen: options?.versionsOpen ?? false,
     loading: options?.loading ?? false,
   }
 }
@@ -738,24 +742,6 @@ function createCanvasIssue(title: string, detail: string): CanvasIssue {
   return { title, detail }
 }
 
-function buildCanvasStageSvg(document: CanvasDraftDocument) {
-  try {
-    const definition = compileDraftToCanvasDefinition({
-      ...document,
-      elements: document.elements.filter(
-        (element) => element.meta.visible && !getElementIssue(element)
-      ),
-    })
-    const svg = buildSvg(definition.width, definition.height, definition.elements, {}).replace(
-      `<rect width="${definition.width}" height="${definition.height}" fill="white" />`,
-      ""
-    )
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
-  } catch {
-    return null
-  }
-}
-
 function getBarcodeIssue(
   element: Extract<CanvasDraftElement, { kind: "barcode" }>
 ): CanvasIssue | null {
@@ -915,7 +901,7 @@ function resolveCanvasSource(searchParams: URLSearchParams): CanvasDraftSource {
 }
 
 function resolveInitialCanvasPanel(searchParams: URLSearchParams): CanvasPageState["activePanel"] {
-  return searchParams.get("panel") === "versions" ? "versions" : "attributes"
+  return searchParams.get("panel") === "output" ? "output" : "attributes"
 }
 
 function resolveCanvasStatus(searchParams: URLSearchParams): string {
@@ -1069,6 +1055,7 @@ function CanvasToolbar({
   onSaveAs,
   onRestoreVersion,
   onReturnCurrent,
+  onOpenVersions,
   onChange,
 }: {
   state: CanvasPageState
@@ -1081,6 +1068,7 @@ function CanvasToolbar({
   onSaveAs: () => Promise<void>
   onRestoreVersion: () => void
   onReturnCurrent: () => void
+  onOpenVersions: () => void
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   return (
@@ -1246,6 +1234,10 @@ function CanvasToolbar({
         </div>
         {readOnly ? null : (
           <>
+            <Button size="sm" variant="outline" onClick={onOpenVersions}>
+              <History className="size-4" />
+              版本历史
+            </Button>
             <Button size="sm" onClick={() => void onSave()}>
               <Save className="size-4" />
               保存
@@ -1278,19 +1270,23 @@ function CanvasLayerRail({
   readOnly: boolean
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
+  const sourceDescription =
+    state.routeSource.kind === "scratch"
+      ? `当前草稿：${state.draft.name}`
+      : state.routeSource.kind === "preset-template"
+        ? `系统模板：${state.draft.name}`
+        : `用户模板：${state.draft.name}`
+  const sourceNote =
+    state.routeSource.kind === "preset-template"
+      ? "来自系统模板副本，保存后会进入本地用户模板库。"
+      : state.routeSource.kind === "user-template"
+        ? "已连接本地用户模板，保存会新增一个已保存版本。"
+        : null
+
   return (
     <div className="tm-left-rail">
-      <CanvasSection
-        title="尺寸与元素"
-        description={
-          state.routeSource.kind === "scratch"
-            ? `当前草稿：${state.draft.name}`
-            : state.routeSource.kind === "preset-template"
-              ? `系统模板：${state.draft.name}`
-              : `用户模板：${state.draft.name}`
-        }
-      >
-        <div className="grid gap-3">
+      <CanvasSection title="尺寸与元素" description={sourceDescription}>
+        <div className="grid gap-2">
           {state.routeSource.kind === "scratch" ? (
             <Select
               value={state.presetId}
@@ -1308,13 +1304,8 @@ function CanvasLayerRail({
                 ))}
               </SelectContent>
             </Select>
-          ) : (
-            <div className="rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-sm text-muted-foreground">
-              {state.routeSource.kind === "preset-template"
-                ? "当前画布来自系统模板副本。保存后会进入本地用户模板库。"
-                : "当前画布连接的是本地用户模板。普通保存会新增一个已保存版本。"}
-            </div>
-          )}
+          ) : null}
+          {sourceNote ? <p className="tm-note tm-note--left-rail">{sourceNote}</p> : null}
           <div className="tm-quick-tools">
             {(["text", "rect", "line", "barcode", "qr"] as const).map((kind) => (
               <Button
@@ -1527,6 +1518,17 @@ function CanvasInspector({
 }) {
   const selectedItems = state.draft.elements.filter((item) => state.selectedIds.includes(item.id))
   const element = selectedItems[0]
+  const supportsReplaceable =
+    element?.kind === "text" || element?.kind === "barcode" || element?.kind === "qr"
+  const boundField =
+    supportsReplaceable && element?.binding
+      ? (state.draft.fields.find((field) => field.key === element.binding?.fieldKey) ?? null)
+      : null
+  const [fieldLabelDraft, setFieldLabelDraft] = React.useState(boundField?.label ?? "")
+
+  React.useEffect(() => {
+    setFieldLabelDraft(boundField?.label ?? "")
+  }, [boundField?.label])
 
   if (selectedItems.length === 0 || !element) {
     return (
@@ -1607,12 +1609,40 @@ function CanvasInspector({
   )
 
   const issue = getElementIssue(element)
-  const supportsReplaceable =
-    element.kind === "text" || element.kind === "barcode" || element.kind === "qr"
-  const boundField =
-    supportsReplaceable && element.binding
-      ? (state.draft.fields.find((field) => field.key === element.binding?.fieldKey) ?? null)
-      : null
+
+  const commitFieldLabel = (rawValue: string) => {
+    if (!boundField) {
+      return
+    }
+    const nextLabel = rawValue.trim() || element.meta.name.trim() || boundField.label
+    onChange((current) =>
+      applyDraftUpdate(current, (draft) => {
+        const currentElement = draft.elements.find((item) => item.id === element.id)
+        if (!currentElement || !("binding" in currentElement) || !currentElement.binding) {
+          return draft
+        }
+        const currentField =
+          draft.fields.find((field) => field.key === currentElement.binding?.fieldKey) ?? null
+        if (!currentField) {
+          return draft
+        }
+        const existingField =
+          draft.fields.find(
+            (field) =>
+              field.key !== currentField.key &&
+              field.label.trim().toLowerCase() === nextLabel.toLowerCase()
+          ) ?? null
+        return existingField
+          ? bindElementToExistingField(draft, element.id, existingField.key)
+          : renameDraftField(draft, currentField.key, nextLabel)
+      })
+    )
+  }
+
+  const fieldLabelSuggestions = state.draft.fields
+    .map((field) => field.label.trim())
+    .filter((label, index, labels) => label.length > 0 && labels.indexOf(label) === index)
+    .map((label) => ({ label, value: label }))
 
   return (
     <div className="tm-inspector-stack">
@@ -1628,7 +1658,7 @@ function CanvasInspector({
         <div className="tm-inspector-form">
           <div className="tm-inspector-inline-field">
             <Label htmlFor="layer-name" className="tm-inspector-inline-label">
-              名称
+              名
             </Label>
             <Input
               id="layer-name"
@@ -1715,64 +1745,24 @@ function CanvasInspector({
             </div>
 
             {boundField ? (
-              <>
-                <div className="tm-inspector-inline-field">
-                  <Label htmlFor="field-binding" className="tm-inspector-inline-label">
-                    绑定到
-                  </Label>
-                  <Select
-                    value={boundField.key}
-                    disabled={readOnly}
-                    onValueChange={(value) =>
-                      onChange((current) =>
-                        applyDraftUpdate(current, (draft) =>
-                          bindElementToExistingField(draft, element.id, value)
-                        )
-                      )
-                    }
-                  >
-                    <SelectTrigger
-                      id="field-binding"
-                      className="tm-inspector-select"
-                      disabled={readOnly}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {state.draft.fields.map((field) => (
-                        <SelectItem key={field.key} value={field.key}>
-                          {field.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="tm-inspector-inline-field">
-                  <Label htmlFor="field-label" className="tm-inspector-inline-label">
-                    字段名
-                  </Label>
-                  <Input
-                    id="field-label"
-                    density="compact"
-                    size="md"
-                    className="tm-inspector-input"
-                    disabled={readOnly}
-                    value={boundField.label}
-                    onChange={(event) =>
-                      onChange((current) =>
-                        applyDraftUpdate(current, (draft) =>
-                          renameDraftField(draft, boundField.key, event.currentTarget.value)
-                        )
-                      )
-                    }
-                  />
-                </div>
-                <div className="rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
-                  <div>Stable key: {boundField.key}</div>
-                  <div>{boundField.multiline ? "多行字段" : "单行字段"}</div>
-                  <div>已绑定 {boundField.bindings.length} 个元素</div>
-                </div>
-              </>
+              <div className="tm-inspector-inline-field">
+                <Label htmlFor="field-label" className="tm-inspector-inline-label">
+                  字段名
+                </Label>
+                <Combobox
+                  id="field-label"
+                  density="compact"
+                  size="md"
+                  className="tm-inspector-input"
+                  disabled={readOnly}
+                  placeholder="输入字段名，可复用已有字段"
+                  value={fieldLabelDraft}
+                  options={fieldLabelSuggestions}
+                  emptyText="没有匹配字段"
+                  onValueChange={setFieldLabelDraft}
+                  onValueCommit={commitFieldLabel}
+                />
+              </div>
             ) : (
               <div className="rounded-xl border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">
                 当前元素保持静态值，不会出现在模板录入表里。
@@ -2451,7 +2441,6 @@ function CanvasStageView({
     () => getVisibleGridBounds(state.viewport, stageViewportSize.width, stageViewportSize.height),
     [state.viewport, stageViewportSize.height, stageViewportSize.width]
   )
-  const stageSvgUrl = React.useMemo(() => buildCanvasStageSvg(state.draft), [state.draft])
   const paperStyle = React.useMemo(
     () => ({
       width: state.draft.width,
@@ -2627,16 +2616,6 @@ function CanvasStageView({
               }}
             />
           ) : null}
-          <div className="tm-stage-paper tm-stage-paper--content" style={paperStyle}>
-            {stageSvgUrl ? (
-              <img
-                alt="canvas stage"
-                className="tm-stage-paper__image"
-                draggable={false}
-                src={stageSvgUrl}
-              />
-            ) : null}
-          </div>
         </div>
         <Stage
           ref={stageRef}
@@ -2892,11 +2871,17 @@ function formatVersionTimestamp(value: string): string {
 
 function CanvasVersionsPanel({
   state,
+  readOnly,
+  onRestoreVersion,
+  onReturnCurrent,
   onOpenVersion,
   onRefresh,
   onToggleAutosaves,
 }: {
   state: CanvasPageState
+  readOnly: boolean
+  onRestoreVersion: () => void
+  onReturnCurrent: () => void
   onOpenVersion: (version: UserTemplateVersionSnapshot) => void
   onRefresh: () => Promise<void>
   onToggleAutosaves: () => void
@@ -2927,103 +2912,108 @@ function CanvasVersionsPanel({
   }
 
   return (
-    <div className="grid gap-4">
-      <CanvasSection
-        title="当前模板"
-        description={`${state.versionHistory.template.name} · 最近保存 ${formatVersionTimestamp(
-          state.versionHistory.template.updatedAt
-        )}`}
-        aside={
-          <Button type="button" variant="outline" size="sm" onClick={() => void onRefresh()}>
-            刷新
-          </Button>
-        }
-      >
-        <div className="rounded-xl border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
-          <div>已保存版本 {state.versionHistory.saved.length} 个</div>
-          <div>未保存草稿 {state.versionHistory.autosaves.length} 个</div>
-        </div>
-      </CanvasSection>
+    <div className="tm-version-drawer">
+      <div className="tm-version-drawer__actions">
+        <Button type="button" variant="outline" size="sm" onClick={() => void onRefresh()}>
+          刷新
+        </Button>
+        {readOnly ? (
+          <>
+            <Button type="button" size="sm" onClick={onRestoreVersion}>
+              恢复
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={onReturnCurrent}>
+              返回当前草稿
+            </Button>
+          </>
+        ) : null}
+      </div>
 
-      <CanvasSection title="已保存版本" description="打开后中心舞台会切到只读快照。">
-        <div className="grid gap-2">
-          {state.versionHistory.saved.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">
-              当前模板还没有已保存版本。
-            </div>
-          ) : (
-            state.versionHistory.saved.map((version) => (
+      <ul className="tm-version-list" aria-label="版本列表">
+        {state.versionHistory.autosaves.length > 0 ? (
+          <>
+            <li>
               <button
-                key={version.id}
                 type="button"
-                className={cn(
-                  "tm-choice tm-choice--layer tm-choice--layer-inspector",
-                  state.readOnlyVersion?.id === version.id && "tm-choice--active"
-                )}
-                onClick={() => onOpenVersion(version)}
+                className="tm-version-list__item tm-version-list__item--group"
+                onClick={onToggleAutosaves}
               >
-                <div className="tm-choice__main">
-                  <div className="min-w-0 flex-1 text-left">
-                    <div className="tm-choice__title-row">
-                      <div className="tm-choice__title">{version.label}</div>
-                    </div>
-                    <div className="tm-choice__meta">
-                      <span>{formatVersionTimestamp(version.createdAt)}</span>
-                      <span>#{version.version}</span>
-                    </div>
+                <div className="tm-version-list__main">
+                  <div className="tm-version-list__title-row">
+                    <span className="tm-version-list__title">未保存版本</span>
+                    <span className="tm-version-list__badge tm-version-list__badge--draft">
+                      {state.autosavesExpanded
+                        ? "收起"
+                        : `展开 ${state.versionHistory.autosaves.length}`}
+                    </span>
+                  </div>
+                  <div className="tm-version-list__meta">
+                    <span>共 {state.versionHistory.autosaves.length} 个自动保存快照</span>
                   </div>
                 </div>
               </button>
-            ))
-          )}
-        </div>
-      </CanvasSection>
+            </li>
+            {state.autosavesExpanded ? (
+              <li className="tm-version-list__nested">
+                {state.versionHistory.autosaves.map((version) => (
+                  <button
+                    key={version.id}
+                    type="button"
+                    className={cn(
+                      "tm-version-list__item tm-version-list__item--nested",
+                      state.readOnlyVersion?.id === version.id && "tm-version-list__item--active"
+                    )}
+                    onClick={() => onOpenVersion(version)}
+                  >
+                    <div className="tm-version-list__main">
+                      <div className="tm-version-list__title-row">
+                        <span className="tm-version-list__title">{version.label}</span>
+                        <span className="tm-version-list__badge tm-version-list__badge--draft">
+                          自动保存
+                        </span>
+                      </div>
+                      <div className="tm-version-list__meta">
+                        <span>{formatVersionTimestamp(version.createdAt)}</span>
+                        <span>#{version.version}</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </li>
+            ) : null}
+          </>
+        ) : null}
 
-      <CanvasSection
-        title="未保存版本"
-        description="每 5 分钟滚动保存一次，最多保留 10 个。"
-        aside={
-          <Button type="button" variant="outline" size="sm" onClick={onToggleAutosaves}>
-            {state.autosavesExpanded ? "收起" : "展开"}
-          </Button>
-        }
-      >
-        {state.versionHistory.autosaves.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">
-            还没有未保存版本。
-          </div>
-        ) : state.autosavesExpanded ? (
-          <div className="grid gap-2">
-            {state.versionHistory.autosaves.map((version) => (
-              <button
-                key={version.id}
-                type="button"
-                className={cn(
-                  "tm-choice tm-choice--layer tm-choice--layer-inspector",
-                  state.readOnlyVersion?.id === version.id && "tm-choice--active"
-                )}
-                onClick={() => onOpenVersion(version)}
-              >
-                <div className="tm-choice__main">
-                  <div className="min-w-0 flex-1 text-left">
-                    <div className="tm-choice__title-row">
-                      <div className="tm-choice__title">{version.label}</div>
-                    </div>
-                    <div className="tm-choice__meta">
-                      <span>{formatVersionTimestamp(version.createdAt)}</span>
-                      <span>#{version.version}</span>
-                    </div>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
+        {state.versionHistory.saved.length === 0 ? (
+          <li className="rounded-xl border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">
+            当前模板还没有已保存版本。
+          </li>
         ) : (
-          <div className="rounded-xl border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
-            已折叠，共 {state.versionHistory.autosaves.length} 个未保存版本。
-          </div>
+          state.versionHistory.saved.map((version) => (
+            <li key={version.id}>
+              <button
+                type="button"
+                className={cn(
+                  "tm-version-list__item",
+                  state.readOnlyVersion?.id === version.id && "tm-version-list__item--active"
+                )}
+                onClick={() => onOpenVersion(version)}
+              >
+                <div className="tm-version-list__main">
+                  <div className="tm-version-list__title-row">
+                    <span className="tm-version-list__title">{version.label}</span>
+                    <span className="tm-version-list__badge">已保存</span>
+                  </div>
+                  <div className="tm-version-list__meta">
+                    <span>{formatVersionTimestamp(version.createdAt)}</span>
+                    <span>#{version.version}</span>
+                  </div>
+                </div>
+              </button>
+            </li>
+          ))
         )}
-      </CanvasSection>
+      </ul>
     </div>
   )
 }
@@ -3044,6 +3034,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
           {
             loading: true,
             activePanel: initialPanel,
+            versionsOpen: searchParams.get("panel") === "versions",
             outputStatus: initialStatus,
           }
         )
@@ -3084,6 +3075,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
             loading: false,
             versionHistory: loaded.versionHistory,
             activePanel: initialPanel,
+            versionsOpen: searchParams.get("panel") === "versions",
             outputStatus:
               initialStatus ||
               (routeSource.kind === "user-template"
@@ -3101,6 +3093,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         setState(
           createCanvasStateFromDraft(fallbackDraft, {
             loading: false,
+            versionsOpen: searchParams.get("panel") === "versions",
             outputStatus: cause instanceof Error ? cause.message : "加载画布失败。",
           })
         )
@@ -3110,7 +3103,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     return () => {
       cancelled = true
     }
-  }, [initialPanel, initialScenario, initialStatus, routeSource])
+  }, [initialPanel, initialScenario, initialStatus, routeSource, searchParams])
 
   React.useEffect(() => {
     if (initialScenario || state.loading || readOnly) {
@@ -3130,11 +3123,11 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
   }, [initialScenario, readOnly, state.liveDraft, state.loading, state.routeSource])
 
   React.useEffect(() => {
-    if (state.activePanel !== "versions" || !state.liveDraft.templateId || initialScenario) {
+    if (!state.versionsOpen || !state.liveDraft.templateId || initialScenario) {
       return
     }
     void refreshVersionHistory()
-  }, [initialScenario, refreshVersionHistory, state.activePanel, state.liveDraft.templateId])
+  }, [initialScenario, refreshVersionHistory, state.liveDraft.templateId, state.versionsOpen])
 
   React.useEffect(() => {
     const fallbackViewport = createViewport(state.draft.width, state.draft.height)
@@ -3276,7 +3269,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       readOnlyVersion: version,
       selectedIds: [],
       editingId: null,
-      activePanel: "versions",
+      versionsOpen: true,
       focus: "center-right",
       outputStatus: `正在查看 ${version.label}。`,
     }))
@@ -3304,8 +3297,8 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       )
       return createCanvasStateFromDraft(restoredDraft, {
         versionHistory: current.versionHistory,
-        activePanel: "versions",
         focus: "center-right",
+        versionsOpen: true,
         outputStatus: `已从 ${current.readOnlyVersion.label} 恢复到当前草稿。`,
       })
     })
@@ -3363,8 +3356,8 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       setState(
         createCanvasStateFromDraft(result.workingCopy.draft, {
           versionHistory: history,
-          activePanel: "versions",
           focus: "center-right",
+          versionsOpen: true,
           outputStatus:
             mode === "save" && existingTemplateId ? "已保存新版本。" : "已保存为用户模板。",
         })
@@ -3396,6 +3389,12 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         onSaveAs={() => persistNamedTemplate("save-as")}
         onRestoreVersion={handleRestoreVersion}
         onReturnCurrent={returnToCurrentDraft}
+        onOpenVersions={() =>
+          setState((current) => ({
+            ...current,
+            versionsOpen: true,
+          }))
+        }
         onChange={setState}
       />
 
@@ -3442,11 +3441,9 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
               </Badge>
             </div>
           </div>
-          <div className="tm-pane__body">
+          <div className="tm-pane__body tm-pane__body--canvas-stage">
             {state.outputStatus ? (
-              <div className="rounded-xl border border-border/70 bg-background/80 px-3 py-2 text-sm text-muted-foreground">
-                {state.outputStatus}
-              </div>
+              <div className="tm-pane__notice">{state.outputStatus}</div>
             ) : null}
             <CanvasStageView
               state={state}
@@ -3460,13 +3457,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         <aside className="tm-pane tm-pane--right tm-pane--canvas-inspector">
           <div className="tm-pane__header">
             <div className="tm-pane__headline">
-              <h2>
-                {state.activePanel === "attributes"
-                  ? "当前元素属性"
-                  : state.activePanel === "output"
-                    ? "打印输出"
-                    : "版本历史"}
-              </h2>
+              <h2>{state.activePanel === "attributes" ? "当前元素属性" : "打印输出"}</h2>
               <p>
                 {state.activePanel === "attributes"
                   ? readOnly
@@ -3474,7 +3465,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
                     : "单选编辑，多选走批量操作。"
                   : state.activePanel === "output"
                     ? "先预览，再打印。"
-                    : "已保存版本与未保存草稿都会汇总在这里。"}
+                    : ""}
               </p>
             </div>
             <div className="tm-pane__tabs">
@@ -3504,43 +3495,18 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
               >
                 输出
               </Button>
-              <Button
-                size="sm"
-                variant={state.activePanel === "versions" ? "default" : "outline"}
-                onClick={() =>
-                  setState((current) => ({
-                    ...current,
-                    activePanel: "versions",
-                    focus: "center-right",
-                  }))
-                }
-              >
-                版本
-              </Button>
             </div>
           </div>
           <div className="tm-pane__body">
             <div className="tm-pane__stack">
               {state.activePanel === "attributes" ? (
                 <CanvasInspector state={state} readOnly={readOnly} onChange={setState} />
-              ) : state.activePanel === "output" ? (
+              ) : (
                 <CanvasOutput
                   controller={controller}
                   state={state}
                   readOnly={readOnly}
                   onChange={setState}
-                />
-              ) : (
-                <CanvasVersionsPanel
-                  state={state}
-                  onOpenVersion={openVersion}
-                  onRefresh={refreshVersionHistory}
-                  onToggleAutosaves={() =>
-                    setState((current) => ({
-                      ...current,
-                      autosavesExpanded: !current.autosavesExpanded,
-                    }))
-                  }
                 />
               )}
               <CanvasLayerPanel state={state} readOnly={readOnly} onChange={setState} />
@@ -3548,6 +3514,41 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
           </div>
         </aside>
       </div>
+      <Sheet
+        open={state.versionsOpen}
+        onOpenChange={(open) =>
+          setState((current) => ({
+            ...current,
+            versionsOpen: open,
+          }))
+        }
+      >
+        <SheetTrigger asChild>
+          <span className="hidden" />
+        </SheetTrigger>
+        <SheetContent side="right" className="tm-version-sheet">
+          <SheetHeader className="tm-version-sheet__header">
+            <SheetTitle>版本历史</SheetTitle>
+            <SheetDescription>已保存版本与未保存草稿都以列表形式收在这里。</SheetDescription>
+          </SheetHeader>
+          <div className="tm-version-sheet__body">
+            <CanvasVersionsPanel
+              state={state}
+              readOnly={readOnly}
+              onRestoreVersion={handleRestoreVersion}
+              onReturnCurrent={returnToCurrentDraft}
+              onOpenVersion={openVersion}
+              onRefresh={refreshVersionHistory}
+              onToggleAutosaves={() =>
+                setState((current) => ({
+                  ...current,
+                  autosavesExpanded: !current.autosavesExpanded,
+                }))
+              }
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
     </section>
   )
 }

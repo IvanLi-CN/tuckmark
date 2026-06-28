@@ -25,8 +25,9 @@
   - large grid mode
   - compact list mode
   - preview thumbnail, name, and size metadata
-  - explicit `录入打印` and `编辑模板` actions on both system and browser-local
-    user templates
+  - card click entering structured print-entry on both system and
+    browser-local user templates
+  - one explicit `编辑模板` secondary action on both groups
   - one-line title truncation with fade masking
   - a widened triple-pane left rail so `>=1280px` large-card mode keeps a
     readable two-up grid instead of collapsing card width under shell pressure
@@ -50,7 +51,9 @@
     reset
   - lower-noise panel framing and a cooler stage surface so the editable label
     stays visually dominant
-  - a right-side inspector split into `属性`, `输出`, and `版本`
+  - a right-side inspector split into `属性` and `输出`
+  - a toolbar-entry version-history drawer instead of a permanently visible
+    right-rail history panel
   - terminology aligned to product-facing Chinese labels instead of mixed
     engineering English
 - Canvas stage is implemented with `react-konva` editing for `text`, `rect`,
@@ -102,6 +105,10 @@
   elements instead of exposing them as structured replacement fields.
 - Structured replacement bindings are limited to `text`, `barcode`, and `qr`;
   `rect` and `line` remain static editor-only structure.
+- Replaceable-element editing is simplified to:
+  - one `名` layer-name field
+  - one field-name autocomplete input that can reuse or create a field label
+  - no separate `绑定到` selector duplicated beside the field-name editor
 - Browser-local user template preview/print reuses the shared canvas artifact
   seam by compiling row values into a concrete `DirectCanvasDefinition` on the
   client before preview or print dispatch.

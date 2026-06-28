@@ -50,9 +50,18 @@ The template workspace is now responsible for two adjacent catalog surfaces:
 - browser-local user templates used for structured print entry and return
   editing
 
+Selecting a template card should enter the structured print-entry flow
+immediately. Template editing stays as a secondary explicit action so the main
+list surface does not duplicate the primary entry action.
+
 The canvas workspace is the only place that can author or revise templates. It
 must expose explicit save, save as, and version-history actions without
 changing the server-side read-only nature of system templates.
+
+Version history belongs to a save-adjacent drawer, not to a permanently visible
+inspector column. Replaceable field editing should stay minimal and desktop-fit:
+one layer name field plus one field-name autocomplete input that can reuse or
+create an existing field label.
 
 ## Web Modes
 
