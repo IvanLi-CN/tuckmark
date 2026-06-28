@@ -5,6 +5,7 @@ import {
   type ArtifactPackets,
   assertServerSidePrintRuntimeReady,
   type BatchPreviewRequest,
+  type CanvasDraftRecord,
   type DirectCanvasPreviewRequest,
   directCanvasSchema,
   type PreviewRequest,
@@ -12,8 +13,14 @@ import {
   type PrintByArtifactRequest,
   type PrintByTemplateRequest,
   type PrintCanvasRequest,
+  parseSyncState,
+  type RecentPrintRecord,
   type SafeTextLabelInput,
+  type SyncState,
   safeTextLabelSchema,
+  syncRecordSchema,
+  syncStateSchema,
+  type TemplateUsageRecord,
   TuckmarkService,
 } from "@tuckmark/core"
 import cors from "cors"
@@ -30,6 +37,11 @@ export interface ServerService {
   listArtifacts(): Promise<Awaited<ReturnType<TuckmarkService["listArtifacts"]>>>
   getArtifact(artifactId: string): Promise<Awaited<ReturnType<TuckmarkService["getArtifact"]>>>
   getArtifactPackets(artifactId: string): Promise<ArtifactPackets>
+  getSyncState(): Promise<SyncState>
+  mergeSyncState(next: SyncState): Promise<SyncState>
+  upsertTemplateUsageRecord(record: TemplateUsageRecord): Promise<SyncState>
+  upsertRecentPrintRecord(record: RecentPrintRecord): Promise<SyncState>
+  upsertCanvasDraftRecord(record: CanvasDraftRecord): Promise<SyncState>
   previewTemplate(
     request: PreviewRequest
   ): Promise<Awaited<ReturnType<TuckmarkService["previewTemplate"]>>>
@@ -126,6 +138,20 @@ const printSafeTextLabelSchema = z.object({
   renderOptions: previewOptionsSchema.optional(),
 })
 
+const syncStateRequestSchema = syncStateSchema
+const templateUsageRecordRequestSchema = syncRecordSchema.refine(
+  (value) => value.kind === "template_usage",
+  "Expected template_usage record"
+)
+const recentPrintRecordRequestSchema = syncRecordSchema.refine(
+  (value) => value.kind === "recent_print",
+  "Expected recent_print record"
+)
+const canvasDraftRecordRequestSchema = syncRecordSchema.refine(
+  (value) => value.kind === "canvas_draft",
+  "Expected canvas_draft record"
+)
+
 function sendError(res: express.Response, error: unknown): void {
   const message = error instanceof Error ? error.message : "Unknown error"
   res.status(400).json({ status: "error", error: message })
@@ -204,6 +230,50 @@ export function createApp(service: ServerService = new TuckmarkService()): expre
       const artifact = await service.getArtifact(req.params.artifactId)
       const svg = await fs.readFile(artifact.svgPath, "utf8")
       res.type("image/svg+xml").send(svg)
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.get("/api/sync/state", async (_req, res) => {
+    try {
+      res.json({ state: await service.getSyncState() })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post("/api/sync/state", async (req, res) => {
+    try {
+      const payload = syncStateRequestSchema.parse(req.body)
+      res.json({ state: await service.mergeSyncState(parseSyncState(payload)) })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post("/api/sync/template-usage", async (req, res) => {
+    try {
+      const payload = templateUsageRecordRequestSchema.parse(req.body) as TemplateUsageRecord
+      res.json({ state: await service.upsertTemplateUsageRecord(payload) })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post("/api/sync/recent-print", async (req, res) => {
+    try {
+      const payload = recentPrintRecordRequestSchema.parse(req.body) as RecentPrintRecord
+      res.json({ state: await service.upsertRecentPrintRecord(payload) })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post("/api/sync/canvas-draft", async (req, res) => {
+    try {
+      const payload = canvasDraftRecordRequestSchema.parse(req.body) as CanvasDraftRecord
+      res.json({ state: await service.upsertCanvasDraftRecord(payload) })
     } catch (error) {
       sendError(res, error)
     }
@@ -316,7 +386,7 @@ export function createApp(service: ServerService = new TuckmarkService()): expre
     }
 
     try {
-      res.sendFile(path.join(staticWebRoot, "index.html"))
+      res.sendFile("index.html", { root: staticWebRoot })
     } catch (error) {
       next(error)
     }

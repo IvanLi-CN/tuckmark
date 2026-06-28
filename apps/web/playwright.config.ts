@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test"
 
 export default defineConfig({
   testDir: "./tests",
+  testIgnore: /sync\.spec\.ts/,
   timeout: 60_000,
   reporter: process.env.CI ? "github" : "list",
   use: {

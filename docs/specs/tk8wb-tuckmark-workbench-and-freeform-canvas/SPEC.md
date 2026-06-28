@@ -160,10 +160,12 @@ output.
   - document metadata
   - per-layer metadata (`name`, `visible`, `locked`)
   - editor metadata (`gridEnabled`, `snapEnabled`)
-- Draft persistence uses `localStorage` keys namespaced by preset id.
-- Refresh restores only the latest draft snapshot for the active preset.
-- Resetting the draft clears the stored draft for that preset and rebuilds from
-  the built-in preset.
+- Draft persistence still uses preset-scoped browser storage as the immediate
+  working copy, but the browser snapshot also participates in same-device sync
+  with `TuckmarkService` when the `server-http` surface is live.
+- Refresh restores the latest merged draft snapshot for the active preset.
+- Resetting the draft clears the browser working copy for that preset, records a
+  tombstone in the sync state, and rebuilds from the built-in preset.
 - Undo / redo keeps an in-memory history stack capped at `50` snapshots and
   does not restore history across refreshes.
 - Canvas interaction baseline:
@@ -191,12 +193,16 @@ output.
 
 ### Recent activity and persistence contract
 
-- Recent templates and recent prints are stored browser-locally.
-- The browser-local registry uses `localStorage` metadata and may enrich itself
-  from the current browser artifact store.
+- Recent templates and recent prints are persisted in a shared sync state that
+  merges browser-local storage with `TuckmarkService` state on the same device.
+- The browser snapshot remains the first-write surface and is reconciled with
+  the service snapshot during startup and after key mutations.
 - No remote history service or `/api/history` endpoint is introduced.
-- Canvas drafts stay browser-local only. No remote document store or account
-  sync is introduced.
+- Canvas drafts participate in the same-device sync state. No cross-device
+  account sync or remote document service is introduced.
+- Sync records carry version, vector clock, update timestamp, payload hash, and
+  optional deletion tombstones. Concurrent draft edits preserve an explicit
+  conflict branch instead of silently discarding one side.
 
 ## Acceptance
 
@@ -212,8 +218,11 @@ output.
 - Canvas workspace supports marquee selection, Shift multi-select, stage pan,
   wheel zoom, and fit-to-view without horizontal shell breakage.
 - Text supports inline stage editing via double click.
-- Refresh restores the latest preset-scoped draft and reset clears it.
+- Refresh restores the latest merged preset-scoped draft and reset clears it
+  without the service reintroducing stale content.
 - Invalid barcode or QR payloads surface as user-visible errors.
+- When browser and service edit the same draft concurrently, the resulting
+  merged state keeps the winning draft plus conflict branch metadata.
 - `1100×820` keeps the `/canvas` stage visible while one contextual side rail
   is hidden.
 - `1280×800`, `1440×900`, and `1600×1024` keep the professional three-column
@@ -255,6 +264,16 @@ output.
 
   PR: include
   ![Canvas output preview workspace](./assets/canvas-output-preview-1280x800.png)
+
+- `1280×800` homepage after server-http startup sync restores recent template and recent print records from persisted service state
+
+  PR: include
+  ![Synced homepage state](./assets/sync-home-1280x800.png)
+
+- `1280×800` canvas workspace after server-http startup sync restores the merged preset-scoped draft into the editor
+
+  PR: include
+  ![Synced canvas draft state](./assets/sync-canvas-1280x800.png)
 
 - `1600×1024` system page in wide three-column mode
 

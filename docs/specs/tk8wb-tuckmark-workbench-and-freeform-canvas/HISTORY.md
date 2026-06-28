@@ -62,3 +62,11 @@ while the workbench was being productized:
     and print stay aligned with stage geometry
   - CLI direct-canvas preview fixtures were updated to include explicit
     `rotation` fields after the shared canvas schema expansion
+- A later same-device persistence round promoted browser-only activity into a
+  shared sync state with `TuckmarkService`:
+  - recent templates, recent prints, and canvas drafts now merge browser and
+    service snapshots under a common contract
+  - startup performs a pull-merge-push reconciliation on `server-http`
+  - draft reset now emits a tombstone so stale service drafts do not reappear
+  - concurrent draft edits preserve conflict branches instead of silently
+    dropping one side

@@ -2,6 +2,7 @@ import fs from "node:fs"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -10,6 +11,12 @@ import { DetongerAdapter } from "../src/detonger-adapter.ts"
 import { TuckmarkService } from "../src/service.ts"
 
 const cleanupPaths: string[] = []
+const testDir = path.dirname(fileURLToPath(import.meta.url))
+const detongerProtocolManifestPath = path.resolve(
+  testDir,
+  "../../../detonger/crates/detonger-protocol/Cargo.toml"
+)
+const itWithDetongerSubmodule = fs.existsSync(detongerProtocolManifestPath) ? it : it.skip
 
 function mockDetongerArgs(adapter: DetongerAdapter, fakeDetongerPath: string) {
   ;(adapter as unknown as { detongerArgs(args: string[]): string[] }).detongerArgs = (
@@ -33,36 +40,40 @@ beforeEach(() => {
 })
 
 describe("DetongerAdapter", () => {
-  it("encodes preview artifacts into detonger-compatible vendor messages by default", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-detonger-"))
-    cleanupPaths.push(root)
+  itWithDetongerSubmodule(
+    "encodes preview artifacts into detonger-compatible vendor messages by default",
+    async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-detonger-"))
+      cleanupPaths.push(root)
 
-    const service = new TuckmarkService({
-      artifactStore: new ArtifactStore(root),
-    })
-    const adapter = new DetongerAdapter()
+      const service = new TuckmarkService({
+        artifactStore: new ArtifactStore(root),
+      })
+      const adapter = new DetongerAdapter()
 
-    const preview = await service.previewTemplate({
-      templateId: "shipping-compact",
-      input: {
-        recipient: "Koha",
-        address: "Moon St 42",
-        orderId: "TM-007",
-        note: "fragile",
-      },
-    })
+      const preview = await service.previewTemplate({
+        templateId: "shipping-compact",
+        input: {
+          recipient: "Koha",
+          address: "Moon St 42",
+          orderId: "TM-007",
+          note: "fragile",
+        },
+      })
 
-    const packets = await adapter.encodeArtifactPackets(preview.artifact)
-    const decoded = packets.packets.map((packet) => Buffer.from(packet, "base64"))
+      const packets = await adapter.encodeArtifactPackets(preview.artifact)
+      const decoded = packets.packets.map((packet) => Buffer.from(packet, "base64"))
 
-    expect(packets.packetCount).toBeGreaterThan(20)
-    expect(decoded[0]?.toString("hex")).toBe("1f2002000188")
-    expect(decoded[1]?.toString("hex")).toBe("1f27013088")
-    expect(decoded.some((packet) => packet[1] === 0x2b)).toBe(true)
-    expect(decoded.some((packet) => packet[1] === 0x2e)).toBe(true)
-    expect(decoded.every((packet) => packet[1] !== 0x2c && packet[1] !== 0x2d)).toBe(true)
-    expect(decoded.at(-1)?.at(-1)).toBe(0x0c)
-  }, 60_000)
+      expect(packets.packetCount).toBeGreaterThan(20)
+      expect(decoded[0]?.toString("hex")).toBe("1f2002000188")
+      expect(decoded[1]?.toString("hex")).toBe("1f27013088")
+      expect(decoded.some((packet) => packet[1] === 0x2b)).toBe(true)
+      expect(decoded.some((packet) => packet[1] === 0x2e)).toBe(true)
+      expect(decoded.every((packet) => packet[1] !== 0x2c && packet[1] !== 0x2d)).toBe(true)
+      expect(decoded.at(-1)?.at(-1)).toBe(0x0c)
+    },
+    60_000
+  )
 
   it("can opt into lpapi compact packets explicitly", async () => {
     process.env.TUCKMARK_DETONGER_PACKET_ENCODER = "lpapi"

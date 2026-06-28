@@ -69,6 +69,7 @@
   - versioned `CanvasDraftDocument`
   - per-layer metadata
   - preset-scoped `localStorage` persistence
+  - same-device sync state records shared with `TuckmarkService`
   - in-memory undo/redo history capped to `50`
 - Shared schema coverage now includes `rotation` on `text`, `rect`, `barcode`,
   and `qr`, while `line` remains endpoint-based.
@@ -91,8 +92,19 @@
   - the new canvas draft monochrome tests now provide a stable in-memory
     storage fallback so package-level test runners without an ambient browser
     global still execute the same draft persistence assertions
-- Home page recent templates and recent prints are backed by browser-local
-  recent-activity storage.
+- Home page recent templates and recent prints now flow through a unified sync
+  state:
+  - browser storage remains the immediate write path
+  - `server-http` startup pulls service state, merges it with browser state,
+    then writes the merged snapshot back to both sides
+  - preview / print / draft-save events enqueue background sync
+- Sync implementation coverage includes:
+  - core `SyncState` schemas and merge helpers
+  - service-side `sync-state.json` persistence under `.tuckmark`
+  - `GET /api/sync/state` and `POST /api/sync/state`
+  - browser migration from legacy recent-activity and draft `localStorage`
+  - draft tombstones to prevent reset content from being reintroduced
+  - conflict branch preservation for concurrent canvas draft edits
 - `404.html` SPA fallback is present for static Pages deep links.
 - Storybook coverage includes stable canvas scenarios for:
   - wide editor
@@ -114,16 +126,10 @@
 - Benchmark viewport evidence must stay aligned with the latest UI SHA whenever
   navigation, list density, or workspace layout changes.
 - Current validation status for this round:
-  - `bun run --filter @tuckmark/web typecheck` passed
-  - `bun run --filter @tuckmark/web test` passed
-  - `bun run build:web:pages` passed
-  - `bun run --filter @tuckmark/web test:e2e -- --grep "template large mode"` passed
-  - `bun run --filter @tuckmark/cli typecheck` passed
-  - `bun run --filter @tuckmark/core typecheck` passed
-  - `bun run --filter @tuckmark/core test tests/renderer.test.ts` passed
-  - browser verification passed for:
-    - grid visibility over the white label-paper base
-    - canvas pan / zoom remaining decoupled from pointer-only panning
-    - output preview generation using the same content semantics as the stage
-  - broader package test suites still retain unrelated environment-sensitive
-    coverage outside this convergence patch
+  - `bun run check` passed
+  - `bun run test:e2e:web` passed
+  - `bun run --filter @tuckmark/web test:e2e:sync` passed
+  - `bun run test:e2e:web -- --grep "browser-static root path defaults to runtime and supports explicit demo mode"` passed
+  - detonger-dependent preview packet coverage now skips cleanly when the
+    `detonger` submodule is unavailable, matching the existing wasm build
+    fallback contract
