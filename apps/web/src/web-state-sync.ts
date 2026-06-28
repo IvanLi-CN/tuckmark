@@ -1,4 +1,5 @@
 import {
+  type CanvasDraftRecord,
   createCanvasDraftRecord,
   createRecentPrintRecord,
   createTemplateUsageRecord,
@@ -76,6 +77,35 @@ function canUseStorage(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined"
 }
 
+function cloneDraftRecordWithLocalDraft(
+  record: CanvasDraftRecord,
+  draft: SharedCanvasDraftDocument
+): CanvasDraftRecord {
+  return {
+    ...record,
+    payload: {
+      ...record.payload,
+      draft,
+    },
+  }
+}
+
+function sameDraftPayload(
+  draft: SharedCanvasDraftDocument,
+  record: CanvasDraftRecord | undefined
+): boolean {
+  if (!record || record.deleted) {
+    return false
+  }
+  return (
+    record.hash ===
+    stableHash({
+      presetId: record.payload.presetId,
+      draft,
+    })
+  )
+}
+
 function persistMergedState(current: SyncState, delta: SyncState): SyncState {
   return persistLocalSyncState(mergeSyncState(current, delta))
 }
@@ -97,7 +127,7 @@ function dedupeLatest<T extends { recordId: string; updatedAt: string }>(records
     })
 }
 
-function buildLegacySyncSnapshot(): SyncState {
+function buildLegacySyncSnapshot(stored: SyncState): SyncState {
   const recentActivity = canUseStorage() ? loadRecentActivity() : emptyRecentActivityState()
 
   let state = emptySyncState()
@@ -126,16 +156,21 @@ function buildLegacySyncSnapshot(): SyncState {
     if (!draft) {
       continue
     }
-    const existing = state.canvasDraftRecords.find(
+    const existing = stored.canvasDraftRecords.find(
       (record) => record.payload.presetId === preset.id
     )
-    const record = createCanvasDraftRecord(
-      {
-        presetId: preset.id,
-        draft,
-      },
-      recordSeed(existing)
-    )
+    let record: CanvasDraftRecord
+    if (sameDraftPayload(draft, existing) && existing) {
+      record = cloneDraftRecordWithLocalDraft(existing, draft)
+    } else {
+      record = createCanvasDraftRecord(
+        {
+          presetId: preset.id,
+          draft,
+        },
+        recordSeed(existing)
+      )
+    }
     state = mergeSyncState(state, {
       ...emptySyncState(),
       updatedAt: record.updatedAt,
@@ -159,8 +194,8 @@ export function loadLocalSyncState(): SyncState {
     stored = emptySyncState()
   }
 
-  const migrated = mergeSyncState(buildLegacySyncSnapshot(), stored)
-  if (JSON.stringify(migrated) !== JSON.stringify(stored)) {
+  const migrated = mergeSyncState(buildLegacySyncSnapshot(stored), stored)
+  if (!sameSyncState(migrated, stored)) {
     persistLocalSyncState(migrated)
   }
   return migrated

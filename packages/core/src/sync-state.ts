@@ -110,7 +110,12 @@ export type CanvasDraftRecord = z.infer<typeof canvasDraftRecordSchema> & {
   payload: CanvasDraftPayload
 }
 export type SyncRecord = TemplateUsageRecord | RecentPrintRecord | CanvasDraftRecord
-export type SyncState = z.infer<typeof syncStateSchema> & {
+export type SyncState = Omit<
+  z.infer<typeof syncStateSchema>,
+  "templateUsageRecords" | "recentPrintRecords" | "canvasDraftRecords"
+> & {
+  templateUsageRecords: TemplateUsageRecord[]
+  recentPrintRecords: RecentPrintRecord[]
   canvasDraftRecords: CanvasDraftRecord[]
 }
 
