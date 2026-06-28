@@ -1,10 +1,11 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 import { emptySyncState, mergeSyncState, parseSyncState, type SyncState } from "./sync-state.js"
 
 export class SyncStateStore {
   readonly root: string
+  #writeChain: Promise<unknown> = Promise.resolve()
 
   constructor(root?: string) {
     this.root = root ?? path.resolve(process.cwd(), ".tuckmark")
@@ -12,6 +13,10 @@ export class SyncStateStore {
 
   private statePath(): string {
     return path.join(this.root, "sync-state.json")
+  }
+
+  private tempStatePath(): string {
+    return path.join(this.root, "sync-state.json.tmp")
   }
 
   async ensure(): Promise<void> {
@@ -31,16 +36,27 @@ export class SyncStateStore {
   async writeState(state: SyncState): Promise<SyncState> {
     await this.ensure()
     const normalized = parseSyncState(state)
-    await writeFile(this.statePath(), `${JSON.stringify(normalized, null, 2)}\n`, "utf8")
+    const nextJson = `${JSON.stringify(normalized, null, 2)}\n`
+    await writeFile(this.tempStatePath(), nextJson, "utf8")
+    await rename(this.tempStatePath(), this.statePath())
     return normalized
   }
 
   async mergeState(next: SyncState): Promise<SyncState> {
-    const current = await this.readState()
-    const merged = mergeSyncState(current, next)
-    return this.writeState({
-      ...merged,
-      updatedAt: new Date().toISOString(),
-    })
+    const run = async () => {
+      const current = await this.readState()
+      const merged = mergeSyncState(current, next)
+      return this.writeState({
+        ...merged,
+        updatedAt: new Date().toISOString(),
+      })
+    }
+
+    const result = this.#writeChain.then(run, run)
+    this.#writeChain = result.then(
+      () => undefined,
+      () => undefined
+    )
+    return result
   }
 }

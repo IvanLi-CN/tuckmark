@@ -21,6 +21,7 @@ export {
   mergeSyncState,
   parseSyncState,
   stableHash,
+  stableStringify,
 } from "./sync-state.js"
 export { getTemplateById, presetTemplates } from "./template-library.js"
 export type {

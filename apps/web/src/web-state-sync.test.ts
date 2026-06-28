@@ -235,4 +235,45 @@ describe("web-state-sync", () => {
       expect.arrayContaining(["shipping-compact", "ops-tag"])
     )
   })
+
+  it("keeps browser-local writes that land while sync is awaiting the service merge", async () => {
+    recordRecentPrintLocally({
+      id: "template:shipping-compact",
+      title: "shipping-compact",
+      kind: "template",
+      printerName: "Browser P2",
+    })
+
+    let releaseMerge: (() => void) | undefined
+    const client = {
+      getSyncState: vi.fn(async () => emptySyncState()),
+      mergeSyncState: vi.fn(
+        async (next: SyncState) =>
+          await new Promise<SyncState>((resolve) => {
+            releaseMerge = () => resolve(next)
+          })
+      ),
+    }
+
+    const pendingSync = syncWebState(client, ["shipping-wide"])
+    await Promise.resolve()
+
+    recordRecentPrintLocally({
+      id: "template:cable-tag",
+      title: "cable-tag",
+      kind: "template",
+      printerName: "Late Browser P2",
+    })
+
+    releaseMerge?.()
+    const synced = await pendingSync
+
+    expect(synced.requiresResync).toBe(true)
+    expect(synced.state.recentPrintRecords.map((record) => record.payload.id)).toEqual(
+      expect.arrayContaining(["template:shipping-compact", "template:cable-tag"])
+    )
+    expect(loadLocalSyncState().recentPrintRecords.map((record) => record.payload.id)).toEqual(
+      expect.arrayContaining(["template:shipping-compact", "template:cable-tag"])
+    )
+  })
 })

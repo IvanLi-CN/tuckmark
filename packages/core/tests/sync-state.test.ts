@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest"
+import { mkdtemp, rm } from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+
+import { afterEach, describe, expect, it } from "vitest"
 
 import {
   type CanvasDraftRecord,
@@ -10,6 +14,15 @@ import {
   mergeSyncRecord,
   mergeSyncState,
 } from "../src/sync-state.ts"
+import { SyncStateStore } from "../src/sync-state-store.ts"
+
+const cleanupRoots: string[] = []
+
+afterEach(async () => {
+  await Promise.all(
+    cleanupRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+  )
+})
 
 describe("sync-state merge semantics", () => {
   it("does not treat same canvas content with different savedAt as a conflict", () => {
@@ -274,5 +287,44 @@ describe("sync-state merge semantics", () => {
     expect(converged.conflicts).toHaveLength(1)
     expect(converged.version).toBe(adoptedByBrowser.version)
     expect(converged.vectorClock).toEqual(adoptedByBrowser.vectorClock)
+  })
+
+  it("serializes concurrent file-backed merges without dropping either record", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-sync-store-"))
+    cleanupRoots.push(root)
+    const store = new SyncStateStore(root)
+
+    const printA = createRecentPrintRecord({
+      id: "template:shipping-compact",
+      title: "shipping-compact",
+      kind: "template",
+      printerName: "Browser P2",
+      printedAt: "2026-06-28T10:00:00.000Z",
+    })
+    const printB = createRecentPrintRecord({
+      id: "template:cable-tag",
+      title: "cable-tag",
+      kind: "template",
+      printerName: "Service P2",
+      printedAt: "2026-06-28T10:01:00.000Z",
+    })
+
+    await Promise.all([
+      store.mergeState({
+        ...emptySyncState(),
+        updatedAt: printA.updatedAt,
+        recentPrintRecords: [printA],
+      }),
+      store.mergeState({
+        ...emptySyncState(),
+        updatedAt: printB.updatedAt,
+        recentPrintRecords: [printB],
+      }),
+    ])
+
+    const finalState = await store.readState()
+    expect(finalState.recentPrintRecords.map((record) => record.payload.id)).toEqual(
+      expect.arrayContaining(["template:shipping-compact", "template:cable-tag"])
+    )
   })
 })

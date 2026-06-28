@@ -107,6 +107,7 @@ export function useWorkbenchController({
     loadRecentActivity()
   )
   const syncInFlightRef = React.useRef<Promise<void> | null>(null)
+  const syncQueuedRef = React.useRef(false)
 
   const browserPrintSupported = React.useMemo(() => isBrowserPrintSupported(), [])
   const browserDirectConfigured = context.capabilities.browserDirectPrintPath !== "disabled"
@@ -228,12 +229,18 @@ export function useWorkbenchController({
       return
     }
     if (syncInFlightRef.current) {
+      syncQueuedRef.current = true
       return
     }
     syncInFlightRef.current = (async () => {
       try {
-        const next = await syncWebState(client, [...SYNC_PRESET_IDS])
-        setRecentActivity(next.recentActivity)
+        let shouldContinue = true
+        while (shouldContinue) {
+          syncQueuedRef.current = false
+          const next = await syncWebState(client, [...SYNC_PRESET_IDS])
+          setRecentActivity(next.recentActivity)
+          shouldContinue = next.requiresResync || syncQueuedRef.current
+        }
       } catch {
         // Ignore sync failures and keep the local session live.
       } finally {

@@ -9,6 +9,7 @@ import {
   type SharedCanvasDraftDocument,
   type SyncState,
   stableHash,
+  stableStringify,
 } from "../../../packages/core/src/web.js"
 
 import {
@@ -77,6 +78,10 @@ function canUseStorage(): boolean {
 
 function persistMergedState(current: SyncState, delta: SyncState): SyncState {
   return persistLocalSyncState(mergeSyncState(current, delta))
+}
+
+function sameSyncState(left: SyncState, right: SyncState): boolean {
+  return stableStringify(left) === stableStringify(right)
 }
 
 function dedupeLatest<T extends { recordId: string; updatedAt: string }>(records: T[]): T[] {
@@ -299,13 +304,19 @@ export async function syncWebState(
 ): Promise<{
   state: SyncState
   recentActivity: RecentActivityState
+  requiresResync: boolean
 }> {
   const local = loadLocalSyncState()
   const remote = await client.getSyncState()
   const merged = mergeSyncState(local, remote)
   const persisted = await client.mergeSyncState(merged)
+  const latestLocal = loadLocalSyncState()
+  const reconciled = mergeSyncState(persisted, latestLocal)
+  const requiresResync = !sameSyncState(reconciled, persisted)
+  const nextState = requiresResync ? reconciled : persisted
   return {
-    state: persisted,
-    recentActivity: applySyncStateToBrowser(persisted, presetIds),
+    state: nextState,
+    recentActivity: applySyncStateToBrowser(nextState, presetIds),
+    requiresResync,
   }
 }
