@@ -529,6 +529,11 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .tm-template-list__section-title,
+  .tm-template-list__section-empty {
+    grid-column: 1 / -1;
+  }
+
   .tm-template-card {
     @apply flex w-full items-center gap-2.5 rounded-[18px] border border-border/70 bg-background/80 px-3 py-2.5 text-left transition-colors;
   }
@@ -758,7 +763,7 @@
   }
 
   .tm-stage--overlay {
-    position: absolute !important;
+    position: absolute;
     inset: 0;
     z-index: 2;
   }

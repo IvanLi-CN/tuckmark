@@ -27,7 +27,9 @@ import type {
   PrintResult,
   RenderOptions,
   Template,
+  UserTemplateSummary,
 } from "./types.js"
+import { listUserTemplates } from "./user-template-store.js"
 
 type UiPrintResult = PrintResult | BrowserPrintResult
 
@@ -102,6 +104,7 @@ export function useWorkbenchController({
   const [recentActivity, setRecentActivity] = React.useState<RecentActivityState>(() =>
     loadRecentActivity()
   )
+  const [userTemplates, setUserTemplates] = React.useState<UserTemplateSummary[]>([])
 
   const browserPrintSupported = React.useMemo(() => isBrowserPrintSupported(), [])
   const browserDirectConfigured = context.capabilities.browserDirectPrintPath !== "disabled"
@@ -204,15 +207,22 @@ export function useWorkbenchController({
     [client, serviceApiUsable]
   )
 
+  const refreshUserTemplates = React.useCallback(async () => {
+    const nextTemplates = await listUserTemplates()
+    setUserTemplates(nextTemplates)
+    return nextTemplates
+  }, [])
+
   React.useEffect(() => {
     void (async () => {
       try {
         await refreshSetup()
+        await refreshUserTemplates()
       } catch {
         setTemplates(fallbackTemplates)
       }
     })()
-  }, [refreshSetup])
+  }, [refreshSetup, refreshUserTemplates])
 
   React.useEffect(() => {
     if (context.mode === "demo" || !browserDirectAvailable || browserPrinter !== null) {
@@ -353,7 +363,9 @@ export function useWorkbenchController({
   const previewSource = React.useCallback(
     async (source: BrowserPrintSource) => {
       if (source.kind === "template") {
-        const template = templates.find((item) => item.id === source.templateId)
+        const template =
+          templates.find((item) => item.id === source.templateId) ??
+          userTemplates.find((item) => item.id === source.templateId)
         if (template) {
           setRecentActivity(
             recordRecentTemplate({
@@ -407,6 +419,7 @@ export function useWorkbenchController({
       syncArtifactData,
       syncBrowserArtifact,
       templates,
+      userTemplates,
     ]
   )
 
@@ -544,7 +557,9 @@ export function useWorkbenchController({
   const printSourceDirect = React.useCallback(
     async (source: BrowserPrintSource) => {
       if (source.kind === "template") {
-        const template = templates.find((item) => item.id === source.templateId)
+        const template =
+          templates.find((item) => item.id === source.templateId) ??
+          userTemplates.find((item) => item.id === source.templateId)
         if (template) {
           setRecentActivity(
             recordRecentTemplate({
@@ -642,6 +657,7 @@ export function useWorkbenchController({
       serviceApiUsable,
       syncArtifactData,
       templates,
+      userTemplates,
     ]
   )
 
@@ -717,6 +733,8 @@ export function useWorkbenchController({
     setRenderOptions,
     setRecentActivity,
     templates,
+    refreshUserTemplates,
+    userTemplates,
   }
 }
 

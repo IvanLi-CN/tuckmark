@@ -8,13 +8,16 @@ import {
   Copy,
   Eye,
   EyeOff,
+  FileClock,
   Focus,
   Grid2x2,
+  History,
   Lock,
   LockOpen,
   Plus,
   Redo2,
   RotateCcw,
+  Save,
   ScanSearch,
   Trash2,
   Undo2,
@@ -32,9 +35,12 @@ import {
   Stage,
   Transformer,
 } from "react-konva"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { buildSvg } from "../../../packages/core/src/web.js"
 import {
+  bindElementToExistingField,
   buildStoryScenarioDocument,
+  buildTemplateFieldsFromDraft,
   CANVAS_HISTORY_LIMIT,
   CANVAS_PRESETS,
   CANVAS_TOOL_LABELS,
@@ -42,18 +48,27 @@ import {
   type CanvasStoryScenario,
   clearStoredDraftDocument,
   compileDraftToCanvasDefinition,
+  compileDraftToFilledCanvasDefinition,
   createCanvasElement,
   createDraftFromPreset,
+  createDraftFromSystemTemplate,
+  duplicateDraftAsTemplate,
   duplicateDraftElement,
   getElementBounds,
   getElementGeometry,
   getElementSelectionBounds,
   getPresetById,
+  getSystemTemplateById,
   loadStoredDraftDocument,
   persistDraftDocument,
+  renameDraftField,
   reorderDraftElements,
+  setDraftFieldMultiline,
+  setDraftFieldValue,
   toCanvasPrintSource,
+  toggleElementBinding,
   translateElement,
+  updateBoundElementValue,
 } from "./canvas-editor-model.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
@@ -70,7 +85,22 @@ import {
 } from "./components/ui/select.js"
 import { Textarea } from "./components/ui/textarea.js"
 import { cn } from "./lib/utils.js"
-import type { CanvasDraftDocument, CanvasDraftElement } from "./types.js"
+import type {
+  CanvasDraftDocument,
+  CanvasDraftElement,
+  CanvasDraftSource,
+  UserTemplateHistory,
+  UserTemplateVersionSnapshot,
+} from "./types.js"
+import {
+  clearTemplateAutosaves,
+  clearWorkingCopy,
+  getAutosaveIntervalMs,
+  loadWorkingCopy,
+  readUserTemplateHistory,
+  saveUserTemplate,
+  saveUserTemplateAutosave,
+} from "./user-template-store.js"
 import type { WorkbenchController } from "./workbench-controller.js"
 
 type CanvasPageProps = {
@@ -98,10 +128,14 @@ type StageViewportSize = {
 }
 
 type CanvasPageState = {
+  routeSource: CanvasDraftSource
   presetId: string
+  liveDraft: CanvasDraftDocument
   draft: CanvasDraftDocument
+  versionHistory: UserTemplateHistory | null
+  readOnlyVersion: UserTemplateVersionSnapshot | null
   selectedIds: string[]
-  activePanel: "attributes" | "output"
+  activePanel: "attributes" | "output" | "versions"
   focus: "left-center" | "center-right"
   gridEnabled: boolean
   snapEnabled: boolean
@@ -112,6 +146,8 @@ type CanvasPageState = {
   historyIndex: number
   editingId: string | null
   outputStatus: string
+  autosavesExpanded: boolean
+  loading: boolean
 }
 
 const GRID_SIZE = 20
@@ -194,6 +230,41 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
   return createDraftFromPreset(getPresetById("ops-tag"))
 }
 
+function createCanvasStateFromDraft(
+  draft: CanvasDraftDocument,
+  options?: {
+    selectedIds?: string[]
+    activePanel?: CanvasPageState["activePanel"]
+    focus?: CanvasPageState["focus"]
+    outputStatus?: string
+    loading?: boolean
+    versionHistory?: UserTemplateHistory | null
+  }
+): CanvasPageState {
+  return {
+    routeSource: draft.source,
+    presetId: draft.presetId,
+    liveDraft: draft,
+    draft,
+    versionHistory: options?.versionHistory ?? null,
+    readOnlyVersion: null,
+    selectedIds: options?.selectedIds ?? [],
+    activePanel: options?.activePanel ?? "attributes",
+    focus: options?.focus ?? "left-center",
+    gridEnabled: draft.editor.gridEnabled,
+    snapEnabled: draft.editor.snapEnabled,
+    spacePressed: false,
+    viewport: createViewport(draft.width, draft.height),
+    selectionBox: { x1: 0, y1: 0, x2: 0, y2: 0, visible: false },
+    history: [cloneDraft(draft)],
+    historyIndex: 0,
+    editingId: null,
+    outputStatus: options?.outputStatus ?? "",
+    autosavesExpanded: false,
+    loading: options?.loading ?? false,
+  }
+}
+
 function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryScenario): string[] {
   if (scenario === "barcode-selected" || scenario === "barcode-invalid") {
     const barcode = draft.elements.find((element) => element.kind === "barcode")
@@ -218,26 +289,19 @@ function createCanvasState(
     storedDraft ??
     (seededDraft.presetId === preset.id ? seededDraft : createDraftFromPreset(preset))
   return {
-    presetId: draft.presetId,
-    draft,
-    selectedIds: getScenarioSelection(draft, scenario),
-    activePanel: scenario === "output-tab" ? "output" : "attributes",
-    focus: scenario === "output-tab" ? "center-right" : "left-center",
-    gridEnabled: draft.editor.gridEnabled,
-    snapEnabled: draft.editor.snapEnabled,
-    spacePressed: false,
-    viewport: createViewport(draft.width, draft.height),
-    selectionBox: { x1: 0, y1: 0, x2: 0, y2: 0, visible: false },
-    history: [cloneDraft(draft)],
-    historyIndex: 0,
+    ...createCanvasStateFromDraft(draft, {
+      selectedIds: getScenarioSelection(draft, scenario),
+      activePanel: scenario === "output-tab" ? "output" : "attributes",
+      focus: scenario === "output-tab" ? "center-right" : "left-center",
+      outputStatus:
+        scenario === "draft-restore"
+          ? "已恢复上次草稿。"
+          : storedDraft
+            ? `已恢复「${draft.name}」的最近草稿。`
+            : "",
+    }),
     editingId:
       scenario === "text-selected" ? (getScenarioSelection(draft, scenario)[0] ?? null) : null,
-    outputStatus:
-      scenario === "draft-restore"
-        ? "已恢复上次草稿。"
-        : storedDraft
-          ? `已恢复「${draft.name}」的最近草稿。`
-          : "",
   }
 }
 
@@ -247,6 +311,7 @@ function pushHistory(state: CanvasPageState, nextDraft: CanvasDraftDocument): Ca
   const history = nextHistory.slice(-CANVAS_HISTORY_LIMIT)
   return {
     ...state,
+    liveDraft: nextDraft,
     draft: nextDraft,
     history,
     historyIndex: history.length - 1,
@@ -261,10 +326,9 @@ function applyDraftUpdate(
   state: CanvasPageState,
   updater: (draft: CanvasDraftDocument) => CanvasDraftDocument
 ): CanvasPageState {
-  const nextDraft = updater(cloneDraft(state.draft))
+  const nextDraft = updater(cloneDraft(state.liveDraft))
   nextDraft.editor.gridEnabled = state.gridEnabled
   nextDraft.editor.snapEnabled = state.snapEnabled
-  persistDraftDocument(nextDraft)
   const next = pushHistory(state, nextDraft)
   return {
     ...next,
@@ -355,10 +419,36 @@ function getVisibleGridBounds(
 }
 
 function resetDraft(state: CanvasPageState): CanvasPageState {
+  if (state.routeSource.kind === "preset-template") {
+    return {
+      ...createCanvasStateFromDraft(
+        createDraftFromSystemTemplate(getSystemTemplateById(state.routeSource.presetId))
+      ),
+      outputStatus: "已重置为系统模板初始内容。",
+    }
+  }
+
+  if (state.routeSource.kind === "user-template") {
+    const restoredDraft =
+      state.versionHistory?.saved.find(
+        (version) => version.id === state.versionHistory?.template.currentVersionId
+      )?.document ?? state.liveDraft
+    return {
+      ...createCanvasStateFromDraft(cloneDraft(restoredDraft), {
+        versionHistory: state.versionHistory,
+      }),
+      outputStatus: "已恢复到当前模板的已保存版本。",
+    }
+  }
+
   clearStoredDraftDocument(state.presetId)
   return {
-    ...createCanvasState(state.presetId),
-    outputStatus: "已重置为内置预设。",
+    ...createCanvasStateFromDraft(
+      createDraftFromPreset(getPresetById(state.routeSource.presetId)),
+      {
+        outputStatus: "已重置为内置草稿。",
+      }
+    ),
   }
 }
 
@@ -438,6 +528,7 @@ function undoDraft(state: CanvasPageState): CanvasPageState {
   persistDraftDocument(nextDraft)
   return {
     ...state,
+    liveDraft: nextDraft,
     draft: nextDraft,
     historyIndex: state.historyIndex - 1,
     selectedIds: updateSelectionAfterDraft(state, nextDraft),
@@ -457,6 +548,7 @@ function redoDraft(state: CanvasPageState): CanvasPageState {
   persistDraftDocument(nextDraft)
   return {
     ...state,
+    liveDraft: nextDraft,
     draft: nextDraft,
     historyIndex: state.historyIndex + 1,
     selectedIds: updateSelectionAfterDraft(state, nextDraft),
@@ -799,6 +891,126 @@ function useElementSize<T extends HTMLElement>(element: T | null): StageViewport
   return size
 }
 
+function resolveCanvasSource(searchParams: URLSearchParams): CanvasDraftSource {
+  const rawSource = searchParams.get("source")
+  if (rawSource === "preset-template") {
+    return {
+      kind: "preset-template",
+      presetId: searchParams.get("templateId") ?? getSystemTemplateById("shipping-compact").id,
+    }
+  }
+  if (rawSource === "user-template") {
+    const templateId = searchParams.get("templateId")
+    if (templateId) {
+      return {
+        kind: "user-template",
+        templateId,
+      }
+    }
+  }
+  return {
+    kind: "scratch",
+    presetId: searchParams.get("presetId") ?? getPresetById("shipping-wide").id,
+  }
+}
+
+function resolveInitialCanvasPanel(searchParams: URLSearchParams): CanvasPageState["activePanel"] {
+  return searchParams.get("panel") === "versions" ? "versions" : "attributes"
+}
+
+function resolveCanvasStatus(searchParams: URLSearchParams): string {
+  const status = searchParams.get("status")
+  if (status === "saved") {
+    return "已保存新版本。"
+  }
+  if (status === "created") {
+    return "已保存为用户模板。"
+  }
+  return ""
+}
+
+async function loadDraftForSource(source: CanvasDraftSource): Promise<{
+  draft: CanvasDraftDocument
+  versionHistory: UserTemplateHistory | null
+}> {
+  if (source.kind === "user-template") {
+    const versionHistory = await readUserTemplateHistory(source.templateId)
+    if (!versionHistory) {
+      throw new Error("当前用户模板不存在，可能已经被浏览器本地数据清理。")
+    }
+    const workingCopy = await loadWorkingCopy(source)
+    if (workingCopy?.draft) {
+      return {
+        draft: workingCopy.draft,
+        versionHistory,
+      }
+    }
+    const currentVersion =
+      versionHistory.saved.find(
+        (version) => version.id === versionHistory.template.currentVersionId
+      ) ?? versionHistory.saved[0]
+    if (!currentVersion) {
+      throw new Error("当前用户模板缺少已保存版本。")
+    }
+    return {
+      draft: {
+        ...cloneDraft(currentVersion.document),
+        source,
+        templateId: source.templateId,
+        baseVersionId: currentVersion.id,
+      },
+      versionHistory,
+    }
+  }
+
+  const workingCopy = await loadWorkingCopy(source)
+  if (workingCopy?.draft) {
+    return {
+      draft: workingCopy.draft,
+      versionHistory: null,
+    }
+  }
+
+  if (source.kind === "preset-template") {
+    return {
+      draft: createDraftFromSystemTemplate(getSystemTemplateById(source.presetId)),
+      versionHistory: null,
+    }
+  }
+
+  const legacyDraft = loadStoredDraftDocument(source.presetId)
+  if (legacyDraft) {
+    return {
+      draft: {
+        ...legacyDraft,
+        source,
+      },
+      versionHistory: null,
+    }
+  }
+
+  return {
+    draft: createDraftFromPreset(getPresetById(source.presetId)),
+    versionHistory: null,
+  }
+}
+
+function createRestoredDraftFromVersion(
+  version: UserTemplateVersionSnapshot,
+  templateId: string
+): CanvasDraftDocument {
+  return {
+    ...cloneDraft(version.document),
+    source: {
+      kind: "user-template",
+      templateId,
+    },
+    templateId,
+    baseVersionId: version.id,
+    lastSavedAt: undefined,
+  }
+}
+
 function TextInlineEditor({
   element,
   viewport,
@@ -852,6 +1064,11 @@ function CanvasToolbar({
   canRedo,
   isWide,
   stageViewportSize,
+  readOnly,
+  onSave,
+  onSaveAs,
+  onRestoreVersion,
+  onReturnCurrent,
   onChange,
 }: {
   state: CanvasPageState
@@ -859,6 +1076,11 @@ function CanvasToolbar({
   canRedo: boolean
   isWide: boolean
   stageViewportSize: StageViewportSize
+  readOnly: boolean
+  onSave: () => Promise<void>
+  onSaveAs: () => Promise<void>
+  onRestoreVersion: () => void
+  onReturnCurrent: () => void
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   return (
@@ -883,127 +1105,165 @@ function CanvasToolbar({
       ) : null}
       <div className="tm-canvas-toolbar__cluster">
         <div className="tm-canvas-toolbar__group">
-          <span className="tm-canvas-toolbar__label">历史</span>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!canUndo}
-            onClick={() => onChange((current) => undoDraft(current))}
-          >
-            <Undo2 className="size-4" />
-            撤销
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!canRedo}
-            onClick={() => onChange((current) => redoDraft(current))}
-          >
-            <Redo2 className="size-4" />
-            重做
-          </Button>
+          <span className="tm-canvas-toolbar__label">{readOnly ? "版本" : "历史"}</span>
+          {readOnly ? (
+            <>
+              <Button size="sm" onClick={onRestoreVersion}>
+                <History className="size-4" />
+                恢复
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => void onSaveAs()}>
+                <Save className="size-4" />
+                另存为
+              </Button>
+              <Button size="sm" variant="outline" onClick={onReturnCurrent}>
+                返回当前草稿
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!canUndo}
+                onClick={() => onChange((current) => undoDraft(current))}
+              >
+                <Undo2 className="size-4" />
+                撤销
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!canRedo}
+                onClick={() => onChange((current) => redoDraft(current))}
+              >
+                <Redo2 className="size-4" />
+                重做
+              </Button>
+            </>
+          )}
         </div>
-        <div className="tm-canvas-toolbar__group">
-          <span className="tm-canvas-toolbar__label">视图</span>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              onChange((current) => ({
-                ...current,
-                viewport: {
-                  ...current.viewport,
-                  scale: clamp(current.viewport.scale / ZOOM_STEP, ZOOM_MIN, ZOOM_MAX),
-                },
-              }))
-            }
-          >
-            <ZoomOut className="size-4" />
-          </Button>
-          <Badge variant="outline" className="tm-canvas-toolbar__zoom-badge">
-            {Math.round(state.viewport.scale * 100)}%
-          </Badge>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              onChange((current) => ({
-                ...current,
-                viewport: {
-                  ...current.viewport,
-                  scale: clamp(current.viewport.scale * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX),
-                },
-              }))
-            }
-          >
-            <ZoomIn className="size-4" />
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              onChange((current) =>
-                fitViewport(current, stageViewportSize.width, stageViewportSize.height)
-              )
-            }
-          >
-            <Focus className="size-4" />
-            适配视图
-          </Button>
-        </div>
-        <div className="tm-canvas-toolbar__group">
-          <span className="tm-canvas-toolbar__label">辅助</span>
-          <Button
-            size="sm"
-            variant={state.gridEnabled ? "default" : "outline"}
-            onClick={() =>
-              onChange((current) => ({
-                ...current,
-                gridEnabled: !current.gridEnabled,
-                draft: {
-                  ...current.draft,
-                  editor: { ...current.draft.editor, gridEnabled: !current.gridEnabled },
-                },
-              }))
-            }
-          >
-            <Grid2x2 className="size-4" />
-            网格
-          </Button>
-          <Button
-            size="sm"
-            variant={state.snapEnabled ? "default" : "outline"}
-            onClick={() =>
-              onChange((current) => ({
-                ...current,
-                snapEnabled: !current.snapEnabled,
-                draft: {
-                  ...current.draft,
-                  editor: { ...current.draft.editor, snapEnabled: !current.snapEnabled },
-                },
-              }))
-            }
-          >
-            <ScanSearch className="size-4" />
-            吸附
-          </Button>
-        </div>
+        {!readOnly ? (
+          <>
+            <div className="tm-canvas-toolbar__group">
+              <span className="tm-canvas-toolbar__label">视图</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  onChange((current) => ({
+                    ...current,
+                    viewport: {
+                      ...current.viewport,
+                      scale: clamp(current.viewport.scale / ZOOM_STEP, ZOOM_MIN, ZOOM_MAX),
+                    },
+                  }))
+                }
+              >
+                <ZoomOut className="size-4" />
+              </Button>
+              <Badge variant="outline" className="tm-canvas-toolbar__zoom-badge">
+                {Math.round(state.viewport.scale * 100)}%
+              </Badge>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  onChange((current) => ({
+                    ...current,
+                    viewport: {
+                      ...current.viewport,
+                      scale: clamp(current.viewport.scale * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX),
+                    },
+                  }))
+                }
+              >
+                <ZoomIn className="size-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  onChange((current) =>
+                    fitViewport(current, stageViewportSize.width, stageViewportSize.height)
+                  )
+                }
+              >
+                <Focus className="size-4" />
+                适配视图
+              </Button>
+            </div>
+            <div className="tm-canvas-toolbar__group">
+              <span className="tm-canvas-toolbar__label">辅助</span>
+              <Button
+                size="sm"
+                variant={state.gridEnabled ? "default" : "outline"}
+                onClick={() =>
+                  onChange((current) => ({
+                    ...current,
+                    gridEnabled: !current.gridEnabled,
+                    draft: {
+                      ...current.draft,
+                      editor: { ...current.draft.editor, gridEnabled: !current.gridEnabled },
+                    },
+                  }))
+                }
+              >
+                <Grid2x2 className="size-4" />
+                网格
+              </Button>
+              <Button
+                size="sm"
+                variant={state.snapEnabled ? "default" : "outline"}
+                onClick={() =>
+                  onChange((current) => ({
+                    ...current,
+                    snapEnabled: !current.snapEnabled,
+                    draft: {
+                      ...current.draft,
+                      editor: { ...current.draft.editor, snapEnabled: !current.snapEnabled },
+                    },
+                  }))
+                }
+              >
+                <ScanSearch className="size-4" />
+                吸附
+              </Button>
+            </div>
+          </>
+        ) : null}
       </div>
       <div className="tm-canvas-toolbar__cluster tm-canvas-toolbar__cluster--tail">
         <div className="tm-canvas-toolbar__status">
           <span className="tm-canvas-toolbar__status-label">状态</span>
           <Badge variant="outline">
-            {state.selectedIds.length > 0 ? `已选 ${state.selectedIds.length} 项` : "未选择元素"}
+            {readOnly
+              ? "历史快照只读"
+              : state.selectedIds.length > 0
+                ? `已选 ${state.selectedIds.length} 项`
+                : "未选择元素"}
           </Badge>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => onChange((current) => resetDraft(current))}
-        >
-          <RotateCcw className="size-4" />
-          重置草稿
-        </Button>
+        {readOnly ? null : (
+          <>
+            <Button size="sm" onClick={() => void onSave()}>
+              <Save className="size-4" />
+              保存
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void onSaveAs()}>
+              <FileClock className="size-4" />
+              另存为
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onChange((current) => resetDraft(current))}
+            >
+              <RotateCcw className="size-4" />
+              重置草稿
+            </Button>
+          </>
+        )}
       </div>
     </div>
   )
@@ -1011,30 +1271,50 @@ function CanvasToolbar({
 
 function CanvasLayerRail({
   state,
+  readOnly,
   onChange,
 }: {
   state: CanvasPageState
+  readOnly: boolean
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   return (
     <div className="tm-left-rail">
-      <CanvasSection title="尺寸与元素" description={`当前预设：${state.draft.name}`}>
+      <CanvasSection
+        title="尺寸与元素"
+        description={
+          state.routeSource.kind === "scratch"
+            ? `当前草稿：${state.draft.name}`
+            : state.routeSource.kind === "preset-template"
+              ? `系统模板：${state.draft.name}`
+              : `用户模板：${state.draft.name}`
+        }
+      >
         <div className="grid gap-3">
-          <Select
-            value={state.presetId}
-            onValueChange={(value) => onChange(() => createCanvasState(value))}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CANVAS_PRESETS.map((preset) => (
-                <SelectItem key={preset.id} value={preset.id}>
-                  {preset.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {state.routeSource.kind === "scratch" ? (
+            <Select
+              value={state.presetId}
+              disabled={readOnly}
+              onValueChange={(value) => onChange(() => createCanvasState(value))}
+            >
+              <SelectTrigger disabled={readOnly}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CANVAS_PRESETS.map((preset) => (
+                  <SelectItem key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <div className="rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+              {state.routeSource.kind === "preset-template"
+                ? "当前画布来自系统模板副本。保存后会进入本地用户模板库。"
+                : "当前画布连接的是本地用户模板。普通保存会新增一个已保存版本。"}
+            </div>
+          )}
           <div className="tm-quick-tools">
             {(["text", "rect", "line", "barcode", "qr"] as const).map((kind) => (
               <Button
@@ -1043,6 +1323,7 @@ function CanvasLayerRail({
                 size="sm"
                 variant="outline"
                 className="tm-quick-tool"
+                disabled={readOnly}
                 onClick={() =>
                   onChange((current) =>
                     applyDraftUpdate(current, (draft) => ({
@@ -1068,9 +1349,11 @@ function CanvasLayerRail({
 
 function CanvasLayerPanel({
   state,
+  readOnly,
   onChange,
 }: {
   state: CanvasPageState
+  readOnly: boolean
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   const selectedCount = state.selectedIds.length
@@ -1085,7 +1368,7 @@ function CanvasLayerPanel({
           <Button
             size="sm"
             variant="outline"
-            disabled={selectedCount === 0}
+            disabled={selectedCount === 0 || readOnly}
             onClick={() => onChange((current) => duplicateSelected(current))}
           >
             <Copy className="size-4" />
@@ -1094,7 +1377,7 @@ function CanvasLayerPanel({
           <Button
             size="sm"
             variant="outline"
-            disabled={selectedCount === 0}
+            disabled={selectedCount === 0 || readOnly}
             onClick={() => onChange((current) => deleteSelected(current))}
           >
             <Trash2 className="size-4" />
@@ -1147,7 +1430,11 @@ function CanvasLayerPanel({
                     size="sm"
                     variant="ghost"
                     className="tm-choice__icon-button"
-                    disabled={state.selectedIds.length !== 1 || state.selectedIds[0] !== element.id}
+                    disabled={
+                      readOnly ||
+                      state.selectedIds.length !== 1 ||
+                      state.selectedIds[0] !== element.id
+                    }
                     onClick={() => onChange((current) => reorderSelection(current, "backward"))}
                   >
                     <ArrowUpToLine className="size-4" />
@@ -1156,7 +1443,11 @@ function CanvasLayerPanel({
                     size="sm"
                     variant="ghost"
                     className="tm-choice__icon-button"
-                    disabled={state.selectedIds.length !== 1 || state.selectedIds[0] !== element.id}
+                    disabled={
+                      readOnly ||
+                      state.selectedIds.length !== 1 ||
+                      state.selectedIds[0] !== element.id
+                    }
                     onClick={() => onChange((current) => reorderSelection(current, "forward"))}
                   >
                     <ArrowDownToLine className="size-4" />
@@ -1168,6 +1459,7 @@ function CanvasLayerPanel({
                     aria-label={
                       element.meta.visible ? `隐藏${element.meta.name}` : `显示${element.meta.name}`
                     }
+                    disabled={readOnly}
                     onClick={() =>
                       onChange((current) =>
                         applyDraftUpdate(current, (draft) => ({
@@ -1194,6 +1486,7 @@ function CanvasLayerPanel({
                     aria-label={
                       element.meta.locked ? `解锁${element.meta.name}` : `锁定${element.meta.name}`
                     }
+                    disabled={readOnly}
                     onClick={() =>
                       onChange((current) =>
                         applyDraftUpdate(current, (draft) => ({
@@ -1225,9 +1518,11 @@ function CanvasLayerPanel({
 
 function CanvasInspector({
   state,
+  readOnly,
   onChange,
 }: {
   state: CanvasPageState
+  readOnly: boolean
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   const selectedItems = state.draft.elements.filter((item) => state.selectedIds.includes(item.id))
@@ -1258,6 +1553,7 @@ function CanvasInspector({
             <Button
               type="button"
               variant="outline"
+              disabled={readOnly}
               onClick={() => onChange((current) => duplicateSelected(current))}
             >
               <Copy className="size-4" />
@@ -1266,6 +1562,7 @@ function CanvasInspector({
             <Button
               type="button"
               variant="outline"
+              disabled={readOnly}
               onClick={() => onChange((current) => deleteSelected(current))}
             >
               <Trash2 className="size-4" />
@@ -1302,6 +1599,7 @@ function CanvasInspector({
         density="compact"
         size="md"
         className="tm-inspector-input"
+        disabled={readOnly}
         value={String(value)}
         onChange={(event) => onValueChange(Number(event.currentTarget.value || 0))}
       />
@@ -1309,6 +1607,12 @@ function CanvasInspector({
   )
 
   const issue = getElementIssue(element)
+  const supportsReplaceable =
+    element.kind === "text" || element.kind === "barcode" || element.kind === "qr"
+  const boundField =
+    supportsReplaceable && element.binding
+      ? (state.draft.fields.find((field) => field.key === element.binding?.fieldKey) ?? null)
+      : null
 
   return (
     <div className="tm-inspector-stack">
@@ -1331,6 +1635,7 @@ function CanvasInspector({
               density="compact"
               size="md"
               className="tm-inspector-input"
+              disabled={readOnly}
               value={element.meta.name}
               onChange={(event) =>
                 updateElement((item) => ({
@@ -1348,10 +1653,13 @@ function CanvasInspector({
               <Textarea
                 id="text-value"
                 className="tm-inspector-textarea"
+                disabled={readOnly}
                 value={element.value}
                 onChange={(event) =>
-                  updateElement((item) =>
-                    item.kind === "text" ? { ...item, value: event.currentTarget.value } : item
+                  onChange((current) =>
+                    applyDraftUpdate(current, (draft) =>
+                      updateBoundElementValue(draft, element.id, event.currentTarget.value)
+                    )
                   )
                 }
               />
@@ -1367,12 +1675,13 @@ function CanvasInspector({
                 density="compact"
                 size="md"
                 className="tm-inspector-input"
+                disabled={readOnly}
                 value={element.value}
                 onChange={(event) =>
-                  updateElement((item) =>
-                    item.kind === "barcode" || item.kind === "qr"
-                      ? { ...item, value: event.currentTarget.value }
-                      : item
+                  onChange((current) =>
+                    applyDraftUpdate(current, (draft) =>
+                      updateBoundElementValue(draft, element.id, event.currentTarget.value)
+                    )
                   )
                 }
               />
@@ -1380,6 +1689,98 @@ function CanvasInspector({
           ) : null}
         </div>
       </CanvasSection>
+
+      {supportsReplaceable ? (
+        <CanvasSection title="替换字段" className="tm-inspector-section">
+          <div className="tm-inspector-form">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={boundField ? "default" : "outline"}
+                disabled={readOnly}
+                onClick={() =>
+                  onChange((current) =>
+                    applyDraftUpdate(current, (draft) =>
+                      toggleElementBinding(draft, element.id, !boundField)
+                    )
+                  )
+                }
+              >
+                {boundField ? "可替换" : "设为可替换"}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                结构化打印时会根据这里的字段绑定来替换内容。
+              </p>
+            </div>
+
+            {boundField ? (
+              <>
+                <div className="tm-inspector-inline-field">
+                  <Label htmlFor="field-binding" className="tm-inspector-inline-label">
+                    绑定到
+                  </Label>
+                  <Select
+                    value={boundField.key}
+                    disabled={readOnly}
+                    onValueChange={(value) =>
+                      onChange((current) =>
+                        applyDraftUpdate(current, (draft) =>
+                          bindElementToExistingField(draft, element.id, value)
+                        )
+                      )
+                    }
+                  >
+                    <SelectTrigger
+                      id="field-binding"
+                      className="tm-inspector-select"
+                      disabled={readOnly}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {state.draft.fields.map((field) => (
+                        <SelectItem key={field.key} value={field.key}>
+                          {field.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="tm-inspector-inline-field">
+                  <Label htmlFor="field-label" className="tm-inspector-inline-label">
+                    字段名
+                  </Label>
+                  <Input
+                    id="field-label"
+                    density="compact"
+                    size="md"
+                    className="tm-inspector-input"
+                    disabled={readOnly}
+                    value={boundField.label}
+                    onChange={(event) =>
+                      onChange((current) =>
+                        applyDraftUpdate(current, (draft) =>
+                          renameDraftField(draft, boundField.key, event.currentTarget.value)
+                        )
+                      )
+                    }
+                  />
+                </div>
+                <div className="rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
+                  <div>Stable key: {boundField.key}</div>
+                  <div>{boundField.multiline ? "多行字段" : "单行字段"}</div>
+                  <div>已绑定 {boundField.bindings.length} 个元素</div>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">
+                当前元素保持静态值，不会出现在模板录入表里。
+              </div>
+            )}
+          </div>
+        </CanvasSection>
+      ) : null}
 
       <CanvasSection title="几何与样式" className="tm-inspector-section">
         <div className="tm-form-grid">
@@ -1507,8 +1908,12 @@ function CanvasInspector({
                 <Label htmlFor="barcode-format" className="tm-inspector-inline-label">
                   格式
                 </Label>
-                <Select value={element.format} onValueChange={() => undefined}>
-                  <SelectTrigger id="barcode-format" className="tm-inspector-select">
+                <Select value={element.format} disabled={readOnly} onValueChange={() => undefined}>
+                  <SelectTrigger
+                    id="barcode-format"
+                    className="tm-inspector-select"
+                    disabled={readOnly}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1524,6 +1929,7 @@ function CanvasInspector({
                 variant={element.showValue ? "default" : "outline"}
                 size="sm"
                 className="tm-inspector-toggle"
+                disabled={readOnly}
                 onClick={() =>
                   updateElement((item) =>
                     item.kind === "barcode" ? { ...item, showValue: !item.showValue } : item
@@ -1540,13 +1946,14 @@ function CanvasInspector({
                 </Label>
                 <Select
                   value={element.errorCorrectionLevel}
+                  disabled={readOnly}
                   onValueChange={(value: "L" | "M" | "Q" | "H") =>
                     updateElement((item) =>
                       item.kind === "qr" ? { ...item, errorCorrectionLevel: value } : item
                     )
                   }
                 >
-                  <SelectTrigger id="qr-level" className="tm-inspector-select">
+                  <SelectTrigger id="qr-level" className="tm-inspector-select" disabled={readOnly}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1569,10 +1976,12 @@ function CanvasInspector({
 function CanvasOutput({
   controller,
   state,
+  readOnly,
   onChange,
 }: {
   controller: WorkbenchController
   state: CanvasPageState
+  readOnly: boolean
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   const source = React.useMemo(
@@ -1610,7 +2019,9 @@ function CanvasOutput({
     controller.selectedPrinter?.name ?? controller.browserPrinter?.name ?? "未选择输出设备"
   const canSubmitOutput = draftIssues.length === 0
   const outputHint = canSubmitOutput
-    ? "先生成预览，确认单色内容与编码结果，再执行打印。"
+    ? readOnly
+      ? "当前打开的是历史快照。若要继续输出，请先恢复到当前草稿。"
+      : "先生成预览，确认单色内容与编码结果，再执行打印。"
     : "当前画布存在无法输出的编码内容，请先修正后再继续。"
   const [issueBubbleOpen, setIssueBubbleOpen] = React.useState(false)
   const [errorBubbleOpen, setErrorBubbleOpen] = React.useState(false)
@@ -1827,7 +2238,7 @@ function CanvasOutput({
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
-              disabled={!canSubmitOutput}
+              disabled={!canSubmitOutput || readOnly}
               onClick={async () => {
                 await controller.previewSource(source)
                 onChange((current) => ({ ...current, outputStatus: "已生成预览。" }))
@@ -1838,7 +2249,7 @@ function CanvasOutput({
             <Button
               type="button"
               variant="outline"
-              disabled={!canSubmitOutput}
+              disabled={!canSubmitOutput || readOnly}
               onClick={async () => {
                 await controller.printSourceDirect(source)
                 onChange((current) => ({ ...current, outputStatus: "已提交直接打印。" }))
@@ -2006,10 +2417,12 @@ function renderElementNode(element: CanvasDraftElement): React.ReactNode {
 
 function CanvasStageView({
   state,
+  readOnly,
   onChange,
   onViewportSizeChange,
 }: {
   state: CanvasPageState
+  readOnly: boolean
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
   onViewportSizeChange: (size: StageViewportSize) => void
 }) {
@@ -2072,6 +2485,9 @@ function CanvasStageView({
   }, [state.selectedIds])
 
   const handleStageMouseDown = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    if (readOnly) {
+      return
+    }
     if (event.target.getParent()?.className === "Transformer") {
       return
     }
@@ -2116,6 +2532,9 @@ function CanvasStageView({
   }
 
   const handleStageMouseMove = () => {
+    if (readOnly) {
+      return
+    }
     const stage = stageRef.current
     if (!stage) {
       return
@@ -2157,6 +2576,9 @@ function CanvasStageView({
   }
 
   const handleStageMouseUp = () => {
+    if (readOnly) {
+      return
+    }
     isPanningRef.current = false
     panOriginRef.current = null
 
@@ -2295,7 +2717,7 @@ function CanvasStageView({
                     offsetX={geometry.rotationOrigin.x}
                     offsetY={geometry.rotationOrigin.y}
                     rotation={element.kind === "line" ? 0 : (element.rotation ?? 0)}
-                    draggable={!element.meta.locked && !state.spacePressed}
+                    draggable={!readOnly && !element.meta.locked && !state.spacePressed}
                     onClick={(event) =>
                       onChange((current) => ({
                         ...setSelection(
@@ -2319,13 +2741,18 @@ function CanvasStageView({
                       }))
                     }
                     onDblClick={() =>
-                      onChange((current) => ({
-                        ...current,
-                        editingId: element.kind === "text" ? element.id : current.editingId,
-                        selectedIds: [element.id],
-                      }))
+                      readOnly
+                        ? undefined
+                        : onChange((current) => ({
+                            ...current,
+                            editingId: element.kind === "text" ? element.id : current.editingId,
+                            selectedIds: [element.id],
+                          }))
                     }
                     onDragEnd={(event) => {
+                      if (readOnly) {
+                        return
+                      }
                       const position = snapElementPosition(
                         element,
                         event.target.x() - geometry.rotationOrigin.x,
@@ -2371,9 +2798,11 @@ function CanvasStageView({
 
               <Transformer
                 ref={transformerRef}
+                resizeEnabled={!readOnly}
                 rotateEnabled
                 enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right"]}
                 flipEnabled={false}
+                listening={!readOnly}
                 boundBoxFunc={(oldBox, newBox) => {
                   if (Math.abs(newBox.width) < 16 || Math.abs(newBox.height) < 16) {
                     return oldBox
@@ -2381,6 +2810,9 @@ function CanvasStageView({
                   return newBox
                 }}
                 onTransformEnd={() => {
+                  if (readOnly) {
+                    return
+                  }
                   const transformer = transformerRef.current
                   if (!transformer) {
                     return
@@ -2421,12 +2853,9 @@ function CanvasStageView({
                   viewport={state.viewport}
                   onCommit={(value) =>
                     onChange((current) => {
-                      const next = applyDraftUpdate(current, (draft) => ({
-                        ...draft,
-                        elements: draft.elements.map((item) =>
-                          item.id === element.id && item.kind === "text" ? { ...item, value } : item
-                        ),
-                      }))
+                      const next = applyDraftUpdate(current, (draft) =>
+                        updateBoundElementValue(draft, element.id, value)
+                      )
                       return {
                         ...next,
                         editingId: null,
@@ -2448,19 +2877,264 @@ function CanvasStageView({
   )
 }
 
-function CanvasWorkspace({ controller, initialScenario = "wide-default" }: CanvasPageProps) {
+function formatVersionTimestamp(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function CanvasVersionsPanel({
+  state,
+  onOpenVersion,
+  onRefresh,
+  onToggleAutosaves,
+}: {
+  state: CanvasPageState
+  onOpenVersion: (version: UserTemplateVersionSnapshot) => void
+  onRefresh: () => Promise<void>
+  onToggleAutosaves: () => void
+}) {
+  if (!state.liveDraft.templateId) {
+    return (
+      <div className="tm-empty-state">
+        <p className="tm-empty-state__title">还没有版本历史</p>
+        <p className="tm-empty-state__body">
+          先执行一次保存，当前草稿才会进入本地模板库并开始记录版本。
+        </p>
+      </div>
+    )
+  }
+
+  if (!state.versionHistory) {
+    return (
+      <div className="grid gap-3">
+        <div className="tm-empty-state">
+          <p className="tm-empty-state__title">正在读取版本历史</p>
+          <p className="tm-empty-state__body">当前模板的已保存版本和未保存草稿会在这里展示。</p>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={() => void onRefresh()}>
+          刷新历史
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid gap-4">
+      <CanvasSection
+        title="当前模板"
+        description={`${state.versionHistory.template.name} · 最近保存 ${formatVersionTimestamp(
+          state.versionHistory.template.updatedAt
+        )}`}
+        aside={
+          <Button type="button" variant="outline" size="sm" onClick={() => void onRefresh()}>
+            刷新
+          </Button>
+        }
+      >
+        <div className="rounded-xl border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+          <div>已保存版本 {state.versionHistory.saved.length} 个</div>
+          <div>未保存草稿 {state.versionHistory.autosaves.length} 个</div>
+        </div>
+      </CanvasSection>
+
+      <CanvasSection title="已保存版本" description="打开后中心舞台会切到只读快照。">
+        <div className="grid gap-2">
+          {state.versionHistory.saved.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">
+              当前模板还没有已保存版本。
+            </div>
+          ) : (
+            state.versionHistory.saved.map((version) => (
+              <button
+                key={version.id}
+                type="button"
+                className={cn(
+                  "tm-choice tm-choice--layer tm-choice--layer-inspector",
+                  state.readOnlyVersion?.id === version.id && "tm-choice--active"
+                )}
+                onClick={() => onOpenVersion(version)}
+              >
+                <div className="tm-choice__main">
+                  <div className="min-w-0 flex-1 text-left">
+                    <div className="tm-choice__title-row">
+                      <div className="tm-choice__title">{version.label}</div>
+                    </div>
+                    <div className="tm-choice__meta">
+                      <span>{formatVersionTimestamp(version.createdAt)}</span>
+                      <span>#{version.version}</span>
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </CanvasSection>
+
+      <CanvasSection
+        title="未保存版本"
+        description="每 5 分钟滚动保存一次，最多保留 10 个。"
+        aside={
+          <Button type="button" variant="outline" size="sm" onClick={onToggleAutosaves}>
+            {state.autosavesExpanded ? "收起" : "展开"}
+          </Button>
+        }
+      >
+        {state.versionHistory.autosaves.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">
+            还没有未保存版本。
+          </div>
+        ) : state.autosavesExpanded ? (
+          <div className="grid gap-2">
+            {state.versionHistory.autosaves.map((version) => (
+              <button
+                key={version.id}
+                type="button"
+                className={cn(
+                  "tm-choice tm-choice--layer tm-choice--layer-inspector",
+                  state.readOnlyVersion?.id === version.id && "tm-choice--active"
+                )}
+                onClick={() => onOpenVersion(version)}
+              >
+                <div className="tm-choice__main">
+                  <div className="min-w-0 flex-1 text-left">
+                    <div className="tm-choice__title-row">
+                      <div className="tm-choice__title">{version.label}</div>
+                    </div>
+                    <div className="tm-choice__meta">
+                      <span>{formatVersionTimestamp(version.createdAt)}</span>
+                      <span>#{version.version}</span>
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border/70 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+            已折叠，共 {state.versionHistory.autosaves.length} 个未保存版本。
+          </div>
+        )}
+      </CanvasSection>
+    </div>
+  )
+}
+
+function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const routeSource = React.useMemo(() => resolveCanvasSource(searchParams), [searchParams])
+  const initialPanel = React.useMemo(() => resolveInitialCanvasPanel(searchParams), [searchParams])
+  const initialStatus = React.useMemo(() => resolveCanvasStatus(searchParams), [searchParams])
   const [state, setState] = React.useState<CanvasPageState>(() =>
-    createCanvasState(CANVAS_PRESETS[0]?.id ?? "shipping-wide", initialScenario)
+    initialScenario
+      ? createCanvasState(CANVAS_PRESETS[0]?.id ?? "shipping-wide", initialScenario)
+      : createCanvasStateFromDraft(
+          createDraftFromPreset(
+            getPresetById(routeSource.kind === "scratch" ? routeSource.presetId : "shipping-wide")
+          ),
+          {
+            loading: true,
+            activePanel: initialPanel,
+            outputStatus: initialStatus,
+          }
+        )
   )
   const isWide = useMediaQuery(`(min-width: ${CANVAS_WIDE_THRESHOLD}px)`)
   const [stageViewportSize, setStageViewportSize] = React.useState<StageViewportSize>({
     width: STAGE_VIEWPORT_WIDTH,
     height: STAGE_VIEWPORT_HEIGHT,
   })
+  const readOnly = state.readOnlyVersion !== null
+
+  const refreshVersionHistory = React.useCallback(async () => {
+    if (!state.liveDraft.templateId) {
+      return
+    }
+    const history = await readUserTemplateHistory(state.liveDraft.templateId)
+    setState((current) =>
+      current.liveDraft.templateId === state.liveDraft.templateId
+        ? { ...current, versionHistory: history }
+        : current
+    )
+  }, [state.liveDraft.templateId])
 
   React.useEffect(() => {
-    persistDraftDocument(state.draft)
-  }, [state.draft])
+    if (initialScenario) {
+      return
+    }
+
+    let cancelled = false
+    void (async () => {
+      try {
+        const loaded = await loadDraftForSource(routeSource)
+        if (cancelled) {
+          return
+        }
+        setState(
+          createCanvasStateFromDraft(loaded.draft, {
+            loading: false,
+            versionHistory: loaded.versionHistory,
+            activePanel: initialPanel,
+            outputStatus:
+              initialStatus ||
+              (routeSource.kind === "user-template"
+                ? "已加载本地用户模板。"
+                : routeSource.kind === "preset-template"
+                  ? "已载入系统模板副本，可保存为本地模板。"
+                  : ""),
+          })
+        )
+      } catch (cause) {
+        if (cancelled) {
+          return
+        }
+        const fallbackDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+        setState(
+          createCanvasStateFromDraft(fallbackDraft, {
+            loading: false,
+            outputStatus: cause instanceof Error ? cause.message : "加载画布失败。",
+          })
+        )
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [initialPanel, initialScenario, initialStatus, routeSource])
+
+  React.useEffect(() => {
+    if (initialScenario || state.loading || readOnly) {
+      return
+    }
+
+    void saveUserTemplateAutosave({
+      templateId: state.liveDraft.templateId,
+      source: state.routeSource,
+      document: state.liveDraft,
+      sourceVersionId: state.liveDraft.baseVersionId,
+    })
+
+    if (state.routeSource.kind === "scratch") {
+      persistDraftDocument(state.liveDraft)
+    }
+  }, [initialScenario, readOnly, state.liveDraft, state.loading, state.routeSource])
+
+  React.useEffect(() => {
+    if (state.activePanel !== "versions" || !state.liveDraft.templateId || initialScenario) {
+      return
+    }
+    void refreshVersionHistory()
+  }, [initialScenario, refreshVersionHistory, state.activePanel, state.liveDraft.templateId])
 
   React.useEffect(() => {
     const fallbackViewport = createViewport(state.draft.width, state.draft.height)
@@ -2514,6 +3188,20 @@ function CanvasWorkspace({ controller, initialScenario = "wide-default" }: Canva
       }
       if (event.key === " ") {
         setState((current) => ({ ...current, spacePressed: true }))
+      }
+      if (readOnly) {
+        if (event.key === "Escape") {
+          event.preventDefault()
+          setState((current) => ({
+            ...current,
+            draft: current.liveDraft,
+            readOnlyVersion: null,
+            selectedIds: [],
+            editingId: null,
+            outputStatus: "已返回当前草稿。",
+          }))
+        }
+        return
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
         event.preventDefault()
@@ -2579,7 +3267,118 @@ function CanvasWorkspace({ controller, initialScenario = "wide-default" }: Canva
       window.removeEventListener("keyup", handleKeyUp)
       window.removeEventListener("blur", handleWindowBlur)
     }
+  }, [readOnly])
+
+  const openVersion = React.useCallback((version: UserTemplateVersionSnapshot) => {
+    setState((current) => ({
+      ...current,
+      draft: cloneDraft(version.document),
+      readOnlyVersion: version,
+      selectedIds: [],
+      editingId: null,
+      activePanel: "versions",
+      focus: "center-right",
+      outputStatus: `正在查看 ${version.label}。`,
+    }))
   }, [])
+
+  const returnToCurrentDraft = React.useCallback(() => {
+    setState((current) => ({
+      ...current,
+      draft: current.liveDraft,
+      readOnlyVersion: null,
+      selectedIds: [],
+      editingId: null,
+      outputStatus: "已返回当前草稿。",
+    }))
+  }, [])
+
+  const handleRestoreVersion = React.useCallback(() => {
+    setState((current) => {
+      if (!current.readOnlyVersion || !current.liveDraft.templateId) {
+        return current
+      }
+      const restoredDraft = createRestoredDraftFromVersion(
+        current.readOnlyVersion,
+        current.liveDraft.templateId
+      )
+      return createCanvasStateFromDraft(restoredDraft, {
+        versionHistory: current.versionHistory,
+        activePanel: "versions",
+        focus: "center-right",
+        outputStatus: `已从 ${current.readOnlyVersion.label} 恢复到当前草稿。`,
+      })
+    })
+  }, [])
+
+  const persistNamedTemplate = React.useCallback(
+    async (mode: "save" | "save-as") => {
+      const baseDraft =
+        readOnly && state.readOnlyVersion ? state.readOnlyVersion.document : state.liveDraft
+      const existingTemplateId =
+        mode === "save" && !readOnly ? state.liveDraft.templateId : undefined
+      const suggestedName =
+        mode === "save" && existingTemplateId
+          ? state.liveDraft.name
+          : baseDraft.name || "未命名模板"
+      const promptLabel = mode === "save" && existingTemplateId ? suggestedName : "请输入模板名称"
+      const nextName =
+        mode === "save" && existingTemplateId
+          ? suggestedName
+          : window.prompt(promptLabel, suggestedName)?.trim()
+
+      if (!nextName) {
+        return
+      }
+
+      const documentForSave =
+        mode === "save" && existingTemplateId
+          ? {
+              ...cloneDraft(baseDraft),
+              name: nextName,
+            }
+          : duplicateDraftAsTemplate(baseDraft, nextName)
+
+      const result = await saveUserTemplate({
+        name: nextName,
+        document: documentForSave,
+        templateId: existingTemplateId,
+        sourceVersionId:
+          mode === "save" && !readOnly ? state.liveDraft.baseVersionId : state.readOnlyVersion?.id,
+      })
+
+      if (!existingTemplateId) {
+        await clearWorkingCopy(state.routeSource)
+      }
+      await clearTemplateAutosaves(result.template.id)
+      await controller.refreshUserTemplates()
+
+      const history = await readUserTemplateHistory(result.template.id)
+      navigate(
+        `/canvas?source=user-template&templateId=${result.template.id}&panel=versions&status=${
+          mode === "save" && existingTemplateId ? "saved" : "created"
+        }`,
+        { replace: true }
+      )
+      setState(
+        createCanvasStateFromDraft(result.workingCopy.draft, {
+          versionHistory: history,
+          activePanel: "versions",
+          focus: "center-right",
+          outputStatus:
+            mode === "save" && existingTemplateId ? "已保存新版本。" : "已保存为用户模板。",
+        })
+      )
+    },
+    [
+      controller.refreshUserTemplates,
+      navigate,
+      readOnly,
+      state.liveDraft,
+      state.readOnlyVersion,
+      state.routeSource,
+    ]
+  )
 
   const canUndo = state.historyIndex > 0
   const canRedo = state.historyIndex < state.history.length - 1
@@ -2592,6 +3391,11 @@ function CanvasWorkspace({ controller, initialScenario = "wide-default" }: Canva
         canRedo={canRedo}
         isWide={isWide}
         stageViewportSize={stageViewportSize}
+        readOnly={readOnly}
+        onSave={() => persistNamedTemplate("save")}
+        onSaveAs={() => persistNamedTemplate("save-as")}
+        onRestoreVersion={handleRestoreVersion}
+        onReturnCurrent={returnToCurrentDraft}
         onChange={setState}
       />
 
@@ -2615,7 +3419,7 @@ function CanvasWorkspace({ controller, initialScenario = "wide-default" }: Canva
             </div>
           </div>
           <div className="tm-pane__body">
-            <CanvasLayerRail state={state} onChange={setState} />
+            <CanvasLayerRail state={state} readOnly={readOnly} onChange={setState} />
           </div>
         </aside>
 
@@ -2623,20 +3427,30 @@ function CanvasWorkspace({ controller, initialScenario = "wide-default" }: Canva
           <div className="tm-pane__header">
             <div className="tm-pane__headline">
               <h2>标签编辑台</h2>
-              <p>单色编辑，所见即所得。</p>
+              <p>{readOnly ? "历史快照只读查看。" : "单色编辑，所见即所得。"}</p>
             </div>
             <div className="tm-pane__meta">
               <Badge variant="outline" className="tm-chip">
                 {state.draft.width} × {state.draft.height}
               </Badge>
               <Badge variant="outline" className="tm-chip">
-                {state.selectedIds.length > 0 ? `已选 ${state.selectedIds.length} 项` : "待选择"}
+                {readOnly
+                  ? (state.readOnlyVersion?.label ?? "只读快照")
+                  : state.selectedIds.length > 0
+                    ? `已选 ${state.selectedIds.length} 项`
+                    : "待选择"}
               </Badge>
             </div>
           </div>
           <div className="tm-pane__body">
+            {state.outputStatus ? (
+              <div className="rounded-xl border border-border/70 bg-background/80 px-3 py-2 text-sm text-muted-foreground">
+                {state.outputStatus}
+              </div>
+            ) : null}
             <CanvasStageView
               state={state}
+              readOnly={readOnly}
               onChange={setState}
               onViewportSizeChange={setStageViewportSize}
             />
@@ -2646,11 +3460,21 @@ function CanvasWorkspace({ controller, initialScenario = "wide-default" }: Canva
         <aside className="tm-pane tm-pane--right tm-pane--canvas-inspector">
           <div className="tm-pane__header">
             <div className="tm-pane__headline">
-              <h2>{state.activePanel === "attributes" ? "当前元素属性" : "打印输出"}</h2>
+              <h2>
+                {state.activePanel === "attributes"
+                  ? "当前元素属性"
+                  : state.activePanel === "output"
+                    ? "打印输出"
+                    : "版本历史"}
+              </h2>
               <p>
                 {state.activePanel === "attributes"
-                  ? "单选编辑，多选走批量操作。"
-                  : "先预览，再打印。"}
+                  ? readOnly
+                    ? "当前打开的是只读快照。"
+                    : "单选编辑，多选走批量操作。"
+                  : state.activePanel === "output"
+                    ? "先预览，再打印。"
+                    : "已保存版本与未保存草稿都会汇总在这里。"}
               </p>
             </div>
             <div className="tm-pane__tabs">
@@ -2680,16 +3504,46 @@ function CanvasWorkspace({ controller, initialScenario = "wide-default" }: Canva
               >
                 输出
               </Button>
+              <Button
+                size="sm"
+                variant={state.activePanel === "versions" ? "default" : "outline"}
+                onClick={() =>
+                  setState((current) => ({
+                    ...current,
+                    activePanel: "versions",
+                    focus: "center-right",
+                  }))
+                }
+              >
+                版本
+              </Button>
             </div>
           </div>
           <div className="tm-pane__body">
             <div className="tm-pane__stack">
               {state.activePanel === "attributes" ? (
-                <CanvasInspector state={state} onChange={setState} />
+                <CanvasInspector state={state} readOnly={readOnly} onChange={setState} />
+              ) : state.activePanel === "output" ? (
+                <CanvasOutput
+                  controller={controller}
+                  state={state}
+                  readOnly={readOnly}
+                  onChange={setState}
+                />
               ) : (
-                <CanvasOutput controller={controller} state={state} onChange={setState} />
+                <CanvasVersionsPanel
+                  state={state}
+                  onOpenVersion={openVersion}
+                  onRefresh={refreshVersionHistory}
+                  onToggleAutosaves={() =>
+                    setState((current) => ({
+                      ...current,
+                      autosavesExpanded: !current.autosavesExpanded,
+                    }))
+                  }
+                />
               )}
-              <CanvasLayerPanel state={state} onChange={setState} />
+              <CanvasLayerPanel state={state} readOnly={readOnly} onChange={setState} />
             </div>
           </div>
         </aside>

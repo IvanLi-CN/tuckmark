@@ -77,13 +77,13 @@ output.
 ### Workspace contract
 
 - `templates` workspace layout:
-  - left: template list and template notes
+  - left: weak-grouped system templates and browser-local user templates
   - center: multi-row batch-entry table
   - right: preview, print parameters, and print actions
 - `canvas` workspace layout:
   - left: document presets, quick-add actions, and layer management
   - center: stage, editor toolbar, zoom state, and stage hints
-  - right: `属性 / 输出` inspector with explicit tab switching
+  - right: `属性 / 输出 / 版本` inspector with explicit tab switching
 - `system` page contains:
   - app settings
   - default print settings
@@ -161,9 +161,14 @@ output.
   - per-layer metadata (`name`, `visible`, `locked`)
   - editor metadata (`gridEnabled`, `snapEnabled`)
 - Draft persistence uses `localStorage` keys namespaced by preset id.
-- Refresh restores only the latest draft snapshot for the active preset.
-- Resetting the draft clears the stored draft for that preset and rebuilds from
-  the built-in preset.
+- Browser-local user templates use an IndexedDB-backed registry with a memory
+  fallback in nonconforming environments.
+- Refresh restores the latest working copy for the active document source.
+- Resetting a scratch draft clears the stored scratch working copy for that
+  preset and rebuilds from the built-in preset.
+- Resetting a preset-template draft rebuilds from the system template source.
+- Resetting a user-template draft restores the current saved version of that
+  browser-local template.
 - Undo / redo keeps an in-memory history stack capped at `50` snapshots and
   does not restore history across refreshes.
 - Canvas interaction baseline:
@@ -197,6 +202,41 @@ output.
 - No remote history service or `/api/history` endpoint is introduced.
 - Canvas drafts stay browser-local only. No remote document store or account
   sync is introduced.
+- Browser-local user template persistence contract:
+  - source kinds are `scratch`, `preset-template`, and `user-template`
+  - first save from `scratch` or `preset-template` creates a browser-local user
+    template and its first saved version
+  - save on a connected user template appends a new saved version
+  - save as creates a new browser-local template from the current draft or
+    read-only version and does not inherit the source template's history
+  - saved versions retain the most recent `20`
+  - autosaved unsaved versions retain the most recent `10`
+  - autosave rolls every `5` minutes for named browser-local templates
+- Browser-local user template field contract:
+  - only `text`, `barcode`, and `qr` can bind to structured replacement fields
+  - field identity is a stable `key`; layer names remain editor-facing labels
+  - multiple elements may share one field binding
+  - rebinding to an existing field immediately syncs the element value to that
+    field default value
+  - v1 field metadata is limited to `label`, `key`, `defaultValue`,
+    `multiline`, and the current binding list
+- Template list contract:
+  - `/templates` groups cards into `系统模板` and `我的模板`
+  - system templates keep `录入打印` and add an explicit `编辑模板` route into
+    `/canvas?source=preset-template&templateId=...`
+  - browser-local user templates expose both `录入打印` and `编辑模板`
+  - browser-local user template rows compile client-side into a concrete canvas
+    definition before preview or print, so `browser-static` and `server-http`
+    reuse the existing canvas artifact seam without a new template persistence
+    API
+- Canvas editor contract:
+  - system template elements with fixed keys such as `__title` stay static when
+    imported into the editor
+  - the `版本` tab lists saved versions and a collapsed autosave section
+  - opening a historical version makes the stage read-only
+  - read-only historical mode only exposes `恢复`, `另存为`, and `返回当前草稿`
+  - restoring a historical version creates a new current working copy instead
+    of mutating saved history in place
 
 ## Acceptance
 
@@ -213,6 +253,18 @@ output.
   wheel zoom, and fit-to-view without horizontal shell breakage.
 - Text supports inline stage editing via double click.
 - Refresh restores the latest preset-scoped draft and reset clears it.
+- `/canvas` can load system templates, scratch drafts, and browser-local user
+  templates through route query parameters.
+- First save from a system template or scratch draft creates a browser-local
+  user template.
+- Save on a connected browser-local user template appends a new saved version.
+- Save as creates a distinct browser-local template without inheriting the
+  source history.
+- Opening a historical version switches the stage into read-only mode and
+  restore returns that version into the current working copy.
+- `/templates` displays both `系统模板` and `我的模板`; browser-local templates
+  support structured row editing, preview, print, and an edit jump back to
+  `/canvas`.
 - Invalid barcode or QR payloads surface as user-visible errors.
 - `1100×820` keeps the `/canvas` stage visible while one contextual side rail
   is hidden.
@@ -255,6 +307,16 @@ output.
 
   PR: include
   ![Canvas output preview workspace](./assets/canvas-output-preview-1280x800.png)
+
+- `1280×800` template workspace showing grouped `系统模板 / 我的模板` cards with a browser-local user template present
+
+  PR: include
+  ![Template grouped user templates](./assets/templates-user-groups-1280x800.png)
+
+- `1280×800` canvas workspace on a browser-local user template with the `版本` tab open and saved/autosave history visible
+
+  PR: include
+  ![Canvas version history workspace](./assets/canvas-version-history-1280x800.png)
 
 - `1600×1024` system page in wide three-column mode
 

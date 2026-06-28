@@ -63,6 +63,18 @@ function createMatchMediaResult(query: string): MediaQueryList {
 function createFakeIndexedDb(): IDBFactory {
   const databases = new Map<string, Map<string, Map<string, unknown>>>()
 
+  function createDomStringList(values: string[]): DOMStringList {
+    return {
+      length: values.length,
+      item(index: number) {
+        return values[index] ?? null
+      },
+      contains(value: string) {
+        return values.includes(value)
+      },
+    } as DOMStringList
+  }
+
   function createRequest<T>(): IDBRequest<T> {
     return {
       error: null,
@@ -105,20 +117,43 @@ function createFakeIndexedDb(): IDBFactory {
       queueMicrotask(() => {
         const existing = databases.get(name)
         const stores = existing ?? new Map<string, Map<string, unknown>>()
+        const objectStoreIndexMaps = new Map<
+          string,
+          Map<string, { keyPath: string | string[]; unique: boolean }>
+        >()
         const database = {
           close() {},
           createObjectStore(storeName: string) {
             if (!stores.has(storeName)) {
               stores.set(storeName, new Map())
             }
-            return {} as IDBObjectStore
+            if (!objectStoreIndexMaps.has(storeName)) {
+              objectStoreIndexMaps.set(storeName, new Map())
+            }
+            return {
+              createIndex(
+                indexName: string,
+                keyPath: string | string[],
+                options?: IDBIndexParameters
+              ) {
+                objectStoreIndexMaps
+                  .get(storeName)
+                  ?.set(indexName, { keyPath, unique: options?.unique ?? false })
+                return {} as IDBIndex
+              },
+            } as IDBObjectStore
           },
           deleteObjectStore() {},
-          transaction(storeName: string) {
-            if (!stores.has(storeName)) {
-              stores.set(storeName, new Map())
+          transaction(storeNames: string | string[]) {
+            const names = Array.isArray(storeNames) ? storeNames : [storeNames]
+            for (const storeName of names) {
+              if (!stores.has(storeName)) {
+                stores.set(storeName, new Map())
+              }
+              if (!objectStoreIndexMaps.has(storeName)) {
+                objectStoreIndexMaps.set(storeName, new Map())
+              }
             }
-            const store = stores.get(storeName) as Map<string, unknown>
             const transaction = {
               error: null,
               onabort: null,
@@ -129,8 +164,28 @@ function createFakeIndexedDb(): IDBFactory {
               db: database,
               durability: "default",
               mode: "readwrite",
-              objectStoreNames: {} as DOMStringList,
-              objectStore() {
+              objectStoreNames: createDomStringList(names),
+              objectStore(requestedStoreName: string) {
+                const store = stores.get(requestedStoreName) as Map<string, unknown>
+                const indexDefinitions = objectStoreIndexMaps.get(requestedStoreName) ?? new Map()
+
+                const readIndexItems = (indexName: string, query: unknown) => {
+                  const definition = indexDefinitions.get(indexName)
+                  if (!definition) {
+                    return []
+                  }
+                  return Array.from(store.values()).filter((value) => {
+                    const record = value as Record<string, unknown>
+                    if (Array.isArray(definition.keyPath)) {
+                      const expected = Array.isArray(query) ? query : [query]
+                      return definition.keyPath.every(
+                        (segment: string, index: number) => record[segment] === expected[index]
+                      )
+                    }
+                    return record[definition.keyPath] === query
+                  })
+                }
+
                 return {
                   get(key: string) {
                     const getRequest = createRequest<unknown>() as unknown as {
@@ -148,6 +203,100 @@ function createFakeIndexedDb(): IDBFactory {
                     })
                     return getRequest
                   },
+                  getAll() {
+                    const getAllRequest = createRequest<unknown[]>() as unknown as {
+                      readyState: IDBRequestReadyState
+                      result: unknown[]
+                      onsuccess: IDBRequest<unknown[]>["onsuccess"]
+                    }
+                    queueMicrotask(() => {
+                      getAllRequest.readyState = "done"
+                      getAllRequest.result = Array.from(store.values()).map((value) =>
+                        structuredClone(value)
+                      )
+                      getAllRequest.onsuccess?.call(
+                        getAllRequest as unknown as IDBRequest<unknown[]>,
+                        new Event("success")
+                      )
+                    })
+                    return getAllRequest
+                  },
+                  delete(key: string) {
+                    const deleteRequest = createRequest<undefined>() as unknown as {
+                      readyState: IDBRequestReadyState
+                      result: undefined
+                      onsuccess: IDBRequest<undefined>["onsuccess"]
+                    }
+                    queueMicrotask(() => {
+                      store.delete(key)
+                      deleteRequest.readyState = "done"
+                      deleteRequest.result = undefined
+                      deleteRequest.onsuccess?.call(
+                        deleteRequest as unknown as IDBRequest<undefined>,
+                        new Event("success")
+                      )
+                    })
+                    return deleteRequest
+                  },
+                  clear() {
+                    const clearRequest = createRequest<undefined>() as unknown as {
+                      readyState: IDBRequestReadyState
+                      result: undefined
+                      onsuccess: IDBRequest<undefined>["onsuccess"]
+                    }
+                    queueMicrotask(() => {
+                      store.clear()
+                      clearRequest.readyState = "done"
+                      clearRequest.result = undefined
+                      clearRequest.onsuccess?.call(
+                        clearRequest as unknown as IDBRequest<undefined>,
+                        new Event("success")
+                      )
+                    })
+                    return clearRequest
+                  },
+                  index(indexName: string) {
+                    return {
+                      objectStore: this as IDBObjectStore,
+                      getAll(query?: unknown) {
+                        const request = createRequest<unknown[]>() as unknown as {
+                          readyState: IDBRequestReadyState
+                          result: unknown[]
+                          onsuccess: IDBRequest<unknown[]>["onsuccess"]
+                        }
+                        queueMicrotask(() => {
+                          request.readyState = "done"
+                          request.result = readIndexItems(indexName, query).map((value) =>
+                            structuredClone(value)
+                          )
+                          request.onsuccess?.call(
+                            request as unknown as IDBRequest<unknown[]>,
+                            new Event("success")
+                          )
+                        })
+                        return request
+                      },
+                      getAllKeys(query?: unknown) {
+                        const request = createRequest<unknown[]>() as unknown as {
+                          readyState: IDBRequestReadyState
+                          result: unknown[]
+                          onsuccess: IDBRequest<unknown[]>["onsuccess"]
+                        }
+                        queueMicrotask(() => {
+                          request.readyState = "done"
+                          request.result = readIndexItems(indexName, query).map((value) => {
+                            const record = value as Record<string, unknown>
+                            return String(record.id ?? record.sourceKey ?? "")
+                          })
+                          request.onsuccess?.call(
+                            request as unknown as IDBRequest<unknown[]>,
+                            new Event("success")
+                          )
+                        })
+                        return request
+                      },
+                    } as IDBIndex
+                  },
                   put(value: { artifact: { id: string } }) {
                     const putRequest = createRequest<string>() as unknown as {
                       readyState: IDBRequestReadyState
@@ -155,9 +304,15 @@ function createFakeIndexedDb(): IDBFactory {
                       onsuccess: IDBRequest<string>["onsuccess"]
                     }
                     queueMicrotask(() => {
-                      store.set(value.artifact.id, structuredClone(value))
+                      const record = value as Record<string, unknown>
+                      const artifact =
+                        typeof record.artifact === "object" && record.artifact !== null
+                          ? (record.artifact as { id?: string })
+                          : undefined
+                      const key = String(record.id ?? record.sourceKey ?? artifact?.id ?? "")
+                      store.set(key, structuredClone(value))
                       putRequest.readyState = "done"
-                      putRequest.result = value.artifact.id
+                      putRequest.result = key
                       putRequest.onsuccess?.call(
                         putRequest as unknown as IDBRequest<string>,
                         new Event("success")
@@ -186,7 +341,7 @@ function createFakeIndexedDb(): IDBFactory {
             return true
           },
           name,
-          objectStoreNames: {} as DOMStringList,
+          objectStoreNames: createDomStringList(Array.from(stores.keys())),
           version: 1,
         } as unknown as IDBDatabase
 

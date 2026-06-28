@@ -33,7 +33,10 @@ import { buildSvg, getTemplateById } from "../../../packages/core/src/web.js"
 
 import type { ApiClient } from "./api-client.js"
 import type { BrowserPrintSource } from "./browser-print-payload.js"
-import type { CanvasStoryScenario } from "./canvas-editor-model.js"
+import {
+  type CanvasStoryScenario,
+  compileDraftToFilledCanvasDefinition,
+} from "./canvas-editor-model.js"
 import { CanvasWorkspace } from "./canvas-page.js"
 import { ProductMark } from "./components/product-mark.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
@@ -55,10 +58,14 @@ import { cn } from "./lib/utils.js"
 import type {
   AppContext,
   CanvasDocumentPreset,
+  CanvasDraftDocument,
   CanvasElement,
   RenderOptions,
   Template,
+  TemplateField,
+  UserTemplateSummary,
 } from "./types.js"
+import { readUserTemplateHistory } from "./user-template-store.js"
 import { createInitialTemplateRows, useWorkbenchController } from "./workbench-controller.js"
 
 type AppProps = {
@@ -71,6 +78,19 @@ type TemplateRow = {
   id: string
   values: Record<string, string>
 }
+
+type TemplateCardEntry =
+  | {
+      kind: "system"
+      id: string
+      template: Template
+    }
+  | {
+      kind: "user"
+      id: string
+      template: UserTemplateSummary
+      draft: CanvasDraftDocument | null
+    }
 
 type TemplateFocus = "left-center" | "center-right"
 type CanvasFocus = "left-center" | "center-right"
@@ -206,7 +226,7 @@ function formatRelativeTime(value: string): string {
   return `${deltaDays} 天前`
 }
 
-function formatTemplateSize(template: Template): string {
+function _formatTemplateSize(template: Template): string {
   if (template.width && template.height) {
     return `${template.width} × ${template.height}`
   }
@@ -223,6 +243,35 @@ function buildTemplatePreviewSvg(template: Template): string | null {
   } catch {
     return null
   }
+}
+
+function buildUserTemplatePreviewSvg(draft: CanvasDraftDocument | null): string | null {
+  if (!draft) {
+    return null
+  }
+
+  try {
+    const input = Object.fromEntries(
+      draft.fields.map((field) => [field.key, field.defaultValue ?? ""])
+    )
+    const compiled = compileDraftToFilledCanvasDefinition(draft, input)
+    return buildSvg(compiled.width, compiled.height, compiled.elements, {})
+  } catch {
+    return null
+  }
+}
+
+function toTemplateFieldList(template: Template | UserTemplateSummary): TemplateField[] {
+  if ("required" in (template.fields[0] ?? {})) {
+    return template.fields as TemplateField[]
+  }
+  return template.fields.map((field) => ({
+    key: field.key,
+    label: field.label,
+    required: false,
+    multiline: field.multiline,
+    defaultValue: field.defaultValue,
+  }))
 }
 
 function toDataUrl(svg: string): string {
@@ -246,6 +295,18 @@ function createTemplatePrintSource(
     templateId: template.id,
     rowId: row.id,
     input: row.values,
+    renderOptions: createPreviewRenderOptions(renderOptions),
+  }
+}
+
+function createUserTemplatePrintSource(
+  draft: CanvasDraftDocument,
+  row: TemplateRow,
+  renderOptions: RenderOptions
+): BrowserPrintSource {
+  return {
+    kind: "canvas",
+    canvas: compileDraftToFilledCanvasDefinition(draft, row.values),
     renderOptions: createPreviewRenderOptions(renderOptions),
   }
 }
@@ -342,6 +403,13 @@ function toSingleLineFieldValue(value: string) {
 
 let templateColumnMeasureContext: CanvasRenderingContext2D | null | undefined
 
+function canMeasureTemplateColumnsWithCanvas() {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
+    return false
+  }
+  return !/jsdom/i.test(navigator.userAgent)
+}
+
 function getTemplateColumnWidthRange(field: Template["fields"][number]) {
   return {
     minWidth: 44,
@@ -351,7 +419,7 @@ function getTemplateColumnWidthRange(field: Template["fields"][number]) {
 
 function measureTemplateColumnTextWidth(value: string) {
   const text = value || "—"
-  if (typeof document === "undefined") {
+  if (typeof document === "undefined" || !canMeasureTemplateColumnsWithCanvas()) {
     return Math.max(Array.from(text).length, 1) * 7.25
   }
 
@@ -517,17 +585,38 @@ function toCanvasPrintSource(
 }
 
 function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>) {
-  const [templateId, setTemplateId] = React.useState(() => controller.templates[0]?.id ?? "")
-  const activeTemplate = React.useMemo(
-    () =>
-      controller.templates.find((template) => template.id === templateId) ??
-      controller.templates[0],
-    [controller.templates, templateId]
+  const [userTemplatePreviewDrafts, setUserTemplatePreviewDrafts] = React.useState<
+    Record<string, CanvasDraftDocument | null>
+  >({})
+  const templateEntries = React.useMemo<TemplateCardEntry[]>(
+    () => [
+      ...controller.templates.map((template) => ({
+        kind: "system" as const,
+        id: `system:${template.id}`,
+        template,
+      })),
+      ...controller.userTemplates.map((template) => ({
+        kind: "user" as const,
+        id: `user:${template.id}`,
+        template,
+        draft: userTemplatePreviewDrafts[template.id] ?? null,
+      })),
+    ],
+    [controller.templates, controller.userTemplates, userTemplatePreviewDrafts]
   )
+  const [templateEntryId, setTemplateEntryId] = React.useState(() => templateEntries[0]?.id ?? "")
+  const activeTemplateEntry = React.useMemo(
+    () =>
+      templateEntries.find((entry) => entry.id === templateEntryId) ?? templateEntries[0] ?? null,
+    [templateEntries, templateEntryId]
+  )
+  const activeTemplate = activeTemplateEntry?.template ?? null
 
   const [templateRows, setTemplateRows] = React.useState<TemplateRow[]>(() =>
     createInitialTemplateRows(controller.templates[0], 3)
   )
+  const [activeUserTemplateDraft, setActiveUserTemplateDraft] =
+    React.useState<CanvasDraftDocument | null>(null)
   const [selectedRowId, setSelectedRowId] = React.useState<string>("")
   const [editingTemplateCell, setEditingTemplateCell] = React.useState<{
     rowId: string
@@ -537,7 +626,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   const [templateNarrowStage, setTemplateNarrowStage] = React.useState<TemplateNarrowStage>("list")
 
   React.useEffect(() => {
-    if (!activeTemplate) {
+    if (!activeTemplateEntry || !activeTemplate) {
       setTemplateRows([])
       setSelectedRowId("")
       return
@@ -547,9 +636,64 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       if (currentRows.length > 0 && currentRows[0]?.id.startsWith(activeTemplate.id)) {
         return currentRows
       }
-      return createInitialTemplateRows(activeTemplate, 3)
+      return createInitialTemplateRows(
+        {
+          id: activeTemplate.id,
+          name: activeTemplate.name,
+          description: activeTemplate.description,
+          width: activeTemplate.width,
+          height: activeTemplate.height,
+          fields: toTemplateFieldList(activeTemplate),
+        },
+        3
+      )
     })
-  }, [activeTemplate])
+  }, [activeTemplate, activeTemplateEntry])
+
+  React.useEffect(() => {
+    if (controller.userTemplates.length === 0) {
+      setUserTemplatePreviewDrafts({})
+      return
+    }
+
+    let cancelled = false
+    void (async () => {
+      const previews = await Promise.all(
+        controller.userTemplates.map(async (template) => {
+          const history = await readUserTemplateHistory(template.id)
+          const version =
+            history?.saved.find((item) => item.id === history.template.currentVersionId) ??
+            history?.saved[0] ??
+            null
+          return [template.id, version?.document ?? null] as const
+        })
+      )
+
+      if (!cancelled) {
+        setUserTemplatePreviewDrafts(Object.fromEntries(previews))
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [controller.userTemplates])
+
+  React.useEffect(() => {
+    if (activeTemplateEntry?.kind !== "user") {
+      setActiveUserTemplateDraft(null)
+      return
+    }
+
+    void (async () => {
+      const history = await readUserTemplateHistory(activeTemplateEntry.template.id)
+      const version =
+        history?.saved.find((item) => item.id === history.template.currentVersionId) ??
+        history?.saved[0] ??
+        null
+      setActiveUserTemplateDraft(version?.document ?? null)
+    })()
+  }, [activeTemplateEntry])
 
   React.useEffect(() => {
     if (!templateRows.some((row) => row.id === selectedRowId)) {
@@ -563,11 +707,14 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     }
     const row = templateRows.find((item) => item.id === editingTemplateCell.rowId)
     const hasField =
-      activeTemplate?.fields.some((field) => field.key === editingTemplateCell.fieldKey) ?? false
+      (activeTemplateEntry?.kind === "user"
+        ? activeTemplateEntry.template.fields
+        : activeTemplate?.fields
+      )?.some((field) => field.key === editingTemplateCell.fieldKey) ?? false
     if (!row || !hasField) {
       setEditingTemplateCell(null)
     }
-  }, [activeTemplate, editingTemplateCell, templateRows])
+  }, [activeTemplate, activeTemplateEntry, editingTemplateCell, templateRows])
 
   const selectedTemplateRow = React.useMemo(
     () => templateRows.find((row) => row.id === selectedRowId) ?? templateRows[0] ?? null,
@@ -646,20 +793,20 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     if (!activeTemplate) {
       return
     }
+    const fields =
+      activeTemplateEntry?.kind === "user"
+        ? activeTemplateEntry.template.fields
+        : activeTemplate.fields
     const row: TemplateRow = {
       id: `${activeTemplate.id}-${crypto.randomUUID()}`,
-      values: Object.fromEntries(
-        activeTemplate.fields.map((field) => [field.key, field.defaultValue ?? ""])
-      ),
+      values: Object.fromEntries(fields.map((field) => [field.key, field.defaultValue ?? ""])),
     }
     setTemplateRows((currentRows) => [...currentRows, row])
     setSelectedRowId(row.id)
-    setEditingTemplateCell(
-      activeTemplate.fields[0] ? { rowId: row.id, fieldKey: activeTemplate.fields[0].key } : null
-    )
+    setEditingTemplateCell(fields[0] ? { rowId: row.id, fieldKey: fields[0].key } : null)
     setTemplateFocus("left-center")
     setTemplateNarrowStage("table")
-  }, [activeTemplate])
+  }, [activeTemplate, activeTemplateEntry])
 
   const duplicateTemplateRow = React.useCallback(() => {
     if (!selectedTemplateRow) {
@@ -679,12 +826,14 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       return next
     })
     setSelectedRowId(row.id)
-    setEditingTemplateCell(
-      activeTemplate?.fields[0] ? { rowId: row.id, fieldKey: activeTemplate.fields[0].key } : null
-    )
+    const fields =
+      activeTemplateEntry?.kind === "user"
+        ? activeTemplateEntry.template.fields
+        : activeTemplate?.fields
+    setEditingTemplateCell(fields?.[0] ? { rowId: row.id, fieldKey: fields[0].key } : null)
     setTemplateFocus("left-center")
     setTemplateNarrowStage("table")
-  }, [activeTemplate, selectedTemplateRow])
+  }, [activeTemplate, activeTemplateEntry, selectedTemplateRow])
 
   const deleteTemplateRow = React.useCallback(() => {
     if (!selectedTemplateRow) {
@@ -703,7 +852,10 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
         return
       }
 
-      const source = createTemplatePrintSource(activeTemplate, row, controller.renderOptions)
+      const source =
+        activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
+          ? createUserTemplatePrintSource(activeUserTemplateDraft, row, controller.renderOptions)
+          : createTemplatePrintSource(activeTemplate as Template, row, controller.renderOptions)
       const previewKey = JSON.stringify(source)
       const result = await controller.previewSource(source)
 
@@ -714,7 +866,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
         }
       }
     },
-    [activeTemplate, controller]
+    [activeTemplate, activeTemplateEntry, activeUserTemplateDraft, controller]
   )
 
   const autoPreviewTemplateRow = React.useCallback(
@@ -724,7 +876,10 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       }
       clearTemplateAutoPreviewTimer()
 
-      const source = createTemplatePrintSource(activeTemplate, row, controller.renderOptions)
+      const source =
+        activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
+          ? createUserTemplatePrintSource(activeUserTemplateDraft, row, controller.renderOptions)
+          : createTemplatePrintSource(activeTemplate as Template, row, controller.renderOptions)
       const previewKey = JSON.stringify(source)
       if (
         lastAutoPreviewKeyRef.current === previewKey ||
@@ -742,7 +897,14 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
         }
       }
     },
-    [activeTemplate, clearTemplateAutoPreviewTimer, controller.renderOptions, previewTemplateRow]
+    [
+      activeTemplate,
+      activeTemplateEntry,
+      activeUserTemplateDraft,
+      clearTemplateAutoPreviewTimer,
+      controller.renderOptions,
+      previewTemplateRow,
+    ]
   )
 
   const updateTemplateField = React.useCallback(
@@ -799,15 +961,29 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       controller.setError("先选择模板与一行数据。")
       return
     }
-    await controller.printSourceDirect({
-      kind: "template",
-      templateId: activeTemplate.id,
-      rowId: selectedTemplateRow.id,
-      input: selectedTemplateRow.values,
-      renderOptions: createPreviewRenderOptions(controller.renderOptions),
-    })
+    await controller.printSourceDirect(
+      activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
+        ? createUserTemplatePrintSource(
+            activeUserTemplateDraft,
+            selectedTemplateRow,
+            controller.renderOptions
+          )
+        : {
+            kind: "template",
+            templateId: activeTemplate.id,
+            rowId: selectedTemplateRow.id,
+            input: selectedTemplateRow.values,
+            renderOptions: createPreviewRenderOptions(controller.renderOptions),
+          }
+    )
     setTemplateFocus("center-right")
-  }, [activeTemplate, controller, selectedTemplateRow])
+  }, [
+    activeTemplate,
+    activeTemplateEntry,
+    activeUserTemplateDraft,
+    controller,
+    selectedTemplateRow,
+  ])
 
   const addCanvasElement = React.useCallback((kind: CanvasElement["kind"]) => {
     setCanvasDraft((currentDraft) => {
@@ -855,6 +1031,8 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   }, [canvasDraft, controller])
 
   return {
+    activeTemplateEntry,
+    activeUserTemplateDraft,
     activeTemplate,
     addCanvasElement,
     addTemplateRow,
@@ -881,11 +1059,12 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     setSelectedCanvasElementId,
     setSelectedRowId,
     setTemplateFocus,
-    setTemplateId,
+    setTemplateEntryId,
     setTemplateNarrowStage,
     templateFocus,
+    templateEntries,
     templateNarrowStage,
-    templateId,
+    templateEntryId,
     templateRows,
     updateCanvasElement,
     updateTemplateField,
@@ -1270,6 +1449,7 @@ function TemplatesPage({
   controller: ReturnType<typeof useWorkbenchController>
   state: ReturnType<typeof useWorkbenchPages>
 }) {
+  const navigate = useNavigate()
   const isTriple = useMediaQuery(`(min-width: ${WIDE_TRIPLE_THRESHOLD}px)`)
   const stacksPreviewBelowTable = !useMediaQuery(
     `(min-width: ${TEMPLATE_STACKED_PREVIEW_THRESHOLD}px)`
@@ -1289,14 +1469,10 @@ function TemplatesPage({
   const [listMode, setListMode] = React.useState<TemplateListMode>("large")
   const [tableShellElement, setTableShellElement] = React.useState<HTMLDivElement | null>(null)
   const tableShellWidth = useElementClientWidth(tableShellElement)
+  const activeTemplateFields = state.activeTemplate ? toTemplateFieldList(state.activeTemplate) : []
   const templateColumnLayout = React.useMemo(
-    () =>
-      resolveTemplateColumnLayout(
-        state.activeTemplate?.fields ?? [],
-        state.templateRows,
-        tableShellWidth
-      ),
-    [state.activeTemplate?.fields, state.templateRows, tableShellWidth]
+    () => resolveTemplateColumnLayout(activeTemplateFields, state.templateRows, tableShellWidth),
+    [activeTemplateFields, state.templateRows, tableShellWidth]
   )
 
   return (
@@ -1345,23 +1521,49 @@ function TemplatesPage({
                 listMode === "large" ? "tm-template-list--grid" : "tm-template-list--list"
               )}
             >
-              {controller.templates.map((template) => (
-                <TemplateCard
-                  key={template.id}
-                  template={template}
-                  active={state.activeTemplate?.id === template.id}
-                  mode={listMode}
-                  onClick={() => {
-                    state.setTemplateId(template.id)
-                    if (usesSingleOutletFlow) {
-                      state.setTemplateNarrowStage("table")
-                      void state.previewSelectedTemplateRow()
-                      return
-                    }
-                    state.setTemplateFocus("left-center")
-                  }}
-                />
-              ))}
+              <TemplateGroup
+                title="系统模板"
+                entries={state.templateEntries.filter((entry) => entry.kind === "system")}
+                listMode={listMode}
+                activeEntryId={state.activeTemplateEntry?.id ?? ""}
+                onSelect={(entryId) => {
+                  state.setTemplateEntryId(entryId)
+                  if (usesSingleOutletFlow) {
+                    state.setTemplateNarrowStage("table")
+                    return
+                  }
+                  state.setTemplateFocus("left-center")
+                }}
+                onEdit={(entryId) => {
+                  const entry = state.templateEntries.find((item) => item.id === entryId)
+                  if (entry?.kind !== "system") {
+                    return
+                  }
+                  navigate(`/canvas?source=preset-template&templateId=${entry.template.id}`)
+                }}
+              />
+              <TemplateGroup
+                title="我的模板"
+                entries={state.templateEntries.filter((entry) => entry.kind === "user")}
+                listMode={listMode}
+                activeEntryId={state.activeTemplateEntry?.id ?? ""}
+                emptyText="还没有保存到浏览器本地的用户模板。"
+                onSelect={(entryId) => {
+                  state.setTemplateEntryId(entryId)
+                  if (usesSingleOutletFlow) {
+                    state.setTemplateNarrowStage("table")
+                    return
+                  }
+                  state.setTemplateFocus("left-center")
+                }}
+                onEdit={(entryId) => {
+                  const entry = state.templateEntries.find((item) => item.id === entryId)
+                  if (entry?.kind !== "user") {
+                    return
+                  }
+                  navigate(`/canvas?source=user-template&templateId=${entry.template.id}`)
+                }}
+              />
             </div>
           </aside>
         ) : null}
@@ -1417,7 +1619,7 @@ function TemplatesPage({
                 >
                   <colgroup>
                     <col style={{ width: `${TEMPLATE_INDEX_COLUMN_WIDTH}px` }} />
-                    {state.activeTemplate?.fields.map((field) => (
+                    {activeTemplateFields.map((field) => (
                       <col
                         key={field.key}
                         style={{
@@ -1431,7 +1633,7 @@ function TemplatesPage({
                       <th>
                         <span className="tm-table__header-label">行</span>
                       </th>
-                      {state.activeTemplate?.fields.map((field) => (
+                      {activeTemplateFields.map((field) => (
                         <th key={field.key}>
                           <span className="tm-table__header-label">{field.label}</span>
                         </th>
@@ -1441,7 +1643,7 @@ function TemplatesPage({
                   <tbody>
                     {state.templateRows.length === 0 ? (
                       <tr>
-                        <td colSpan={(state.activeTemplate?.fields.length ?? 0) + 1}>
+                        <td colSpan={activeTemplateFields.length + 1}>
                           <EmptyMini text="当前模板还没有数据行。" />
                         </td>
                       </tr>
@@ -1459,7 +1661,7 @@ function TemplatesPage({
                           <td>
                             <span className="tm-table__row-index">{rowIndex + 1}</span>
                           </td>
-                          {state.activeTemplate?.fields.map((field) => {
+                          {activeTemplateFields.map((field) => {
                             const value = toSingleLineFieldValue(row.values[field.key] ?? "")
                             const isEditing =
                               state.editingTemplateCell?.rowId === row.id &&
@@ -1920,46 +2122,109 @@ function EmptyMini({ text }: { text: string }) {
 }
 
 function TemplateCard({
-  template,
+  entry,
   active,
   mode,
   onClick,
+  onEdit,
 }: {
-  template: Template
+  entry: TemplateCardEntry
   active: boolean
   mode: TemplateListMode
   onClick: () => void
+  onEdit: () => void
 }) {
-  const previewSvg = React.useMemo(() => buildTemplatePreviewSvg(template), [template])
+  const template = entry.template
+  const previewSvg = React.useMemo(
+    () =>
+      entry.kind === "user"
+        ? buildUserTemplatePreviewSvg(entry.draft)
+        : buildTemplatePreviewSvg(entry.template),
+    [entry]
+  )
   const previewSrc = previewSvg ? toDataUrl(previewSvg) : null
 
   return (
-    <button
-      type="button"
+    <div
       className={cn(
         "tm-template-card",
         mode === "large" && "tm-template-card--grid",
         mode === "list" && "tm-template-card--list",
         active && "tm-template-card--active"
       )}
-      onClick={onClick}
     >
-      <div className="tm-template-card__preview">
-        {previewSrc ? (
-          <img
-            src={previewSrc}
-            alt={`${template.name} preview`}
-            className="tm-template-card__image"
+      <button type="button" className="contents" onClick={onClick}>
+        <div className="tm-template-card__preview">
+          {previewSrc ? (
+            <img
+              src={previewSrc}
+              alt={`${template.name} preview`}
+              className="tm-template-card__image"
+            />
+          ) : (
+            <div className="tm-template-card__placeholder">{template.name}</div>
+          )}
+        </div>
+        <div className="tm-template-card__meta">
+          <div className="tm-template-card__name">{template.name}</div>
+          <div className="tm-template-card__size">
+            {template.width && template.height
+              ? `${template.width} × ${template.height}`
+              : "尺寸待定"}
+          </div>
+        </div>
+      </button>
+      <div className="flex gap-2 px-3 pb-3">
+        <Button type="button" size="sm" className="flex-1" onClick={onClick}>
+          录入打印
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={onEdit}>
+          编辑模板
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function TemplateGroup({
+  title,
+  entries,
+  listMode,
+  activeEntryId,
+  emptyText = "当前分组没有模板。",
+  onSelect,
+  onEdit,
+}: {
+  title: string
+  entries: TemplateCardEntry[]
+  listMode: TemplateListMode
+  activeEntryId: string
+  emptyText?: string
+  onSelect: (entryId: string) => void
+  onEdit: (entryId: string) => void
+}) {
+  return (
+    <>
+      <div className="tm-template-list__section-title text-sm font-medium text-muted-foreground">
+        {title}
+      </div>
+      {entries.length === 0 ? (
+        <div className="tm-template-list__section-empty">
+          <EmptyMini text={emptyText} />
+        </div>
+      ) : (
+        entries.map((entry) => (
+          <TemplateCard
+            key={entry.id}
+            entry={entry}
+            active={activeEntryId === entry.id}
+            mode={listMode}
+            onClick={() => onSelect(entry.id)}
+            onEdit={() => onEdit(entry.id)}
           />
-        ) : (
-          <div className="tm-template-card__placeholder">{template.name}</div>
-        )}
-      </div>
-      <div className="tm-template-card__meta">
-        <div className="tm-template-card__name">{template.name}</div>
-        <div className="tm-template-card__size">{formatTemplateSize(template)}</div>
-      </div>
-    </button>
+        ))
+      )}
+    </>
   )
 }
 

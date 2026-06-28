@@ -3,16 +3,22 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
 import {
+  bindElementToExistingField,
+  buildTemplateFieldsFromDraft,
   clearStoredDraftDocument,
   compileDraftToCanvasDefinition,
+  compileDraftToFilledCanvasDefinition,
   createCanvasElement,
   createDraftFromPreset,
+  createDraftFromSystemTemplate,
   getElementBounds,
   getElementGeometry,
   getElementSelectionBounds,
   getPresetById,
+  getSystemTemplateById,
   loadStoredDraftDocument,
   persistDraftDocument,
+  toggleElementBinding,
 } from "./canvas-editor-model.js"
 import type { CanvasDraftElement } from "./types.js"
 
@@ -245,5 +251,80 @@ describe("canvas-editor-model monochrome contract", () => {
     expect(selectionBounds.y).toBeLessThan(bounds.y)
     expect(selectionBounds.width).toBeCloseTo(bounds.height, 5)
     expect(selectionBounds.height).toBeCloseTo(bounds.width, 5)
+  })
+
+  it("creates bindable fields from system templates while keeping static preset values fixed", () => {
+    const template = getSystemTemplateById("shipping-compact")
+    const draft = createDraftFromSystemTemplate(template)
+
+    expect(draft.source.kind).toBe("preset-template")
+    expect(draft.fields.length).toBeGreaterThan(0)
+
+    const titleElement = draft.elements.find(
+      (element) => element.kind === "text" && element.meta.name.includes("标题")
+    )
+    if (titleElement?.kind === "text") {
+      expect(titleElement.binding).toBeUndefined()
+    }
+
+    const firstBoundElement = draft.elements.find(
+      (element) =>
+        (element.kind === "text" || element.kind === "barcode" || element.kind === "qr") &&
+        element.binding
+    )
+    expect(firstBoundElement).toBeDefined()
+    expect(draft.fields.some((field) => field.key === firstBoundElement?.binding?.fieldKey)).toBe(
+      true
+    )
+  })
+
+  it("syncs multiple bound elements from the same field input", () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const textElements = draft.elements.filter((element) => element.kind === "text")
+    expect(textElements.length).toBeGreaterThanOrEqual(2)
+    const [firstTextElement, secondTextElement] = textElements
+    const firstTextId = firstTextElement?.id
+    const secondTextId = secondTextElement?.id
+    if (!firstTextId || !secondTextId) {
+      throw new Error("expected at least two text elements in shipping-wide preset")
+    }
+
+    let next = toggleElementBinding(draft, firstTextId, true)
+    const fieldKey = next.fields[0]?.key
+    expect(fieldKey).toBeTruthy()
+    if (!fieldKey) {
+      throw new Error("expected the first bound field to expose a stable key")
+    }
+    next = bindElementToExistingField(next, secondTextId, fieldKey)
+
+    const compiled = compileDraftToFilledCanvasDefinition(next, {
+      [fieldKey]: "Shared replacement",
+    })
+
+    const compiledTexts = compiled.elements.filter((element) => element.kind === "text")
+    const matched = compiledTexts.filter((element) => element.value === "Shared replacement")
+    expect(matched.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it("builds template fields from the draft field registry", () => {
+    const draft = createDraftFromPreset(getPresetById("ops-tag"))
+    const qrElement = draft.elements.find((element) => element.kind === "qr")
+    expect(qrElement).toBeDefined()
+    const qrElementId = qrElement?.id
+    if (!qrElementId) {
+      throw new Error("expected ops-tag preset to include a qr element")
+    }
+
+    const bound = toggleElementBinding(draft, qrElementId, true)
+    const fields = buildTemplateFieldsFromDraft(bound)
+
+    expect(fields).toHaveLength(1)
+    expect(fields[0]).toMatchObject({
+      required: false,
+      key: bound.fields[0]?.key,
+      label: bound.fields[0]?.label,
+      multiline: bound.fields[0]?.multiline,
+      defaultValue: bound.fields[0]?.defaultValue,
+    })
   })
 })
