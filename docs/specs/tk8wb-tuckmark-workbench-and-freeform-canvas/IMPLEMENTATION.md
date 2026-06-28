@@ -127,6 +127,7 @@
   navigation, list density, or workspace layout changes.
 - Current validation status for this round:
   - `bun run check` passed
+  - `bun run test:e2e:web` passed
   - `bun run --filter @tuckmark/web test:e2e:sync` passed
   - `bun run test:e2e:web -- --grep "browser-static root path defaults to runtime and supports explicit demo mode"` passed
   - detonger-dependent preview packet coverage now skips cleanly when the

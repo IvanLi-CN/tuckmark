@@ -1,7 +1,7 @@
 {
   "version": 1,
   "default_branch": "main",
-  "required_checks": ["Label Gate", "CI PR / Workspace", "CI PR / Web Demo"],
+  "required_checks": ["Label Gate", "CI PR / Workspace", "CI PR / Web Demo", "CI PR / Sync State"],
   "informational_checks": [
     "CI Main / Release Snapshot",
     "Pages Deploy",
