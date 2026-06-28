@@ -106,6 +106,9 @@ export function useWorkbenchController({
   const [recentActivity, setRecentActivity] = React.useState<RecentActivityState>(() =>
     loadRecentActivity()
   )
+  const [startupSyncReady, setStartupSyncReady] = React.useState(
+    !(context.surface === "server-http" && context.mode === "runtime")
+  )
   const syncInFlightRef = React.useRef<Promise<void> | null>(null)
   const syncQueuedRef = React.useRef(false)
 
@@ -211,6 +214,7 @@ export function useWorkbenchController({
   )
 
   React.useEffect(() => {
+    setStartupSyncReady(!(context.surface === "server-http" && context.mode === "runtime"))
     void (async () => {
       try {
         await refreshSetup()
@@ -220,6 +224,8 @@ export function useWorkbenchController({
         }
       } catch {
         setTemplates(fallbackTemplates)
+      } finally {
+        setStartupSyncReady(true)
       }
     })()
   }, [client, context.mode, context.surface, refreshSetup])
@@ -773,6 +779,7 @@ export function useWorkbenchController({
     setProbeResult,
     setRenderOptions,
     setRecentActivity,
+    startupSyncReady,
     templates,
     scheduleSync,
   }

@@ -2426,6 +2426,11 @@ function CanvasStageView({
 }
 
 function CanvasWorkspace({ controller, initialScenario = "wide-default" }: CanvasPageProps) {
+  const startupSyncPending =
+    controller.context.surface === "server-http" &&
+    controller.context.mode === "runtime" &&
+    !controller.startupSyncReady
+  const [startupSyncHydrated, setStartupSyncHydrated] = React.useState(!startupSyncPending)
   const [state, setState] = React.useState<CanvasPageState>(() =>
     createCanvasState(CANVAS_PRESETS[0]?.id ?? "shipping-wide", initialScenario)
   )
@@ -2436,6 +2441,25 @@ function CanvasWorkspace({ controller, initialScenario = "wide-default" }: Canva
   })
 
   React.useEffect(() => {
+    if (startupSyncPending) {
+      setStartupSyncHydrated(false)
+      return
+    }
+    setState((current) => {
+      const next = createCanvasState(current.presetId, initialScenario)
+      const unchanged =
+        current.draft.presetId === next.draft.presetId &&
+        current.draft.name === next.draft.name &&
+        JSON.stringify(current.draft) === JSON.stringify(next.draft)
+      return unchanged ? current : next
+    })
+    setStartupSyncHydrated(true)
+  }, [initialScenario, startupSyncPending])
+
+  React.useEffect(() => {
+    if (startupSyncPending || !startupSyncHydrated) {
+      return
+    }
     if (state.storageMode === "reset-pending") {
       controller.deleteCanvasDraft(state.presetId)
       return
@@ -2448,6 +2472,8 @@ function CanvasWorkspace({ controller, initialScenario = "wide-default" }: Canva
     state.draft,
     state.presetId,
     state.storageMode,
+    startupSyncPending,
+    startupSyncHydrated,
   ])
 
   React.useEffect(() => {
@@ -2611,7 +2637,7 @@ function CanvasWorkspace({ controller, initialScenario = "wide-default" }: Canva
           <div className="tm-pane__header">
             <div className="tm-pane__headline">
               <h2>标签编辑台</h2>
-              <p>单色编辑，所见即所得。</p>
+              <p>{startupSyncPending ? "正在同步最近草稿。" : "单色编辑，所见即所得。"}</p>
             </div>
             <div className="tm-pane__meta">
               <Badge variant="outline" className="tm-chip">
@@ -2623,11 +2649,17 @@ function CanvasWorkspace({ controller, initialScenario = "wide-default" }: Canva
             </div>
           </div>
           <div className="tm-pane__body">
-            <CanvasStageView
-              state={state}
-              onChange={setState}
-              onViewportSizeChange={setStageViewportSize}
-            />
+            {startupSyncPending ? (
+              <div className="tm-empty-state">
+                <p>正在恢复同设备草稿…</p>
+              </div>
+            ) : (
+              <CanvasStageView
+                state={state}
+                onChange={setState}
+                onViewportSizeChange={setStageViewportSize}
+              />
+            )}
           </div>
         </section>
 

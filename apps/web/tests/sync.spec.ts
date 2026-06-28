@@ -97,3 +97,38 @@ test("server-http startup merges browser-local recent prints back into service s
     })
     .toBe(true)
 })
+
+test("server-http canvas restores a service-persisted draft on first open", async ({ page }) => {
+  const draft = createDraftDocument({
+    name: "Service Shipping Draft",
+  })
+
+  await writeServerSyncState({
+    ...createServerRecentActivityState(),
+    canvasDraftRecords: [
+      {
+        kind: "canvas_draft",
+        recordId: "draft:shipping-wide",
+        version: 1,
+        vectorClock: { browser: 0, service: 1 },
+        updatedAt: "2026-06-28T10:15:00.000Z",
+        hash: "service-draft-hash",
+        deleted: false,
+        conflicts: [],
+        payload: {
+          presetId: "shipping-wide",
+          draft,
+          savedAt: "2026-06-28T10:15:00.000Z",
+        },
+      },
+    ],
+  })
+
+  await page.goto("/canvas")
+
+  await expect(page.getByText("标签编辑台")).toBeVisible()
+  await expect(page.getByText("当前预设：Service Shipping Draft")).toBeVisible()
+  await expect(await readBrowserStorage(page, "tuckmark:canvas-draft:v1:shipping-wide")).toContain(
+    "Service Shipping Draft"
+  )
+})
