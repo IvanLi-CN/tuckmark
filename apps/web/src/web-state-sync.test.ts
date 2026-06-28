@@ -13,6 +13,7 @@ import { createDraftFromPreset, getDraftStorageKey, getPresetById } from "./canv
 import {
   applySyncStateToBrowser,
   loadLocalSyncState,
+  recordCanvasDraftLocally,
   recordRecentPrintLocally,
   syncWebState,
 } from "./web-state-sync.js"
@@ -260,6 +261,35 @@ describe("web-state-sync", () => {
     expect(loaded.canvasDraftRecords[0]?.updatedAt).toBe(existing.updatedAt)
     expect(loaded.canvasDraftRecords[0]?.version).toBe(existing.version)
     expect(loaded.canvasDraftRecords[0]?.vectorClock).toEqual(existing.vectorClock)
+  })
+
+  it("does not bump version when persisting an unchanged draft over synced state", () => {
+    const preset = getPresetById("shipping-wide")
+    const draft = createDraftFromPreset(preset)
+    const existing = {
+      ...createCanvasDraftRecord({
+        presetId: preset.id,
+        draft,
+        savedAt: "2026-06-28T10:15:00.000Z",
+      }),
+      version: 3,
+      vectorClock: { browser: 0, service: 1 },
+    }
+
+    window.localStorage.setItem(
+      "tuckmark.sync-state.v1",
+      JSON.stringify({
+        ...emptySyncState(),
+        updatedAt: existing.updatedAt,
+        canvasDraftRecords: [existing],
+      })
+    )
+
+    const recorded = recordCanvasDraftLocally(preset.id, draft)
+
+    expect(recorded.canvasDraftRecords[0]?.updatedAt).toBe(existing.updatedAt)
+    expect(recorded.canvasDraftRecords[0]?.version).toBe(existing.version)
+    expect(recorded.canvasDraftRecords[0]?.vectorClock).toEqual(existing.vectorClock)
   })
 
   it("keeps browser-local writes that land while sync is awaiting the service merge", async () => {

@@ -237,13 +237,16 @@ export function recordCanvasDraftLocally(
 ): SyncState {
   const current = loadLocalSyncState()
   const existing = current.canvasDraftRecords.find((record) => record.payload.presetId === presetId)
-  const record = createCanvasDraftRecord(
-    {
-      presetId,
-      draft,
-    },
-    recordSeed(existing)
-  )
+  const record =
+    sameDraftPayload(draft, existing) && existing
+      ? cloneDraftRecordWithLocalDraft(existing, draft)
+      : createCanvasDraftRecord(
+          {
+            presetId,
+            draft,
+          },
+          recordSeed(existing)
+        )
   return persistMergedState(current, {
     ...emptySyncState(),
     updatedAt: record.updatedAt,
