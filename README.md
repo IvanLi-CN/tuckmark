@@ -89,3 +89,14 @@ Override ports or runtime wiring with:
   - behavior: the Web app asks the runtime service API to control hardware
   - startup is fatal when enabled but detonger/runtime prerequisites are missing
 - The two paths share artifact semantics, but not the same runtime dependency boundary.
+
+## Session State Sync
+
+- In `server-http`, the Web app performs same-device sync with the service for:
+  - recent template usage
+  - recent print history
+  - preset-scoped canvas drafts
+- The service persists merged session state in `.tuckmark/sync-state.json`.
+- Browser and service state merge on startup and after draft save, draft reset, and successful print activity.
+- Concurrent draft edits keep the merged winning draft plus conflict branch metadata instead of silently overwriting one side.
+- `browser-static` and demo-style Web surfaces remain local-first and continue to work without the service runtime.

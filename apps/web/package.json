@@ -17,6 +17,7 @@
     "pretest": "bun run wasm:build:dev",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:sync": "playwright test -c playwright.config.sync.ts",
     "pretypecheck": "bun run wasm:build:dev",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

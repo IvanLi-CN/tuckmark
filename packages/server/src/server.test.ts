@@ -6,6 +6,7 @@ import path from "node:path"
 import type {
   ArtifactPackets,
   BatchPreviewRequest,
+  CanvasDraftRecord,
   DirectCanvasPreviewRequest,
   PreviewArtifact,
   PreviewRequest,
@@ -13,7 +14,10 @@ import type {
   PrintByArtifactRequest,
   PrintByTemplateRequest,
   PrintCanvasRequest,
+  RecentPrintRecord,
   SafeTextLabelInput,
+  SyncState,
+  TemplateUsageRecord,
   TuckmarkService,
 } from "@tuckmark/core"
 import { afterEach, describe, expect, it } from "vitest"
@@ -58,6 +62,13 @@ function createArtifact(root: string, id: string): PreviewArtifact {
 class FakeServerService implements ServerService {
   readonly artifact: PreviewArtifact
   calls: Array<{ method: string; args: unknown[] }> = []
+  syncState: SyncState = {
+    schemaVersion: 1,
+    updatedAt: "2026-06-18T00:00:00.000Z",
+    templateUsageRecords: [],
+    recentPrintRecords: [],
+    canvasDraftRecords: [],
+  }
 
   constructor(artifact: PreviewArtifact) {
     this.artifact = artifact
@@ -132,6 +143,44 @@ class FakeServerService implements ServerService {
       packetCount: 1,
       totalBytes: 3,
     }
+  }
+
+  async getSyncState(): Promise<SyncState> {
+    this.calls.push({ method: "getSyncState", args: [] })
+    return this.syncState
+  }
+
+  async mergeSyncState(next: SyncState): Promise<SyncState> {
+    this.calls.push({ method: "mergeSyncState", args: [next] })
+    this.syncState = next
+    return this.syncState
+  }
+
+  async upsertTemplateUsageRecord(record: TemplateUsageRecord): Promise<SyncState> {
+    this.calls.push({ method: "upsertTemplateUsageRecord", args: [record] })
+    this.syncState = {
+      ...this.syncState,
+      templateUsageRecords: [record],
+    }
+    return this.syncState
+  }
+
+  async upsertRecentPrintRecord(record: RecentPrintRecord): Promise<SyncState> {
+    this.calls.push({ method: "upsertRecentPrintRecord", args: [record] })
+    this.syncState = {
+      ...this.syncState,
+      recentPrintRecords: [record],
+    }
+    return this.syncState
+  }
+
+  async upsertCanvasDraftRecord(record: CanvasDraftRecord): Promise<SyncState> {
+    this.calls.push({ method: "upsertCanvasDraftRecord", args: [record] })
+    this.syncState = {
+      ...this.syncState,
+      canvasDraftRecords: [record],
+    }
+    return this.syncState
   }
 
   async previewTemplate(
@@ -465,6 +514,47 @@ describe("server", () => {
     expect(probeJson.stage).toBe("complete")
     expect(probeJson.printerId).toBe("printer-1")
     expect(service.calls.some((call) => call.method === "probePrinter")).toBe(true)
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    )
+  })
+
+  it("exposes sync state get and merge endpoints", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-server-"))
+    cleanupPaths.push(root)
+    const service = new FakeServerService(createArtifact(root, "artifact-sync"))
+    const app = createApp(service)
+    const server = app.listen(0)
+    const baseUrl = await new Promise<string>((resolve, reject) => {
+      server.once("error", reject)
+      server.once("listening", () => {
+        const address = server.address() as AddressInfo
+        resolve(`http://127.0.0.1:${address.port}`)
+      })
+    })
+
+    const getRes = await fetch(`${baseUrl}/api/sync/state`)
+    const getJson = (await getRes.json()) as { state: SyncState }
+    expect(getRes.status).toBe(200)
+    expect(getJson.state.schemaVersion).toBe(1)
+
+    const nextState: SyncState = {
+      schemaVersion: 1,
+      updatedAt: "2026-06-28T00:00:00.000Z",
+      templateUsageRecords: [],
+      recentPrintRecords: [],
+      canvasDraftRecords: [],
+    }
+    const postRes = await fetch(`${baseUrl}/api/sync/state`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(nextState),
+    })
+    const postJson = (await postRes.json()) as { state: SyncState }
+    expect(postRes.status).toBe(200)
+    expect(postJson.state.updatedAt).toBe("2026-06-28T00:00:00.000Z")
+    expect(service.calls.some((call) => call.method === "mergeSyncState")).toBe(true)
+
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve()))
     )

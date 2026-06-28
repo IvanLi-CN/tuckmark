@@ -32,7 +32,6 @@ import {
   Stage,
   Transformer,
 } from "react-konva"
-import { buildSvg } from "../../../packages/core/src/web.js"
 import {
   buildStoryScenarioDocument,
   CANVAS_HISTORY_LIMIT,
@@ -41,11 +40,9 @@ import {
   CANVAS_WIDE_THRESHOLD,
   type CanvasStoryScenario,
   clearStoredDraftDocument,
-  compileDraftToCanvasDefinition,
   createCanvasElement,
   createDraftFromPreset,
   duplicateDraftElement,
-  getElementBounds,
   getElementGeometry,
   getElementSelectionBounds,
   getPresetById,
@@ -112,6 +109,7 @@ type CanvasPageState = {
   historyIndex: number
   editingId: string | null
   outputStatus: string
+  storageMode: "persisted" | "reset-pending"
 }
 
 const GRID_SIZE = 20
@@ -238,6 +236,7 @@ function createCanvasState(
         : storedDraft
           ? `已恢复「${draft.name}」的最近草稿。`
           : "",
+    storageMode: "persisted",
   }
 }
 
@@ -269,6 +268,7 @@ function applyDraftUpdate(
   return {
     ...next,
     selectedIds: updateSelectionAfterDraft(state, nextDraft),
+    storageMode: "persisted",
   }
 }
 
@@ -359,6 +359,7 @@ function resetDraft(state: CanvasPageState): CanvasPageState {
   return {
     ...createCanvasState(state.presetId),
     outputStatus: "已重置为内置预设。",
+    storageMode: "reset-pending",
   }
 }
 
@@ -442,6 +443,7 @@ function undoDraft(state: CanvasPageState): CanvasPageState {
     historyIndex: state.historyIndex - 1,
     selectedIds: updateSelectionAfterDraft(state, nextDraft),
     editingId: null,
+    storageMode: "persisted",
   }
 }
 
@@ -461,6 +463,7 @@ function redoDraft(state: CanvasPageState): CanvasPageState {
     historyIndex: state.historyIndex + 1,
     selectedIds: updateSelectionAfterDraft(state, nextDraft),
     editingId: null,
+    storageMode: "persisted",
   }
 }
 
@@ -644,24 +647,6 @@ function buildQrCells(element: Extract<CanvasDraftElement, { kind: "qr" }>) {
 
 function createCanvasIssue(title: string, detail: string): CanvasIssue {
   return { title, detail }
-}
-
-function buildCanvasStageSvg(document: CanvasDraftDocument) {
-  try {
-    const definition = compileDraftToCanvasDefinition({
-      ...document,
-      elements: document.elements.filter(
-        (element) => element.meta.visible && !getElementIssue(element)
-      ),
-    })
-    const svg = buildSvg(definition.width, definition.height, definition.elements, {}).replace(
-      `<rect width="${definition.width}" height="${definition.height}" fill="white" />`,
-      ""
-    )
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
-  } catch {
-    return null
-  }
 }
 
 function getBarcodeIssue(
@@ -964,6 +949,7 @@ function CanvasToolbar({
                   ...current.draft,
                   editor: { ...current.draft.editor, gridEnabled: !current.gridEnabled },
                 },
+                storageMode: "persisted",
               }))
             }
           >
@@ -981,6 +967,7 @@ function CanvasToolbar({
                   ...current.draft,
                   editor: { ...current.draft.editor, snapEnabled: !current.snapEnabled },
                 },
+                storageMode: "persisted",
               }))
             }
           >
@@ -2038,7 +2025,6 @@ function CanvasStageView({
     () => getVisibleGridBounds(state.viewport, stageViewportSize.width, stageViewportSize.height),
     [state.viewport, stageViewportSize.height, stageViewportSize.width]
   )
-  const stageSvgUrl = React.useMemo(() => buildCanvasStageSvg(state.draft), [state.draft])
   const paperStyle = React.useMemo(
     () => ({
       width: state.draft.width,
@@ -2205,22 +2191,13 @@ function CanvasStageView({
               }}
             />
           ) : null}
-          <div className="tm-stage-paper tm-stage-paper--content" style={paperStyle}>
-            {stageSvgUrl ? (
-              <img
-                alt="canvas stage"
-                className="tm-stage-paper__image"
-                draggable={false}
-                src={stageSvgUrl}
-              />
-            ) : null}
-          </div>
         </div>
         <Stage
           ref={stageRef}
           width={stageViewportSize.width}
           height={stageViewportSize.height}
-          className="tm-stage tm-stage--editor tm-stage--overlay"
+          className="tm-stage tm-stage--editor"
+          style={{ position: "absolute", inset: 0, zIndex: 2 }}
           onMouseDown={handleStageMouseDown}
           onMouseMove={handleStageMouseMove}
           onMouseUp={handleStageMouseUp}
@@ -2459,8 +2436,19 @@ function CanvasWorkspace({ controller, initialScenario = "wide-default" }: Canva
   })
 
   React.useEffect(() => {
+    if (state.storageMode === "reset-pending") {
+      controller.deleteCanvasDraft(state.presetId)
+      return
+    }
     persistDraftDocument(state.draft)
-  }, [state.draft])
+    controller.recordCanvasDraft(state.presetId, state.draft)
+  }, [
+    controller.deleteCanvasDraft,
+    controller.recordCanvasDraft,
+    state.draft,
+    state.presetId,
+    state.storageMode,
+  ])
 
   React.useEffect(() => {
     const fallbackViewport = createViewport(state.draft.width, state.draft.height)
