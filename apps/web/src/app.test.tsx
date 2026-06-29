@@ -1301,6 +1301,33 @@ describe("web workbench app", () => {
     expect(document.body.textContent).not.toContain("当前草稿：Stale indexeddb draft")
   })
 
+  it("prefers synced preset-template drafts over stale indexeddb working copies on startup", async () => {
+    const syncedDraft = createDraftFromPreset(getPresetById("ops-tag"))
+    syncedDraft.presetId = "cable-tag"
+    syncedDraft.source = { kind: "preset-template", presetId: "cable-tag" }
+    syncedDraft.name = "Synced preset draft"
+    syncedDraft.elements = [...syncedDraft.elements, { ...syncedDraft.elements[0]!, id: "extra-text" }]
+    window.localStorage.setItem(getDraftStorageKey("cable-tag"), JSON.stringify(syncedDraft))
+
+    const staleDraft = structuredClone(syncedDraft)
+    staleDraft.name = "Stale preset draft"
+    staleDraft.elements = staleDraft.elements.slice(0, -1)
+    await saveUserTemplateAutosave({
+      source: { kind: "preset-template", presetId: "cable-tag" },
+      document: staleDraft,
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      "/canvas?source=preset-template&templateId=cable-tag"
+    )
+    await flush(8)
+
+    expect(document.body.textContent).toContain("系统模板：Synced preset draft")
+    expect(document.body.textContent).not.toContain("系统模板：Stale preset draft")
+  })
+
   it("persists grid and snap toggles into the user-template working copy", async () => {
     const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
     const saved = await saveUserTemplate({
@@ -1335,6 +1362,68 @@ describe("web workbench app", () => {
     })
     expect(workingCopy?.draft.editor.gridEnabled).toBe(false)
     expect(workingCopy?.draft.editor.snapEnabled).toBe(false)
+  })
+
+  it("keeps a restored saved version as the current working copy after reopening", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const firstSave = await saveUserTemplate({
+      name: "Restore Target",
+      document: {
+        ...baseDraft,
+        name: "Restore Target",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const secondDraft = structuredClone(firstSave.workingCopy.draft)
+    secondDraft.name = "Restore Target v2"
+    const secondSave = await saveUserTemplate({
+      name: "Restore Target v2",
+      templateId: firstSave.template.id,
+      sourceVersionId: firstSave.version.id,
+      document: secondDraft,
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=user-template&templateId=${firstSave.template.id}&panel=versions`
+    )
+    await flush(8)
+
+    await act(async () => {
+      const savedVersionButton = Array.from(document.querySelectorAll(".tm-version-list__item")).find(
+        (item) => item.textContent?.includes(firstSave.version.label)
+      ) as HTMLButtonElement | undefined
+      savedVersionButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    await act(async () => {
+      queryButton("恢复").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    const workingCopy = await loadWorkingCopy({
+      kind: "user-template",
+      templateId: firstSave.template.id,
+    })
+    expect(workingCopy?.draft.name).toBe("Restore Target")
+    expect(workingCopy?.baseVersionId).toBe(firstSave.version.id)
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=user-template&templateId=${firstSave.template.id}`
+    )
+    await flush(8)
+
+    expect(document.body.textContent).toContain("用户模板：Restore Target")
+    expect(document.body.textContent).not.toContain("用户模板：Restore Target v2")
+
+    const history = await readUserTemplateHistory(firstSave.template.id)
+    expect(history?.saved.some((version) => version.id === secondSave.version.id)).toBe(true)
+    expect(history?.autosaves).toHaveLength(0)
   })
 
   it("records recent template usage when previewing a user template row", async () => {

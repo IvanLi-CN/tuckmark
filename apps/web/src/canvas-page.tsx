@@ -1023,6 +1023,23 @@ async function loadDraftForSource(source: CanvasDraftSource): Promise<{
   }
 
   if (source.kind === "preset-template") {
+    const legacyDraft = loadStoredDraftDocument(source.presetId)
+    if (legacyDraft) {
+      return {
+        draft: {
+          ...legacyDraft,
+          source,
+        },
+        versionHistory: null,
+      }
+    }
+    const workingCopy = await loadWorkingCopy(source)
+    if (workingCopy?.draft) {
+      return {
+        draft: workingCopy.draft,
+        versionHistory: null,
+      }
+    }
     return {
       draft: createDraftFromSystemTemplate(getSystemTemplateById(source.presetId)),
       versionHistory: null,
@@ -3246,7 +3263,10 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       })
     }
 
-    if (autosaveRouteSource.kind === "scratch" && !startupSyncPending) {
+    if (
+      (autosaveRouteSource.kind === "scratch" || autosaveRouteSource.kind === "preset-template") &&
+      !startupSyncPending
+    ) {
       persistDraftDocument(autosaveLiveDraft)
     }
   }, [
@@ -3261,19 +3281,16 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
   ])
 
   React.useEffect(() => {
-    if (
-      initialScenario ||
-      state.loading ||
-      state.routeSource.kind !== "scratch" ||
-      startupSyncPending
-    ) {
+    if (initialScenario || state.loading || startupSyncPending) {
       return
     }
-    if (state.storageMode === "reset-pending") {
-      controller.deleteCanvasDraft(state.presetId)
-      return
+    if (state.routeSource.kind === "scratch" || state.routeSource.kind === "preset-template") {
+      if (state.storageMode === "reset-pending") {
+        controller.deleteCanvasDraft(state.presetId)
+        return
+      }
+      controller.recordCanvasDraft(state.presetId, state.liveDraft)
     }
-    controller.recordCanvasDraft(state.presetId, state.liveDraft)
   }, [
     controller.deleteCanvasDraft,
     controller.recordCanvasDraft,
@@ -3450,23 +3467,43 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     }))
   }, [])
 
-  const handleRestoreVersion = React.useCallback(() => {
-    setState((current) => {
-      if (!current.readOnlyVersion || !current.liveDraft.templateId) {
-        return current
-      }
-      const restoredDraft = createRestoredDraftFromVersion(
-        current.readOnlyVersion,
-        current.liveDraft.templateId
-      )
-      return createCanvasStateFromDraft(restoredDraft, {
-        versionHistory: current.versionHistory,
+  const handleRestoreVersion = React.useCallback(async () => {
+    const snapshot =
+      state.readOnlyVersion && state.liveDraft.templateId
+        ? {
+            readOnlyVersion: state.readOnlyVersion,
+            templateId: state.liveDraft.templateId,
+            versionHistory: state.versionHistory,
+          }
+        : null
+
+    if (!snapshot) {
+      return
+    }
+
+    const restoredDraft = createRestoredDraftFromVersion(
+      snapshot.readOnlyVersion,
+      snapshot.templateId
+    )
+    await replaceUserTemplateWorkingCopy({
+      templateId: snapshot.templateId,
+      source: { kind: "user-template", templateId: snapshot.templateId },
+      document: restoredDraft,
+      sourceVersionId: snapshot.readOnlyVersion.id,
+    })
+    await clearTemplateAutosaves(snapshot.templateId)
+    await controller.refreshUserTemplates()
+
+    const history = await readUserTemplateHistory(snapshot.templateId)
+    setState((current) =>
+      createCanvasStateFromDraft(restoredDraft, {
+        versionHistory: history ?? snapshot.versionHistory,
         focus: "center-right",
         versionsOpen: true,
-        outputStatus: `已从 ${current.readOnlyVersion.label} 恢复到当前草稿。`,
+        outputStatus: `已从 ${snapshot.readOnlyVersion.label} 恢复到当前草稿。`,
       })
-    })
-  }, [])
+    )
+  }, [controller, state.liveDraft.templateId, state.readOnlyVersion, state.versionHistory])
 
   const persistNamedTemplate = React.useCallback(
     async (mode: "save" | "save-as") => {

@@ -43,3 +43,18 @@ test("preset templates can be saved into browser-local user templates and reused
   await expect(page).toHaveURL(/\/canvas\?source=user-template&templateId=/)
   await expect(page.getByText("用户模板：E2E Cable Tag")).toBeVisible()
 })
+
+test("preset-template working copies survive reload before first save", async ({ page }) => {
+  await page.goto("/canvas?source=preset-template&templateId=cable-tag")
+
+  await expect(page.getByText("系统模板：Cable Tag")).toBeVisible()
+  const layerItems = page.locator(".tm-layer-list--inspector .tm-choice--layer")
+  await expect(layerItems).toHaveCount(5)
+  await page.locator(".tm-quick-tools").getByRole("button", { name: "文本", exact: true }).click()
+  await expect(layerItems).toHaveCount(6)
+
+  await page.reload()
+
+  await expect(page.getByText("系统模板：Cable Tag")).toBeVisible()
+  await expect(layerItems).toHaveCount(6)
+})
