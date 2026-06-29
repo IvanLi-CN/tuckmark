@@ -704,7 +704,7 @@ async function trimIndexedDbVersions(
       templateId,
       kind,
     ])
-  ).sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+  ).sort(compareVersionsNewestFirst)
   await Promise.all(versions.slice(limit).map((version) => remove(store, version.id)))
 }
 
