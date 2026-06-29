@@ -544,6 +544,20 @@
     padding: 0.625rem;
   }
 
+  .tm-template-list--large {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tm-template-list--list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tm-template-list--large .tm-template-group {
+    grid-column: 1 / -1;
+  }
+
   .tm-template-group {
     @apply flex min-w-0 flex-col;
     gap: 0.625rem;

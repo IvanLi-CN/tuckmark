@@ -1518,7 +1518,13 @@ function TemplatesPage({
                 </div>
               }
             />
-            <div className={cn("tm-pane__body", "tm-template-list")}>
+            <div
+              className={cn(
+                "tm-pane__body",
+                "tm-template-list",
+                listMode === "large" ? "tm-template-list--large" : "tm-template-list--list"
+              )}
+            >
               <TemplateGroup
                 title="系统模板"
                 entries={state.templateEntries.filter((entry) => entry.kind === "system")}

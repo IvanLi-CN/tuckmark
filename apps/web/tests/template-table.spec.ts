@@ -168,8 +168,8 @@ test("template large mode uses a two-column grid layout", async ({ page }) => {
 
   await page.getByRole("button", { name: "大图" }).click()
 
-  const gridMetrics = await page.locator(".tm-template-list").evaluate((list) => {
-    const cards = Array.from(list.querySelectorAll(".tm-template-card"))
+  const gridMetrics = await page.locator(".tm-template-group__grid--large").evaluate((grid) => {
+    const cards = Array.from(grid.querySelectorAll(".tm-template-card"))
     const firstTwo = cards.slice(0, 2).map((card) => {
       const rect = card.getBoundingClientRect()
       return {
@@ -180,7 +180,7 @@ test("template large mode uses a two-column grid layout", async ({ page }) => {
     })
 
     return {
-      templateColumns: getComputedStyle(list).gridTemplateColumns,
+      templateColumns: getComputedStyle(grid).gridTemplateColumns,
       cardCount: cards.length,
       firstTwo,
     }
@@ -199,8 +199,8 @@ test("template large mode keeps two columns in the standard three-pane width", a
 
   await page.getByRole("button", { name: "大图" }).click()
 
-  const gridMetrics = await page.locator(".tm-template-list").evaluate((list) => {
-    const cards = Array.from(list.querySelectorAll(".tm-template-card"))
+  const gridMetrics = await page.locator(".tm-template-group__grid--large").evaluate((grid) => {
+    const cards = Array.from(grid.querySelectorAll(".tm-template-card"))
     const firstTwo = cards.slice(0, 2).map((card) => {
       const rect = card.getBoundingClientRect()
       return {
@@ -211,7 +211,7 @@ test("template large mode keeps two columns in the standard three-pane width", a
     })
 
     return {
-      templateColumns: getComputedStyle(list).gridTemplateColumns,
+      templateColumns: getComputedStyle(grid).gridTemplateColumns,
       cardCount: cards.length,
       firstTwo,
     }
