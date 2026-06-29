@@ -1306,7 +1306,10 @@ describe("web workbench app", () => {
     syncedDraft.presetId = "cable-tag"
     syncedDraft.source = { kind: "preset-template", presetId: "cable-tag" }
     syncedDraft.name = "Synced preset draft"
-    syncedDraft.elements = [...syncedDraft.elements, { ...syncedDraft.elements[0]!, id: "extra-text" }]
+    syncedDraft.elements = [
+      ...syncedDraft.elements,
+      { ...syncedDraft.elements[0]!, id: "extra-text" },
+    ]
     window.localStorage.setItem(getDraftStorageKey("cable-tag"), JSON.stringify(syncedDraft))
 
     const staleDraft = structuredClone(syncedDraft)
@@ -1392,9 +1395,11 @@ describe("web workbench app", () => {
     await flush(8)
 
     await act(async () => {
-      const savedVersionButton = Array.from(document.querySelectorAll(".tm-version-list__item")).find(
-        (item) => item.textContent?.includes(firstSave.version.label)
-      ) as HTMLButtonElement | undefined
+      const savedVersionButton = Array.from(
+        document.querySelectorAll(".tm-version-list__item")
+      ).find((item) => item.textContent?.includes(firstSave.version.label)) as
+        | HTMLButtonElement
+        | undefined
       savedVersionButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
       await flush(8)
     })
