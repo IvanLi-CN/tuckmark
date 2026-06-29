@@ -56,6 +56,7 @@ import {
   getPresetById,
   getSystemTemplateById,
   loadStoredDraftDocument,
+  normalizeDraftDocument,
   persistDraftDocument,
   renameDraftField,
   reorderDraftElements,
@@ -346,7 +347,7 @@ function applyDraftUpdate(
   state: CanvasPageState,
   updater: (draft: CanvasDraftDocument) => CanvasDraftDocument
 ): CanvasPageState {
-  const nextDraft = updater(cloneDraft(state.liveDraft))
+  const nextDraft = normalizeDraftDocument(updater(cloneDraft(state.liveDraft)))
   nextDraft.editor.gridEnabled = state.gridEnabled
   nextDraft.editor.snapEnabled = state.snapEnabled
   const next = pushHistory(state, nextDraft)
@@ -461,11 +462,13 @@ function getVisibleGridBounds(
 
 function resetDraft(state: CanvasPageState): CanvasPageState {
   if (state.routeSource.kind === "preset-template") {
+    clearStoredDraftDocument(state.routeSource.presetId)
     return {
       ...createCanvasStateFromDraft(
         createDraftFromSystemTemplate(getSystemTemplateById(state.routeSource.presetId))
       ),
       outputStatus: "已重置为系统模板初始内容。",
+      storageMode: "reset-pending",
     }
   }
 
@@ -528,6 +531,7 @@ async function resetCanvasDraft(args: {
     }
   }
 
+  await clearWorkingCopy(state.routeSource)
   return resetDraft(state)
 }
 
@@ -1196,6 +1200,8 @@ function CanvasToolbar({
   onOpenVersions: () => void
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
+  const interactionLocked = readOnly || state.loading
+
   return (
     <div className="tm-canvas-toolbar">
       {!isWide ? (
@@ -1203,6 +1209,7 @@ function CanvasToolbar({
           <Button
             size="sm"
             variant={state.focus === "left-center" ? "default" : "outline"}
+            disabled={state.loading}
             onClick={() => onChange((current) => ({ ...current, focus: "left-center" }))}
           >
             工具与图层
@@ -1210,6 +1217,7 @@ function CanvasToolbar({
           <Button
             size="sm"
             variant={state.focus === "center-right" ? "default" : "outline"}
+            disabled={state.loading}
             onClick={() => onChange((current) => ({ ...current, focus: "center-right" }))}
           >
             属性与输出
@@ -1225,11 +1233,21 @@ function CanvasToolbar({
                 <History className="size-4" />
                 恢复
               </Button>
-              <Button size="sm" variant="outline" onClick={() => void onSaveAs()}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={state.loading}
+                onClick={() => void onSaveAs()}
+              >
                 <Save className="size-4" />
                 另存为
               </Button>
-              <Button size="sm" variant="outline" onClick={onReturnCurrent}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={state.loading}
+                onClick={onReturnCurrent}
+              >
                 返回当前草稿
               </Button>
             </>
@@ -1238,7 +1256,7 @@ function CanvasToolbar({
               <Button
                 size="sm"
                 variant="outline"
-                disabled={!canUndo}
+                disabled={!canUndo || interactionLocked}
                 onClick={() => onChange((current) => undoDraft(current))}
               >
                 <Undo2 className="size-4" />
@@ -1247,7 +1265,7 @@ function CanvasToolbar({
               <Button
                 size="sm"
                 variant="outline"
-                disabled={!canRedo}
+                disabled={!canRedo || interactionLocked}
                 onClick={() => onChange((current) => redoDraft(current))}
               >
                 <Redo2 className="size-4" />
@@ -1263,6 +1281,7 @@ function CanvasToolbar({
               <Button
                 size="sm"
                 variant="outline"
+                disabled={interactionLocked}
                 onClick={() =>
                   onChange((current) => ({
                     ...current,
@@ -1281,6 +1300,7 @@ function CanvasToolbar({
               <Button
                 size="sm"
                 variant="outline"
+                disabled={interactionLocked}
                 onClick={() =>
                   onChange((current) => ({
                     ...current,
@@ -1296,6 +1316,7 @@ function CanvasToolbar({
               <Button
                 size="sm"
                 variant="outline"
+                disabled={interactionLocked}
                 onClick={() =>
                   onChange((current) =>
                     fitViewport(current, stageViewportSize.width, stageViewportSize.height)
@@ -1311,6 +1332,7 @@ function CanvasToolbar({
               <Button
                 size="sm"
                 variant={state.gridEnabled ? "default" : "outline"}
+                disabled={interactionLocked}
                 onClick={() =>
                   onChange((current) => {
                     const nextEditor = {
@@ -1327,6 +1349,7 @@ function CanvasToolbar({
               <Button
                 size="sm"
                 variant={state.snapEnabled ? "default" : "outline"}
+                disabled={interactionLocked}
                 onClick={() =>
                   onChange((current) => {
                     const nextEditor = {
@@ -1350,26 +1373,38 @@ function CanvasToolbar({
           <Badge variant="outline">
             {readOnly
               ? "历史快照只读"
-              : state.selectedIds.length > 0
-                ? `已选 ${state.selectedIds.length} 项`
-                : "未选择元素"}
+              : state.loading
+                ? "正在读取草稿"
+                : state.selectedIds.length > 0
+                  ? `已选 ${state.selectedIds.length} 项`
+                  : "未选择元素"}
           </Badge>
         </div>
         {readOnly ? null : (
           <>
-            <Button size="sm" variant="outline" onClick={onOpenVersions}>
+            <Button size="sm" variant="outline" disabled={state.loading} onClick={onOpenVersions}>
               <History className="size-4" />
               版本历史
             </Button>
-            <Button size="sm" onClick={() => void onSave()}>
+            <Button size="sm" disabled={state.loading} onClick={() => void onSave()}>
               <Save className="size-4" />
               保存
             </Button>
-            <Button size="sm" variant="outline" onClick={() => void onSaveAs()}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={state.loading}
+              onClick={() => void onSaveAs()}
+            >
               <FileClock className="size-4" />
               另存为
             </Button>
-            <Button size="sm" variant="outline" onClick={() => void onReset()}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={state.loading}
+              onClick={() => void onReset()}
+            >
               <RotateCcw className="size-4" />
               重置草稿
             </Button>
@@ -1389,14 +1424,16 @@ function CanvasLayerRail({
   readOnly: boolean
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
-  const sourceDescription =
-    state.routeSource.kind === "scratch"
+  const sourceDescription = state.loading
+    ? "正在读取当前画布草稿。"
+    : state.routeSource.kind === "scratch"
       ? `当前草稿：${state.draft.name}`
       : state.routeSource.kind === "preset-template"
         ? `系统模板：${state.draft.name}`
         : `用户模板：${state.draft.name}`
-  const sourceNote =
-    state.routeSource.kind === "preset-template"
+  const sourceNote = state.loading
+    ? "稍后会切换到当前路由对应的草稿。"
+    : state.routeSource.kind === "preset-template"
       ? "来自系统模板副本，保存后会进入本地用户模板库。"
       : state.routeSource.kind === "user-template"
         ? "已连接本地用户模板，保存会新增一个已保存版本。"
@@ -1467,6 +1504,15 @@ function CanvasLayerPanel({
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   const selectedCount = state.selectedIds.length
+
+  if (state.loading) {
+    return (
+      <div className="tm-empty-state">
+        <p className="tm-empty-state__title">正在读取当前画布草稿</p>
+        <p className="tm-empty-state__body">稍后会显示可编辑图层列表。</p>
+      </div>
+    )
+  }
 
   return (
     <CanvasSection
@@ -3169,6 +3215,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     height: STAGE_VIEWPORT_HEIGHT,
   })
   const readOnly = state.readOnlyVersion !== null
+  const interactionLocked = readOnly || state.loading
 
   const refreshVersionHistory = React.useCallback(async () => {
     if (!state.liveDraft.templateId) {
@@ -3254,7 +3301,11 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       !autosaveBaseline ||
       !sameDraftContent(autosaveLiveDraft, autosaveBaseline)
 
-    if (shouldCreateAutosave) {
+    if (
+      shouldCreateAutosave &&
+      autosaveLiveDraft.templateId &&
+      state.storageMode !== "reset-pending"
+    ) {
       void saveUserTemplateAutosave({
         templateId: autosaveLiveDraft.templateId,
         source: autosaveRouteSource,
@@ -3265,7 +3316,8 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
 
     if (
       (autosaveRouteSource.kind === "scratch" || autosaveRouteSource.kind === "preset-template") &&
-      !startupSyncPending
+      !startupSyncPending &&
+      state.storageMode !== "reset-pending"
     ) {
       persistDraftDocument(autosaveLiveDraft)
     }
@@ -3277,6 +3329,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     autosaveVersionHistory,
     initialScenario,
     readOnly,
+    state.storageMode,
     startupSyncPending,
   ])
 
@@ -3363,7 +3416,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       if (event.key === " ") {
         setState((current) => ({ ...current, spacePressed: true }))
       }
-      if (readOnly) {
+      if (interactionLocked) {
         if (event.key === "Escape") {
           event.preventDefault()
           setState((current) => ({
@@ -3441,7 +3494,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       window.removeEventListener("keyup", handleKeyUp)
       window.removeEventListener("blur", handleWindowBlur)
     }
-  }, [readOnly])
+  }, [interactionLocked])
 
   const openVersion = React.useCallback((version: UserTemplateVersionSnapshot) => {
     setState((current) => ({
@@ -3628,7 +3681,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
             </div>
           </div>
           <div className="tm-pane__body">
-            <CanvasLayerRail state={state} readOnly={readOnly} onChange={setState} />
+            <CanvasLayerRail state={state} readOnly={interactionLocked} onChange={setState} />
           </div>
         </aside>
 
@@ -3640,8 +3693,10 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
                 {readOnly
                   ? "历史快照只读查看。"
                   : startupSyncPending
-                    ? "正在同步最近草稿。"
-                    : "单色编辑，所见即所得。"}
+                    ? "正在恢复同设备草稿。"
+                    : state.loading
+                      ? "正在读取当前画布草稿。"
+                      : "单色编辑，所见即所得。"}
               </p>
             </div>
             <div className="tm-pane__meta">
@@ -3661,15 +3716,21 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
             {state.outputStatus ? (
               <div className="tm-pane__notice">{state.outputStatus}</div>
             ) : null}
-            {startupSyncPending ? (
+            {startupSyncPending || state.loading ? (
               <div className="tm-empty-state">
-                <p className="tm-empty-state__title">正在恢复同设备草稿</p>
-                <p className="tm-empty-state__body">稍后会继续打开当前预设的最近草稿。</p>
+                <p className="tm-empty-state__title">
+                  {startupSyncPending ? "正在恢复同设备草稿" : "正在读取画布"}
+                </p>
+                <p className="tm-empty-state__body">
+                  {startupSyncPending
+                    ? "稍后会继续打开当前预设的最近草稿。"
+                    : "稍后会切换到当前路由对应的模板草稿。"}
+                </p>
               </div>
             ) : (
               <CanvasStageView
                 state={state}
-                readOnly={readOnly}
+                readOnly={interactionLocked}
                 onChange={setState}
                 onViewportSizeChange={setStageViewportSize}
               />
@@ -3685,7 +3746,9 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
                 {state.activePanel === "attributes"
                   ? readOnly
                     ? "当前打开的是只读快照。"
-                    : "单选编辑，多选走批量操作。"
+                    : state.loading
+                      ? "正在读取当前画布草稿。"
+                      : "单选编辑，多选走批量操作。"
                   : state.activePanel === "output"
                     ? "先预览，再打印。"
                     : ""}
@@ -3695,6 +3758,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
               <Button
                 size="sm"
                 variant={state.activePanel === "attributes" ? "default" : "outline"}
+                disabled={state.loading}
                 onClick={() =>
                   setState((current) => ({
                     ...current,
@@ -3708,6 +3772,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
               <Button
                 size="sm"
                 variant={state.activePanel === "output" ? "default" : "outline"}
+                disabled={state.loading}
                 onClick={() =>
                   setState((current) => ({
                     ...current,
@@ -3723,16 +3788,16 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
           <div className="tm-pane__body">
             <div className="tm-pane__stack">
               {state.activePanel === "attributes" ? (
-                <CanvasInspector state={state} readOnly={readOnly} onChange={setState} />
+                <CanvasInspector state={state} readOnly={interactionLocked} onChange={setState} />
               ) : (
                 <CanvasOutput
                   controller={controller}
                   state={state}
-                  readOnly={readOnly}
+                  readOnly={interactionLocked}
                   onChange={setState}
                 />
               )}
-              <CanvasLayerPanel state={state} readOnly={readOnly} onChange={setState} />
+              <CanvasLayerPanel state={state} readOnly={interactionLocked} onChange={setState} />
             </div>
           </div>
         </aside>

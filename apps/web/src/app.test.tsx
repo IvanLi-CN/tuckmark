@@ -24,6 +24,8 @@ import {
   saveUserTemplateAutosave,
 } from "./user-template-store.js"
 
+let heldUserTemplateLoadRelease: (() => void) | null = null
+
 const browserPrinterMocks = vi.hoisted(() => ({
   connectBrowserPrinter: vi.fn(),
   getSelectedBrowserPrinter: vi.fn(),
@@ -642,6 +644,19 @@ async function renderApp(context: AppContext, client?: ApiClient, path = "/"): P
     mountedRoot.render(<App context={context} client={client} />)
     await flush()
   })
+}
+
+function beginHoldingUserTemplateLoad(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    heldUserTemplateLoadRelease = () => {
+      heldUserTemplateLoadRelease = null
+      resolve()
+    }
+  })
+}
+
+function releaseHeldUserTemplateLoad(): void {
+  heldUserTemplateLoadRelease?.()
 }
 
 beforeEach(async () => {
@@ -1312,9 +1327,13 @@ describe("web workbench app", () => {
     syncedDraft.presetId = "cable-tag"
     syncedDraft.source = { kind: "preset-template", presetId: "cable-tag" }
     syncedDraft.name = "Synced preset draft"
+    const syncedDraftFirstElement = syncedDraft.elements[0]
+    if (!syncedDraftFirstElement) {
+      throw new Error("expected preset draft to include at least one element")
+    }
     syncedDraft.elements = [
       ...syncedDraft.elements,
-      { ...syncedDraft.elements[0]!, id: "extra-text" },
+      { ...syncedDraftFirstElement, id: "extra-text" },
     ]
     window.localStorage.setItem(getDraftStorageKey("cable-tag"), JSON.stringify(syncedDraft))
 
@@ -1335,6 +1354,62 @@ describe("web workbench app", () => {
 
     expect(document.body.textContent).toContain("系统模板：Synced preset draft")
     expect(document.body.textContent).not.toContain("系统模板：Stale preset draft")
+  })
+
+  it("waits for a user-template working copy before allowing preview from /templates", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const textElement = baseDraft.elements.find((element) => element.kind === "text")
+    if (!textElement) {
+      throw new Error("expected shipping-wide preset to include a text element")
+    }
+    const boundDraft = toggleElementBinding(baseDraft, textElement.id, true)
+    const saved = await saveUserTemplate({
+      name: "Async Preview",
+      document: {
+        ...boundDraft,
+        name: "Async Preview",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const actualStore = await vi.importActual<typeof import("./user-template-store.js")>(
+      "./user-template-store.js"
+    )
+    const loadPromise = beginHoldingUserTemplateLoad()
+    const originalLoadWorkingCopy = await import("./user-template-store.js")
+    const loadWorkingCopySpy = vi.spyOn(originalLoadWorkingCopy, "loadWorkingCopy")
+    loadWorkingCopySpy.mockImplementation(async (source) => {
+      if (source.kind === "user-template" && source.templateId === saved.template.id) {
+        await loadPromise
+      }
+      return actualStore.loadWorkingCopy(source)
+    })
+
+    try {
+      await renderApp(browserRuntimeContext, undefined, "/templates")
+      await flush(2)
+
+      await act(async () => {
+        const targetCard = Array.from(document.querySelectorAll(".tm-template-card")).find((item) =>
+          item.textContent?.includes("Async Preview")
+        ) as HTMLElement | undefined
+        const surface = targetCard?.querySelector(
+          ".tm-template-card__surface"
+        ) as HTMLButtonElement | null
+        surface?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await flush(1)
+      })
+
+      expect(queryButton("生成预览").disabled).toBe(true)
+      expect(document.body.textContent).toContain("正在读取本地模板草稿。")
+      expect(browserPayloadMocks.materializeBrowserArtifactData).not.toHaveBeenCalled()
+
+      releaseHeldUserTemplateLoad()
+      await flush(8)
+    } finally {
+      releaseHeldUserTemplateLoad()
+      vi.restoreAllMocks()
+    }
   })
 
   it("persists grid and snap toggles into the user-template working copy", async () => {
@@ -1435,6 +1510,121 @@ describe("web workbench app", () => {
     const history = await readUserTemplateHistory(firstSave.template.id)
     expect(history?.saved.some((version) => version.id === secondSave.version.id)).toBe(true)
     expect(history?.autosaves).toHaveLength(0)
+  })
+
+  it("blocks routed canvas interactions until the requested preset-template draft loads", async () => {
+    const actualStore = await vi.importActual<typeof import("./user-template-store.js")>(
+      "./user-template-store.js"
+    )
+    const loadPromise = beginHoldingUserTemplateLoad()
+    const originalLoadWorkingCopy = await import("./user-template-store.js")
+    const loadWorkingCopySpy = vi.spyOn(originalLoadWorkingCopy, "loadWorkingCopy")
+    loadWorkingCopySpy.mockImplementation(async (source) => {
+      if (source.kind === "preset-template" && source.presetId === "cable-tag") {
+        await loadPromise
+      }
+      return actualStore.loadWorkingCopy(source)
+    })
+
+    try {
+      await renderApp(
+        browserRuntimeContext,
+        undefined,
+        "/canvas?source=preset-template&templateId=cable-tag"
+      )
+      await flush(1)
+
+      expect(document.body.textContent).toContain("正在读取画布")
+      expect(queryButton("保存").disabled).toBe(true)
+      expect(queryButton("另存为").disabled).toBe(true)
+      expect(queryButton("重置草稿").disabled).toBe(true)
+      expect(document.body.textContent).not.toContain("可编辑文本")
+
+      releaseHeldUserTemplateLoad()
+      await flush(8)
+    } finally {
+      releaseHeldUserTemplateLoad()
+      vi.restoreAllMocks()
+    }
+  })
+
+  it("keeps scratch reset cleared across reload", async () => {
+    const preset = getPresetById("shipping-wide")
+    const syncedDraft = createDraftFromPreset(preset)
+    syncedDraft.name = "Changed scratch"
+    const syncedDraftFirstElement = syncedDraft.elements[0]
+    if (!syncedDraftFirstElement) {
+      throw new Error("expected scratch draft to include at least one element")
+    }
+    syncedDraft.elements = [
+      ...syncedDraft.elements,
+      { ...syncedDraftFirstElement, id: "extra-text" },
+    ]
+    window.localStorage.setItem(getDraftStorageKey(preset.id), JSON.stringify(syncedDraft))
+    await saveUserTemplateAutosave({
+      source: { kind: "scratch", presetId: preset.id },
+      document: syncedDraft,
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=scratch&presetId=${preset.id}`
+    )
+    await flush(8)
+
+    await act(async () => {
+      queryButton("重置草稿").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    expect(window.localStorage.getItem(getDraftStorageKey(preset.id))).toBeNull()
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=scratch&presetId=${preset.id}`
+    )
+    await flush(8)
+
+    expect(document.body.textContent).toContain("当前草稿：快递单宽版")
+    expect(document.body.textContent).not.toContain("当前草稿：Changed scratch")
+  })
+
+  it("keeps preset-template reset cleared across reload", async () => {
+    const presetDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    presetDraft.presetId = "cable-tag"
+    presetDraft.source = { kind: "preset-template", presetId: "cable-tag" }
+    presetDraft.name = "Changed preset copy"
+    window.localStorage.setItem(getDraftStorageKey("cable-tag"), JSON.stringify(presetDraft))
+    await saveUserTemplateAutosave({
+      source: { kind: "preset-template", presetId: "cable-tag" },
+      document: presetDraft,
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      "/canvas?source=preset-template&templateId=cable-tag"
+    )
+    await flush(8)
+
+    await act(async () => {
+      queryButton("重置草稿").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    expect(window.localStorage.getItem(getDraftStorageKey("cable-tag"))).toBeNull()
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      "/canvas?source=preset-template&templateId=cable-tag"
+    )
+    await flush(8)
+
+    expect(document.body.textContent).toContain("系统模板：Cable Tag")
+    expect(document.body.textContent).not.toContain("系统模板：Changed preset copy")
   })
 
   it("records recent template usage when previewing a user template row", async () => {

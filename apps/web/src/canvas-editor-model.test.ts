@@ -17,6 +17,7 @@ import {
   getPresetById,
   getSystemTemplateById,
   loadStoredDraftDocument,
+  normalizeDraftDocument,
   persistDraftDocument,
   toggleElementBinding,
 } from "./canvas-editor-model.js"
@@ -297,5 +298,57 @@ describe("canvas-editor-model monochrome contract", () => {
       multiline: bound.fields[0]?.multiline,
       defaultValue: bound.fields[0]?.defaultValue,
     })
+  })
+
+  it("drops orphaned bound fields after generic element deletion is normalized", () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const textElement = draft.elements.find((element) => element.kind === "text")
+    if (!textElement) {
+      throw new Error("expected shipping-wide preset to include a text element")
+    }
+
+    const bound = toggleElementBinding(draft, textElement.id, true)
+    const deleted = normalizeDraftDocument({
+      ...bound,
+      elements: bound.elements.filter((element) => element.id !== textElement.id),
+    })
+
+    expect(deleted.fields).toHaveLength(0)
+  })
+
+  it("rewrites bindings when duplicated elements are normalized", () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const textElement = draft.elements.find((element) => element.kind === "text")
+    if (!textElement) {
+      throw new Error("expected shipping-wide preset to include a text element")
+    }
+
+    const bound = toggleElementBinding(draft, textElement.id, true)
+    const fieldKey = bound.fields[0]?.key
+    if (!fieldKey) {
+      throw new Error("expected bound field key")
+    }
+
+    const duplicate = {
+      ...textElement,
+      id: `${textElement.id}-copy`,
+      binding: { fieldKey, kind: "text" as const },
+      value: "Different stale value",
+    }
+    const normalized = normalizeDraftDocument({
+      ...bound,
+      elements: [...bound.elements, duplicate],
+    })
+
+    expect(normalized.fields[0]?.bindings).toEqual(
+      expect.arrayContaining([textElement.id, `${textElement.id}-copy`])
+    )
+    const normalizedDuplicate = normalized.elements.find(
+      (element) => element.id === `${textElement.id}-copy`
+    )
+    expect(normalizedDuplicate?.kind).toBe("text")
+    if (normalizedDuplicate?.kind === "text") {
+      expect(normalizedDuplicate.value).toBe(normalized.fields[0]?.defaultValue)
+    }
   })
 })

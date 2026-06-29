@@ -623,6 +623,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   )
   const [activeUserTemplateDraft, setActiveUserTemplateDraft] =
     React.useState<CanvasDraftDocument | null>(null)
+  const [activeUserTemplateDraftLoading, setActiveUserTemplateDraftLoading] = React.useState(false)
   const [selectedRowId, setSelectedRowId] = React.useState<string>("")
   const [editingTemplateCell, setEditingTemplateCell] = React.useState<{
     rowId: string
@@ -701,26 +702,35 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   React.useEffect(() => {
     if (activeTemplateEntry?.kind !== "user") {
       setActiveUserTemplateDraft(null)
+      setActiveUserTemplateDraftLoading(false)
       return
     }
 
     let cancelled = false
     const templateId = activeTemplateEntry.template.id
+    setActiveUserTemplateDraft(null)
+    setActiveUserTemplateDraftLoading(true)
     void (async () => {
-      const workingCopy = await loadWorkingCopy({ kind: "user-template", templateId })
-      const version = workingCopy?.draft ?? null
-      if (!cancelled) {
-        if (version) {
-          setActiveUserTemplateDraft(version)
-          return
-        }
-        const history = await readUserTemplateHistory(templateId)
-        const savedVersion =
-          history?.saved.find((item) => item.id === history.template.currentVersionId) ??
-          history?.saved[0] ??
-          null
+      try {
+        const workingCopy = await loadWorkingCopy({ kind: "user-template", templateId })
+        const version = workingCopy?.draft ?? null
         if (!cancelled) {
-          setActiveUserTemplateDraft(savedVersion?.document ?? null)
+          if (version) {
+            setActiveUserTemplateDraft(version)
+            return
+          }
+          const history = await readUserTemplateHistory(templateId)
+          const savedVersion =
+            history?.saved.find((item) => item.id === history.template.currentVersionId) ??
+            history?.saved[0] ??
+            null
+          if (!cancelled) {
+            setActiveUserTemplateDraft(savedVersion?.document ?? null)
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setActiveUserTemplateDraftLoading(false)
         }
       }
     })()
@@ -886,6 +896,14 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
         controller.setError("先选择模板与一行数据。")
         return
       }
+      const userTemplateDraftReady =
+        activeTemplateEntry?.kind !== "user" ||
+        (activeUserTemplateDraft?.templateId === activeTemplateEntry.template.id &&
+          !activeUserTemplateDraftLoading)
+      if (!userTemplateDraftReady) {
+        controller.setError("正在读取本地模板草稿，请稍后再预览。")
+        return
+      }
 
       const source =
         activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
@@ -906,12 +924,25 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
         }
       }
     },
-    [activeTemplate, activeTemplateEntry, activeUserTemplateDraft, controller]
+    [
+      activeTemplate,
+      activeTemplateEntry,
+      activeUserTemplateDraft,
+      activeUserTemplateDraftLoading,
+      controller,
+    ]
   )
 
   const autoPreviewTemplateRow = React.useCallback(
     async (row: TemplateRow) => {
       if (!activeTemplate) {
+        return
+      }
+      const userTemplateDraftReady =
+        activeTemplateEntry?.kind !== "user" ||
+        (activeUserTemplateDraft?.templateId === activeTemplateEntry.template.id &&
+          !activeUserTemplateDraftLoading)
+      if (!userTemplateDraftReady) {
         return
       }
       clearTemplateAutoPreviewTimer()
@@ -949,6 +980,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       clearTemplateAutoPreviewTimer,
       controller.renderOptions,
       previewTemplateRow,
+      activeUserTemplateDraftLoading,
     ]
   )
 
@@ -1006,6 +1038,14 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       controller.setError("先选择模板与一行数据。")
       return
     }
+    const userTemplateDraftReady =
+      activeTemplateEntry?.kind !== "user" ||
+      (activeUserTemplateDraft?.templateId === activeTemplateEntry.template.id &&
+        !activeUserTemplateDraftLoading)
+    if (!userTemplateDraftReady) {
+      controller.setError("正在读取本地模板草稿，请稍后再打印。")
+      return
+    }
     await controller.printSourceDirect(
       activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
         ? createUserTemplatePrintSource(
@@ -1027,6 +1067,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     activeTemplate,
     activeTemplateEntry,
     activeUserTemplateDraft,
+    activeUserTemplateDraftLoading,
     controller,
     selectedTemplateRow,
   ])
@@ -1095,6 +1136,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     autoPreviewTemplateRow,
     selectedCanvasElement,
     selectedCanvasElementId,
+    activeUserTemplateDraftLoading,
     editingTemplateCell,
     selectedTemplateRow,
     selectedRowId,
@@ -1512,6 +1554,13 @@ function TemplatesPage({
   const showTemplateTablePane = !usesSingleOutletFlow || showsTableStage
   const showTemplatePreviewPane =
     !usesSingleOutletFlow || showsTableStage || showsDisabledPreviewRail
+  const activeUserTemplatePending =
+    state.activeTemplateEntry?.kind === "user" && state.activeUserTemplateDraftLoading
+  const templatePreviewDisabled =
+    showsDisabledPreviewRail ||
+    !state.activeTemplateEntry ||
+    !state.selectedTemplateRow ||
+    activeUserTemplatePending
   const [listMode, setListMode] = React.useState<TemplateListMode>("large")
   const [tableShellElement, setTableShellElement] = React.useState<HTMLDivElement | null>(null)
   const tableShellWidth = useElementClientWidth(tableShellElement)
@@ -1796,8 +1845,12 @@ function TemplatesPage({
             <TemplatesPrintRail
               controller={controller}
               state={state}
-              disabled={showsDisabledPreviewRail}
-              unavailableMessage="先选择模板后查看预览与打印。"
+              disabled={templatePreviewDisabled}
+              unavailableMessage={
+                activeUserTemplatePending
+                  ? "正在读取本地模板草稿。"
+                  : "先选择模板后查看预览与打印。"
+              }
               onFocusRight={() => state.setTemplateFocus("center-right")}
             />
           </aside>
@@ -1808,7 +1861,12 @@ function TemplatesPage({
             <TemplatesPrintRail
               controller={controller}
               state={state}
-              disabled={false}
+              disabled={templatePreviewDisabled}
+              unavailableMessage={
+                activeUserTemplatePending
+                  ? "正在读取本地模板草稿。"
+                  : "先选择模板后查看预览与打印。"
+              }
               onFocusRight={() => state.setTemplateFocus("center-right")}
             />
           </aside>

@@ -213,7 +213,7 @@ function syncBindingsIntoElements(
   }
 }
 
-function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDraftDocument {
+export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDraftDocument {
   const source =
     document.source ??
     ({
