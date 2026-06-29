@@ -150,6 +150,7 @@ type CanvasPageState = {
   autosavesExpanded: boolean
   versionsOpen: boolean
   loading: boolean
+  storageMode: "persisted" | "reset-pending"
 }
 
 const GRID_SIZE = 20
@@ -266,6 +267,7 @@ function createCanvasStateFromDraft(
     autosavesExpanded: false,
     versionsOpen: options?.versionsOpen ?? false,
     loading: options?.loading ?? false,
+    storageMode: "persisted",
   }
 }
 
@@ -337,6 +339,7 @@ function applyDraftUpdate(
   return {
     ...next,
     selectedIds: updateSelectionAfterDraft(state, nextDraft),
+    storageMode: "persisted",
   }
 }
 
@@ -453,6 +456,7 @@ function resetDraft(state: CanvasPageState): CanvasPageState {
         outputStatus: "已重置为内置草稿。",
       }
     ),
+    storageMode: "reset-pending",
   }
 }
 
@@ -1194,6 +1198,7 @@ function CanvasToolbar({
                       ...current.draft,
                       editor: { ...current.draft.editor, gridEnabled: !current.gridEnabled },
                     },
+                    storageMode: "persisted",
                   }))
                 }
               >
@@ -1211,6 +1216,7 @@ function CanvasToolbar({
                       ...current.draft,
                       editor: { ...current.draft.editor, snapEnabled: !current.snapEnabled },
                     },
+                    storageMode: "persisted",
                   }))
                 }
               >
@@ -3024,6 +3030,11 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
   const routeSource = React.useMemo(() => resolveCanvasSource(searchParams), [searchParams])
   const initialPanel = React.useMemo(() => resolveInitialCanvasPanel(searchParams), [searchParams])
   const initialStatus = React.useMemo(() => resolveCanvasStatus(searchParams), [searchParams])
+  const startupSyncPending =
+    routeSource.kind === "scratch" &&
+    controller.context.surface === "server-http" &&
+    controller.context.mode === "runtime" &&
+    !controller.startupSyncReady
   const [state, setState] = React.useState<CanvasPageState>(() =>
     initialScenario
       ? createCanvasState(CANVAS_PRESETS[0]?.id ?? "shipping-wide", initialScenario)
@@ -3060,6 +3071,9 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
 
   React.useEffect(() => {
     if (initialScenario) {
+      return
+    }
+    if (startupSyncPending) {
       return
     }
 
@@ -3103,7 +3117,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     return () => {
       cancelled = true
     }
-  }, [initialPanel, initialScenario, initialStatus, routeSource, searchParams])
+  }, [initialPanel, initialScenario, initialStatus, routeSource, searchParams, startupSyncPending])
 
   React.useEffect(() => {
     if (initialScenario || state.loading || readOnly) {
@@ -3117,10 +3131,43 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       sourceVersionId: state.liveDraft.baseVersionId,
     })
 
-    if (state.routeSource.kind === "scratch") {
+    if (state.routeSource.kind === "scratch" && !startupSyncPending) {
       persistDraftDocument(state.liveDraft)
     }
-  }, [initialScenario, readOnly, state.liveDraft, state.loading, state.routeSource])
+  }, [
+    initialScenario,
+    readOnly,
+    startupSyncPending,
+    state.liveDraft,
+    state.loading,
+    state.routeSource,
+  ])
+
+  React.useEffect(() => {
+    if (
+      initialScenario ||
+      state.loading ||
+      state.routeSource.kind !== "scratch" ||
+      startupSyncPending
+    ) {
+      return
+    }
+    if (state.storageMode === "reset-pending") {
+      controller.deleteCanvasDraft(state.presetId)
+      return
+    }
+    controller.recordCanvasDraft(state.presetId, state.liveDraft)
+  }, [
+    controller.deleteCanvasDraft,
+    controller.recordCanvasDraft,
+    initialScenario,
+    startupSyncPending,
+    state.liveDraft,
+    state.loading,
+    state.presetId,
+    state.routeSource.kind,
+    state.storageMode,
+  ])
 
   React.useEffect(() => {
     if (!state.versionsOpen || !state.liveDraft.templateId || initialScenario) {
@@ -3426,7 +3473,13 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
           <div className="tm-pane__header">
             <div className="tm-pane__headline">
               <h2>标签编辑台</h2>
-              <p>{readOnly ? "历史快照只读查看。" : "单色编辑，所见即所得。"}</p>
+              <p>
+                {readOnly
+                  ? "历史快照只读查看。"
+                  : startupSyncPending
+                    ? "正在同步最近草稿。"
+                    : "单色编辑，所见即所得。"}
+              </p>
             </div>
             <div className="tm-pane__meta">
               <Badge variant="outline" className="tm-chip">
@@ -3445,12 +3498,19 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
             {state.outputStatus ? (
               <div className="tm-pane__notice">{state.outputStatus}</div>
             ) : null}
-            <CanvasStageView
-              state={state}
-              readOnly={readOnly}
-              onChange={setState}
-              onViewportSizeChange={setStageViewportSize}
-            />
+            {startupSyncPending ? (
+              <div className="tm-empty-state">
+                <p className="tm-empty-state__title">正在恢复同设备草稿</p>
+                <p className="tm-empty-state__body">稍后会继续打开当前预设的最近草稿。</p>
+              </div>
+            ) : (
+              <CanvasStageView
+                state={state}
+                readOnly={readOnly}
+                onChange={setState}
+                onViewportSizeChange={setStageViewportSize}
+              />
+            )}
           </div>
         </section>
 

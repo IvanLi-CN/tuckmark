@@ -70,3 +70,10 @@ while the workbench was being productized:
     save-adjacent right-side drawer
   - replaceable field editing collapsed into a single field-name autocomplete
     input instead of separate binding and naming controls
+- A later same-device persistence round was folded back into the same topic:
+  - recent templates and recent prints now reconcile browser and service
+    snapshots under a shared same-device sync contract
+  - scratch canvas drafts now restore through that merged sync state on
+    `server-http`
+  - browser-local user templates and their version history remain intentionally
+    outside that sync contract

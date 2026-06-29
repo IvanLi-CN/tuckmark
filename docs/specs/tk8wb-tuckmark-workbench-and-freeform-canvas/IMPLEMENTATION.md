@@ -83,7 +83,9 @@
     `user-template`
   - draft field registry and per-element replacement bindings
   - per-layer metadata
-  - preset-scoped legacy `localStorage` persistence for scratch drafts
+  - preset-scoped browser storage persistence for scratch drafts
+  - same-device sync state records shared with `TuckmarkService` for scratch
+    drafts, recent templates, and recent prints
   - IndexedDB-backed browser-local user template persistence with memory
     fallback in incomplete test/browser environments
   - in-memory undo/redo history capped to `50`
@@ -112,6 +114,12 @@
 - Browser-local user template preview/print reuses the shared canvas artifact
   seam by compiling row values into a concrete `DirectCanvasDefinition` on the
   client before preview or print dispatch.
+- Same-device sync intentionally stops at:
+  - recent templates
+  - recent prints
+  - scratch canvas drafts
+- Browser-local user templates, saved versions, autosaves, and user-template
+  working copies remain outside the sync contract.
 - Shared schema coverage now includes `rotation` on `text`, `rect`, `barcode`,
   and `qr`, while `line` remains endpoint-based.
 - Line rotation remains an editor-side endpoint transform only:
@@ -162,7 +170,8 @@
   - `bun run --filter @tuckmark/web test` passed
   - `bun run --filter @tuckmark/web build:pages` passed
   - `bun run --filter @tuckmark/web build:storybook` passed
-  - `bun x playwright test tests/template-table.spec.ts tests/user-template-flow.spec.ts` passed
+  - `bun run --filter @tuckmark/web test:e2e -- tests/user-template-flow.spec.ts` passed
+  - `bun run --filter @tuckmark/web test:e2e:sync` passed
   - `bun run build:web:pages` passed
   - `bun run --filter @tuckmark/web test:e2e -- --grep "template large mode"` passed
   - `bun run --filter @tuckmark/cli typecheck` passed

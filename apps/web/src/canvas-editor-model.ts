@@ -842,6 +842,20 @@ export function clearStoredDraftDocument(presetId: string): void {
   window.localStorage.removeItem(getDraftStorageKey(presetId))
 }
 
+export function persistDraftDocumentToStorage(
+  presetId: string,
+  rawDocument: CanvasDraftDocument
+): void {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  window.localStorage.setItem(
+    getDraftStorageKey(presetId),
+    JSON.stringify(normalizeDraftDocument(rawDocument))
+  )
+}
+
 export function duplicateDraftElement(
   element: CanvasDraftElement,
   _index: number

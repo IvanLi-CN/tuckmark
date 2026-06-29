@@ -12,12 +12,7 @@ import {
   restoreBrowserPrinter,
 } from "./browser-printer.js"
 import { buildInputFromTemplate, defaultRenderOptions, fallbackTemplates } from "./demo-data.js"
-import {
-  loadRecentActivity,
-  type RecentActivityState,
-  recordRecentPrint,
-  recordRecentTemplate,
-} from "./lib/recent-activity.js"
+import { loadRecentActivity, type RecentActivityState } from "./lib/recent-activity.js"
 import { resolveAppContext } from "./runtime.js"
 import type {
   AppContext,
@@ -30,8 +25,17 @@ import type {
   UserTemplateSummary,
 } from "./types.js"
 import { listUserTemplates } from "./user-template-store.js"
+import {
+  applySyncStateToBrowser,
+  deleteCanvasDraftLocally,
+  recordCanvasDraftLocally,
+  recordRecentPrintLocally,
+  recordTemplateUsageLocally,
+  syncWebState,
+} from "./web-state-sync.js"
 
 type UiPrintResult = PrintResult | BrowserPrintResult
+const SYNC_PRESET_IDS = ["shipping-wide", "ops-tag", "compact-note"] as const
 
 function sortPrinters(printers: Printer[]): Printer[] {
   return [...printers].sort((left, right) => {
@@ -105,6 +109,11 @@ export function useWorkbenchController({
     loadRecentActivity()
   )
   const [userTemplates, setUserTemplates] = React.useState<UserTemplateSummary[]>([])
+  const [startupSyncReady, setStartupSyncReady] = React.useState(
+    !(context.surface === "server-http" && context.mode === "runtime")
+  )
+  const syncInFlightRef = React.useRef<Promise<void> | null>(null)
+  const syncQueuedRef = React.useRef(false)
 
   const browserPrintSupported = React.useMemo(() => isBrowserPrintSupported(), [])
   const browserDirectConfigured = context.capabilities.browserDirectPrintPath !== "disabled"
@@ -214,15 +223,47 @@ export function useWorkbenchController({
   }, [])
 
   React.useEffect(() => {
+    setStartupSyncReady(!(context.surface === "server-http" && context.mode === "runtime"))
     void (async () => {
       try {
         await refreshSetup()
         await refreshUserTemplates()
+        if (context.surface === "server-http" && context.mode === "runtime") {
+          const next = await syncWebState(client, [...SYNC_PRESET_IDS])
+          setRecentActivity(next.recentActivity)
+        }
       } catch {
         setTemplates(fallbackTemplates)
+      } finally {
+        setStartupSyncReady(true)
       }
     })()
-  }, [refreshSetup, refreshUserTemplates])
+  }, [client, context.mode, context.surface, refreshSetup, refreshUserTemplates])
+
+  const scheduleSync = React.useCallback(() => {
+    if (context.surface !== "server-http" || context.mode !== "runtime") {
+      return
+    }
+    if (syncInFlightRef.current) {
+      syncQueuedRef.current = true
+      return
+    }
+    syncInFlightRef.current = (async () => {
+      try {
+        let shouldContinue = true
+        while (shouldContinue) {
+          syncQueuedRef.current = false
+          const next = await syncWebState(client, [...SYNC_PRESET_IDS])
+          setRecentActivity(next.recentActivity)
+          shouldContinue = next.requiresResync || syncQueuedRef.current
+        }
+      } catch {
+        // Ignore sync failures and keep the local session live.
+      } finally {
+        syncInFlightRef.current = null
+      }
+    })()
+  }, [client, context.mode, context.surface])
 
   React.useEffect(() => {
     if (context.mode === "demo" || !browserDirectAvailable || browserPrinter !== null) {
@@ -367,13 +408,13 @@ export function useWorkbenchController({
           templates.find((item) => item.id === source.templateId) ??
           userTemplates.find((item) => item.id === source.templateId)
         if (template) {
-          setRecentActivity(
-            recordRecentTemplate({
-              id: template.id,
-              name: template.name,
-              description: template.description,
-            })
-          )
+          const nextState = recordTemplateUsageLocally({
+            id: template.id,
+            name: template.name,
+            description: template.description,
+          })
+          setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
+          scheduleSync()
         }
       }
 
@@ -415,6 +456,7 @@ export function useWorkbenchController({
       executeServerPreview,
       hasServerPrinterFlow,
       run,
+      scheduleSync,
       selectedPrinter,
       syncArtifactData,
       syncBrowserArtifact,
@@ -428,16 +470,34 @@ export function useWorkbenchController({
       if (!source) {
         return
       }
-      setRecentActivity(
-        recordRecentPrint({
-          id: `${source.kind}:${summarizeSourceTitle(source)}`,
-          title: summarizeSourceTitle(source),
-          kind: source.kind === "safe-text" ? "safe_text" : source.kind,
-          printerName,
-        })
-      )
+      const nextState = recordRecentPrintLocally({
+        id: `${source.kind}:${summarizeSourceTitle(source)}`,
+        title: summarizeSourceTitle(source),
+        kind: source.kind === "safe-text" ? "safe_text" : source.kind,
+        printerName,
+      })
+      setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
+      scheduleSync()
     },
-    []
+    [scheduleSync]
+  )
+
+  const recordCanvasDraft = React.useCallback(
+    (presetId: string, draft: Parameters<typeof recordCanvasDraftLocally>[1]) => {
+      const nextState = recordCanvasDraftLocally(presetId, draft)
+      setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
+      scheduleSync()
+    },
+    [scheduleSync]
+  )
+
+  const deleteCanvasDraft = React.useCallback(
+    (presetId: string) => {
+      const nextState = deleteCanvasDraftLocally(presetId)
+      setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
+      scheduleSync()
+    },
+    [scheduleSync]
   )
 
   const printCurrentPreview = React.useCallback(async () => {
@@ -561,13 +621,13 @@ export function useWorkbenchController({
           templates.find((item) => item.id === source.templateId) ??
           userTemplates.find((item) => item.id === source.templateId)
         if (template) {
-          setRecentActivity(
-            recordRecentTemplate({
-              id: template.id,
-              name: template.name,
-              description: template.description,
-            })
-          )
+          const nextState = recordTemplateUsageLocally({
+            id: template.id,
+            name: template.name,
+            description: template.description,
+          })
+          setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
+          scheduleSync()
         }
       }
 
@@ -653,6 +713,7 @@ export function useWorkbenchController({
       printerId,
       run,
       runServerTaskWithRecovery,
+      scheduleSync,
       selectedPrinter,
       serviceApiUsable,
       syncArtifactData,
@@ -704,8 +765,10 @@ export function useWorkbenchController({
     browserPrinter,
     busy,
     client,
+    deleteCanvasDraft,
     connectPhysicalPrinter,
     context,
+    recordCanvasDraft,
     error,
     hasServerPrinterFlow,
     preview,
@@ -732,9 +795,11 @@ export function useWorkbenchController({
     setProbeResult,
     setRenderOptions,
     setRecentActivity,
+    startupSyncReady,
     templates,
     refreshUserTemplates,
     userTemplates,
+    scheduleSync,
   }
 }
 

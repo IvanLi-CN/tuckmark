@@ -28,6 +28,10 @@ function emptyState(): RecentActivityState {
   }
 }
 
+export function emptyRecentActivityState(): RecentActivityState {
+  return emptyState()
+}
+
 function canUseStorage(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined"
 }
@@ -71,6 +75,10 @@ function writeRecentActivity(next: RecentActivityState): RecentActivityState {
 
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   return next
+}
+
+export function persistRecentActivity(next: RecentActivityState): RecentActivityState {
+  return writeRecentActivity(next)
 }
 
 export function clearRecentActivity(): RecentActivityState {

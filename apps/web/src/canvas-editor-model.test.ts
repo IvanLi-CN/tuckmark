@@ -28,32 +28,6 @@ type AnyRectElement = Extract<AnyCanvasElement, { kind: "rect" }>
 type AnyLineElement = Extract<AnyCanvasElement, { kind: "line" }>
 
 function getStorage() {
-  const globalScope = globalThis as typeof globalThis & {
-    localStorage?: Storage
-  }
-  const windowScope =
-    typeof window !== "undefined" ? (window as Window & typeof globalThis) : undefined
-
-  const windowStorage = windowScope?.localStorage
-  if (windowStorage) {
-    return windowStorage
-  }
-
-  if (globalScope.localStorage) {
-    if (windowScope) {
-      Object.defineProperty(windowScope, "localStorage", {
-        value: globalScope.localStorage,
-        configurable: true,
-      })
-    } else {
-      Object.defineProperty(globalScope, "window", {
-        value: globalThis as Window & typeof globalThis,
-        configurable: true,
-      })
-    }
-    return globalScope.localStorage
-  }
-
   const store = new Map<string, string>()
   const memoryStorage: Storage = {
     get length() {
@@ -76,19 +50,16 @@ function getStorage() {
     },
   }
 
-  Object.defineProperty(globalScope, "localStorage", {
+  Object.defineProperty(globalThis, "localStorage", {
     value: memoryStorage,
     configurable: true,
+    writable: true,
   })
-  if (windowScope) {
-    Object.defineProperty(windowScope, "localStorage", {
+  if (typeof window !== "undefined") {
+    Object.defineProperty(window, "localStorage", {
       value: memoryStorage,
       configurable: true,
-    })
-  } else {
-    Object.defineProperty(globalScope, "window", {
-      value: globalThis as Window & typeof globalThis,
-      configurable: true,
+      writable: true,
     })
   }
   return memoryStorage

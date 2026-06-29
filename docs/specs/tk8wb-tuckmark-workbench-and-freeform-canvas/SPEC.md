@@ -161,12 +161,14 @@ output.
   - document metadata
   - per-layer metadata (`name`, `visible`, `locked`)
   - editor metadata (`gridEnabled`, `snapEnabled`)
-- Draft persistence uses `localStorage` keys namespaced by preset id.
+- Scratch-draft persistence uses preset-scoped browser storage keys and also
+  participates in same-device sync with `TuckmarkService` when the
+  `server-http` surface is live.
 - Browser-local user templates use an IndexedDB-backed registry with a memory
   fallback in nonconforming environments.
 - Refresh restores the latest working copy for the active document source.
 - Resetting a scratch draft clears the stored scratch working copy for that
-  preset and rebuilds from the built-in preset.
+  preset, records a sync tombstone, and rebuilds from the built-in preset.
 - Resetting a preset-template draft rebuilds from the system template source.
 - Resetting a user-template draft restores the current saved version of that
   browser-local template.
@@ -197,12 +199,15 @@ output.
 
 ### Recent activity and persistence contract
 
-- Recent templates and recent prints are stored browser-locally.
-- The browser-local registry uses `localStorage` metadata and may enrich itself
-  from the current browser artifact store.
+- Recent templates and recent prints are persisted in a shared same-device sync
+  state that merges browser-local storage with `TuckmarkService`.
+- The browser snapshot remains the first-write surface and is reconciled with
+  the service snapshot during startup and after key mutations.
 - No remote history service or `/api/history` endpoint is introduced.
-- Canvas drafts stay browser-local only. No remote document store or account
-  sync is introduced.
+- Scratch canvas drafts participate in the same same-device sync state. No
+  cross-device account sync or remote document service is introduced.
+- Browser-local user templates, saved versions, autosaves, and user-template
+  working copies stay browser-local only and do not sync through the service.
 - Browser-local user template persistence contract:
   - source kinds are `scratch`, `preset-template`, and `user-template`
   - first save from `scratch` or `preset-template` creates a browser-local user
@@ -274,6 +279,9 @@ output.
   support structured row editing, preview, print, and an edit jump back to
   `/canvas`.
 - Invalid barcode or QR payloads surface as user-visible errors.
+- `server-http` startup restores recent activity from the merged sync snapshot.
+- Scratch canvas drafts can be restored from the merged same-device sync
+  snapshot after reload.
 - `1100×820` keeps the `/canvas` stage visible while one contextual side rail
   is hidden.
 - `1280×800`, `1440×900`, and `1600×1024` keep the professional three-column

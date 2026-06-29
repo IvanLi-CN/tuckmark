@@ -1,4 +1,9 @@
-import type { DirectCanvasDefinition, PrinterProbeResult } from "../../../packages/core/src/web.js"
+import type {
+  DirectCanvasDefinition,
+  PrinterProbeResult,
+  SyncState,
+} from "../../../packages/core/src/web.js"
+import { emptySyncState } from "../../../packages/core/src/web.js"
 import {
   listBrowserRuntimeTemplates,
   previewCanvasInBrowser,
@@ -84,6 +89,8 @@ export interface ApiClient {
   listTemplates(): Promise<Template[]>
   listPrinters(): Promise<Printer[]>
   probePrinter(input: { printerId: string; printerName?: string }): Promise<PrinterProbeResult>
+  getSyncState(): Promise<SyncState>
+  mergeSyncState(state: SyncState): Promise<SyncState>
   previewTemplate(input: PreviewTemplateInput): Promise<PreviewResult>
   previewCanvas(input: PreviewCanvasInput): Promise<PreviewResult>
   previewSafeText(input: PreviewSafeTextInput): Promise<PreviewResult>
@@ -117,6 +124,25 @@ export class HttpApiClient implements ApiClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
     })
+  }
+
+  async getSyncState(): Promise<SyncState> {
+    const response = await requestJson<{ state: SyncState }>(
+      `${this.context.apiBasePath}/sync/state`
+    )
+    return response.state
+  }
+
+  async mergeSyncState(state: SyncState): Promise<SyncState> {
+    const response = await requestJson<{ state: SyncState }>(
+      `${this.context.apiBasePath}/sync/state`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(state),
+      }
+    )
+    return response.state
   }
 
   previewTemplate(input: PreviewTemplateInput): Promise<PreviewResult> {
@@ -207,6 +233,14 @@ export class BrowserRuntimeApiClient implements ApiClient {
     throw new Error("browser-static surface does not expose service-api printer probing.")
   }
 
+  async getSyncState(): Promise<SyncState> {
+    return emptySyncState()
+  }
+
+  async mergeSyncState(state: SyncState): Promise<SyncState> {
+    return state
+  }
+
   previewTemplate(input: PreviewTemplateInput): Promise<PreviewResult> {
     return previewTemplateInBrowser(input)
   }
@@ -283,6 +317,14 @@ export class DemoApiClient implements ApiClient {
         disconnectMs: 80,
       },
     }
+  }
+
+  async getSyncState(): Promise<SyncState> {
+    return emptySyncState()
+  }
+
+  async mergeSyncState(state: SyncState): Promise<SyncState> {
+    return state
   }
 
   async previewTemplate(input: PreviewTemplateInput): Promise<PreviewResult> {

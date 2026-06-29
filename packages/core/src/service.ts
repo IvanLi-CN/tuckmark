@@ -8,6 +8,13 @@ import {
   renderSafeTextLabelPreview,
   renderTemplateToPreview,
 } from "./renderer.js"
+import type {
+  CanvasDraftRecord,
+  RecentPrintRecord,
+  SyncState,
+  TemplateUsageRecord,
+} from "./sync-state.js"
+import { SyncStateStore } from "./sync-state-store.js"
 import { getTemplateById, presetTemplates } from "./template-library.js"
 import type {
   ArtifactPackets,
@@ -32,16 +39,19 @@ import type {
 export interface TuckmarkServiceOptions {
   artifactStore?: ArtifactStore
   detonger?: DetongerAdapter
+  syncStateStore?: SyncStateStore
 }
 
 export class TuckmarkService {
   readonly artifactStore: ArtifactStore
   readonly detonger: DetongerAdapter
+  readonly syncStateStore: SyncStateStore
   readonly serverSidePrintEnabled: boolean
 
   constructor(options?: TuckmarkServiceOptions) {
     this.artifactStore = options?.artifactStore ?? new ArtifactStore()
     this.detonger = options?.detonger ?? new DetongerAdapter()
+    this.syncStateStore = options?.syncStateStore ?? new SyncStateStore(this.artifactStore.root)
     const serverSidePrintFlag = process.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT?.trim().toLowerCase()
     this.serverSidePrintEnabled = serverSidePrintFlag === "1" || serverSidePrintFlag === "true"
   }
@@ -157,6 +167,41 @@ export class TuckmarkService {
 
   async listArtifacts(): Promise<PreviewArtifact[]> {
     return this.artifactStore.listArtifacts()
+  }
+
+  async getSyncState(): Promise<SyncState> {
+    return this.syncStateStore.readState()
+  }
+
+  async mergeSyncState(next: SyncState): Promise<SyncState> {
+    return this.syncStateStore.mergeState(next)
+  }
+
+  async upsertTemplateUsageRecord(record: TemplateUsageRecord): Promise<SyncState> {
+    const current = await this.getSyncState()
+    return this.mergeSyncState({
+      ...current,
+      templateUsageRecords: [record],
+      updatedAt: new Date().toISOString(),
+    })
+  }
+
+  async upsertRecentPrintRecord(record: RecentPrintRecord): Promise<SyncState> {
+    const current = await this.getSyncState()
+    return this.mergeSyncState({
+      ...current,
+      recentPrintRecords: [record],
+      updatedAt: new Date().toISOString(),
+    })
+  }
+
+  async upsertCanvasDraftRecord(record: CanvasDraftRecord): Promise<SyncState> {
+    const current = await this.getSyncState()
+    return this.mergeSyncState({
+      ...current,
+      canvasDraftRecords: [record],
+      updatedAt: new Date().toISOString(),
+    })
   }
 
   async getArtifactPackets(artifactId: string): Promise<ArtifactPackets> {

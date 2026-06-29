@@ -1475,6 +1475,10 @@ function TemplatesPage({
     [activeTemplateFields, state.templateRows, tableShellWidth]
   )
 
+  React.useEffect(() => {
+    void controller.refreshUserTemplates()
+  }, [controller.refreshUserTemplates])
+
   return (
     <section className="tm-workspace">
       <div
