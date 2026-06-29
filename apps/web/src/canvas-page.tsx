@@ -1292,11 +1292,7 @@ function CanvasToolbar({
               <FileClock className="size-4" />
               另存为
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void onReset()}
-            >
+            <Button size="sm" variant="outline" onClick={() => void onReset()}>
               <RotateCcw className="size-4" />
               重置草稿
             </Button>
