@@ -310,5 +310,5 @@ test("template page moves preview and print below the table on extra narrow widt
   expect(layout?.rightTop ?? 0).toBeGreaterThanOrEqual((layout?.centerBottom ?? 0) - 1)
   expect(Math.abs((layout?.rightLeft ?? 0) - (layout?.centerLeft ?? 0))).toBeLessThanOrEqual(2)
   expect(Math.abs((layout?.rightWidth ?? 0) - (layout?.centerWidth ?? 0))).toBeLessThanOrEqual(2)
-  await expect(page.getByText("预览与打印")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "预览与打印" })).toBeVisible()
 })
