@@ -246,6 +246,25 @@ class MemoryUserTemplateStore {
     return cloneValue(workingCopy)
   }
 
+  async replaceWorkingCopy(args: {
+    templateId?: string
+    source: CanvasDraftSource
+    document: CanvasDraftDocument
+    sourceVersionId?: string
+  }): Promise<CanvasWorkingCopyIndexEntry> {
+    const now = new Date().toISOString()
+    const workingCopy: CanvasWorkingCopyIndexEntry = {
+      sourceKey: createSourceKey(args.source),
+      source: cloneValue(args.source),
+      templateId: args.templateId,
+      draft: cloneValue(args.document),
+      updatedAt: now,
+      baseVersionId: args.sourceVersionId,
+    }
+    this.workingCopies.set(workingCopy.sourceKey, workingCopy)
+    return cloneValue(workingCopy)
+  }
+
   async loadWorkingCopy(source: CanvasDraftSource): Promise<CanvasWorkingCopyIndexEntry | null> {
     const entry = this.workingCopies.get(createSourceKey(source))
     return entry ? cloneValue(entry) : null
@@ -557,6 +576,27 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
     return cloneValue(workingCopy)
   }
 
+  override async replaceWorkingCopy(args: {
+    templateId?: string
+    source: CanvasDraftSource
+    document: CanvasDraftDocument
+    sourceVersionId?: string
+  }): Promise<CanvasWorkingCopyIndexEntry> {
+    const now = new Date().toISOString()
+    const workingCopy: CanvasWorkingCopyIndexEntry = {
+      sourceKey: createSourceKey(args.source),
+      source: cloneValue(args.source),
+      templateId: args.templateId,
+      draft: cloneValue(args.document),
+      updatedAt: now,
+      baseVersionId: args.sourceVersionId,
+    }
+    await this.transaction([WORKING_COPY_STORE], "readwrite", async (stores) => {
+      await put(stores[WORKING_COPY_STORE], workingCopy)
+    })
+    return cloneValue(workingCopy)
+  }
+
   override async loadWorkingCopy(
     source: CanvasDraftSource
   ): Promise<CanvasWorkingCopyIndexEntry | null> {
@@ -667,6 +707,12 @@ let storePromise:
         document: CanvasDraftDocument
         sourceVersionId?: string
       }): Promise<CanvasWorkingCopyIndexEntry>
+      replaceWorkingCopy(args: {
+        templateId?: string
+        source: CanvasDraftSource
+        document: CanvasDraftDocument
+        sourceVersionId?: string
+      }): Promise<CanvasWorkingCopyIndexEntry>
       loadWorkingCopy(source: CanvasDraftSource): Promise<CanvasWorkingCopyIndexEntry | null>
       clearWorkingCopy(source: CanvasDraftSource): Promise<void>
       clearTemplateAutosaves(templateId: string): Promise<void>
@@ -743,6 +789,16 @@ export async function saveUserTemplateAutosave(args: {
 }) {
   const store = await resolveStore()
   return store.saveAutosave(args)
+}
+
+export async function replaceUserTemplateWorkingCopy(args: {
+  templateId?: string
+  source: CanvasDraftSource
+  document: CanvasDraftDocument
+  sourceVersionId?: string
+}) {
+  const store = await resolveStore()
+  return store.replaceWorkingCopy(args)
 }
 
 export async function loadWorkingCopy(

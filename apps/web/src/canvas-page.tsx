@@ -99,6 +99,7 @@ import {
   clearWorkingCopy,
   loadWorkingCopy,
   readUserTemplateHistory,
+  replaceUserTemplateWorkingCopy,
   saveUserTemplate,
   saveUserTemplateAutosave,
 } from "./user-template-store.js"
@@ -458,6 +459,43 @@ function resetDraft(state: CanvasPageState): CanvasPageState {
     ),
     storageMode: "reset-pending",
   }
+}
+
+async function resetCanvasDraft(args: {
+  state: CanvasPageState
+  controller: WorkbenchController
+}): Promise<CanvasPageState> {
+  const { state, controller } = args
+
+  if (state.routeSource.kind === "user-template") {
+    const currentVersion =
+      state.versionHistory?.saved.find(
+        (version) => version.id === state.versionHistory?.template.currentVersionId
+      ) ?? null
+
+    const restoredDraft = currentVersion
+      ? createRestoredDraftFromVersion(currentVersion, state.routeSource.templateId)
+      : cloneDraft(state.liveDraft)
+
+    await replaceUserTemplateWorkingCopy({
+      templateId: state.routeSource.templateId,
+      source: state.routeSource,
+      document: restoredDraft,
+      sourceVersionId: currentVersion?.id,
+    })
+    await clearTemplateAutosaves(state.routeSource.templateId)
+    await controller.refreshUserTemplates()
+
+    const history = await readUserTemplateHistory(state.routeSource.templateId)
+    return {
+      ...createCanvasStateFromDraft(restoredDraft, {
+        versionHistory: history,
+      }),
+      outputStatus: "已恢复到当前模板的已保存版本。",
+    }
+  }
+
+  return resetDraft(state)
 }
 
 function duplicateSelected(state: CanvasPageState): CanvasPageState {
@@ -1055,6 +1093,7 @@ function CanvasToolbar({
   isWide,
   stageViewportSize,
   readOnly,
+  onReset,
   onSave,
   onSaveAs,
   onRestoreVersion,
@@ -1068,6 +1107,7 @@ function CanvasToolbar({
   isWide: boolean
   stageViewportSize: StageViewportSize
   readOnly: boolean
+  onReset: () => Promise<void>
   onSave: () => Promise<void>
   onSaveAs: () => Promise<void>
   onRestoreVersion: () => void
@@ -1255,7 +1295,7 @@ function CanvasToolbar({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => onChange((current) => resetDraft(current))}
+              onClick={() => void onReset()}
             >
               <RotateCcw className="size-4" />
               重置草稿
@@ -3420,6 +3460,14 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     ]
   )
 
+  const handleResetDraft = React.useCallback(async () => {
+    const nextState = await resetCanvasDraft({
+      state,
+      controller,
+    })
+    setState(nextState)
+  }, [controller, state])
+
   const canUndo = state.historyIndex > 0
   const canRedo = state.historyIndex < state.history.length - 1
 
@@ -3432,6 +3480,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         isWide={isWide}
         stageViewportSize={stageViewportSize}
         readOnly={readOnly}
+        onReset={handleResetDraft}
         onSave={() => persistNamedTemplate("save")}
         onSaveAs={() => persistNamedTemplate("save-as")}
         onRestoreVersion={handleRestoreVersion}

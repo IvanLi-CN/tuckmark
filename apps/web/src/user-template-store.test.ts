@@ -12,6 +12,7 @@ import {
   getAutosaveIntervalMs,
   loadWorkingCopy,
   readUserTemplateHistory,
+  replaceUserTemplateWorkingCopy,
   resetUserTemplateStoreForTest,
   saveUserTemplate,
   saveUserTemplateAutosave,
@@ -121,5 +122,47 @@ describe("user-template-store", () => {
     const history = await readUserTemplateHistory(saved.template.id)
     expect(history?.saved).toHaveLength(1)
     expect(history?.autosaves).toHaveLength(0)
+  })
+
+  it("replaces the persisted working copy without creating a new autosave version", async () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Version Reset",
+      document: draft,
+    })
+
+    const autosaveDraft = structuredClone(saved.workingCopy.draft)
+    autosaveDraft.name = "Version Reset draft"
+    await saveUserTemplateAutosave({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: autosaveDraft,
+      sourceVersionId: saved.version.id,
+    })
+
+    const restoredDraft = structuredClone(saved.workingCopy.draft)
+    restoredDraft.name = "Version Reset"
+    restoredDraft.baseVersionId = saved.version.id
+
+    const replaced = await replaceUserTemplateWorkingCopy({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: restoredDraft,
+      sourceVersionId: saved.version.id,
+    })
+
+    expect(replaced.baseVersionId).toBe(saved.version.id)
+    expect(replaced.draft.name).toBe("Version Reset")
+
+    const workingCopy = await loadWorkingCopy({
+      kind: "user-template",
+      templateId: saved.template.id,
+    })
+    expect(workingCopy?.baseVersionId).toBe(saved.version.id)
+    expect(workingCopy?.draft.name).toBe("Version Reset")
+
+    const history = await readUserTemplateHistory(saved.template.id)
+    expect(history?.saved).toHaveLength(1)
+    expect(history?.autosaves).toHaveLength(1)
   })
 })
