@@ -416,6 +416,10 @@ export function useWorkbenchController({
           setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
           scheduleSync()
         }
+      } else if (source.kind === "canvas" && source.templateUsage) {
+        const nextState = recordTemplateUsageLocally(source.templateUsage)
+        setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
+        scheduleSync()
       }
 
       const result = await run(
@@ -629,6 +633,10 @@ export function useWorkbenchController({
           setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
           scheduleSync()
         }
+      } else if (source.kind === "canvas" && source.templateUsage) {
+        const nextState = recordTemplateUsageLocally(source.templateUsage)
+        setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
+        scheduleSync()
       }
 
       const hasTarget =

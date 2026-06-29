@@ -101,6 +101,29 @@ describe("user-template-store", () => {
     expect(getAutosaveIntervalMs()).toBe(5 * 60 * 1000)
   })
 
+  it("does not create an autosave when the draft only differs by version metadata", async () => {
+    const draft = createDraftFromPreset(getPresetById("ops-tag"))
+    const saved = await saveUserTemplate({
+      name: "Rack Tag",
+      document: draft,
+    })
+
+    const reopenedDraft = structuredClone(saved.workingCopy.draft)
+    reopenedDraft.baseVersionId = saved.version.id
+    reopenedDraft.lastSavedAt = new Date().toISOString()
+
+    await saveUserTemplateAutosave({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: reopenedDraft,
+      sourceVersionId: saved.version.id,
+    })
+
+    const history = await readUserTemplateHistory(saved.template.id)
+    expect(history?.saved).toHaveLength(1)
+    expect(history?.autosaves).toHaveLength(0)
+  })
+
   it("clears autosave history without touching saved versions", async () => {
     const draft = createDraftFromPreset(getPresetById("shipping-wide"))
     const saved = await saveUserTemplate({

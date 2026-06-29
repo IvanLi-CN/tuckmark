@@ -8,6 +8,7 @@ import type { ApiClient } from "./api-client.js"
 import { App } from "./app.js"
 import { createDraftFromPreset, getDraftStorageKey, getPresetById } from "./canvas-editor-model.js"
 import { fallbackTemplates } from "./demo-data.js"
+import { loadRecentActivity } from "./lib/recent-activity.js"
 import type { AppContext, PreviewArtifact } from "./types.js"
 import {
   loadWorkingCopy,
@@ -1219,6 +1220,29 @@ describe("web workbench app", () => {
     }
   })
 
+  it("does not create an autosave when opening an unchanged user template", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Stable Template",
+      document: {
+        ...baseDraft,
+        name: "Stable Template",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=user-template&templateId=${saved.template.id}`
+    )
+    await flush(8)
+
+    const history = await readUserTemplateHistory(saved.template.id)
+    expect(history?.saved).toHaveLength(1)
+    expect(history?.autosaves).toHaveLength(0)
+  })
+
   it("does not persist user-template undo state into scratch draft storage", async () => {
     const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
     const saved = await saveUserTemplate({
@@ -1251,6 +1275,30 @@ describe("web workbench app", () => {
     })
 
     expect(memoryStorage.getItem(savedDraftStorageKey)).toBeNull()
+  })
+
+  it("prefers synced scratch drafts over stale indexeddb working copies on startup", async () => {
+    const preset = getPresetById("shipping-wide")
+    const syncedDraft = createDraftFromPreset(preset)
+    syncedDraft.name = "Synced scratch draft"
+    window.localStorage.setItem(getDraftStorageKey(preset.id), JSON.stringify(syncedDraft))
+
+    const staleDraft = structuredClone(syncedDraft)
+    staleDraft.name = "Stale indexeddb draft"
+    await saveUserTemplateAutosave({
+      source: { kind: "scratch", presetId: preset.id },
+      document: staleDraft,
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=scratch&presetId=${preset.id}`
+    )
+    await flush(8)
+
+    expect(document.body.textContent).toContain("当前草稿：Synced scratch draft")
+    expect(document.body.textContent).not.toContain("当前草稿：Stale indexeddb draft")
   })
 
   it("persists grid and snap toggles into the user-template working copy", async () => {
@@ -1287,5 +1335,41 @@ describe("web workbench app", () => {
     })
     expect(workingCopy?.draft.editor.gridEnabled).toBe(false)
     expect(workingCopy?.draft.editor.snapEnabled).toBe(false)
+  })
+
+  it("records recent template usage when previewing a user template row", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Recent User Template",
+      description: "User template recent activity",
+      document: {
+        ...baseDraft,
+        name: "Recent User Template",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(browserRuntimeContext, undefined, "/templates")
+    await flush(8)
+
+    await act(async () => {
+      const targetCard = Array.from(document.querySelectorAll(".tm-template-card")).find((item) =>
+        item.textContent?.includes("Recent User Template")
+      ) as HTMLElement | undefined
+      const surface = targetCard?.querySelector(
+        ".tm-template-card__surface"
+      ) as HTMLButtonElement | null
+      surface?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    await act(async () => {
+      queryButton("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    const recent = loadRecentActivity()
+    expect(recent.templates[0]?.id).toBe(saved.template.id)
+    expect(recent.templates[0]?.name).toBe("Recent User Template")
   })
 })

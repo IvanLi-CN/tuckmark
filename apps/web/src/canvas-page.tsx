@@ -36,6 +36,7 @@ import {
   Transformer,
 } from "react-konva"
 import { useNavigate, useSearchParams } from "react-router-dom"
+import { stableStringify } from "../../../packages/core/src/web.js"
 import {
   bindElementToExistingField,
   buildStoryScenarioDocument,
@@ -192,6 +193,18 @@ function normalizeRect(box: CanvasSelectionBox) {
 
 function cloneDraft(draft: CanvasDraftDocument): CanvasDraftDocument {
   return structuredClone(draft)
+}
+
+function toComparableDraft(draft: CanvasDraftDocument) {
+  return {
+    ...draft,
+    baseVersionId: undefined,
+    lastSavedAt: undefined,
+  }
+}
+
+function sameDraftContent(left: CanvasDraftDocument, right: CanvasDraftDocument): boolean {
+  return stableStringify(toComparableDraft(left)) === stableStringify(toComparableDraft(right))
 }
 
 function hasVisibleTextSelection(state: CanvasPageState) {
@@ -1009,14 +1022,6 @@ async function loadDraftForSource(source: CanvasDraftSource): Promise<{
     }
   }
 
-  const workingCopy = await loadWorkingCopy(source)
-  if (workingCopy?.draft) {
-    return {
-      draft: workingCopy.draft,
-      versionHistory: null,
-    }
-  }
-
   if (source.kind === "preset-template") {
     return {
       draft: createDraftFromSystemTemplate(getSystemTemplateById(source.presetId)),
@@ -1031,6 +1036,14 @@ async function loadDraftForSource(source: CanvasDraftSource): Promise<{
         ...legacyDraft,
         source,
       },
+      versionHistory: null,
+    }
+  }
+
+  const workingCopy = await loadWorkingCopy(source)
+  if (workingCopy?.draft) {
+    return {
+      draft: workingCopy.draft,
       versionHistory: null,
     }
   }
@@ -1055,6 +1068,39 @@ function createRestoredDraftFromVersion(
     baseVersionId: version.id,
     lastSavedAt: undefined,
   }
+}
+
+function getAutosaveBaselineDraft(args: {
+  routeSource: CanvasDraftSource
+  liveDraft: CanvasDraftDocument
+  readOnlyVersion: UserTemplateVersionSnapshot | null
+  versionHistory: UserTemplateHistory | null
+}): CanvasDraftDocument | null {
+  if (args.routeSource.kind !== "user-template" || !args.liveDraft.templateId) {
+    return null
+  }
+
+  if (args.readOnlyVersion) {
+    return args.readOnlyVersion.document
+  }
+
+  if (args.liveDraft.baseVersionId) {
+    const savedVersion =
+      args.versionHistory?.saved.find((version) => version.id === args.liveDraft.baseVersionId) ??
+      null
+    if (savedVersion) {
+      return savedVersion.document
+    }
+  }
+
+  const currentVersion =
+    args.versionHistory?.saved.find(
+      (version) => version.id === args.versionHistory?.template.currentVersionId
+    ) ??
+    args.versionHistory?.saved[0] ??
+    null
+
+  return currentVersion?.document ?? null
 }
 
 function TextInlineEditor({
@@ -3169,28 +3215,49 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     }
   }, [initialPanel, initialScenario, initialStatus, routeSource, searchParams, startupSyncPending])
 
+  const autosaveLiveDraft = state.liveDraft
+  const autosaveLoading = state.loading
+  const autosaveRouteSource = state.routeSource
+  const autosaveReadOnlyVersion = state.readOnlyVersion
+  const autosaveVersionHistory = state.versionHistory
+
   React.useEffect(() => {
-    if (initialScenario || state.loading || readOnly) {
+    if (initialScenario || autosaveLoading || readOnly) {
       return
     }
 
-    void saveUserTemplateAutosave({
-      templateId: state.liveDraft.templateId,
-      source: state.routeSource,
-      document: state.liveDraft,
-      sourceVersionId: state.liveDraft.baseVersionId,
+    const autosaveBaseline = getAutosaveBaselineDraft({
+      liveDraft: autosaveLiveDraft,
+      readOnlyVersion: autosaveReadOnlyVersion,
+      routeSource: autosaveRouteSource,
+      versionHistory: autosaveVersionHistory,
     })
+    const shouldCreateAutosave =
+      autosaveRouteSource.kind !== "user-template" ||
+      !autosaveBaseline ||
+      !sameDraftContent(autosaveLiveDraft, autosaveBaseline)
 
-    if (state.routeSource.kind === "scratch" && !startupSyncPending) {
-      persistDraftDocument(state.liveDraft)
+    if (shouldCreateAutosave) {
+      void saveUserTemplateAutosave({
+        templateId: autosaveLiveDraft.templateId,
+        source: autosaveRouteSource,
+        document: autosaveLiveDraft,
+        sourceVersionId: autosaveLiveDraft.baseVersionId,
+      })
+    }
+
+    if (autosaveRouteSource.kind === "scratch" && !startupSyncPending) {
+      persistDraftDocument(autosaveLiveDraft)
     }
   }, [
+    autosaveLiveDraft,
+    autosaveLoading,
+    autosaveReadOnlyVersion,
+    autosaveRouteSource,
+    autosaveVersionHistory,
     initialScenario,
     readOnly,
     startupSyncPending,
-    state.liveDraft,
-    state.loading,
-    state.routeSource,
   ])
 
   React.useEffect(() => {

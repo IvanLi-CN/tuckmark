@@ -300,6 +300,7 @@ function createTemplatePrintSource(
 }
 
 function createUserTemplatePrintSource(
+  template: UserTemplateSummary,
   draft: CanvasDraftDocument,
   row: TemplateRow,
   renderOptions: RenderOptions
@@ -308,6 +309,11 @@ function createUserTemplatePrintSource(
     kind: "canvas",
     canvas: compileDraftToFilledCanvasDefinition(draft, row.values),
     renderOptions: createPreviewRenderOptions(renderOptions),
+    templateUsage: {
+      id: template.id,
+      name: template.name,
+      description: template.description,
+    },
   }
 }
 
@@ -862,7 +868,12 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
 
       const source =
         activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
-          ? createUserTemplatePrintSource(activeUserTemplateDraft, row, controller.renderOptions)
+          ? createUserTemplatePrintSource(
+              activeTemplateEntry.template,
+              activeUserTemplateDraft,
+              row,
+              controller.renderOptions
+            )
           : createTemplatePrintSource(activeTemplate as Template, row, controller.renderOptions)
       const previewKey = JSON.stringify(source)
       const result = await controller.previewSource(source)
@@ -886,7 +897,12 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
 
       const source =
         activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
-          ? createUserTemplatePrintSource(activeUserTemplateDraft, row, controller.renderOptions)
+          ? createUserTemplatePrintSource(
+              activeTemplateEntry.template,
+              activeUserTemplateDraft,
+              row,
+              controller.renderOptions
+            )
           : createTemplatePrintSource(activeTemplate as Template, row, controller.renderOptions)
       const previewKey = JSON.stringify(source)
       if (
@@ -972,6 +988,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     await controller.printSourceDirect(
       activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
         ? createUserTemplatePrintSource(
+            activeTemplateEntry.template,
             activeUserTemplateDraft,
             selectedTemplateRow,
             controller.renderOptions

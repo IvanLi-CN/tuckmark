@@ -1,3 +1,4 @@
+import { stableStringify } from "../../../packages/core/src/web.js"
 import type {
   CanvasDraftDocument,
   CanvasDraftField,
@@ -72,6 +73,18 @@ function getNextSavedVersionNumber(versions: Iterable<UserTemplateVersionSnapsho
         .map((version) => version.version)
     ) + 1
   )
+}
+
+function toComparableDraft(draft: CanvasDraftDocument) {
+  return {
+    ...draft,
+    baseVersionId: undefined,
+    lastSavedAt: undefined,
+  }
+}
+
+function sameDocumentContent(left: CanvasDraftDocument, right: CanvasDraftDocument): boolean {
+  return stableStringify(toComparableDraft(left)) === stableStringify(toComparableDraft(right))
 }
 
 function compareVersionsNewestFirst(
@@ -232,8 +245,17 @@ class MemoryUserTemplateStore {
       return cloneValue(workingCopy)
     }
 
+    const templateId = args.templateId
+    const currentVersionId = this.templates.get(templateId)?.currentVersionId
+    const currentVersion = currentVersionId
+      ? Array.from(this.versions.values()).find((version) => version.id === currentVersionId)
+      : null
+    if (currentVersion && sameDocumentContent(currentVersion.document, draft)) {
+      return cloneValue(workingCopy)
+    }
+
     const autosaveHistory = Array.from(this.versions.values())
-      .filter((version) => version.templateId === args.templateId && version.kind === "autosave")
+      .filter((version) => version.templateId === templateId && version.kind === "autosave")
       .sort(compareVersionsOldestFirst)
     const newest = autosaveHistory[autosaveHistory.length - 1]
     if (newest) {
@@ -250,14 +272,14 @@ class MemoryUserTemplateStore {
       Math.max(
         0,
         ...Array.from(this.versions.values())
-          .filter((version) => version.templateId === args.templateId)
+          .filter((version) => version.templateId === templateId)
           .map((version) => version.version)
       ) + 1
 
     const autosaveId = createId("user-template-autosave")
     this.versions.set(autosaveId, {
       id: autosaveId,
-      templateId: args.templateId,
+      templateId,
       version: nextVersionNumber,
       kind: "autosave",
       createdAt: now,
@@ -265,7 +287,7 @@ class MemoryUserTemplateStore {
       sourceVersionId: args.sourceVersionId,
       document: draft,
     })
-    this.trimVersions(args.templateId, "autosave", MAX_AUTOSAVE_VERSIONS)
+    this.trimVersions(templateId, "autosave", MAX_AUTOSAVE_VERSIONS)
 
     return cloneValue(workingCopy)
   }
@@ -542,6 +564,17 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
     }
 
     if (!args.templateId) {
+      await this.transaction([WORKING_COPY_STORE], "readwrite", async (stores) => {
+        await put(stores[WORKING_COPY_STORE], workingCopy)
+      })
+      return cloneValue(workingCopy)
+    }
+
+    const currentTemplate = await this.readTemplate(args.templateId)
+    const currentVersion = currentTemplate
+      ? await this.readVersion(currentTemplate.currentVersionId)
+      : null
+    if (currentVersion && sameDocumentContent(currentVersion.document, workingCopy.draft)) {
       await this.transaction([WORKING_COPY_STORE], "readwrite", async (stores) => {
         await put(stores[WORKING_COPY_STORE], workingCopy)
       })
