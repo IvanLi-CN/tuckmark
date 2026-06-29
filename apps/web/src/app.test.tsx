@@ -6,8 +6,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { emptySyncState } from "../../../packages/core/src/web.js"
 import type { ApiClient } from "./api-client.js"
 import { App } from "./app.js"
+import { createDraftFromPreset, getDraftStorageKey, getPresetById } from "./canvas-editor-model.js"
 import { fallbackTemplates } from "./demo-data.js"
 import type { AppContext, PreviewArtifact } from "./types.js"
+import {
+  loadWorkingCopy,
+  readUserTemplateHistory,
+  resetUserTemplateStoreForTest,
+  saveUserTemplate,
+  saveUserTemplateAutosave,
+} from "./user-template-store.js"
 
 const browserPrinterMocks = vi.hoisted(() => ({
   connectBrowserPrinter: vi.fn(),
@@ -20,6 +28,36 @@ const browserPrinterMocks = vi.hoisted(() => ({
 const browserPayloadMocks = vi.hoisted(() => ({
   materializeBrowserArtifactData: vi.fn(),
 }))
+
+vi.mock("react-konva", async () => {
+  const React = await import("react")
+  const createMockNode = (options?: { imperativeHandle?: object }) =>
+    React.forwardRef<object, React.HTMLAttributes<HTMLElement>>(function MockNode(props, ref) {
+      const { children } = props
+      React.useImperativeHandle<object, object>(ref, () => options?.imperativeHandle ?? {}, [])
+      return React.createElement("div", null, children)
+    })
+
+  return {
+    Group: createMockNode(),
+    Layer: createMockNode(),
+    Line: createMockNode(),
+    Rect: createMockNode(),
+    Stage: createMockNode(),
+    Text: createMockNode(),
+    Transformer: createMockNode({
+      imperativeHandle: {
+        nodes() {},
+        shouldOverdrawWholeArea() {},
+        getLayer() {
+          return {
+            batchDraw() {},
+          }
+        },
+      },
+    }),
+  }
+})
 
 vi.mock("./browser-printer.js", () => browserPrinterMocks)
 vi.mock("./browser-print-payload.js", () => browserPayloadMocks)
@@ -75,10 +113,32 @@ function createCanvasContextStub(): CanvasRenderingContext2D {
   return {
     font: "",
     fillStyle: "#000000",
+    scale() {},
+    transform() {},
+    setTransform() {},
+    resetTransform() {},
+    translate() {},
+    rotate() {},
+    save() {},
+    restore() {},
+    beginPath() {},
+    closePath() {},
+    moveTo() {},
+    lineTo() {},
+    bezierCurveTo() {},
+    quadraticCurveTo() {},
+    arc() {},
+    rect() {},
+    clip() {},
+    stroke() {},
+    fill() {},
+    clearRect() {},
+    strokeRect() {},
+    fillRect() {},
+    setLineDash() {},
     measureText(text: string) {
       return { width: Math.max(Array.from(text).length, 1) * 7.25 } as TextMetrics
     },
-    fillRect() {},
     drawImage() {},
     getImageData(_sx: number, _sy: number, sw: number, sh: number) {
       const width = Math.max(Math.floor(sw), 1)
@@ -561,14 +621,14 @@ function _clickNav(label: string): Promise<void> {
   })
 }
 
-async function renderApp(context: AppContext, client?: ApiClient): Promise<void> {
+async function renderApp(context: AppContext, client?: ApiClient, path = "/"): Promise<void> {
   document.body.innerHTML = '<div id="root"></div>'
   const rootElement = document.getElementById("root")
   if (!rootElement) {
     throw new Error("Missing root element")
   }
 
-  window.history.replaceState({}, "", "/")
+  window.history.replaceState({}, "", path)
 
   await act(async () => {
     mountedRoot = ReactDOM.createRoot(rootElement)
@@ -577,7 +637,7 @@ async function renderApp(context: AppContext, client?: ApiClient): Promise<void>
   })
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.useFakeTimers()
   fetchMock.mockReset()
   globalThis.fetch = fetchMock
@@ -615,6 +675,7 @@ beforeEach(() => {
   )
 
   memoryStorage.clear()
+  await resetUserTemplateStoreForTest()
 })
 
 afterEach(async () => {
@@ -1105,5 +1166,126 @@ describe("web workbench app", () => {
     expect(browserPrinterMocks.restoreBrowserPrinter).not.toHaveBeenCalled()
     expect(browserPrinterMocks.connectBrowserPrinter).not.toHaveBeenCalled()
     expect(browserPrinterMocks.printPreviewArtifact).not.toHaveBeenCalled()
+  })
+
+  it("keeps the source user-template working copy when saving as a new template", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Source Template",
+      document: {
+        ...baseDraft,
+        name: "Source Template",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const unsavedDraft = structuredClone(saved.workingCopy.draft)
+    unsavedDraft.name = "Source Template Draft"
+    unsavedDraft.fields = unsavedDraft.fields.map((field, index) =>
+      index === 0 ? { ...field, defaultValue: "Unsaved Receiver" } : field
+    )
+    await saveUserTemplateAutosave({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: unsavedDraft,
+      sourceVersionId: saved.version.id,
+    })
+
+    const originalPrompt = window.prompt
+    window.prompt = () => "Copied Template"
+    try {
+      await renderApp(
+        browserRuntimeContext,
+        undefined,
+        `/canvas?source=user-template&templateId=${saved.template.id}`
+      )
+      await flush(8)
+
+      await act(async () => {
+        queryButton("另存为").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await flush(8)
+      })
+
+      const templates = await readUserTemplateHistory(saved.template.id)
+      expect(templates?.autosaves).toHaveLength(1)
+
+      const workingCopy = await loadWorkingCopy({
+        kind: "user-template",
+        templateId: saved.template.id,
+      })
+      expect(workingCopy?.draft.name).toBe("Source Template Draft")
+    } finally {
+      window.prompt = originalPrompt
+    }
+  })
+
+  it("does not persist user-template undo state into scratch draft storage", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Undo Source",
+      document: {
+        ...baseDraft,
+        name: "Undo Source",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const savedDraftStorageKey = getDraftStorageKey("shipping-wide")
+    expect(memoryStorage.getItem(savedDraftStorageKey)).toBeNull()
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=user-template&templateId=${saved.template.id}`
+    )
+    await flush(8)
+
+    await act(async () => {
+      queryButton("文本").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    await act(async () => {
+      queryButton("撤销").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    expect(memoryStorage.getItem(savedDraftStorageKey)).toBeNull()
+  })
+
+  it("persists grid and snap toggles into the user-template working copy", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Assist Settings",
+      document: {
+        ...baseDraft,
+        name: "Assist Settings",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=user-template&templateId=${saved.template.id}`
+    )
+    await flush(8)
+
+    await act(async () => {
+      queryButton("网格").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    await act(async () => {
+      queryButton("吸附").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    const workingCopy = await loadWorkingCopy({
+      kind: "user-template",
+      templateId: saved.template.id,
+    })
+    expect(workingCopy?.draft.editor.gridEnabled).toBe(false)
+    expect(workingCopy?.draft.editor.snapEnabled).toBe(false)
   })
 })

@@ -344,6 +344,26 @@ function applyDraftUpdate(
   }
 }
 
+function updateEditorAssistState(
+  state: CanvasPageState,
+  nextEditor: CanvasDraftDocument["editor"]
+): CanvasPageState {
+  return {
+    ...state,
+    gridEnabled: nextEditor.gridEnabled,
+    snapEnabled: nextEditor.snapEnabled,
+    liveDraft: {
+      ...state.liveDraft,
+      editor: nextEditor,
+    },
+    draft: {
+      ...state.draft,
+      editor: nextEditor,
+    },
+    storageMode: "persisted",
+  }
+}
+
 function setSelection(state: CanvasPageState, id: string, multi: boolean): CanvasPageState {
   const isSelected = state.selectedIds.includes(id)
   if (!multi) {
@@ -571,7 +591,6 @@ function undoDraft(state: CanvasPageState): CanvasPageState {
     return state
   }
   const nextDraft = cloneDraft(previousDraft)
-  persistDraftDocument(nextDraft)
   return {
     ...state,
     liveDraft: nextDraft,
@@ -591,7 +610,6 @@ function redoDraft(state: CanvasPageState): CanvasPageState {
     return state
   }
   const nextDraft = cloneDraft(nextHistoryDraft)
-  persistDraftDocument(nextDraft)
   return {
     ...state,
     liveDraft: nextDraft,
@@ -1231,15 +1249,13 @@ function CanvasToolbar({
                 size="sm"
                 variant={state.gridEnabled ? "default" : "outline"}
                 onClick={() =>
-                  onChange((current) => ({
-                    ...current,
-                    gridEnabled: !current.gridEnabled,
-                    draft: {
-                      ...current.draft,
-                      editor: { ...current.draft.editor, gridEnabled: !current.gridEnabled },
-                    },
-                    storageMode: "persisted",
-                  }))
+                  onChange((current) => {
+                    const nextEditor = {
+                      ...current.liveDraft.editor,
+                      gridEnabled: !current.gridEnabled,
+                    }
+                    return updateEditorAssistState(current, nextEditor)
+                  })
                 }
               >
                 <Grid2x2 className="size-4" />
@@ -1249,15 +1265,13 @@ function CanvasToolbar({
                 size="sm"
                 variant={state.snapEnabled ? "default" : "outline"}
                 onClick={() =>
-                  onChange((current) => ({
-                    ...current,
-                    snapEnabled: !current.snapEnabled,
-                    draft: {
-                      ...current.draft,
-                      editor: { ...current.draft.editor, snapEnabled: !current.snapEnabled },
-                    },
-                    storageMode: "persisted",
-                  }))
+                  onChange((current) => {
+                    const nextEditor = {
+                      ...current.liveDraft.editor,
+                      snapEnabled: !current.snapEnabled,
+                    }
+                    return updateEditorAssistState(current, nextEditor)
+                  })
                 }
               >
                 <ScanSearch className="size-4" />
@@ -3423,7 +3437,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
           mode === "save" && !readOnly ? state.liveDraft.baseVersionId : state.readOnlyVersion?.id,
       })
 
-      if (!existingTemplateId) {
+      if (!existingTemplateId && state.routeSource.kind !== "user-template") {
         await clearWorkingCopy(state.routeSource)
       }
       await clearTemplateAutosaves(result.template.id)
