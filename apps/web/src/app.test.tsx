@@ -6,13 +6,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { emptySyncState } from "../../../packages/core/src/web.js"
 import type { ApiClient } from "./api-client.js"
 import { App } from "./app.js"
-import { createDraftFromPreset, getDraftStorageKey, getPresetById } from "./canvas-editor-model.js"
+import {
+  createDraftFromPreset,
+  getDraftStorageKey,
+  getPresetById,
+  toggleElementBinding,
+} from "./canvas-editor-model.js"
 import { fallbackTemplates } from "./demo-data.js"
 import { loadRecentActivity } from "./lib/recent-activity.js"
 import type { AppContext, PreviewArtifact } from "./types.js"
 import {
   loadWorkingCopy,
   readUserTemplateHistory,
+  replaceUserTemplateWorkingCopy,
   resetUserTemplateStoreForTest,
   saveUserTemplate,
   saveUserTemplateAutosave,
@@ -1465,5 +1471,112 @@ describe("web workbench app", () => {
     const recent = loadRecentActivity()
     expect(recent.templates[0]?.id).toBe(saved.template.id)
     expect(recent.templates[0]?.name).toBe("Recent User Template")
+  })
+
+  it("builds /templates columns from the user-template working copy schema", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const textElement = baseDraft.elements.find((element) => element.kind === "text")
+    if (!textElement) {
+      throw new Error("expected shipping-wide preset to include a text element")
+    }
+    const boundDraft = toggleElementBinding(baseDraft, textElement.id, true)
+    const saved = await saveUserTemplate({
+      name: "Schema Current",
+      document: {
+        ...boundDraft,
+        name: "Schema Current",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const updatedWorkingCopy = structuredClone(saved.workingCopy.draft)
+    updatedWorkingCopy.fields = updatedWorkingCopy.fields.map((field, index) =>
+      index === 0 ? { ...field, label: "收件人（当前草稿）" } : field
+    )
+
+    await replaceUserTemplateWorkingCopy({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: updatedWorkingCopy,
+      sourceVersionId: saved.version.id,
+    })
+
+    await renderApp(browserRuntimeContext, undefined, "/templates")
+    await flush(8)
+
+    await act(async () => {
+      const targetCard = Array.from(document.querySelectorAll(".tm-template-card")).find((item) =>
+        item.textContent?.includes("Schema Current")
+      ) as HTMLElement | undefined
+      const surface = targetCard?.querySelector(
+        ".tm-template-card__surface"
+      ) as HTMLButtonElement | null
+      surface?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    expect(document.body.textContent).toContain("收件人（当前草稿）")
+  })
+
+  it("previews user templates from the persisted working copy instead of the last saved version", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const textElement = baseDraft.elements.find((element) => element.kind === "text")
+    if (!textElement) {
+      throw new Error("expected shipping-wide preset to include a text element")
+    }
+    const boundDraft = toggleElementBinding(baseDraft, textElement.id, true)
+    const saved = await saveUserTemplate({
+      name: "Preview Current",
+      document: {
+        ...boundDraft,
+        name: "Preview Current",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const updatedWorkingCopy = structuredClone(saved.workingCopy.draft)
+    updatedWorkingCopy.fields = updatedWorkingCopy.fields.map((field, index) =>
+      index === 0 ? { ...field, defaultValue: "Current Working Copy" } : field
+    )
+
+    await replaceUserTemplateWorkingCopy({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: updatedWorkingCopy,
+      sourceVersionId: saved.version.id,
+    })
+
+    await renderApp(browserRuntimeContext, undefined, "/templates")
+    await flush(8)
+
+    await act(async () => {
+      const targetCard = Array.from(document.querySelectorAll(".tm-template-card")).find((item) =>
+        item.textContent?.includes("Preview Current")
+      ) as HTMLElement | undefined
+      const surface = targetCard?.querySelector(
+        ".tm-template-card__surface"
+      ) as HTMLButtonElement | null
+      surface?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    await act(async () => {
+      queryButton("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    expect(browserPayloadMocks.materializeBrowserArtifactData).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        kind: "canvas",
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "text",
+              value: "Current Working Copy",
+            }),
+          ]),
+        }),
+      })
+    )
   })
 })

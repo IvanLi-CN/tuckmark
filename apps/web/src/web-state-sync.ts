@@ -31,6 +31,7 @@ import type { CanvasDraftDocument } from "./types.js"
 
 const SYNC_STORAGE_KEY = "tuckmark.sync-state.v1"
 const MAX_ITEMS = 6
+const SYNCABLE_PRESET_IDS = new Set(CANVAS_PRESETS.map((preset) => preset.id))
 
 export type SyncApiClient = {
   getSyncState(): Promise<SyncState>
@@ -236,6 +237,9 @@ export function recordCanvasDraftLocally(
   draft: SharedCanvasDraftDocument
 ): SyncState {
   const current = loadLocalSyncState()
+  if (!SYNCABLE_PRESET_IDS.has(presetId)) {
+    return current
+  }
   const existing = current.canvasDraftRecords.find((record) => record.payload.presetId === presetId)
   const record =
     sameDraftPayload(draft, existing) && existing
@@ -256,6 +260,9 @@ export function recordCanvasDraftLocally(
 
 export function deleteCanvasDraftLocally(presetId: string): SyncState {
   const current = loadLocalSyncState()
+  if (!SYNCABLE_PRESET_IDS.has(presetId)) {
+    return current
+  }
   const existing = current.canvasDraftRecords.find((record) => record.payload.presetId === presetId)
   const deletedAt = new Date().toISOString()
   const preservedDraft =

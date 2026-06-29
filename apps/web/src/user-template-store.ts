@@ -1,7 +1,6 @@
 import { stableStringify } from "../../../packages/core/src/web.js"
 import type {
   CanvasDraftDocument,
-  CanvasDraftField,
   CanvasDraftSource,
   CanvasWorkingCopyIndexEntry,
   UserTemplateHistory,
@@ -101,6 +100,17 @@ function compareVersionsOldestFirst(
   return left.version - right.version || left.createdAt.localeCompare(right.createdAt)
 }
 
+function buildTemplateSummary(
+  template: UserTemplateRecord,
+  workingCopy: CanvasWorkingCopyIndexEntry | null,
+  fallbackDocument: CanvasDraftDocument | null
+): UserTemplateSummary {
+  return {
+    ...cloneValue(template),
+    fields: cloneValue(workingCopy?.draft.fields ?? fallbackDocument?.fields ?? []),
+  }
+}
+
 class MemoryUserTemplateStore {
   private readonly templates = new Map<string, UserTemplateRecord>()
   private readonly versions = new Map<string, UserTemplateVersionSnapshot>()
@@ -110,10 +120,15 @@ class MemoryUserTemplateStore {
     const templates = Array.from(this.templates.values()).sort((left, right) =>
       right.updatedAt.localeCompare(left.updatedAt)
     )
-    return templates.map((template) => ({
-      ...cloneValue(template),
-      fields: this.getCurrentFields(template),
-    }))
+    return templates.map((template) =>
+      buildTemplateSummary(
+        template,
+        this.workingCopies.get(
+          createSourceKey({ kind: "user-template", templateId: template.id })
+        ) ?? null,
+        this.versions.get(template.currentVersionId)?.document ?? null
+      )
+    )
   }
 
   async readTemplate(templateId: string): Promise<UserTemplateSummary | null> {
@@ -121,10 +136,11 @@ class MemoryUserTemplateStore {
     if (!template) {
       return null
     }
-    return {
-      ...cloneValue(template),
-      fields: this.getCurrentFields(template),
-    }
+    return buildTemplateSummary(
+      template,
+      this.workingCopies.get(createSourceKey({ kind: "user-template", templateId })) ?? null,
+      this.versions.get(template.currentVersionId)?.document ?? null
+    )
   }
 
   async readHistory(templateId: string): Promise<UserTemplateHistory | null> {
@@ -329,12 +345,6 @@ class MemoryUserTemplateStore {
     this.versions.clear()
     this.workingCopies.clear()
   }
-
-  private getCurrentFields(template: UserTemplateRecord): CanvasDraftField[] {
-    const currentVersion = this.versions.get(template.currentVersionId)
-    return currentVersion ? cloneValue(currentVersion.document.fields) : []
-  }
-
   private trimVersions(templateId: string, kind: UserTemplateVersionKind, limit: number): void {
     const versions = Array.from(this.versions.values())
       .filter((version) => version.templateId === templateId && version.kind === kind)
@@ -395,18 +405,25 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
 
   override async listTemplates(): Promise<UserTemplateSummary[]> {
     const templates = await this.transaction(
-      [TEMPLATE_STORE, VERSION_STORE],
+      [TEMPLATE_STORE, VERSION_STORE, WORKING_COPY_STORE],
       "readonly",
       async (stores) => {
         const records = await readAll<UserTemplateRecord>(stores[TEMPLATE_STORE])
         const versions = await readAll<UserTemplateVersionSnapshot>(stores[VERSION_STORE])
+        const workingCopies = await readAll<CanvasWorkingCopyIndexEntry>(stores[WORKING_COPY_STORE])
         const versionMap = new Map(versions.map((version) => [version.id, version]))
+        const workingCopyMap = new Map(workingCopies.map((entry) => [entry.sourceKey, entry]))
         return records
           .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-          .map((template) => ({
-            ...template,
-            fields: cloneValue(versionMap.get(template.currentVersionId)?.document.fields ?? []),
-          }))
+          .map((template) =>
+            buildTemplateSummary(
+              template,
+              workingCopyMap.get(
+                createSourceKey({ kind: "user-template", templateId: template.id })
+              ) ?? null,
+              versionMap.get(template.currentVersionId)?.document ?? null
+            )
+          )
       }
     )
     return cloneValue(templates)
@@ -414,7 +431,7 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
 
   override async readTemplate(templateId: string): Promise<UserTemplateSummary | null> {
     const template = await this.transaction(
-      [TEMPLATE_STORE, VERSION_STORE],
+      [TEMPLATE_STORE, VERSION_STORE, WORKING_COPY_STORE],
       "readonly",
       async (stores) => {
         const record = await readOne<UserTemplateRecord>(stores[TEMPLATE_STORE], templateId)
@@ -425,10 +442,11 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
           stores[VERSION_STORE],
           record.currentVersionId
         )
-        return {
-          ...record,
-          fields: cloneValue(version?.document.fields ?? []),
-        }
+        const workingCopy = await readOne<CanvasWorkingCopyIndexEntry>(
+          stores[WORKING_COPY_STORE],
+          createSourceKey({ kind: "user-template", templateId })
+        )
+        return buildTemplateSummary(record, workingCopy, version?.document ?? null)
       }
     )
     return template ? cloneValue(template) : null

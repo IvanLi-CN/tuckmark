@@ -65,7 +65,7 @@ import type {
   TemplateField,
   UserTemplateSummary,
 } from "./types.js"
-import { readUserTemplateHistory } from "./user-template-store.js"
+import { loadWorkingCopy, readUserTemplateHistory } from "./user-template-store.js"
 import { createInitialTemplateRows, useWorkbenchController } from "./workbench-controller.js"
 
 type AppProps = {
@@ -638,9 +638,15 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       return
     }
 
+    const templateFields = toTemplateFieldList(activeTemplate)
     setTemplateRows((currentRows) => {
       if (currentRows.length > 0 && currentRows[0]?.id.startsWith(activeTemplate.id)) {
-        return currentRows
+        const schemaMatchesCurrentRows =
+          Object.keys(currentRows[0]?.values ?? {}).join("|") ===
+          templateFields.map((field) => field.key).join("|")
+        if (schemaMatchesCurrentRows) {
+          return currentRows
+        }
       }
       return createInitialTemplateRows(
         {
@@ -649,7 +655,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
           description: activeTemplate.description,
           width: activeTemplate.width,
           height: activeTemplate.height,
-          fields: toTemplateFieldList(activeTemplate),
+          fields: templateFields,
         },
         3
       )
@@ -666,6 +672,13 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     void (async () => {
       const previews = await Promise.all(
         controller.userTemplates.map(async (template) => {
+          const workingCopy = await loadWorkingCopy({
+            kind: "user-template",
+            templateId: template.id,
+          })
+          if (workingCopy?.draft) {
+            return [template.id, workingCopy.draft] as const
+          }
           const history = await readUserTemplateHistory(template.id)
           const version =
             history?.saved.find((item) => item.id === history.template.currentVersionId) ??
@@ -694,13 +707,21 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     let cancelled = false
     const templateId = activeTemplateEntry.template.id
     void (async () => {
-      const history = await readUserTemplateHistory(templateId)
-      const version =
-        history?.saved.find((item) => item.id === history.template.currentVersionId) ??
-        history?.saved[0] ??
-        null
+      const workingCopy = await loadWorkingCopy({ kind: "user-template", templateId })
+      const version = workingCopy?.draft ?? null
       if (!cancelled) {
-        setActiveUserTemplateDraft(version?.document ?? null)
+        if (version) {
+          setActiveUserTemplateDraft(version)
+          return
+        }
+        const history = await readUserTemplateHistory(templateId)
+        const savedVersion =
+          history?.saved.find((item) => item.id === history.template.currentVersionId) ??
+          history?.saved[0] ??
+          null
+        if (!cancelled) {
+          setActiveUserTemplateDraft(savedVersion?.document ?? null)
+        }
       }
     })()
 

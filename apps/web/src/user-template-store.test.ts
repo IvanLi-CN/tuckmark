@@ -11,6 +11,7 @@ import {
   clearTemplateAutosaves,
   getAutosaveIntervalMs,
   loadWorkingCopy,
+  readUserTemplate,
   readUserTemplateHistory,
   replaceUserTemplateWorkingCopy,
   resetUserTemplateStoreForTest,
@@ -187,6 +188,34 @@ describe("user-template-store", () => {
     const history = await readUserTemplateHistory(saved.template.id)
     expect(history?.saved).toHaveLength(1)
     expect(history?.autosaves).toHaveLength(1)
+  })
+
+  it("builds template summary fields from the persisted working copy before the next save", async () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const textElement = draft.elements.find((element) => element.kind === "text")
+    if (!textElement) {
+      throw new Error("expected shipping-wide preset to include a text element")
+    }
+    const boundDraft = toggleElementBinding(draft, textElement.id, true)
+    const saved = await saveUserTemplate({
+      name: "Schema Drift",
+      document: boundDraft,
+    })
+
+    const workingCopyDraft = structuredClone(saved.workingCopy.draft)
+    workingCopyDraft.fields = workingCopyDraft.fields.map((field, index) =>
+      index === 0 ? { ...field, label: "收件人（草稿）" } : field
+    )
+
+    await replaceUserTemplateWorkingCopy({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: workingCopyDraft,
+      sourceVersionId: saved.version.id,
+    })
+
+    const template = await readUserTemplate(saved.template.id)
+    expect(template?.fields[0]?.label).toBe("收件人（草稿）")
   })
 
   it("keeps saved version numbers monotonic after retention trimming", async () => {

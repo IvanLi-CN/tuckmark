@@ -3284,7 +3284,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     if (initialScenario || state.loading || startupSyncPending) {
       return
     }
-    if (state.routeSource.kind === "scratch" || state.routeSource.kind === "preset-template") {
+    if (state.routeSource.kind === "scratch") {
       if (state.storageMode === "reset-pending") {
         controller.deleteCanvasDraft(state.presetId)
         return
