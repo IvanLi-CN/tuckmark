@@ -165,4 +165,32 @@ describe("user-template-store", () => {
     expect(history?.saved).toHaveLength(1)
     expect(history?.autosaves).toHaveLength(1)
   })
+
+  it("keeps saved version numbers monotonic after retention trimming", async () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const firstSave = await saveUserTemplate({
+      name: "Retention Label",
+      document: draft,
+    })
+
+    let lastSave = firstSave
+    for (let index = 0; index < 21; index += 1) {
+      const nextDraft = structuredClone(lastSave.workingCopy.draft)
+      nextDraft.name = `Retention Label ${index + 2}`
+      lastSave = await saveUserTemplate({
+        name: nextDraft.name,
+        templateId: firstSave.template.id,
+        sourceVersionId: lastSave.version.id,
+        document: nextDraft,
+      })
+    }
+
+    expect(lastSave.version.version).toBe(22)
+    expect(lastSave.version.label).toBe("已保存版本 22")
+
+    const history = await readUserTemplateHistory(firstSave.template.id)
+    expect(history?.saved).toHaveLength(20)
+    expect(history?.saved[0]?.version).toBe(22)
+    expect(history?.saved[0]?.label).toBe("已保存版本 22")
+  })
 })

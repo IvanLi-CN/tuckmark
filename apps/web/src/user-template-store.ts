@@ -63,6 +63,31 @@ function hasStore(db: IDBDatabase, storeName: string): boolean {
   return false
 }
 
+function getNextSavedVersionNumber(versions: Iterable<UserTemplateVersionSnapshot>): number {
+  return (
+    Math.max(
+      0,
+      ...Array.from(versions)
+        .filter((version) => version.kind === "saved")
+        .map((version) => version.version)
+    ) + 1
+  )
+}
+
+function compareVersionsNewestFirst(
+  left: UserTemplateVersionSnapshot,
+  right: UserTemplateVersionSnapshot
+): number {
+  return right.version - left.version || right.createdAt.localeCompare(left.createdAt)
+}
+
+function compareVersionsOldestFirst(
+  left: UserTemplateVersionSnapshot,
+  right: UserTemplateVersionSnapshot
+): number {
+  return left.version - right.version || left.createdAt.localeCompare(right.createdAt)
+}
+
 class MemoryUserTemplateStore {
   private readonly templates = new Map<string, UserTemplateRecord>()
   private readonly versions = new Map<string, UserTemplateVersionSnapshot>()
@@ -97,7 +122,7 @@ class MemoryUserTemplateStore {
 
     const history = Array.from(this.versions.values())
       .filter((version) => version.templateId === templateId)
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .sort(compareVersionsNewestFirst)
 
     return {
       template,
@@ -126,11 +151,10 @@ class MemoryUserTemplateStore {
     const document = cloneValue(args.document)
     const templateId = args.templateId ?? createId("user-template")
     const existing = this.templates.get(templateId)
-    const savedHistory = Array.from(this.versions.values())
-      .filter((version) => version.templateId === templateId && version.kind === "saved")
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-    const lastSavedVersion = savedHistory[savedHistory.length - 1]
-    const nextVersionNumber = (lastSavedVersion?.version ?? 0) + 1
+    const templateVersions = Array.from(this.versions.values()).filter(
+      (version) => version.templateId === templateId
+    )
+    const nextVersionNumber = getNextSavedVersionNumber(templateVersions)
 
     document.templateId = templateId
     document.source = { kind: "user-template", templateId }
@@ -210,7 +234,7 @@ class MemoryUserTemplateStore {
 
     const autosaveHistory = Array.from(this.versions.values())
       .filter((version) => version.templateId === args.templateId && version.kind === "autosave")
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .sort(compareVersionsOldestFirst)
     const newest = autosaveHistory[autosaveHistory.length - 1]
     if (newest) {
       const previousSaved = Date.parse(newest.createdAt)
@@ -292,7 +316,7 @@ class MemoryUserTemplateStore {
   private trimVersions(templateId: string, kind: UserTemplateVersionKind, limit: number): void {
     const versions = Array.from(this.versions.values())
       .filter((version) => version.templateId === templateId && version.kind === kind)
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .sort(compareVersionsNewestFirst)
 
     versions.slice(limit).forEach((version) => {
       this.versions.delete(version.id)
@@ -410,10 +434,10 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
           },
           saved: versions
             .filter((version) => version.kind === "saved")
-            .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+            .sort(compareVersionsNewestFirst),
           autosaves: versions
             .filter((version) => version.kind === "autosave")
-            .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+            .sort(compareVersionsNewestFirst),
         }
       }
     )
@@ -438,10 +462,10 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
     version: UserTemplateVersionSnapshot
     workingCopy: CanvasWorkingCopyIndexEntry
   }> {
-    const current = await this.readHistory(args.templateId ?? "")
-    const now = new Date().toISOString()
     const templateId = args.templateId ?? createId("user-template")
-    const savedCount = current?.saved.length ?? 0
+    const current = await this.readHistory(templateId)
+    const now = new Date().toISOString()
+    const nextVersionNumber = getNextSavedVersionNumber(current?.saved ?? [])
     const document = cloneValue(args.document)
     document.templateId = templateId
     document.source = { kind: "user-template", templateId }
@@ -452,10 +476,10 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
     const version: UserTemplateVersionSnapshot = {
       id: createId("user-template-version"),
       templateId,
-      version: savedCount + 1,
+      version: nextVersionNumber,
       kind: "saved",
       createdAt: now,
-      label: `已保存版本 ${savedCount + 1}`,
+      label: `已保存版本 ${nextVersionNumber}`,
       sourceVersionId: args.sourceVersionId,
       document,
     }
@@ -531,7 +555,7 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
           "autosave",
         ] as [string, UserTemplateVersionKind])
       )
-    ).sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    ).sort(compareVersionsOldestFirst)
     const newest = previousAutosaves[previousAutosaves.length - 1]
     if (newest) {
       const delta = Date.parse(now) - Date.parse(newest.createdAt)

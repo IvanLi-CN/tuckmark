@@ -685,14 +685,22 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       return
     }
 
+    let cancelled = false
+    const templateId = activeTemplateEntry.template.id
     void (async () => {
-      const history = await readUserTemplateHistory(activeTemplateEntry.template.id)
+      const history = await readUserTemplateHistory(templateId)
       const version =
         history?.saved.find((item) => item.id === history.template.currentVersionId) ??
         history?.saved[0] ??
         null
-      setActiveUserTemplateDraft(version?.document ?? null)
+      if (!cancelled) {
+        setActiveUserTemplateDraft(version?.document ?? null)
+      }
     })()
+
+    return () => {
+      cancelled = true
+    }
   }, [activeTemplateEntry])
 
   React.useEffect(() => {
