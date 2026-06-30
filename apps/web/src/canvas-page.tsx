@@ -3267,8 +3267,14 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
           ...createCanvasStateFromDraft(
             {
               version: 1,
-              id: routeSource.kind === "user-template" ? routeSource.templateId : routeSource.presetId,
-              presetId: routeSource.kind === "user-template" ? routeSource.templateId : routeSource.presetId,
+              id:
+                routeSource.kind === "user-template"
+                  ? routeSource.templateId
+                  : routeSource.presetId,
+              presetId:
+                routeSource.kind === "user-template"
+                  ? routeSource.templateId
+                  : routeSource.presetId,
               name: "加载失败",
               source: routeSource,
               width: 384,
