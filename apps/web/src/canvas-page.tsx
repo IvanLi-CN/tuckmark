@@ -1149,7 +1149,7 @@ function TextInlineEditor({
       <Textarea
         autoFocus
         value={value}
-        className="min-h-[92px] resize-none border-primary/35 bg-white/96 shadow-lg"
+        className="tm-selectable-text min-h-[92px] resize-none border-primary/35 bg-white/96 shadow-lg"
         style={{
           fontFamily: CANVAS_TEXT_FONT_FAMILY,
           fontSize: `${Math.max(12, element.fontSize * viewport.scale * 0.68)}px`,
@@ -1294,9 +1294,18 @@ function CanvasToolbar({
               >
                 <ZoomOut className="size-4" />
               </Button>
-              <Badge variant="outline" className="tm-canvas-toolbar__zoom-badge">
-                {Math.round(state.viewport.scale * 100)}%
-              </Badge>
+              <Input
+                aria-label="当前缩放百分比"
+                readOnly
+                tabIndex={-1}
+                value={`${Math.round(state.viewport.scale * 100)}%`}
+                density="compact"
+                size="sm"
+                widthMode="content-fit"
+                minWidthPx={56}
+                maxWidthPx={72}
+                className="tm-value-field tm-value-field--compact tm-canvas-toolbar__zoom-badge"
+              />
               <Button
                 size="sm"
                 variant="outline"
@@ -1370,15 +1379,26 @@ function CanvasToolbar({
       <div className="tm-canvas-toolbar__cluster tm-canvas-toolbar__cluster--tail">
         <div className="tm-canvas-toolbar__status">
           <span className="tm-canvas-toolbar__status-label">状态</span>
-          <Badge variant="outline">
-            {readOnly
-              ? "历史快照只读"
-              : state.loading
-                ? "正在读取草稿"
-                : state.selectedIds.length > 0
-                  ? `已选 ${state.selectedIds.length} 项`
-                  : "未选择元素"}
-          </Badge>
+          <Input
+            aria-label="当前画布状态"
+            readOnly
+            tabIndex={-1}
+            value={
+              readOnly
+                ? "历史快照只读"
+                : state.loading
+                  ? "正在读取草稿"
+                  : state.selectedIds.length > 0
+                    ? `已选 ${state.selectedIds.length} 项`
+                    : "未选择元素"
+            }
+            density="compact"
+            size="sm"
+            widthMode="content-fit"
+            minWidthPx={132}
+            maxWidthPx={220}
+            className="tm-value-field tm-value-field--status"
+          />
         </div>
         {readOnly ? null : (
           <>
@@ -1547,6 +1567,12 @@ function CanvasLayerPanel({
           const index = state.draft.elements.length - reverseIndex
           const selected = state.selectedIds.includes(element.id)
           const issue = getElementIssue(element)
+          const selectLayer = () =>
+            onChange((current) => ({
+              ...setSelection(current, element.id, false),
+              focus: "center-right",
+              activePanel: "attributes",
+            }))
           return (
             <div
               key={element.id}
@@ -1557,22 +1583,20 @@ function CanvasLayerPanel({
               )}
             >
               <div className="tm-choice__main">
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 text-left"
-                  onClick={() =>
-                    onChange((current) => ({
-                      ...setSelection(current, element.id, false),
-                      focus: "center-right",
-                      activePanel: "attributes",
-                    }))
-                  }
-                >
-                  <div className="tm-choice__title-row">
-                    <div className="tm-choice__title" title={element.meta.name}>
-                      {element.meta.name}
-                    </div>
-                  </div>
+                <div className="tm-choice__title-row">
+                  <Input
+                    aria-label={`${element.meta.name} 图层名称`}
+                    readOnly
+                    tabIndex={-1}
+                    value={element.meta.name}
+                    title={element.meta.name}
+                    density="compact"
+                    size="sm"
+                    className="tm-choice__title"
+                    onClick={selectLayer}
+                  />
+                </div>
+                <button type="button" className="min-w-0 text-left" onClick={selectLayer}>
                   <div className="tm-choice__meta">
                     <span>图层 {index}</span>
                     <span>{CANVAS_TOOL_LABELS[element.kind]}</span>
@@ -3698,9 +3722,15 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
           <div className="tm-pane__header">
             <div className="tm-pane__headline">
               <h2>工具栏</h2>
-              <p>
-                {state.draft.width} × {state.draft.height} dots
-              </p>
+              <Input
+                aria-label="当前标签尺寸"
+                readOnly
+                tabIndex={-1}
+                value={`${state.draft.width} × ${state.draft.height} dots`}
+                density="compact"
+                size="sm"
+                className="tm-value-field"
+              />
             </div>
           </div>
           <div className="tm-pane__body">
@@ -3723,16 +3753,30 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
               </p>
             </div>
             <div className="tm-pane__meta">
-              <Badge variant="outline" className="tm-chip">
-                {state.draft.width} × {state.draft.height}
-              </Badge>
-              <Badge variant="outline" className="tm-chip">
-                {readOnly
-                  ? (state.readOnlyVersion?.label ?? "只读快照")
-                  : state.selectedIds.length > 0
-                    ? `已选 ${state.selectedIds.length} 项`
-                    : "待选择"}
-              </Badge>
+              <Input
+                aria-label="标签尺寸"
+                readOnly
+                tabIndex={-1}
+                value={`${state.draft.width} × ${state.draft.height}`}
+                density="compact"
+                size="sm"
+                className="tm-value-field tm-chip"
+              />
+              <Input
+                aria-label="当前选择状态"
+                readOnly
+                tabIndex={-1}
+                value={
+                  readOnly
+                    ? (state.readOnlyVersion?.label ?? "只读快照")
+                    : state.selectedIds.length > 0
+                      ? `已选 ${state.selectedIds.length} 项`
+                      : "待选择"
+                }
+                density="compact"
+                size="sm"
+                className="tm-value-field tm-chip"
+              />
             </div>
           </div>
           <div className="tm-pane__body tm-pane__body--canvas-stage">

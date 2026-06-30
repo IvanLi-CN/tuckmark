@@ -73,6 +73,11 @@
       linear-gradient(180deg, rgba(214, 186, 153, 0.22), transparent 42%);
   }
 
+  ::selection {
+    background: rgba(168, 115, 69, 0.24);
+    color: inherit;
+  }
+
   button,
   input,
   select,
@@ -83,6 +88,28 @@
   img {
     display: block;
     max-width: 100%;
+  }
+
+  .tm-selectable-none {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .tm-selectable-text {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  .tm-selectable-none input,
+  .tm-selectable-none textarea,
+  .tm-selectable-none [contenteditable="true"],
+  .tm-selectable-none [contenteditable="plaintext-only"],
+  .tm-selectable-none [role="textbox"],
+  .tm-selectable-none [role="searchbox"],
+  .tm-selectable-none [role="spinbutton"],
+  .tm-selectable-none .tm-selectable-text {
+    -webkit-user-select: text;
+    user-select: text;
   }
 }
 
@@ -735,6 +762,7 @@
 
   .tm-table__header-label,
   .tm-table__row-index {
+    user-select: none;
     display: block;
     padding: 0 0.5rem;
   }
@@ -750,6 +778,7 @@
   }
 
   .tm-table__cell {
+    user-select: none;
     appearance: none;
     display: inline-flex;
     align-items: center;
@@ -889,6 +918,18 @@
   .tm-canvas-toolbar__zoom-badge {
     min-width: 3.7rem;
     justify-content: center;
+  }
+
+  .tm-value-field {
+    @apply inline-flex min-w-0 items-center rounded-md border border-border/70 bg-background/92 px-2.5 text-xs font-medium text-foreground shadow-none outline-none;
+  }
+
+  .tm-value-field--compact {
+    @apply h-7 rounded-full px-3;
+  }
+
+  .tm-value-field--status {
+    @apply h-8 min-w-[10rem] max-w-[18rem] rounded-full px-3;
   }
 
   .tm-canvas-toolbar__status {

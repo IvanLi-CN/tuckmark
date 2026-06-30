@@ -45,7 +45,7 @@ function Input({
     <input
       type={type}
       className={cn(
-        "flex min-w-0 border border-input outline-none file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+        "tm-selectable-text flex min-w-0 border border-input outline-none file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
         density === "default" &&
           cn(
             "w-full bg-background shadow-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring/70",
