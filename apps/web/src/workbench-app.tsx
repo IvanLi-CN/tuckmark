@@ -1593,7 +1593,16 @@ function TemplatesPage({
               icon={LayoutTemplate}
               title="模板列表"
               actions={
-                <div className="flex gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate("/canvas")}
+                  >
+                    <Plus className="size-4" />
+                    <span>新增模板</span>
+                  </Button>
                   <Button
                     type="button"
                     size="sm"
@@ -1647,6 +1656,17 @@ function TemplatesPage({
                 listMode={listMode}
                 activeEntryId={state.activeTemplateEntry?.id ?? ""}
                 emptyText="还没有保存到浏览器本地的用户模板。"
+                emptyAction={
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate("/canvas")}
+                  >
+                    <Plus className="size-4" />
+                    <span>新增模板</span>
+                  </Button>
+                }
                 onSelect={(entryId) => {
                   state.setTemplateEntryId(entryId)
                   if (usesSingleOutletFlow) {
@@ -2297,6 +2317,7 @@ function TemplateGroup({
   listMode,
   activeEntryId,
   emptyText = "当前分组没有模板。",
+  emptyAction,
   onSelect,
   onEdit,
 }: {
@@ -2305,6 +2326,7 @@ function TemplateGroup({
   listMode: TemplateListMode
   activeEntryId: string
   emptyText?: string
+  emptyAction?: React.ReactNode
   onSelect: (entryId: string) => void
   onEdit: (entryId: string) => void
 }) {
@@ -2316,6 +2338,9 @@ function TemplateGroup({
       {entries.length === 0 ? (
         <div className="tm-template-list__section-empty">
           <EmptyMini text={emptyText} />
+          {emptyAction ? (
+            <div className="tm-template-list__section-empty-action">{emptyAction}</div>
+          ) : null}
         </div>
       ) : (
         <div

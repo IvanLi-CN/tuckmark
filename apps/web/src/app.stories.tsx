@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { userEvent, within } from "storybook/test"
+import { expect, userEvent, within } from "storybook/test"
 
 import type { ApiClient } from "./api-client.js"
 import { DemoApiClient } from "./api-client.js"
@@ -135,6 +135,13 @@ export const TemplatesWorkspace: Story = {
   args: {
     context: runtimeContext,
     initialEntries: ["/templates"],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const addTemplateButtons = canvas.getAllByRole("button", { name: "新增模板" })
+    await expect(addTemplateButtons).toHaveLength(2)
+    await userEvent.click(addTemplateButtons[0])
+    await expect(canvas.getByText(/当前草稿：/)).toBeVisible()
   },
 }
 

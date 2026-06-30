@@ -174,6 +174,7 @@ test("template large mode uses a two-column grid layout", async ({ page }) => {
       const rect = card.getBoundingClientRect()
       return {
         top: Math.round(rect.top),
+        height: Math.round(rect.height),
         left: Math.round(rect.left),
         width: Math.round(rect.width),
       }
@@ -189,6 +190,9 @@ test("template large mode uses a two-column grid layout", async ({ page }) => {
   expect(gridMetrics.cardCount).toBeGreaterThanOrEqual(2)
   expect(gridMetrics.templateColumns.split(" ").length).toBe(2)
   expect(gridMetrics.firstTwo[0]?.top).toBe(gridMetrics.firstTwo[1]?.top)
+  expect(
+    Math.abs((gridMetrics.firstTwo[0]?.height ?? 0) - (gridMetrics.firstTwo[1]?.height ?? 0))
+  ).toBeLessThanOrEqual(1)
   expect(gridMetrics.firstTwo[0]?.left).not.toBe(gridMetrics.firstTwo[1]?.left)
   expect(gridMetrics.firstTwo[0]?.width).toBeGreaterThan(140)
 })
@@ -205,6 +209,7 @@ test("template large mode keeps two columns in the standard three-pane width", a
       const rect = card.getBoundingClientRect()
       return {
         top: Math.round(rect.top),
+        height: Math.round(rect.height),
         left: Math.round(rect.left),
         width: Math.round(rect.width),
       }
@@ -220,8 +225,34 @@ test("template large mode keeps two columns in the standard three-pane width", a
   expect(gridMetrics.cardCount).toBeGreaterThanOrEqual(2)
   expect(gridMetrics.templateColumns.split(" ").length).toBe(2)
   expect(gridMetrics.firstTwo[0]?.top).toBe(gridMetrics.firstTwo[1]?.top)
+  expect(
+    Math.abs((gridMetrics.firstTwo[0]?.height ?? 0) - (gridMetrics.firstTwo[1]?.height ?? 0))
+  ).toBeLessThanOrEqual(1)
   expect(gridMetrics.firstTwo[0]?.left).not.toBe(gridMetrics.firstTwo[1]?.left)
   expect(gridMetrics.firstTwo[0]?.width).toBeGreaterThan(120)
+})
+
+test("template list exposes add-template actions that open the canvas workspace", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto("/templates?demo=true")
+
+  const listPane = page.locator(".tm-pane--left")
+  await expect(listPane.getByRole("button", { name: "新增模板" })).toHaveCount(2)
+  await expect(
+    listPane.locator(".tm-pane__header").getByRole("button", { name: "新增模板" })
+  ).toBeVisible()
+  await expect(
+    listPane.locator(".tm-template-list__section-empty").getByRole("button", { name: "新增模板" })
+  ).toBeVisible()
+
+  await listPane
+    .locator(".tm-template-list__section-empty")
+    .getByRole("button", { name: "新增模板" })
+    .click()
+  await expect(page).toHaveURL(/\/canvas(?:\?|$)/)
+  await expect(page.getByText("当前草稿：")).toBeVisible()
 })
 
 test("template page keeps a disabled preview rail beside the list before a template is chosen on narrow widths", async ({
