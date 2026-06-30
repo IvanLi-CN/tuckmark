@@ -540,7 +540,7 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
         return createCanvasElement("text", index, {
           x: element.x,
           y: element.y,
-          width: element.width ?? 180,
+          width: element.width,
           fontSize: element.fontSize,
           fontWeight: element.fontWeight,
           align: element.align,

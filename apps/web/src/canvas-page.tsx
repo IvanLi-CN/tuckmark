@@ -3263,14 +3263,31 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         if (cancelled) {
           return
         }
-        const fallbackDraft = createDraftFromPreset(getPresetById("shipping-wide"))
-        setState(
-          createCanvasStateFromDraft(fallbackDraft, {
-            loading: false,
-            versionsOpen: searchParams.get("panel") === "versions",
-            outputStatus: cause instanceof Error ? cause.message : "加载画布失败。",
-          })
-        )
+        setState({
+          ...createCanvasStateFromDraft(
+            {
+              version: 1,
+              id: routeSource.kind === "user-template" ? routeSource.templateId : routeSource.presetId,
+              presetId: routeSource.kind === "user-template" ? routeSource.templateId : routeSource.presetId,
+              name: "加载失败",
+              source: routeSource,
+              width: 384,
+              height: 224,
+              fields: [],
+              elements: [],
+              editor: {
+                gridEnabled: true,
+                snapEnabled: true,
+              },
+            },
+            {
+              loading: false,
+              versionsOpen: searchParams.get("panel") === "versions",
+              outputStatus: cause instanceof Error ? cause.message : "加载画布失败。",
+            }
+          ),
+          storageMode: "reset-pending",
+        })
       }
     })()
 

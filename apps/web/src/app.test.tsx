@@ -1548,6 +1548,35 @@ describe("web workbench app", () => {
     }
   })
 
+  it("surfaces route load failures instead of falling back to an unrelated draft", async () => {
+    const actualStore = await vi.importActual<typeof import("./user-template-store.js")>(
+      "./user-template-store.js"
+    )
+    const originalLoadWorkingCopy = await import("./user-template-store.js")
+    const loadWorkingCopySpy = vi.spyOn(originalLoadWorkingCopy, "loadWorkingCopy")
+    loadWorkingCopySpy.mockImplementation(async (source) => {
+      if (source.kind === "preset-template" && source.presetId === "cable-tag") {
+        throw new Error("missing requested draft")
+      }
+      return actualStore.loadWorkingCopy(source)
+    })
+
+    try {
+      await renderApp(
+        browserRuntimeContext,
+        undefined,
+        "/canvas?source=preset-template&templateId=cable-tag"
+      )
+      await flush(8)
+
+      expect(document.body.textContent).toContain("missing requested draft")
+      expect(document.body.textContent).not.toContain("快递单宽版")
+      expect(document.body.textContent).not.toContain("系统模板：Cable Tag")
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
   it("keeps scratch reset cleared across reload", async () => {
     const preset = getPresetById("shipping-wide")
     const syncedDraft = createDraftFromPreset(preset)

@@ -250,6 +250,24 @@ describe("canvas-editor-model monochrome contract", () => {
     )
   })
 
+  it("preserves widthless system template text elements when imported into the editor", () => {
+    const template = getSystemTemplateById("shipping-compact")
+    const draft = createDraftFromSystemTemplate(template)
+
+    const recipient = draft.elements.find(
+      (element) => element.kind === "text" && element.binding?.fieldKey === "recipient"
+    )
+    const orderLabel = draft.elements.find(
+      (element) => element.kind === "text" && element.meta.name.includes("订单")
+    )
+
+    if (!recipient || recipient.kind !== "text") {
+      throw new Error("expected recipient element")
+    }
+    expect(recipient.width).toBeUndefined()
+    expect(orderLabel?.kind === "text" ? orderLabel.width : undefined).toBeUndefined()
+  })
+
   it("syncs multiple bound elements from the same field input", () => {
     const draft = createDraftFromPreset(getPresetById("shipping-wide"))
     const textElements = draft.elements.filter((element) => element.kind === "text")
