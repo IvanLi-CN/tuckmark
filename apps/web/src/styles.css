@@ -734,6 +734,14 @@
     @apply flex justify-start;
   }
 
+  .tm-template-list__empty-action-button {
+    @apply inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-dashed border-border/75 bg-transparent px-3 text-xs font-medium text-muted-foreground transition-colors outline-none hover:bg-accent/45 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/65 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .tm-template-list__empty-action-button svg {
+    @apply size-4 shrink-0;
+  }
+
   .tm-template-card--list .tm-template-card__preview {
     width: 72px;
     height: 46px;

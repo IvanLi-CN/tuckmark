@@ -1657,15 +1657,14 @@ function TemplatesPage({
                 activeEntryId={state.activeTemplateEntry?.id ?? ""}
                 emptyText="还没有保存到浏览器本地的用户模板。"
                 emptyAction={
-                  <Button
+                  <button
                     type="button"
-                    size="sm"
-                    variant="outline"
+                    className="tm-template-list__empty-action-button"
                     onClick={() => navigate("/canvas")}
                   >
                     <Plus className="size-4" />
                     <span>新增模板</span>
-                  </Button>
+                  </button>
                 }
                 onSelect={(entryId) => {
                   state.setTemplateEntryId(entryId)

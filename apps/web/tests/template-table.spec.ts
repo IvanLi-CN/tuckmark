@@ -249,6 +249,9 @@ test("template list exposes add-template actions that open the canvas workspace"
   await expect(
     listPane.locator(".tm-template-list__empty-box").getByRole("button", { name: "新增模板" })
   ).toBeVisible()
+  await expect(
+    listPane.locator(".tm-template-list__empty-box").getByRole("button", { name: "新增模板" })
+  ).toHaveClass(/tm-template-list__empty-action-button/)
 
   await listPane
     .locator(".tm-template-list__empty-box")
