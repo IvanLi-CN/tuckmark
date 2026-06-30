@@ -105,6 +105,14 @@
     mutating saved history in place
 - System-template import keeps static template keys such as `__title` as fixed
   elements instead of exposing them as structured replacement fields.
+- System-template canvas working copies now recover safely from earlier
+  browser-local drafts that persisted empty bound values:
+  - canvas-only placeholder rendering seeds visible label text for empty bound
+    text / QR elements so imported layers stay visible on first open
+  - browser-local legacy preset-template drafts with empty field defaults are
+    normalized back into the same visible-placeholder state on reload
+  - template-workspace batch rows still keep empty input defaults instead of
+    inheriting those canvas-only placeholders
 - Structured replacement bindings are limited to `text`, `barcode`, and `qr`;
   `rect` and `line` remain static editor-only structure.
 - Replaceable-element editing is simplified to:
@@ -171,6 +179,9 @@
   - `bun run --filter @tuckmark/web build:pages` passed
   - `bun run --filter @tuckmark/web build:storybook` passed
   - `bun run --filter @tuckmark/web test:e2e -- tests/user-template-flow.spec.ts` passed
+  - `bun run --filter @tuckmark/web test:e2e -- user-template-flow.spec.ts` passed
+  - `bun run --filter @tuckmark/web test:e2e -- template-table.spec.ts` passed
+  - `TUCKMARK_WEB_SURFACE=browser-static bun run --filter @tuckmark/web build` passed
   - `bun run --filter @tuckmark/web test:e2e:sync` passed
   - `bun run build:web:pages` passed
   - `bun run --filter @tuckmark/web test:e2e -- --grep "template large mode"` passed
