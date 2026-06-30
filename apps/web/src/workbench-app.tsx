@@ -2241,10 +2241,11 @@ function FocusPairSwitch({
   )
 }
 
-function EmptyMini({ text }: { text: string }) {
+function EmptyMini({ children, text }: { children?: React.ReactNode; text: string }) {
   return (
-    <div className="tm-selectable-none rounded-2xl border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
-      {text}
+    <div className="tm-template-list__empty-box">
+      <div>{text}</div>
+      {children}
     </div>
   )
 }
@@ -2337,10 +2338,11 @@ function TemplateGroup({
       </div>
       {entries.length === 0 ? (
         <div className="tm-template-list__section-empty">
-          <EmptyMini text={emptyText} />
-          {emptyAction ? (
-            <div className="tm-template-list__section-empty-action">{emptyAction}</div>
-          ) : null}
+          <EmptyMini text={emptyText}>
+            {emptyAction ? (
+              <div className="tm-template-list__section-empty-action">{emptyAction}</div>
+            ) : null}
+          </EmptyMini>
         </div>
       ) : (
         <div

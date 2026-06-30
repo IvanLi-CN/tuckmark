@@ -721,7 +721,13 @@
   }
 
   .tm-template-list__section-empty {
-    @apply grid gap-2;
+    @apply grid;
+  }
+
+  .tm-template-list__empty-box {
+    @apply grid gap-3 rounded-2xl border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground;
+    -webkit-user-select: none;
+    user-select: none;
   }
 
   .tm-template-list__section-empty-action {
