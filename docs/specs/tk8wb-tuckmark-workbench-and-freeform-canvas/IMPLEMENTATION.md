@@ -56,6 +56,9 @@
     right-rail history panel
   - terminology aligned to product-facing Chinese labels instead of mixed
     engineering English
+  - a workbench-wide selectable contract that suppresses accidental text
+    selection on static chrome while keeping editable and copy-relevant values
+    explicitly selectable
 - Canvas stage is implemented with `react-konva` editing for `text`, `rect`,
   `line`, `barcode`, and `qr`.
 - Stage interaction coverage includes:
@@ -161,6 +164,10 @@
   - draft-restore state
   - grouped browser-local user templates in `/templates`
   - browser-local user template version history in `/canvas`
+  - shared shell selectable contract
+  - template inline-edit selectable contract
+  - default canvas selectable contract
+  - text-selected canvas selectable contract
 
 ## Remaining validation
 

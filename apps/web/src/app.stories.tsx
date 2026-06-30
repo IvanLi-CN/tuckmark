@@ -131,6 +131,13 @@ export const Home: Story = {
   },
 }
 
+export const HomeSelectableContract: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/"],
+  },
+}
+
 export const TemplatesWorkspace: Story = {
   args: {
     context: runtimeContext,
@@ -182,6 +189,19 @@ export const TemplatesListEditing: Story = {
   },
 }
 
+export const TemplatesSelectableEditing: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: "列表" }))
+    const [firstRecipientButton] = canvas.getAllByRole("button", { name: "Koha Cat" })
+    await userEvent.click(firstRecipientButton)
+  },
+}
+
 export const CanvasWorkspace: Story = {
   args: {
     context: runtimeContext,
@@ -194,6 +214,44 @@ export const CanvasWorkspaceWide: Story = {
     context: runtimeContext,
     initialEntries: ["/canvas"],
     canvasScenario: "wide-default",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+}
+
+export const CanvasWorkspaceSelectableDefault: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "wide-default",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "Canvas chrome is intentionally non-selectable, while read-only metadata fields and live editors preserve copy and edit affordances.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+}
+
+export const CanvasWorkspaceSelectableText: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-selected",
   },
   parameters: {
     viewport: {

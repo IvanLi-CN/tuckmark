@@ -729,6 +729,20 @@ describe("web workbench app", () => {
     expect(document.body.textContent).toContain("Runtime mode")
   })
 
+  it("marks shared shell chrome as non-selectable", async () => {
+    await renderApp(browserRuntimeContext)
+
+    const shell = document.querySelector(".tm-shell") as HTMLElement | null
+    const header = document.querySelector(".tm-header") as HTMLElement | null
+    const footer = document.querySelector(".tm-footer") as HTMLElement | null
+    const navLink = document.querySelector(".tm-nav__link") as HTMLElement | null
+
+    expect(shell?.className).toContain("tm-selectable-none")
+    expect(header?.className).toContain("tm-selectable-none")
+    expect(footer?.className).toContain("tm-selectable-none")
+    expect(navLink?.className).toContain("tm-selectable-none")
+  })
+
   it("renders template workspace and submits preview through /api on server-http runtime", async () => {
     fetchMock
       .mockResolvedValueOnce(new Response(JSON.stringify({ templates: fallbackTemplates })))
@@ -963,6 +977,82 @@ describe("web workbench app", () => {
           String(call[0]).includes("/api/artifacts/") && String(call[0]).endsWith("/packets")
       )
     ).toBe(true)
+  })
+
+  it("keeps template editing inputs selectable while display cells stay chrome-like", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: fallbackTemplates })))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            printers: [
+              {
+                id: "printer-1",
+                name: "Mock P2",
+                capabilities: {
+                  printWidthDots: 384,
+                  supportedPaperTypes: ["continuous", "gap"],
+                },
+              },
+            ],
+          })
+        )
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ artifact: makeArtifact("artifact-selectable") }))
+      )
+
+    await renderApp(serverRuntimeContext)
+
+    await act(async () => {
+      const nav = document.querySelector("a[href='/templates']") as HTMLAnchorElement | null
+      nav?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush()
+    })
+
+    await act(async () => {
+      const firstRow = document.querySelector(".tm-table tbody tr") as HTMLTableRowElement | null
+      firstRow?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    const firstCellButton = document.querySelector(
+      ".tm-table tbody tr button.tm-table__cell"
+    ) as HTMLButtonElement | null
+    expect(firstCellButton).not.toBeNull()
+
+    await act(async () => {
+      firstCellButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush()
+    })
+
+    const input = document.querySelector(".tm-table tbody tr input") as HTMLInputElement | null
+    expect(input).not.toBeNull()
+    expect(input?.className).toContain("tm-selectable-text")
+  })
+
+  it("keeps layer name copyable without breaking layer selection", async () => {
+    await renderApp(browserRuntimeContext, undefined, "/canvas")
+    await flush(4)
+
+    const layerNameInput = document.querySelector(
+      '.tm-layer-list--inspector input[aria-label$="图层名称"]'
+    ) as HTMLInputElement | null
+    expect(layerNameInput).not.toBeNull()
+    expect(layerNameInput?.className).toContain("tm-selectable-text")
+
+    await act(async () => {
+      layerNameInput?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush()
+    })
+
+    const selectedStatus = document.querySelector(
+      'input[aria-label="当前选择状态"]'
+    ) as HTMLInputElement | null
+    expect(selectedStatus?.value).toBe("已选 1 项")
   })
 
   it("hydrates recent activity from sync state on server-http startup", async () => {

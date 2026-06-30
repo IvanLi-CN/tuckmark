@@ -77,3 +77,11 @@ while the workbench was being productized:
     `server-http`
   - browser-local user templates and their version history remain intentionally
     outside that sync contract
+- A later interaction-hardening round tightened text-selection behavior across
+  the entire workbench:
+  - shared shell and workspace chrome now default to non-selectable behavior
+  - copy-relevant status and metadata values moved onto explicit read-only
+    field surfaces instead of inheriting browser default text selection
+  - canvas drag, marquee, pan, and zoom flows now avoid stray page-level text
+    highlights while preserving inline text editing and structured-input copy
+    paths
