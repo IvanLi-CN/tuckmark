@@ -250,22 +250,88 @@ describe("canvas-editor-model monochrome contract", () => {
     )
   })
 
-  it("preserves widthless system template text elements when imported into the editor", () => {
+  it("assigns a fallback width to widthless system template text elements when imported", () => {
     const template = getSystemTemplateById("shipping-compact")
     const draft = createDraftFromSystemTemplate(template)
 
     const recipient = draft.elements.find(
       (element) => element.kind === "text" && element.binding?.fieldKey === "recipient"
     )
-    const orderLabel = draft.elements.find(
-      (element) => element.kind === "text" && element.meta.name.includes("订单")
-    )
-
-    if (!recipient || recipient.kind !== "text") {
+    if (recipient?.kind !== "text") {
       throw new Error("expected recipient element")
     }
-    expect(recipient.width).toBeUndefined()
-    expect(orderLabel?.kind === "text" ? orderLabel.width : undefined).toBeUndefined()
+    expect(recipient.width).toBe(180)
+  })
+
+  it("seeds system template bound elements from field labels when defaults are absent", () => {
+    const template = getSystemTemplateById("cable-tag")
+    const draft = createDraftFromSystemTemplate(template)
+
+    const nameText = draft.elements.find(
+      (element) => element.kind === "text" && element.binding?.fieldKey === "name"
+    )
+    const portText = draft.elements.find(
+      (element) => element.kind === "text" && element.binding?.fieldKey === "port"
+    )
+    const locationText = draft.elements.find(
+      (element) => element.kind === "text" && element.binding?.fieldKey === "location"
+    )
+    const nameQr = draft.elements.find(
+      (element) => element.kind === "qr" && element.binding?.fieldKey === "name"
+    )
+
+    expect(nameText?.kind === "text" ? nameText.value : undefined).toBe("Name")
+    expect(portText?.kind === "text" ? portText.value : undefined).toBe("Port")
+    expect(locationText?.kind === "text" ? locationText.value : undefined).toBe("Location")
+    expect(nameQr?.kind === "qr" ? nameQr.value : undefined).toBe("Name")
+    expect(draft.fields.map((field) => [field.key, field.defaultValue])).toEqual(
+      expect.arrayContaining([
+        ["name", ""],
+        ["port", ""],
+        ["location", ""],
+      ])
+    )
+    expect(nameText?.kind === "text" ? nameText.width : undefined).toBe(180)
+    expect(portText?.kind === "text" ? portText.width : undefined).toBe(180)
+    expect(locationText?.kind === "text" ? locationText.width : undefined).toBe(160)
+  })
+
+  it("migrates stored preset-template drafts with empty field defaults back to template labels", () => {
+    const template = getSystemTemplateById("cable-tag")
+    const draft = createDraftFromSystemTemplate(template)
+    const legacyDraft = {
+      ...draft,
+      fields: draft.fields.map((field) => ({ ...field, defaultValue: "" })),
+      elements: draft.elements.map((element) =>
+        element.kind === "text" || element.kind === "qr" ? { ...element, value: "" } : element
+      ),
+    }
+
+    const normalized = normalizeDraftDocument(legacyDraft)
+    const nameText = normalized.elements.find(
+      (element) => element.kind === "text" && element.binding?.fieldKey === "name"
+    )
+    const portText = normalized.elements.find(
+      (element) => element.kind === "text" && element.binding?.fieldKey === "port"
+    )
+    const locationText = normalized.elements.find(
+      (element) => element.kind === "text" && element.binding?.fieldKey === "location"
+    )
+    const nameQr = normalized.elements.find(
+      (element) => element.kind === "qr" && element.binding?.fieldKey === "name"
+    )
+
+    expect(nameText?.kind === "text" ? nameText.value : undefined).toBe("Name")
+    expect(portText?.kind === "text" ? portText.value : undefined).toBe("Port")
+    expect(locationText?.kind === "text" ? locationText.value : undefined).toBe("Location")
+    expect(nameQr?.kind === "qr" ? nameQr.value : undefined).toBe("Name")
+    expect(normalized.fields.map((field) => [field.key, field.defaultValue])).toEqual(
+      expect.arrayContaining([
+        ["name", ""],
+        ["port", ""],
+        ["location", ""],
+      ])
+    )
   })
 
   it("syncs multiple bound elements from the same field input", () => {
