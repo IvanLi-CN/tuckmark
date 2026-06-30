@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
 
-import { resolveApiOrigin, resolvePublicBase } from "./vite.config.js"
+import {
+  createPwaHtmlTags,
+  createPwaManifest,
+  createServiceWorkerSource,
+  hashPwaString,
+  resolveApiOrigin,
+  resolvePublicBase,
+} from "./vite.config.js"
 
 describe("resolveApiOrigin", () => {
   it("prefers explicit api origin", () => {
@@ -36,5 +43,71 @@ describe("resolvePublicBase", () => {
 
   it("keeps server-http builds on the root base", () => {
     expect(resolvePublicBase({ TUCKMARK_WEB_SURFACE: "server-http" }, "build")).toBe("/")
+  })
+})
+
+describe("PWA build assets", () => {
+  it("defines browser-static-only head tags for install metadata", () => {
+    expect(createPwaHtmlTags()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tag: "link",
+          attrs: expect.objectContaining({ rel: "manifest", href: "./manifest.webmanifest" }),
+        }),
+        expect.objectContaining({
+          tag: "link",
+          attrs: expect.objectContaining({ rel: "icon", href: "./pwa/tuckmark-icon-192.png" }),
+        }),
+      ])
+    )
+  })
+
+  it("uses relative manifest and icon URLs for browser-static Pages builds", () => {
+    expect(createPwaManifest()).toMatchObject({
+      start_url: "./",
+      scope: "./",
+      display: "standalone",
+      icons: [
+        {
+          src: "./pwa/tuckmark-icon-192.png",
+          purpose: "any maskable",
+        },
+        {
+          src: "./pwa/tuckmark-icon-512.png",
+          purpose: "any maskable",
+        },
+      ],
+    })
+  })
+
+  it("generates a service worker with app-shell caching and update activation", () => {
+    const source = createServiceWorkerSource({
+      version: "test-version",
+      assets: [
+        { url: "./index.html", revision: "index" },
+        { url: "./assets/app.js", revision: "app" },
+        { url: "./pwa/tuckmark-icon-192.png", revision: "icon" },
+      ],
+    })
+
+    expect(source).toContain("tuckmark-app-")
+    expect(source).toContain('"./index.html"')
+    expect(source).toContain('"./assets/app.js"')
+    expect(source).toContain('"./pwa/tuckmark-icon-192.png"')
+    expect(source).toContain('event.data?.type === "SKIP_WAITING"')
+    expect(source).toContain('request.mode === "navigate"')
+  })
+
+  it("changes service worker output when same-url bundle content changes", () => {
+    const first = createServiceWorkerSource({
+      version: hashPwaString("./assets/app.js:first-content"),
+      assets: [{ url: "./assets/app.js", revision: hashPwaString("first-content") }],
+    })
+    const second = createServiceWorkerSource({
+      version: hashPwaString("./assets/app.js:second-content"),
+      assets: [{ url: "./assets/app.js", revision: hashPwaString("second-content") }],
+    })
+
+    expect(first).not.toBe(second)
   })
 })
