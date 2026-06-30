@@ -39,7 +39,7 @@ test("server-http canvas restores a locally persisted draft after reload", async
   await page.goto("/canvas")
 
   await expect(page.getByText("标签编辑台")).toBeVisible()
-  await expect(page.getByText("当前预设：Recovered Shipping Draft")).toBeVisible()
+  await expect(page.getByText("当前草稿：Recovered Shipping Draft")).toBeVisible()
   await expect(await readBrowserStorage(page, "tuckmark:canvas-draft:v1:shipping-wide")).toContain(
     "Recovered Shipping Draft"
   )
@@ -47,7 +47,7 @@ test("server-http canvas restores a locally persisted draft after reload", async
   await page.reload()
 
   await expect(page.getByText("标签编辑台")).toBeVisible()
-  await expect(page.getByText("当前预设：Recovered Shipping Draft")).toBeVisible()
+  await expect(page.getByText("当前草稿：Recovered Shipping Draft")).toBeVisible()
   await expect(await readBrowserStorage(page, "tuckmark:canvas-draft:v1:shipping-wide")).toContain(
     "Recovered Shipping Draft"
   )
@@ -127,7 +127,7 @@ test("server-http canvas restores a service-persisted draft on first open", asyn
   await page.goto("/canvas")
 
   await expect(page.getByText("标签编辑台")).toBeVisible()
-  await expect(page.getByText("当前预设：Service Shipping Draft")).toBeVisible()
+  await expect(page.getByText("当前草稿：Service Shipping Draft")).toBeVisible()
   await expect(await readBrowserStorage(page, "tuckmark:canvas-draft:v1:shipping-wide")).toContain(
     "Service Shipping Draft"
   )

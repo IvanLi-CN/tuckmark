@@ -92,8 +92,82 @@ export type CanvasLayerMeta = {
   locked: boolean
 }
 
+export type CanvasFieldBindingKind = "text" | "barcode" | "qr"
+
+export type CanvasElementBinding = {
+  fieldKey: string
+  kind: CanvasFieldBindingKind
+}
+
 export type CanvasDraftElement = CanvasElement & {
   meta: CanvasLayerMeta
+  binding?: CanvasElementBinding
+}
+
+export type CanvasDraftSource =
+  | {
+      kind: "scratch"
+      presetId: string
+    }
+  | {
+      kind: "preset-template"
+      presetId: string
+    }
+  | {
+      kind: "user-template"
+      templateId: string
+    }
+
+export type CanvasDraftField = {
+  key: string
+  label: string
+  defaultValue: string
+  multiline: boolean
+  bindings: string[]
+}
+
+export type UserTemplateVersionKind = "saved" | "autosave"
+
+export type UserTemplateVersionSnapshot = {
+  id: string
+  templateId: string
+  version: number
+  kind: UserTemplateVersionKind
+  createdAt: string
+  label: string
+  sourceVersionId?: string
+  document: CanvasDraftDocument
+}
+
+export type UserTemplateRecord = {
+  id: string
+  name: string
+  description: string
+  width: number
+  height: number
+  createdAt: string
+  updatedAt: string
+  currentVersionId: string
+  fieldOrder: string[]
+}
+
+export type CanvasWorkingCopyIndexEntry = {
+  sourceKey: string
+  source: CanvasDraftSource
+  draft: CanvasDraftDocument
+  updatedAt: string
+  templateId?: string
+  baseVersionId?: string
+}
+
+export type UserTemplateSummary = UserTemplateRecord & {
+  fields: CanvasDraftField[]
+}
+
+export type UserTemplateHistory = {
+  template: UserTemplateSummary
+  saved: UserTemplateVersionSnapshot[]
+  autosaves: UserTemplateVersionSnapshot[]
 }
 
 export type CanvasDraftDocument = {
@@ -101,8 +175,13 @@ export type CanvasDraftDocument = {
   id: string
   presetId: string
   name: string
+  source: CanvasDraftSource
+  templateId?: string
+  baseVersionId?: string
+  lastSavedAt?: string
   width: number
   height: number
+  fields: CanvasDraftField[]
   elements: CanvasDraftElement[]
   editor: {
     gridEnabled: boolean
@@ -131,7 +210,7 @@ export type Printer = {
 export type PreviewArtifact = {
   id: string
   name: string
-  source?: "template" | "canvas" | "batch_row" | "safe_text"
+  source?: "template" | "canvas" | "batch_row" | "safe_text" | "user_template"
   templateId?: string
   batchIndex?: number
   renderOptions: RenderOptions & {

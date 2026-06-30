@@ -6,8 +6,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { emptySyncState } from "../../../packages/core/src/web.js"
 import type { ApiClient } from "./api-client.js"
 import { App } from "./app.js"
+import {
+  createDraftFromPreset,
+  getDraftStorageKey,
+  getPresetById,
+  toggleElementBinding,
+} from "./canvas-editor-model.js"
 import { fallbackTemplates } from "./demo-data.js"
+import { loadRecentActivity } from "./lib/recent-activity.js"
 import type { AppContext, PreviewArtifact } from "./types.js"
+import {
+  loadWorkingCopy,
+  readUserTemplateHistory,
+  replaceUserTemplateWorkingCopy,
+  resetUserTemplateStoreForTest,
+  saveUserTemplate,
+  saveUserTemplateAutosave,
+} from "./user-template-store.js"
+
+let heldUserTemplateLoadRelease: (() => void) | null = null
 
 const browserPrinterMocks = vi.hoisted(() => ({
   connectBrowserPrinter: vi.fn(),
@@ -20,6 +37,36 @@ const browserPrinterMocks = vi.hoisted(() => ({
 const browserPayloadMocks = vi.hoisted(() => ({
   materializeBrowserArtifactData: vi.fn(),
 }))
+
+vi.mock("react-konva", async () => {
+  const React = await import("react")
+  const createMockNode = (options?: { imperativeHandle?: object }) =>
+    React.forwardRef<object, React.HTMLAttributes<HTMLElement>>(function MockNode(props, ref) {
+      const { children } = props
+      React.useImperativeHandle<object, object>(ref, () => options?.imperativeHandle ?? {}, [])
+      return React.createElement("div", null, children)
+    })
+
+  return {
+    Group: createMockNode(),
+    Layer: createMockNode(),
+    Line: createMockNode(),
+    Rect: createMockNode(),
+    Stage: createMockNode(),
+    Text: createMockNode(),
+    Transformer: createMockNode({
+      imperativeHandle: {
+        nodes() {},
+        shouldOverdrawWholeArea() {},
+        getLayer() {
+          return {
+            batchDraw() {},
+          }
+        },
+      },
+    }),
+  }
+})
 
 vi.mock("./browser-printer.js", () => browserPrinterMocks)
 vi.mock("./browser-print-payload.js", () => browserPayloadMocks)
@@ -75,10 +122,32 @@ function createCanvasContextStub(): CanvasRenderingContext2D {
   return {
     font: "",
     fillStyle: "#000000",
+    scale() {},
+    transform() {},
+    setTransform() {},
+    resetTransform() {},
+    translate() {},
+    rotate() {},
+    save() {},
+    restore() {},
+    beginPath() {},
+    closePath() {},
+    moveTo() {},
+    lineTo() {},
+    bezierCurveTo() {},
+    quadraticCurveTo() {},
+    arc() {},
+    rect() {},
+    clip() {},
+    stroke() {},
+    fill() {},
+    clearRect() {},
+    strokeRect() {},
+    fillRect() {},
+    setLineDash() {},
     measureText(text: string) {
       return { width: Math.max(Array.from(text).length, 1) * 7.25 } as TextMetrics
     },
-    fillRect() {},
     drawImage() {},
     getImageData(_sx: number, _sy: number, sw: number, sh: number) {
       const width = Math.max(Math.floor(sw), 1)
@@ -153,6 +222,18 @@ function createMatchMediaResult(query: string): MediaQueryList {
 function createFakeIndexedDb(): IDBFactory {
   const databases = new Map<string, Map<string, Map<string, unknown>>>()
 
+  function createDomStringList(values: string[]): DOMStringList {
+    return {
+      length: values.length,
+      item(index: number) {
+        return values[index] ?? null
+      },
+      contains(value: string) {
+        return values.includes(value)
+      },
+    } as DOMStringList
+  }
+
   function createRequest<T>(): IDBRequest<T> {
     return {
       error: null,
@@ -195,20 +276,43 @@ function createFakeIndexedDb(): IDBFactory {
       queueMicrotask(() => {
         const existing = databases.get(name)
         const stores = existing ?? new Map<string, Map<string, unknown>>()
+        const objectStoreIndexMaps = new Map<
+          string,
+          Map<string, { keyPath: string | string[]; unique: boolean }>
+        >()
         const database = {
           close() {},
           createObjectStore(storeName: string) {
             if (!stores.has(storeName)) {
               stores.set(storeName, new Map())
             }
-            return {} as IDBObjectStore
+            if (!objectStoreIndexMaps.has(storeName)) {
+              objectStoreIndexMaps.set(storeName, new Map())
+            }
+            return {
+              createIndex(
+                indexName: string,
+                keyPath: string | string[],
+                options?: IDBIndexParameters
+              ) {
+                objectStoreIndexMaps
+                  .get(storeName)
+                  ?.set(indexName, { keyPath, unique: options?.unique ?? false })
+                return {} as IDBIndex
+              },
+            } as IDBObjectStore
           },
           deleteObjectStore() {},
-          transaction(storeName: string) {
-            if (!stores.has(storeName)) {
-              stores.set(storeName, new Map())
+          transaction(storeNames: string | string[]) {
+            const names = Array.isArray(storeNames) ? storeNames : [storeNames]
+            for (const storeName of names) {
+              if (!stores.has(storeName)) {
+                stores.set(storeName, new Map())
+              }
+              if (!objectStoreIndexMaps.has(storeName)) {
+                objectStoreIndexMaps.set(storeName, new Map())
+              }
             }
-            const store = stores.get(storeName) as Map<string, unknown>
             const transaction = {
               error: null,
               onabort: null,
@@ -219,8 +323,28 @@ function createFakeIndexedDb(): IDBFactory {
               db: database,
               durability: "default",
               mode: "readwrite",
-              objectStoreNames: {} as DOMStringList,
-              objectStore() {
+              objectStoreNames: createDomStringList(names),
+              objectStore(requestedStoreName: string) {
+                const store = stores.get(requestedStoreName) as Map<string, unknown>
+                const indexDefinitions = objectStoreIndexMaps.get(requestedStoreName) ?? new Map()
+
+                const readIndexItems = (indexName: string, query: unknown) => {
+                  const definition = indexDefinitions.get(indexName)
+                  if (!definition) {
+                    return []
+                  }
+                  return Array.from(store.values()).filter((value) => {
+                    const record = value as Record<string, unknown>
+                    if (Array.isArray(definition.keyPath)) {
+                      const expected = Array.isArray(query) ? query : [query]
+                      return definition.keyPath.every(
+                        (segment: string, index: number) => record[segment] === expected[index]
+                      )
+                    }
+                    return record[definition.keyPath] === query
+                  })
+                }
+
                 return {
                   get(key: string) {
                     const getRequest = createRequest<unknown>() as unknown as {
@@ -238,6 +362,100 @@ function createFakeIndexedDb(): IDBFactory {
                     })
                     return getRequest
                   },
+                  getAll() {
+                    const getAllRequest = createRequest<unknown[]>() as unknown as {
+                      readyState: IDBRequestReadyState
+                      result: unknown[]
+                      onsuccess: IDBRequest<unknown[]>["onsuccess"]
+                    }
+                    queueMicrotask(() => {
+                      getAllRequest.readyState = "done"
+                      getAllRequest.result = Array.from(store.values()).map((value) =>
+                        structuredClone(value)
+                      )
+                      getAllRequest.onsuccess?.call(
+                        getAllRequest as unknown as IDBRequest<unknown[]>,
+                        new Event("success")
+                      )
+                    })
+                    return getAllRequest
+                  },
+                  delete(key: string) {
+                    const deleteRequest = createRequest<undefined>() as unknown as {
+                      readyState: IDBRequestReadyState
+                      result: undefined
+                      onsuccess: IDBRequest<undefined>["onsuccess"]
+                    }
+                    queueMicrotask(() => {
+                      store.delete(key)
+                      deleteRequest.readyState = "done"
+                      deleteRequest.result = undefined
+                      deleteRequest.onsuccess?.call(
+                        deleteRequest as unknown as IDBRequest<undefined>,
+                        new Event("success")
+                      )
+                    })
+                    return deleteRequest
+                  },
+                  clear() {
+                    const clearRequest = createRequest<undefined>() as unknown as {
+                      readyState: IDBRequestReadyState
+                      result: undefined
+                      onsuccess: IDBRequest<undefined>["onsuccess"]
+                    }
+                    queueMicrotask(() => {
+                      store.clear()
+                      clearRequest.readyState = "done"
+                      clearRequest.result = undefined
+                      clearRequest.onsuccess?.call(
+                        clearRequest as unknown as IDBRequest<undefined>,
+                        new Event("success")
+                      )
+                    })
+                    return clearRequest
+                  },
+                  index(indexName: string) {
+                    return {
+                      objectStore: this as IDBObjectStore,
+                      getAll(query?: unknown) {
+                        const request = createRequest<unknown[]>() as unknown as {
+                          readyState: IDBRequestReadyState
+                          result: unknown[]
+                          onsuccess: IDBRequest<unknown[]>["onsuccess"]
+                        }
+                        queueMicrotask(() => {
+                          request.readyState = "done"
+                          request.result = readIndexItems(indexName, query).map((value) =>
+                            structuredClone(value)
+                          )
+                          request.onsuccess?.call(
+                            request as unknown as IDBRequest<unknown[]>,
+                            new Event("success")
+                          )
+                        })
+                        return request
+                      },
+                      getAllKeys(query?: unknown) {
+                        const request = createRequest<unknown[]>() as unknown as {
+                          readyState: IDBRequestReadyState
+                          result: unknown[]
+                          onsuccess: IDBRequest<unknown[]>["onsuccess"]
+                        }
+                        queueMicrotask(() => {
+                          request.readyState = "done"
+                          request.result = readIndexItems(indexName, query).map((value) => {
+                            const record = value as Record<string, unknown>
+                            return String(record.id ?? record.sourceKey ?? "")
+                          })
+                          request.onsuccess?.call(
+                            request as unknown as IDBRequest<unknown[]>,
+                            new Event("success")
+                          )
+                        })
+                        return request
+                      },
+                    } as IDBIndex
+                  },
                   put(value: { artifact: { id: string } }) {
                     const putRequest = createRequest<string>() as unknown as {
                       readyState: IDBRequestReadyState
@@ -245,9 +463,15 @@ function createFakeIndexedDb(): IDBFactory {
                       onsuccess: IDBRequest<string>["onsuccess"]
                     }
                     queueMicrotask(() => {
-                      store.set(value.artifact.id, structuredClone(value))
+                      const record = value as Record<string, unknown>
+                      const artifact =
+                        typeof record.artifact === "object" && record.artifact !== null
+                          ? (record.artifact as { id?: string })
+                          : undefined
+                      const key = String(record.id ?? record.sourceKey ?? artifact?.id ?? "")
+                      store.set(key, structuredClone(value))
                       putRequest.readyState = "done"
-                      putRequest.result = value.artifact.id
+                      putRequest.result = key
                       putRequest.onsuccess?.call(
                         putRequest as unknown as IDBRequest<string>,
                         new Event("success")
@@ -276,7 +500,7 @@ function createFakeIndexedDb(): IDBFactory {
             return true
           },
           name,
-          objectStoreNames: {} as DOMStringList,
+          objectStoreNames: createDomStringList(Array.from(stores.keys())),
           version: 1,
         } as unknown as IDBDatabase
 
@@ -406,14 +630,14 @@ function _clickNav(label: string): Promise<void> {
   })
 }
 
-async function renderApp(context: AppContext, client?: ApiClient): Promise<void> {
+async function renderApp(context: AppContext, client?: ApiClient, path = "/"): Promise<void> {
   document.body.innerHTML = '<div id="root"></div>'
   const rootElement = document.getElementById("root")
   if (!rootElement) {
     throw new Error("Missing root element")
   }
 
-  window.history.replaceState({}, "", "/")
+  window.history.replaceState({}, "", path)
 
   await act(async () => {
     mountedRoot = ReactDOM.createRoot(rootElement)
@@ -422,7 +646,20 @@ async function renderApp(context: AppContext, client?: ApiClient): Promise<void>
   })
 }
 
-beforeEach(() => {
+function beginHoldingUserTemplateLoad(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    heldUserTemplateLoadRelease = () => {
+      heldUserTemplateLoadRelease = null
+      resolve()
+    }
+  })
+}
+
+function releaseHeldUserTemplateLoad(): void {
+  heldUserTemplateLoadRelease?.()
+}
+
+beforeEach(async () => {
   vi.useFakeTimers()
   fetchMock.mockReset()
   globalThis.fetch = fetchMock
@@ -460,6 +697,7 @@ beforeEach(() => {
   )
 
   memoryStorage.clear()
+  await resetUserTemplateStoreForTest()
 })
 
 afterEach(async () => {
@@ -950,5 +1188,614 @@ describe("web workbench app", () => {
     expect(browserPrinterMocks.restoreBrowserPrinter).not.toHaveBeenCalled()
     expect(browserPrinterMocks.connectBrowserPrinter).not.toHaveBeenCalled()
     expect(browserPrinterMocks.printPreviewArtifact).not.toHaveBeenCalled()
+  })
+
+  it("keeps the source user-template working copy when saving as a new template", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Source Template",
+      document: {
+        ...baseDraft,
+        name: "Source Template",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const unsavedDraft = structuredClone(saved.workingCopy.draft)
+    unsavedDraft.name = "Source Template Draft"
+    unsavedDraft.fields = unsavedDraft.fields.map((field, index) =>
+      index === 0 ? { ...field, defaultValue: "Unsaved Receiver" } : field
+    )
+    await saveUserTemplateAutosave({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: unsavedDraft,
+      sourceVersionId: saved.version.id,
+    })
+
+    const originalPrompt = window.prompt
+    window.prompt = () => "Copied Template"
+    try {
+      await renderApp(
+        browserRuntimeContext,
+        undefined,
+        `/canvas?source=user-template&templateId=${saved.template.id}`
+      )
+      await flush(8)
+
+      await act(async () => {
+        queryButton("另存为").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await flush(8)
+      })
+
+      const templates = await readUserTemplateHistory(saved.template.id)
+      expect(templates?.autosaves).toHaveLength(1)
+
+      const workingCopy = await loadWorkingCopy({
+        kind: "user-template",
+        templateId: saved.template.id,
+      })
+      expect(workingCopy?.draft.name).toBe("Source Template Draft")
+    } finally {
+      window.prompt = originalPrompt
+    }
+  })
+
+  it("does not create an autosave when opening an unchanged user template", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Stable Template",
+      document: {
+        ...baseDraft,
+        name: "Stable Template",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=user-template&templateId=${saved.template.id}`
+    )
+    await flush(8)
+
+    const history = await readUserTemplateHistory(saved.template.id)
+    expect(history?.saved).toHaveLength(1)
+    expect(history?.autosaves).toHaveLength(0)
+  })
+
+  it("does not persist user-template undo state into scratch draft storage", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Undo Source",
+      document: {
+        ...baseDraft,
+        name: "Undo Source",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const savedDraftStorageKey = getDraftStorageKey("shipping-wide")
+    expect(memoryStorage.getItem(savedDraftStorageKey)).toBeNull()
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=user-template&templateId=${saved.template.id}`
+    )
+    await flush(8)
+
+    await act(async () => {
+      queryButton("文本").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    await act(async () => {
+      queryButton("撤销").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    expect(memoryStorage.getItem(savedDraftStorageKey)).toBeNull()
+  })
+
+  it("prefers synced scratch drafts over stale indexeddb working copies on startup", async () => {
+    const preset = getPresetById("shipping-wide")
+    const syncedDraft = createDraftFromPreset(preset)
+    syncedDraft.name = "Synced scratch draft"
+    window.localStorage.setItem(getDraftStorageKey(preset.id), JSON.stringify(syncedDraft))
+
+    const staleDraft = structuredClone(syncedDraft)
+    staleDraft.name = "Stale indexeddb draft"
+    await saveUserTemplateAutosave({
+      source: { kind: "scratch", presetId: preset.id },
+      document: staleDraft,
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=scratch&presetId=${preset.id}`
+    )
+    await flush(8)
+
+    expect(document.body.textContent).toContain("当前草稿：Synced scratch draft")
+    expect(document.body.textContent).not.toContain("当前草稿：Stale indexeddb draft")
+  })
+
+  it("prefers synced preset-template drafts over stale indexeddb working copies on startup", async () => {
+    const syncedDraft = createDraftFromPreset(getPresetById("ops-tag"))
+    syncedDraft.presetId = "cable-tag"
+    syncedDraft.source = { kind: "preset-template", presetId: "cable-tag" }
+    syncedDraft.name = "Synced preset draft"
+    const syncedDraftFirstElement = syncedDraft.elements[0]
+    if (!syncedDraftFirstElement) {
+      throw new Error("expected preset draft to include at least one element")
+    }
+    syncedDraft.elements = [
+      ...syncedDraft.elements,
+      { ...syncedDraftFirstElement, id: "extra-text" },
+    ]
+    window.localStorage.setItem(getDraftStorageKey("cable-tag"), JSON.stringify(syncedDraft))
+
+    const staleDraft = structuredClone(syncedDraft)
+    staleDraft.name = "Stale preset draft"
+    staleDraft.elements = staleDraft.elements.slice(0, -1)
+    await saveUserTemplateAutosave({
+      source: { kind: "preset-template", presetId: "cable-tag" },
+      document: staleDraft,
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      "/canvas?source=preset-template&templateId=cable-tag"
+    )
+    await flush(8)
+
+    expect(document.body.textContent).toContain("系统模板：Synced preset draft")
+    expect(document.body.textContent).not.toContain("系统模板：Stale preset draft")
+  })
+
+  it("waits for a user-template working copy before allowing preview from /templates", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const textElement = baseDraft.elements.find((element) => element.kind === "text")
+    if (!textElement) {
+      throw new Error("expected shipping-wide preset to include a text element")
+    }
+    const boundDraft = toggleElementBinding(baseDraft, textElement.id, true)
+    const saved = await saveUserTemplate({
+      name: "Async Preview",
+      document: {
+        ...boundDraft,
+        name: "Async Preview",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const actualStore = await vi.importActual<typeof import("./user-template-store.js")>(
+      "./user-template-store.js"
+    )
+    const loadPromise = beginHoldingUserTemplateLoad()
+    const originalLoadWorkingCopy = await import("./user-template-store.js")
+    const loadWorkingCopySpy = vi.spyOn(originalLoadWorkingCopy, "loadWorkingCopy")
+    loadWorkingCopySpy.mockImplementation(async (source) => {
+      if (source.kind === "user-template" && source.templateId === saved.template.id) {
+        await loadPromise
+      }
+      return actualStore.loadWorkingCopy(source)
+    })
+
+    try {
+      await renderApp(browserRuntimeContext, undefined, "/templates")
+      await flush(2)
+
+      await act(async () => {
+        const targetCard = Array.from(document.querySelectorAll(".tm-template-card")).find((item) =>
+          item.textContent?.includes("Async Preview")
+        ) as HTMLElement | undefined
+        const surface = targetCard?.querySelector(
+          ".tm-template-card__surface"
+        ) as HTMLButtonElement | null
+        surface?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await flush(1)
+      })
+
+      expect(queryButton("生成预览").disabled).toBe(true)
+      expect(document.body.textContent).toContain("正在读取本地模板草稿。")
+      expect(browserPayloadMocks.materializeBrowserArtifactData).not.toHaveBeenCalled()
+
+      releaseHeldUserTemplateLoad()
+      await flush(8)
+    } finally {
+      releaseHeldUserTemplateLoad()
+      vi.restoreAllMocks()
+    }
+  })
+
+  it("persists grid and snap toggles into the user-template working copy", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Assist Settings",
+      document: {
+        ...baseDraft,
+        name: "Assist Settings",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=user-template&templateId=${saved.template.id}`
+    )
+    await flush(8)
+
+    await act(async () => {
+      queryButton("网格").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    await act(async () => {
+      queryButton("吸附").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    const workingCopy = await loadWorkingCopy({
+      kind: "user-template",
+      templateId: saved.template.id,
+    })
+    expect(workingCopy?.draft.editor.gridEnabled).toBe(false)
+    expect(workingCopy?.draft.editor.snapEnabled).toBe(false)
+  })
+
+  it("keeps a restored saved version as the current working copy after reopening", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const firstSave = await saveUserTemplate({
+      name: "Restore Target",
+      document: {
+        ...baseDraft,
+        name: "Restore Target",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const secondDraft = structuredClone(firstSave.workingCopy.draft)
+    secondDraft.name = "Restore Target v2"
+    const secondSave = await saveUserTemplate({
+      name: "Restore Target v2",
+      templateId: firstSave.template.id,
+      sourceVersionId: firstSave.version.id,
+      document: secondDraft,
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=user-template&templateId=${firstSave.template.id}&panel=versions`
+    )
+    await flush(8)
+
+    await act(async () => {
+      const savedVersionButton = Array.from(
+        document.querySelectorAll(".tm-version-list__item")
+      ).find((item) => item.textContent?.includes(firstSave.version.label)) as
+        | HTMLButtonElement
+        | undefined
+      savedVersionButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    await act(async () => {
+      queryButton("恢复").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    const workingCopy = await loadWorkingCopy({
+      kind: "user-template",
+      templateId: firstSave.template.id,
+    })
+    expect(workingCopy?.draft.name).toBe("Restore Target")
+    expect(workingCopy?.baseVersionId).toBe(firstSave.version.id)
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=user-template&templateId=${firstSave.template.id}`
+    )
+    await flush(8)
+
+    expect(document.body.textContent).toContain("用户模板：Restore Target")
+    expect(document.body.textContent).not.toContain("用户模板：Restore Target v2")
+
+    const history = await readUserTemplateHistory(firstSave.template.id)
+    expect(history?.saved.some((version) => version.id === secondSave.version.id)).toBe(true)
+    expect(history?.autosaves).toHaveLength(0)
+  })
+
+  it("blocks routed canvas interactions until the requested preset-template draft loads", async () => {
+    const actualStore = await vi.importActual<typeof import("./user-template-store.js")>(
+      "./user-template-store.js"
+    )
+    const loadPromise = beginHoldingUserTemplateLoad()
+    const originalLoadWorkingCopy = await import("./user-template-store.js")
+    const loadWorkingCopySpy = vi.spyOn(originalLoadWorkingCopy, "loadWorkingCopy")
+    loadWorkingCopySpy.mockImplementation(async (source) => {
+      if (source.kind === "preset-template" && source.presetId === "cable-tag") {
+        await loadPromise
+      }
+      return actualStore.loadWorkingCopy(source)
+    })
+
+    try {
+      await renderApp(
+        browserRuntimeContext,
+        undefined,
+        "/canvas?source=preset-template&templateId=cable-tag"
+      )
+      await flush(1)
+
+      expect(document.body.textContent).toContain("正在读取画布")
+      expect(queryButton("保存").disabled).toBe(true)
+      expect(queryButton("另存为").disabled).toBe(true)
+      expect(queryButton("重置草稿").disabled).toBe(true)
+      expect(document.body.textContent).not.toContain("可编辑文本")
+
+      releaseHeldUserTemplateLoad()
+      await flush(8)
+    } finally {
+      releaseHeldUserTemplateLoad()
+      vi.restoreAllMocks()
+    }
+  })
+
+  it("surfaces route load failures instead of falling back to an unrelated draft", async () => {
+    const actualStore = await vi.importActual<typeof import("./user-template-store.js")>(
+      "./user-template-store.js"
+    )
+    const originalLoadWorkingCopy = await import("./user-template-store.js")
+    const loadWorkingCopySpy = vi.spyOn(originalLoadWorkingCopy, "loadWorkingCopy")
+    loadWorkingCopySpy.mockImplementation(async (source) => {
+      if (source.kind === "preset-template" && source.presetId === "cable-tag") {
+        throw new Error("missing requested draft")
+      }
+      return actualStore.loadWorkingCopy(source)
+    })
+
+    try {
+      await renderApp(
+        browserRuntimeContext,
+        undefined,
+        "/canvas?source=preset-template&templateId=cable-tag"
+      )
+      await flush(8)
+
+      expect(document.body.textContent).toContain("missing requested draft")
+      expect(document.body.textContent).not.toContain("快递单宽版")
+      expect(document.body.textContent).not.toContain("系统模板：Cable Tag")
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
+  it("keeps scratch reset cleared across reload", async () => {
+    const preset = getPresetById("shipping-wide")
+    const syncedDraft = createDraftFromPreset(preset)
+    syncedDraft.name = "Changed scratch"
+    const syncedDraftFirstElement = syncedDraft.elements[0]
+    if (!syncedDraftFirstElement) {
+      throw new Error("expected scratch draft to include at least one element")
+    }
+    syncedDraft.elements = [
+      ...syncedDraft.elements,
+      { ...syncedDraftFirstElement, id: "extra-text" },
+    ]
+    window.localStorage.setItem(getDraftStorageKey(preset.id), JSON.stringify(syncedDraft))
+    await saveUserTemplateAutosave({
+      source: { kind: "scratch", presetId: preset.id },
+      document: syncedDraft,
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=scratch&presetId=${preset.id}`
+    )
+    await flush(8)
+
+    await act(async () => {
+      queryButton("重置草稿").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    expect(window.localStorage.getItem(getDraftStorageKey(preset.id))).toBeNull()
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=scratch&presetId=${preset.id}`
+    )
+    await flush(8)
+
+    expect(document.body.textContent).toContain("当前草稿：快递单宽版")
+    expect(document.body.textContent).not.toContain("当前草稿：Changed scratch")
+  })
+
+  it("keeps preset-template reset cleared across reload", async () => {
+    const presetDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    presetDraft.presetId = "cable-tag"
+    presetDraft.source = { kind: "preset-template", presetId: "cable-tag" }
+    presetDraft.name = "Changed preset copy"
+    window.localStorage.setItem(getDraftStorageKey("cable-tag"), JSON.stringify(presetDraft))
+    await saveUserTemplateAutosave({
+      source: { kind: "preset-template", presetId: "cable-tag" },
+      document: presetDraft,
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      "/canvas?source=preset-template&templateId=cable-tag"
+    )
+    await flush(8)
+
+    await act(async () => {
+      queryButton("重置草稿").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    expect(window.localStorage.getItem(getDraftStorageKey("cable-tag"))).toBeNull()
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      "/canvas?source=preset-template&templateId=cable-tag"
+    )
+    await flush(8)
+
+    expect(document.body.textContent).toContain("系统模板：Cable Tag")
+    expect(document.body.textContent).not.toContain("系统模板：Changed preset copy")
+  })
+
+  it("records recent template usage when previewing a user template row", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Recent User Template",
+      description: "User template recent activity",
+      document: {
+        ...baseDraft,
+        name: "Recent User Template",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(browserRuntimeContext, undefined, "/templates")
+    await flush(8)
+
+    await act(async () => {
+      const targetCard = Array.from(document.querySelectorAll(".tm-template-card")).find((item) =>
+        item.textContent?.includes("Recent User Template")
+      ) as HTMLElement | undefined
+      const surface = targetCard?.querySelector(
+        ".tm-template-card__surface"
+      ) as HTMLButtonElement | null
+      surface?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    await act(async () => {
+      queryButton("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    const recent = loadRecentActivity()
+    expect(recent.templates[0]?.id).toBe(saved.template.id)
+    expect(recent.templates[0]?.name).toBe("Recent User Template")
+  })
+
+  it("builds /templates columns from the user-template working copy schema", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const textElement = baseDraft.elements.find((element) => element.kind === "text")
+    if (!textElement) {
+      throw new Error("expected shipping-wide preset to include a text element")
+    }
+    const boundDraft = toggleElementBinding(baseDraft, textElement.id, true)
+    const saved = await saveUserTemplate({
+      name: "Schema Current",
+      document: {
+        ...boundDraft,
+        name: "Schema Current",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const updatedWorkingCopy = structuredClone(saved.workingCopy.draft)
+    updatedWorkingCopy.fields = updatedWorkingCopy.fields.map((field, index) =>
+      index === 0 ? { ...field, label: "收件人（当前草稿）" } : field
+    )
+
+    await replaceUserTemplateWorkingCopy({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: updatedWorkingCopy,
+      sourceVersionId: saved.version.id,
+    })
+
+    await renderApp(browserRuntimeContext, undefined, "/templates")
+    await flush(8)
+
+    await act(async () => {
+      const targetCard = Array.from(document.querySelectorAll(".tm-template-card")).find((item) =>
+        item.textContent?.includes("Schema Current")
+      ) as HTMLElement | undefined
+      const surface = targetCard?.querySelector(
+        ".tm-template-card__surface"
+      ) as HTMLButtonElement | null
+      surface?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    expect(document.body.textContent).toContain("收件人（当前草稿）")
+  })
+
+  it("previews user templates from the persisted working copy instead of the last saved version", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const textElement = baseDraft.elements.find((element) => element.kind === "text")
+    if (!textElement) {
+      throw new Error("expected shipping-wide preset to include a text element")
+    }
+    const boundDraft = toggleElementBinding(baseDraft, textElement.id, true)
+    const saved = await saveUserTemplate({
+      name: "Preview Current",
+      document: {
+        ...boundDraft,
+        name: "Preview Current",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const updatedWorkingCopy = structuredClone(saved.workingCopy.draft)
+    updatedWorkingCopy.fields = updatedWorkingCopy.fields.map((field, index) =>
+      index === 0 ? { ...field, defaultValue: "Current Working Copy" } : field
+    )
+
+    await replaceUserTemplateWorkingCopy({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: updatedWorkingCopy,
+      sourceVersionId: saved.version.id,
+    })
+
+    await renderApp(browserRuntimeContext, undefined, "/templates")
+    await flush(8)
+
+    await act(async () => {
+      const targetCard = Array.from(document.querySelectorAll(".tm-template-card")).find((item) =>
+        item.textContent?.includes("Preview Current")
+      ) as HTMLElement | undefined
+      const surface = targetCard?.querySelector(
+        ".tm-template-card__surface"
+      ) as HTMLButtonElement | null
+      surface?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    await act(async () => {
+      queryButton("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    expect(browserPayloadMocks.materializeBrowserArtifactData).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        kind: "canvas",
+        canvas: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "text",
+              value: "Current Working Copy",
+            }),
+          ]),
+        }),
+      })
+    )
   })
 })

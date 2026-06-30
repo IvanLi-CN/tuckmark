@@ -62,11 +62,18 @@ while the workbench was being productized:
     and print stay aligned with stage geometry
   - CLI direct-canvas preview fixtures were updated to include explicit
     `rotation` fields after the shared canvas schema expansion
-- A later same-device persistence round promoted browser-only activity into a
-  shared sync state with `TuckmarkService`:
-  - recent templates, recent prints, and canvas drafts now merge browser and
-    service snapshots under a common contract
-  - startup performs a pull-merge-push reconciliation on `server-http`
-  - draft reset now emits a tombstone so stale service drafts do not reappear
-  - concurrent draft edits preserve conflict branches instead of silently
-    dropping one side
+- The browser-local template round was then simplified again around actual
+  desktop usage:
+  - template cards now enter structured print flow directly on click, while
+    template editing stays as the secondary explicit action
+  - version history moved out of the always-visible inspector rail into a
+    save-adjacent right-side drawer
+  - replaceable field editing collapsed into a single field-name autocomplete
+    input instead of separate binding and naming controls
+- A later same-device persistence round was folded back into the same topic:
+  - recent templates and recent prints now reconcile browser and service
+    snapshots under a shared same-device sync contract
+  - scratch canvas drafts now restore through that merged sync state on
+    `server-http`
+  - browser-local user templates and their version history remain intentionally
+    outside that sync contract

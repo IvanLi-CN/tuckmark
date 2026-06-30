@@ -22,7 +22,9 @@ import type {
   PrintResult,
   RenderOptions,
   Template,
+  UserTemplateSummary,
 } from "./types.js"
+import { listUserTemplates } from "./user-template-store.js"
 import {
   applySyncStateToBrowser,
   deleteCanvasDraftLocally,
@@ -106,6 +108,7 @@ export function useWorkbenchController({
   const [recentActivity, setRecentActivity] = React.useState<RecentActivityState>(() =>
     loadRecentActivity()
   )
+  const [userTemplates, setUserTemplates] = React.useState<UserTemplateSummary[]>([])
   const [startupSyncReady, setStartupSyncReady] = React.useState(
     !(context.surface === "server-http" && context.mode === "runtime")
   )
@@ -213,11 +216,18 @@ export function useWorkbenchController({
     [client, serviceApiUsable]
   )
 
+  const refreshUserTemplates = React.useCallback(async () => {
+    const nextTemplates = await listUserTemplates()
+    setUserTemplates(nextTemplates)
+    return nextTemplates
+  }, [])
+
   React.useEffect(() => {
     setStartupSyncReady(!(context.surface === "server-http" && context.mode === "runtime"))
     void (async () => {
       try {
         await refreshSetup()
+        await refreshUserTemplates()
         if (context.surface === "server-http" && context.mode === "runtime") {
           const next = await syncWebState(client, [...SYNC_PRESET_IDS])
           setRecentActivity(next.recentActivity)
@@ -228,7 +238,7 @@ export function useWorkbenchController({
         setStartupSyncReady(true)
       }
     })()
-  }, [client, context.mode, context.surface, refreshSetup])
+  }, [client, context.mode, context.surface, refreshSetup, refreshUserTemplates])
 
   const scheduleSync = React.useCallback(() => {
     if (context.surface !== "server-http" || context.mode !== "runtime") {
@@ -394,7 +404,9 @@ export function useWorkbenchController({
   const previewSource = React.useCallback(
     async (source: BrowserPrintSource) => {
       if (source.kind === "template") {
-        const template = templates.find((item) => item.id === source.templateId)
+        const template =
+          templates.find((item) => item.id === source.templateId) ??
+          userTemplates.find((item) => item.id === source.templateId)
         if (template) {
           const nextState = recordTemplateUsageLocally({
             id: template.id,
@@ -404,6 +416,10 @@ export function useWorkbenchController({
           setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
           scheduleSync()
         }
+      } else if (source.kind === "canvas" && source.templateUsage) {
+        const nextState = recordTemplateUsageLocally(source.templateUsage)
+        setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
+        scheduleSync()
       }
 
       const result = await run(
@@ -449,6 +465,7 @@ export function useWorkbenchController({
       syncArtifactData,
       syncBrowserArtifact,
       templates,
+      userTemplates,
     ]
   )
 
@@ -604,7 +621,9 @@ export function useWorkbenchController({
   const printSourceDirect = React.useCallback(
     async (source: BrowserPrintSource) => {
       if (source.kind === "template") {
-        const template = templates.find((item) => item.id === source.templateId)
+        const template =
+          templates.find((item) => item.id === source.templateId) ??
+          userTemplates.find((item) => item.id === source.templateId)
         if (template) {
           const nextState = recordTemplateUsageLocally({
             id: template.id,
@@ -614,6 +633,10 @@ export function useWorkbenchController({
           setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
           scheduleSync()
         }
+      } else if (source.kind === "canvas" && source.templateUsage) {
+        const nextState = recordTemplateUsageLocally(source.templateUsage)
+        setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
+        scheduleSync()
       }
 
       const hasTarget =
@@ -703,6 +726,7 @@ export function useWorkbenchController({
       serviceApiUsable,
       syncArtifactData,
       templates,
+      userTemplates,
     ]
   )
 
@@ -781,6 +805,8 @@ export function useWorkbenchController({
     setRecentActivity,
     startupSyncReady,
     templates,
+    refreshUserTemplates,
+    userTemplates,
     scheduleSync,
   }
 }

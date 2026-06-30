@@ -11,6 +11,9 @@
     demo surfaces
 - Template workspace is implemented as a left template browser, center batch
   table, and right preview/print rail.
+- Template browser now weak-groups cards into:
+  - `系统模板`
+  - `我的模板`
 - Template workspace now adds a narrow route-owned fallback:
   - `960-1279px` keeps a two-pane shell: the initial state shows the template
     list beside a disabled preview/print rail, then swaps the left pane from
@@ -22,9 +25,14 @@
   - large grid mode
   - compact list mode
   - preview thumbnail, name, and size metadata
+  - card click entering structured print-entry on both system and
+    browser-local user templates
+  - one explicit `编辑模板` secondary action on both groups
   - one-line title truncation with fade masking
   - a widened triple-pane left rail so `>=1280px` large-card mode keeps a
     readable two-up grid instead of collapsing card width under shell pressure
+- Browser-local user template cards render real SVG previews compiled from the
+  saved draft instead of placeholder chrome.
 - Template table supports:
   - row add, duplicate, delete, and select
   - adaptive column widths with min/max limits
@@ -33,6 +41,8 @@
   - compact inline editing without cell reflow
   - auto-preview on row focus/click
   - debounced preview refresh after edits
+  - browser-local user template fields sourced from the draft field registry
+    rather than the system template catalog
 - Canvas workspace is now implemented as an editor-first professional label
   tool with:
   - a stable three-column desktop layout at `>=1280px`
@@ -42,6 +52,8 @@
   - lower-noise panel framing and a cooler stage surface so the editable label
     stays visually dominant
   - a right-side inspector split into `属性` and `输出`
+  - a toolbar-entry version-history drawer instead of a permanently visible
+    right-rail history panel
   - terminology aligned to product-facing Chinese labels instead of mixed
     engineering English
 - Canvas stage is implemented with `react-konva` editing for `text`, `rect`,
@@ -67,10 +79,47 @@
   - editor selection affordances stay outside printable content semantics
 - Web draft model coverage includes:
   - versioned `CanvasDraftDocument`
+  - source-aware working copies for `scratch`, `preset-template`, and
+    `user-template`
+  - draft field registry and per-element replacement bindings
   - per-layer metadata
-  - preset-scoped `localStorage` persistence
-  - same-device sync state records shared with `TuckmarkService`
+  - preset-scoped browser storage persistence for scratch drafts
+  - same-device sync state records shared with `TuckmarkService` for scratch
+    drafts, recent templates, and recent prints
+  - IndexedDB-backed browser-local user template persistence with memory
+    fallback in incomplete test/browser environments
   - in-memory undo/redo history capped to `50`
+- Browser-local user template model coverage includes:
+  - `UserTemplateRecord`
+  - `UserTemplateVersionSnapshot`
+  - `CanvasWorkingCopyIndexEntry`
+  - saved-version retention capped at `20`
+  - autosave retention capped at `10`
+  - autosave interval fixed at `5` minutes
+- Canvas save semantics now cover:
+  - first save from scratch/system-template creating a browser-local user
+    template
+  - save on an existing browser-local template creating a new saved version
+  - save as creating a new template from the current draft or read-only version
+  - read-only historical restore creating a new current working copy instead of
+    mutating saved history in place
+- System-template import keeps static template keys such as `__title` as fixed
+  elements instead of exposing them as structured replacement fields.
+- Structured replacement bindings are limited to `text`, `barcode`, and `qr`;
+  `rect` and `line` remain static editor-only structure.
+- Replaceable-element editing is simplified to:
+  - one `名` layer-name field
+  - one field-name autocomplete input that can reuse or create a field label
+  - no separate `绑定到` selector duplicated beside the field-name editor
+- Browser-local user template preview/print reuses the shared canvas artifact
+  seam by compiling row values into a concrete `DirectCanvasDefinition` on the
+  client before preview or print dispatch.
+- Same-device sync intentionally stops at:
+  - recent templates
+  - recent prints
+  - scratch canvas drafts
+- Browser-local user templates, saved versions, autosaves, and user-template
+  working copies remain outside the sync contract.
 - Shared schema coverage now includes `rotation` on `text`, `rect`, `barcode`,
   and `qr`, while `line` remains endpoint-based.
 - Line rotation remains an editor-side endpoint transform only:
@@ -92,19 +141,8 @@
   - the new canvas draft monochrome tests now provide a stable in-memory
     storage fallback so package-level test runners without an ambient browser
     global still execute the same draft persistence assertions
-- Home page recent templates and recent prints now flow through a unified sync
-  state:
-  - browser storage remains the immediate write path
-  - `server-http` startup pulls service state, merges it with browser state,
-    then writes the merged snapshot back to both sides
-  - preview / print / draft-save events enqueue background sync
-- Sync implementation coverage includes:
-  - core `SyncState` schemas and merge helpers
-  - service-side `sync-state.json` persistence under `.tuckmark`
-  - `GET /api/sync/state` and `POST /api/sync/state`
-  - browser migration from legacy recent-activity and draft `localStorage`
-  - draft tombstones to prevent reset content from being reintroduced
-  - conflict branch preservation for concurrent canvas draft edits
+- Home page recent templates and recent prints are backed by browser-local
+  recent-activity storage.
 - `404.html` SPA fallback is present for static Pages deep links.
 - Storybook coverage includes stable canvas scenarios for:
   - wide editor
@@ -113,6 +151,8 @@
   - selected barcode
   - output tab
   - draft-restore state
+  - grouped browser-local user templates in `/templates`
+  - browser-local user template version history in `/canvas`
 
 ## Remaining validation
 
@@ -126,10 +166,20 @@
 - Benchmark viewport evidence must stay aligned with the latest UI SHA whenever
   navigation, list density, or workspace layout changes.
 - Current validation status for this round:
-  - `bun run check` passed
-  - `bun run test:e2e:web` passed
+  - `bun run --filter @tuckmark/web typecheck` passed
+  - `bun run --filter @tuckmark/web test` passed
+  - `bun run --filter @tuckmark/web build:pages` passed
+  - `bun run --filter @tuckmark/web build:storybook` passed
+  - `bun run --filter @tuckmark/web test:e2e -- tests/user-template-flow.spec.ts` passed
   - `bun run --filter @tuckmark/web test:e2e:sync` passed
-  - `bun run test:e2e:web -- --grep "browser-static root path defaults to runtime and supports explicit demo mode"` passed
-  - detonger-dependent preview packet coverage now skips cleanly when the
-    `detonger` submodule is unavailable, matching the existing wasm build
-    fallback contract
+  - `bun run build:web:pages` passed
+  - `bun run --filter @tuckmark/web test:e2e -- --grep "template large mode"` passed
+  - `bun run --filter @tuckmark/cli typecheck` passed
+  - `bun run --filter @tuckmark/core typecheck` passed
+  - `bun run --filter @tuckmark/core test tests/renderer.test.ts` passed
+  - browser verification passed for:
+    - grid visibility over the white label-paper base
+    - canvas pan / zoom remaining decoupled from pointer-only panning
+    - output preview generation using the same content semantics as the stage
+  - broader package test suites still retain unrelated environment-sensitive
+    coverage outside this convergence patch

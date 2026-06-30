@@ -30,6 +30,11 @@ type CanvasPrintSource = {
   kind: "canvas"
   canvas: DirectCanvasDefinition
   renderOptions: BrowserRenderOptions
+  templateUsage?: {
+    id: string
+    name: string
+    description: string
+  }
 }
 
 export type BrowserPrintSource = TemplatePrintSource | SafeTextPrintSource | CanvasPrintSource

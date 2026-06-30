@@ -292,6 +292,14 @@ describe("web-state-sync", () => {
     expect(recorded.canvasDraftRecords[0]?.vectorClock).toEqual(existing.vectorClock)
   })
 
+  it("ignores non-syncable preset ids when recording browser draft state", () => {
+    const draft = createDraftFromPreset(getPresetById("cable-tag"))
+
+    const recorded = recordCanvasDraftLocally("cable-tag", draft)
+
+    expect(recorded.canvasDraftRecords).toHaveLength(0)
+  })
+
   it("keeps browser-local writes that land while sync is awaiting the service merge", async () => {
     recordRecentPrintLocally({
       id: "template:shipping-compact",

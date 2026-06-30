@@ -44,6 +44,25 @@ The two formal workspaces are:
 They are intentionally parallel surfaces with different editing affordances but
 the same preview and print contracts.
 
+The template workspace is now responsible for two adjacent catalog surfaces:
+
+- system templates used as read-only structured print entry points
+- browser-local user templates used for structured print entry and return
+  editing
+
+Selecting a template card should enter the structured print-entry flow
+immediately. Template editing stays as a secondary explicit action so the main
+list surface does not duplicate the primary entry action.
+
+The canvas workspace is the only place that can author or revise templates. It
+must expose explicit save, save as, and version-history actions without
+changing the server-side read-only nature of system templates.
+
+Version history belongs to a save-adjacent drawer, not to a permanently visible
+inspector column. Replaceable field editing should stay minimal and desktop-fit:
+one layer name field plus one field-name autocomplete input that can reuse or
+create an existing field label.
+
 ## Web Modes
 
 The Web surface supports two operational modes without cloning routes:
@@ -102,9 +121,14 @@ Benchmark layouts:
 - `1440×900`: standard three-column workspace
 - `1600×1024`: relaxed three-column workspace
 
-At `1024-1279px`, the template and canvas routes enter `focus-paired dual-pane`
-mode. The center workspace remains persistent while the active side pair changes
-based on user focus. This is a route contract, not a user preference setting.
+At `1024-1279px`, the template route uses a route-owned single-outlet flow with
+an optional side preview rail, while the canvas route keeps the stage visible
+and switches one contextual side rail. This is a route contract, not a user
+preference setting.
+
+At `>=1280px`, the template workspace must keep the left rail wide enough for a
+readable two-column large-card grid even after introducing grouped system and
+browser-local template sections.
 
 ## Runtime Readiness Contract
 

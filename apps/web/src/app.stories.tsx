@@ -3,8 +3,18 @@ import { userEvent, within } from "storybook/test"
 
 import type { ApiClient } from "./api-client.js"
 import { DemoApiClient } from "./api-client.js"
+import {
+  createDraftFromPreset,
+  getPresetById,
+  toggleElementBinding,
+} from "./canvas-editor-model.js"
 import { fallbackTemplates } from "./demo-data.js"
 import type { AppContext } from "./types.js"
+import {
+  resetUserTemplateStoreForTest,
+  saveUserTemplate,
+  saveUserTemplateAutosave,
+} from "./user-template-store.js"
 import { WorkbenchAppStory } from "./workbench-app.js"
 
 const runtimeContext: AppContext = {
@@ -64,6 +74,56 @@ export default meta
 
 type Story = StoryObj<typeof WorkbenchAppStory>
 
+async function seedUserTemplateFixtures() {
+  await resetUserTemplateStoreForTest()
+
+  const presetDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+  const recipientElement = presetDraft.elements.find((element) => element.kind === "text")
+  const noteElement = presetDraft.elements.filter((element) => element.kind === "text")[1]
+  if (!recipientElement || !noteElement) {
+    return
+  }
+
+  let draft = toggleElementBinding(presetDraft, recipientElement.id, true)
+  draft = toggleElementBinding(draft, noteElement.id, true)
+  draft = {
+    ...draft,
+    name: "本地发货模板",
+    fields: draft.fields.map((field, index) =>
+      index === 0
+        ? { ...field, label: "收件人", defaultValue: "Koha Cat" }
+        : { ...field, label: "备注", defaultValue: "Handle with care" }
+    ),
+  }
+
+  const saved = await saveUserTemplate({
+    name: "本地发货模板",
+    document: draft,
+  })
+
+  const savedDraft = structuredClone(saved.workingCopy.draft)
+  savedDraft.fields = savedDraft.fields.map((field, index) =>
+    index === 0 ? { ...field, defaultValue: "Warehouse Desk 7" } : field
+  )
+  await saveUserTemplate({
+    name: "本地发货模板",
+    templateId: saved.template.id,
+    sourceVersionId: saved.version.id,
+    document: savedDraft,
+  })
+
+  const autosaveDraft = structuredClone(savedDraft)
+  autosaveDraft.fields = autosaveDraft.fields.map((field, index) =>
+    index === 1 ? { ...field, defaultValue: "Auto-saved note" } : field
+  )
+  await saveUserTemplateAutosave({
+    templateId: saved.template.id,
+    source: { kind: "user-template", templateId: saved.template.id },
+    document: autosaveDraft,
+    sourceVersionId: saved.version.id,
+  })
+}
+
 export const Home: Story = {
   args: {
     context: runtimeContext,
@@ -76,6 +136,19 @@ export const TemplatesWorkspace: Story = {
     context: runtimeContext,
     initialEntries: ["/templates"],
   },
+}
+
+export const TemplatesWorkspaceWithUserTemplates: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+  },
+  loaders: [
+    async () => {
+      await seedUserTemplateFixtures()
+      return {}
+    },
+  ],
 }
 
 export const TemplatesList: Story = {
@@ -194,6 +267,71 @@ export const CanvasWorkspaceOutputTab: Story = {
     context: runtimeContext,
     initialEntries: ["/canvas"],
     canvasScenario: "output-tab",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+}
+
+export const CanvasWorkspaceUserTemplateVersions: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas?source=user-template&panel=versions"],
+  },
+  loaders: [
+    async () => {
+      await seedUserTemplateFixtures()
+      const presetDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+      const recipientElement = presetDraft.elements.find((element) => element.kind === "text")
+      if (!recipientElement) {
+        return { templateId: null }
+      }
+      let draft = toggleElementBinding(presetDraft, recipientElement.id, true)
+      draft = {
+        ...draft,
+        name: "本地发货模板",
+        fields: draft.fields.map((field) => ({
+          ...field,
+          label: "收件人",
+          defaultValue: "Koha Cat",
+        })),
+      }
+      const result = await saveUserTemplate({
+        name: "版本故事模板",
+        document: draft,
+      })
+      await saveUserTemplateAutosave({
+        templateId: result.template.id,
+        source: { kind: "user-template", templateId: result.template.id },
+        document: {
+          ...structuredClone(result.workingCopy.draft),
+          fields: result.workingCopy.draft.fields.map((field) => ({
+            ...field,
+            defaultValue: "Autosave preview",
+          })),
+        },
+        sourceVersionId: result.version.id,
+      })
+      return { templateId: result.template.id }
+    },
+  ],
+  render: (_args, context) => {
+    const templateId = context.loaded?.templateId as string | null
+    return (
+      <WorkbenchAppStory
+        context={runtimeContext}
+        initialEntries={[
+          templateId
+            ? `/canvas?source=user-template&templateId=${templateId}&panel=versions`
+            : "/canvas?panel=versions",
+        ]}
+      />
+    )
   },
   parameters: {
     viewport: {

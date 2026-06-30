@@ -1,6 +1,8 @@
 import {
   type DirectCanvasDefinition,
   estimateCharsPerLine,
+  presetTemplateData,
+  type TemplateDefinition,
   wrapText,
 } from "../../../packages/core/src/web.js"
 
@@ -9,6 +11,7 @@ import type {
   CanvasDocumentPreset,
   CanvasDraftDocument,
   CanvasDraftElement,
+  CanvasDraftField,
   CanvasElement,
   RenderOptions,
 } from "./types.js"
@@ -54,6 +57,7 @@ const DRAFT_STORAGE_PREFIX = `tuckmark:canvas-draft:v${DRAFT_STORAGE_VERSION}:`
 const MONO_FILL = "none"
 const MONO_STROKE = "#111111"
 const MONO_SOLID_FILL = "#111111"
+const STATIC_TEMPLATE_KEY_PREFIX = "__"
 
 type CanvasBounds = {
   x: number
@@ -65,6 +69,10 @@ type CanvasBounds = {
 type CanvasPoint = {
   x: number
   y: number
+}
+
+function assertNever(value: never): never {
+  throw new Error(`unexpected canvas element: ${JSON.stringify(value)}`)
 }
 
 export type CanvasElementGeometry = {
@@ -146,10 +154,85 @@ function normalizeMonochromeElement(element: CanvasDraftElement): CanvasDraftEle
   }
 }
 
-function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDraftDocument {
+function isBindableKind(
+  element: CanvasDraftElement
+): element is Extract<CanvasDraftElement, { kind: "text" | "barcode" | "qr" }> {
+  return element.kind === "text" || element.kind === "barcode" || element.kind === "qr"
+}
+
+function inferFieldMultiline(element: CanvasDraftElement): boolean {
+  return element.kind === "text" ? Math.max(element.maxLines ?? 1, 1) > 1 : false
+}
+
+function slugifyFieldKey(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+  return normalized || "field"
+}
+
+function createUniqueFieldKey(existingKeys: string[], seed: string): string {
+  const base = slugifyFieldKey(seed)
+  if (!existingKeys.includes(base)) {
+    return base
+  }
+  let index = 2
+  while (existingKeys.includes(`${base}-${index}`)) {
+    index += 1
+  }
+  return `${base}-${index}`
+}
+
+function syncBindingsIntoElements(
+  elements: CanvasDraftElement[],
+  fields: CanvasDraftField[]
+): { elements: CanvasDraftElement[]; fields: CanvasDraftField[] } {
+  const fieldMap = new Map<string, CanvasDraftField>(
+    fields.map((field) => [field.key, { ...field, bindings: [] }])
+  )
+  const nextElements = elements.map((element) => {
+    if (!isBindableKind(element) || !element.binding) {
+      return element
+    }
+    const field = fieldMap.get(element.binding.fieldKey)
+    if (!field) {
+      const { binding: _binding, ...rest } = element
+      return rest as CanvasDraftElement
+    }
+    field.bindings.push(element.id)
+    return {
+      ...element,
+      value: field.defaultValue,
+    }
+  })
+  return {
+    elements: nextElements,
+    fields: Array.from(fieldMap.values()).filter((field) => field.bindings.length > 0),
+  }
+}
+
+export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDraftDocument {
+  const source =
+    document.source ??
+    ({
+      kind: "scratch",
+      presetId: document.presetId,
+    } as const)
+  const fields = Array.isArray(document.fields) ? document.fields : []
+  const synced = syncBindingsIntoElements(
+    document.elements.map((element) => normalizeMonochromeElement(element)),
+    fields
+  )
   return {
     ...document,
-    elements: document.elements.map((element) => normalizeMonochromeElement(element)),
+    source,
+    templateId: document.templateId,
+    baseVersionId: document.baseVersionId,
+    lastSavedAt: document.lastSavedAt,
+    fields: synced.fields,
+    elements: synced.elements,
   }
 }
 
@@ -357,11 +440,16 @@ function buildPresetElements(presetId: string): CanvasDraftElement[] {
 }
 
 export function createDraftFromPreset(preset: CanvasDocumentPreset): CanvasDraftDocument {
-  return {
+  return normalizeDraftDocument({
     version: 1,
     id: preset.id,
     presetId: preset.id,
     name: preset.name,
+    source: {
+      kind: "scratch",
+      presetId: preset.id,
+    },
+    fields: [],
     width: preset.width,
     height: preset.height,
     elements: buildPresetElements(preset.id),
@@ -369,7 +457,7 @@ export function createDraftFromPreset(preset: CanvasDocumentPreset): CanvasDraft
       gridEnabled: true,
       snapEnabled: true,
     },
-  }
+  })
 }
 
 export function cloneDraftDocument(document: CanvasDraftDocument): CanvasDraftDocument {
@@ -388,6 +476,320 @@ export function getPresetById(presetId: string): CanvasDocumentPreset {
   }
 
   return fallbackPreset
+}
+
+export function getSystemTemplateById(templateId: string): TemplateDefinition {
+  const template = presetTemplateData.find((item) => item.id === templateId)
+  if (template) {
+    return template
+  }
+  throw new Error(`Unknown system template: ${templateId}`)
+}
+
+function inferLayerNameFromTemplateElement(
+  element: TemplateDefinition["elements"][number],
+  field?: TemplateDefinition["fields"][number]
+): string {
+  if (field) {
+    return field.label
+  }
+  if ("key" in element && element.key.startsWith(STATIC_TEMPLATE_KEY_PREFIX)) {
+    return element.key
+      .replace(/^_+/, "")
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (token) => token.toUpperCase())
+  }
+  return CANVAS_TOOL_LABELS[element.kind]
+}
+
+export function createDraftFromSystemTemplate(template: TemplateDefinition): CanvasDraftDocument {
+  const fieldMap = new Map(template.fields.map((field) => [field.key, field]))
+  const elements: CanvasDraftElement[] = template.elements.map((element, index) => {
+    const field = "key" in element ? fieldMap.get(element.key) : undefined
+    const meta = {
+      name: inferLayerNameFromTemplateElement(element, field),
+      visible: true,
+      locked: false,
+    }
+
+    switch (element.kind) {
+      case "rect":
+        return createCanvasElement("rect", index, {
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          height: element.height,
+          strokeWidth: element.strokeWidth,
+          fill: element.fill,
+          stroke: element.stroke,
+          radius: element.radius,
+          rotation: element.rotation,
+          meta,
+        })
+      case "line":
+        return createCanvasElement("line", index, {
+          x: element.x1,
+          y: element.y1,
+          x2: element.x2,
+          y2: element.y2,
+          strokeWidth: element.strokeWidth,
+          stroke: element.stroke,
+          meta,
+        })
+      case "text":
+        return createCanvasElement("text", index, {
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          fontSize: element.fontSize,
+          fontWeight: element.fontWeight,
+          align: element.align,
+          value: field ? (field.defaultValue ?? "") : (element.value ?? ""),
+          maxLines: element.maxLines,
+          rotation: element.rotation,
+          binding: field ? { fieldKey: field.key, kind: "text" } : undefined,
+          meta,
+        })
+      case "barcode":
+        return createCanvasElement("barcode", index, {
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          height: element.height,
+          value: field ? (field.defaultValue ?? "") : (element.value ?? ""),
+          format: element.format,
+          showValue: element.showValue,
+          rotation: element.rotation,
+          binding: field ? { fieldKey: field.key, kind: "barcode" } : undefined,
+          meta,
+        })
+      case "qr":
+        return createCanvasElement("qr", index, {
+          x: element.x,
+          y: element.y,
+          size: element.size,
+          value: field ? (field.defaultValue ?? "") : (element.value ?? ""),
+          errorCorrectionLevel: element.errorCorrectionLevel,
+          rotation: element.rotation,
+          binding: field ? { fieldKey: field.key, kind: "qr" } : undefined,
+          meta,
+        })
+      default:
+        return assertNever(element)
+    }
+  })
+
+  return normalizeDraftDocument({
+    version: 1,
+    id: template.id,
+    presetId: template.id,
+    name: template.name,
+    source: {
+      kind: "preset-template",
+      presetId: template.id,
+    },
+    width: template.width,
+    height: template.height,
+    fields: template.fields.map((field) => ({
+      key: field.key,
+      label: field.label,
+      defaultValue: field.defaultValue ?? "",
+      multiline: field.multiline ?? false,
+      bindings: [],
+    })),
+    elements,
+    editor: {
+      gridEnabled: true,
+      snapEnabled: true,
+    },
+  })
+}
+
+export function duplicateDraftAsTemplate(
+  document: CanvasDraftDocument,
+  name: string
+): CanvasDraftDocument {
+  return normalizeDraftDocument({
+    ...cloneDraftDocument(document),
+    id: `canvas-${crypto.randomUUID()}`,
+    name,
+    source: {
+      kind: "scratch",
+      presetId: document.presetId,
+    },
+    templateId: undefined,
+    baseVersionId: undefined,
+    lastSavedAt: undefined,
+  })
+}
+
+export function renameDraftField(
+  document: CanvasDraftDocument,
+  fieldKey: string,
+  label: string
+): CanvasDraftDocument {
+  return normalizeDraftDocument({
+    ...document,
+    fields: document.fields.map((field) => (field.key === fieldKey ? { ...field, label } : field)),
+  })
+}
+
+export function setDraftFieldValue(
+  document: CanvasDraftDocument,
+  fieldKey: string,
+  defaultValue: string
+): CanvasDraftDocument {
+  return normalizeDraftDocument({
+    ...document,
+    fields: document.fields.map((field) =>
+      field.key === fieldKey ? { ...field, defaultValue } : field
+    ),
+  })
+}
+
+export function setDraftFieldMultiline(
+  document: CanvasDraftDocument,
+  fieldKey: string,
+  multiline: boolean
+): CanvasDraftDocument {
+  return normalizeDraftDocument({
+    ...document,
+    fields: document.fields.map((field) =>
+      field.key === fieldKey ? { ...field, multiline } : field
+    ),
+  })
+}
+
+export function toggleElementBinding(
+  document: CanvasDraftDocument,
+  elementId: string,
+  enabled: boolean
+): CanvasDraftDocument {
+  const element = document.elements.find((item) => item.id === elementId)
+  if (!element || !isBindableKind(element)) {
+    return document
+  }
+
+  if (!enabled) {
+    const remainingBoundElementCount = document.elements.filter(
+      (item) =>
+        item.id !== elementId &&
+        isBindableKind(item) &&
+        item.binding?.fieldKey === element.binding?.fieldKey
+    ).length
+    return normalizeDraftDocument({
+      ...document,
+      elements: document.elements.map((item) =>
+        item.id === elementId ? ({ ...item, binding: undefined } as CanvasDraftElement) : item
+      ),
+      fields: element.binding
+        ? document.fields.filter((field) =>
+            field.key === element.binding?.fieldKey ? remainingBoundElementCount > 0 : true
+          )
+        : document.fields,
+    })
+  }
+
+  if (element.binding) {
+    return document
+  }
+
+  const nextFieldKey = createUniqueFieldKey(
+    document.fields.map((field) => field.key),
+    element.meta.name
+  )
+
+  return normalizeDraftDocument({
+    ...document,
+    elements: document.elements.map((item) =>
+      item.id === elementId
+        ? ({
+            ...item,
+            binding: {
+              fieldKey: nextFieldKey,
+              kind: item.kind,
+            },
+          } as CanvasDraftElement)
+        : item
+    ),
+    fields: [
+      ...document.fields,
+      {
+        key: nextFieldKey,
+        label: element.meta.name,
+        defaultValue: element.value,
+        multiline: inferFieldMultiline(element),
+        bindings: [],
+      },
+    ],
+  })
+}
+
+export function bindElementToExistingField(
+  document: CanvasDraftDocument,
+  elementId: string,
+  fieldKey: string
+): CanvasDraftDocument {
+  const field = document.fields.find((item) => item.key === fieldKey)
+  const element = document.elements.find((item) => item.id === elementId)
+  if (!field || !element || !isBindableKind(element)) {
+    return document
+  }
+
+  const previousFieldKey = element.binding?.fieldKey
+  const nextFields =
+    previousFieldKey && previousFieldKey !== fieldKey
+      ? document.fields.filter((item) => {
+          if (item.key !== previousFieldKey) {
+            return true
+          }
+          return document.elements.some(
+            (candidate) =>
+              candidate.id !== elementId &&
+              isBindableKind(candidate) &&
+              candidate.binding?.fieldKey === previousFieldKey
+          )
+        })
+      : document.fields
+
+  return normalizeDraftDocument({
+    ...document,
+    fields: nextFields,
+    elements: document.elements.map((item) =>
+      item.id === elementId
+        ? ({
+            ...item,
+            binding: {
+              fieldKey,
+              kind: item.kind,
+            },
+            value: field.defaultValue,
+          } as CanvasDraftElement)
+        : item
+    ),
+  })
+}
+
+export function updateBoundElementValue(
+  document: CanvasDraftDocument,
+  elementId: string,
+  value: string
+): CanvasDraftDocument {
+  const element = document.elements.find((item) => item.id === elementId)
+  if (!element) {
+    return document
+  }
+
+  if (!isBindableKind(element) || !element.binding) {
+    return normalizeDraftDocument({
+      ...document,
+      elements: document.elements.map((item) =>
+        item.id === elementId ? ({ ...item, value } as CanvasDraftElement) : item
+      ),
+    })
+  }
+
+  return setDraftFieldValue(document, element.binding.fieldKey, value)
 }
 
 export function getDraftStorageKey(presetId: string): string {
@@ -735,12 +1137,14 @@ export function compileDraftElement(
   element: CanvasDraftElement
 ): DirectCanvasDefinition["elements"][number] {
   const normalized = normalizeMonochromeElement(element)
+  const resolvedKey =
+    isBindableKind(normalized) && normalized.binding ? normalized.binding.fieldKey : normalized.id
 
   switch (normalized.kind) {
     case "text":
       return {
         kind: "text",
-        key: normalized.id,
+        key: resolvedKey,
         x: normalized.x,
         y: normalized.y,
         width: normalized.width,
@@ -777,7 +1181,7 @@ export function compileDraftElement(
     case "barcode":
       return {
         kind: "barcode",
-        key: normalized.id,
+        key: resolvedKey,
         x: normalized.x,
         y: normalized.y,
         width: normalized.width,
@@ -790,7 +1194,7 @@ export function compileDraftElement(
     case "qr":
       return {
         kind: "qr",
-        key: normalized.id,
+        key: resolvedKey,
         x: normalized.x,
         y: normalized.y,
         size: normalized.size,
@@ -813,6 +1217,49 @@ export function compileDraftToCanvasDefinition(
       .filter((element) => element.meta.visible)
       .map((element) => compileDraftElement(element)),
   }
+}
+
+export function compileDraftToFilledCanvasDefinition(
+  document: CanvasDraftDocument,
+  input: Record<string, string>
+): DirectCanvasDefinition {
+  const fieldMap = new Map(
+    document.fields.map((field) => [field.key, input[field.key] ?? field.defaultValue ?? ""])
+  )
+
+  return {
+    id: document.id,
+    name: document.name,
+    width: document.width,
+    height: document.height,
+    elements: document.elements
+      .filter((element) => element.meta.visible)
+      .map((element) => {
+        const compiled = compileDraftElement(element)
+        if (
+          (compiled.kind === "text" || compiled.kind === "barcode" || compiled.kind === "qr") &&
+          isBindableKind(element) &&
+          element.binding
+        ) {
+          const resolvedValue = fieldMap.get(element.binding.fieldKey) ?? element.value
+          return {
+            ...compiled,
+            value: resolvedValue,
+          }
+        }
+        return compiled
+      }),
+  }
+}
+
+export function buildTemplateFieldsFromDraft(document: CanvasDraftDocument) {
+  return document.fields.map((field) => ({
+    key: field.key,
+    label: field.label,
+    required: false,
+    multiline: field.multiline,
+    defaultValue: field.defaultValue,
+  }))
 }
 
 function createPreviewRenderOptions(renderOptions: RenderOptions) {

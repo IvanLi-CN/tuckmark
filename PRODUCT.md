@@ -44,6 +44,20 @@ The `templates` and `canvas` pages are the formal production workspaces. They
 share the same print artifact seam even though they expose different editing
 models.
 
+`templates` remains the structured print-entry workspace. It now groups
+read-only system templates and browser-local user templates in one list.
+Selecting a template card enters structured row entry directly, while template
+editing remains an explicit secondary action.
+
+`canvas` is the template editor workspace. It supports scratch drafts, editable
+copies of system templates, and browser-local user templates with save, save
+as, and version history semantics. Version history is opened from the save
+actions instead of occupying the main inspector rail full time.
+
+Browser-local user templates are intentionally local to the current browser.
+There is no account sync, remote template library, or server-owned template
+history surface in v1.
+
 ## Print Path Contract
 
 The Web product exposes two formal print paths:
