@@ -1173,8 +1173,8 @@ function WorkbenchLayout({
   const modeLabel = controller.context.mode === "demo" ? "Demo mode" : "Runtime mode"
 
   return (
-    <div className={cn("tm-shell", isCanvasRoute && "tm-shell--canvas")}>
-      <header className="tm-header">
+    <div className={cn("tm-shell", "tm-selectable-none", isCanvasRoute && "tm-shell--canvas")}>
+      <header className="tm-header tm-selectable-none">
         <div className="tm-header__left">
           <ProductMark />
           <nav className="tm-nav" aria-label="Main navigation">
@@ -1186,7 +1186,7 @@ function WorkbenchLayout({
                   to={item.to}
                   end={item.to === "/"}
                   className={({ isActive }) =>
-                    cn("tm-nav__link", isActive && "tm-nav__link--active")
+                    cn("tm-nav__link", "tm-selectable-none", isActive && "tm-nav__link--active")
                   }
                 >
                   <Icon className="size-4" />
@@ -1221,7 +1221,7 @@ function WorkbenchLayout({
         <Outlet />
       </main>
 
-      <footer className="tm-footer">
+      <footer className="tm-footer tm-selectable-none">
         <div className="tm-footer__row">
           <span>{surfaceLabel}</span>
           <span>{modeLabel}</span>
@@ -1386,7 +1386,7 @@ function StatusPill({
   tone: "ok" | "warn" | "muted"
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-background/70 px-4 py-3 text-sm">
+    <div className="tm-selectable-none flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-background/70 px-4 py-3 text-sm">
       <span className="text-muted-foreground">{label}</span>
       <span
         className={cn(
@@ -2223,7 +2223,7 @@ function FocusPairSwitch({
 
 function EmptyMini({ text }: { text: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
+    <div className="tm-selectable-none rounded-2xl border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
       {text}
     </div>
   )
@@ -2310,7 +2310,7 @@ function TemplateGroup({
 }) {
   return (
     <section className="tm-template-group">
-      <div className="tm-template-list__section-title text-sm font-medium text-muted-foreground">
+      <div className="tm-template-list__section-title tm-selectable-none text-sm font-medium text-muted-foreground">
         {title}
       </div>
       {entries.length === 0 ? (

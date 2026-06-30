@@ -196,6 +196,16 @@ output.
   - zero selection shows a focused onboarding hint
   - multi-selection shows batch actions and does not silently edit the first
     selected element as if it were a single-selection state
+- Workbench selectable contract:
+  - shared shell chrome, workspace chrome, static notices, and list-card
+    metadata are non-selectable by default
+  - editable fields, textareas, inline text editing, and structured table
+    inputs preserve normal text selection and editing behavior
+  - copy-relevant read-only values such as canvas size, zoom value, selection
+    status, and layer names remain selectable through explicit read-only field
+    surfaces instead of plain static text
+  - canvas drag, marquee select, pan, zoom, and layer switching must not leave
+    behind stray browser text-highlight artifacts
 
 ### Recent activity and persistence contract
 
@@ -265,6 +275,9 @@ output.
 - Canvas workspace supports marquee selection, Shift multi-select, stage pan,
   wheel zoom, and fit-to-view without horizontal shell breakage.
 - Text supports inline stage editing via double click.
+- Shared shell, templates, canvas, and system pages prevent accidental text
+  selection on non-editable chrome while preserving selection and copy
+  behavior in editable or read-only value fields.
 - Refresh restores the latest preset-scoped draft and reset clears it.
 - `/canvas` can load system templates, scratch drafts, and browser-local user
   templates through route query parameters.
@@ -325,6 +338,26 @@ output.
   ![Canvas output preview workspace](./assets/canvas-output-preview-1280x800.png)
 
 - `1280×800` template workspace showing grouped `系统模板 / 我的模板` cards with a browser-local user template present
+
+- `1440×900` homepage shell with non-selectable shared chrome and selectable status/value fields preserved where copying matters
+
+  PR: include
+  ![Home selectable contract](./assets/selectable/home-selectable-1440x900.png)
+
+- `1280×800` template workspace with non-selectable list/table chrome and selectable inline editing field behavior
+
+  PR: include
+  ![Templates selectable contract](./assets/selectable/templates-selectable-1280x800.png)
+
+- `1280×800` canvas workspace default state with non-selectable toolbar/stage chrome and selectable read-only metadata fields
+
+  PR: include
+  ![Canvas selectable default](./assets/selectable/canvas-selectable-default-1280x800.png)
+
+- `1280×800` canvas workspace text-selected state with selectable property editor fields preserved inside the hardened chrome contract
+
+  PR: include
+  ![Canvas selectable text state](./assets/selectable/canvas-selectable-text-1280x800.png)
 
   PR: include
   ![Template grouped user templates](./assets/templates-user-groups-1280x800.png)
