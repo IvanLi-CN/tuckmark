@@ -2946,7 +2946,7 @@ function CanvasStageView({
                       height={Math.max(bounds.height, 1)}
                       fill="rgba(255,255,255,0.001)"
                     />
-                    {!issue ? renderElementNode(element) : null}
+                    {renderElementNode(element)}
                   </Group>
                 )
               })}

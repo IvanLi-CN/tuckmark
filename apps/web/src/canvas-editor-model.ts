@@ -12,6 +12,7 @@ import type {
   CanvasDraftDocument,
   CanvasDraftElement,
   CanvasDraftField,
+  CanvasDraftSource,
   CanvasElement,
   RenderOptions,
 } from "./types.js"
@@ -138,6 +139,11 @@ function normalizeMonochromeFill(fill: string | undefined): string {
 
 function normalizeMonochromeElement(element: CanvasDraftElement): CanvasDraftElement {
   switch (element.kind) {
+    case "text":
+      return {
+        ...element,
+        width: element.width ?? 180,
+      }
     case "rect":
       return {
         ...element,
@@ -187,7 +193,8 @@ function createUniqueFieldKey(existingKeys: string[], seed: string): string {
 
 function syncBindingsIntoElements(
   elements: CanvasDraftElement[],
-  fields: CanvasDraftField[]
+  fields: CanvasDraftField[],
+  source?: CanvasDraftSource
 ): { elements: CanvasDraftElement[]; fields: CanvasDraftField[] } {
   const fieldMap = new Map<string, CanvasDraftField>(
     fields.map((field) => [field.key, { ...field, bindings: [] }])
@@ -202,9 +209,13 @@ function syncBindingsIntoElements(
       return rest as CanvasDraftElement
     }
     field.bindings.push(element.id)
+    const value =
+      source?.kind === "preset-template" && field.defaultValue === ""
+        ? field.label
+        : field.defaultValue
     return {
       ...element,
-      value: field.defaultValue,
+      value,
     }
   })
   return {
@@ -221,9 +232,31 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
       presetId: document.presetId,
     } as const)
   const fields = Array.isArray(document.fields) ? document.fields : []
+  const normalizedFields =
+    source.kind === "preset-template" &&
+    fields.length > 0 &&
+    fields.every((field) => field.defaultValue === "")
+      ? (() => {
+          const templateFields = new Map(
+            getSystemTemplateById(source.presetId).fields.map((field) => [field.key, field])
+          )
+          return fields.map((field) => {
+            const templateField = templateFields.get(field.key)
+            if (!templateField) {
+              return field
+            }
+            return {
+              ...field,
+              label: field.label || templateField.label,
+              defaultValue: templateField.defaultValue ?? "",
+            }
+          })
+        })()
+      : fields
   const synced = syncBindingsIntoElements(
     document.elements.map((element) => normalizeMonochromeElement(element)),
-    fields
+    normalizedFields,
+    source
   )
   return {
     ...document,
@@ -504,6 +537,11 @@ function inferLayerNameFromTemplateElement(
 
 export function createDraftFromSystemTemplate(template: TemplateDefinition): CanvasDraftDocument {
   const fieldMap = new Map(template.fields.map((field) => [field.key, field]))
+  const resolveInitialFieldValue = (field: TemplateDefinition["fields"][number] | undefined) =>
+    field ? (field.defaultValue ?? field.label) : undefined
+  const getTextElementWidth = (
+    element: Extract<TemplateDefinition["elements"][number], { kind: "text" }>
+  ) => element.width ?? 180
   const elements: CanvasDraftElement[] = template.elements.map((element, index) => {
     const field = "key" in element ? fieldMap.get(element.key) : undefined
     const meta = {
@@ -540,11 +578,11 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
         return createCanvasElement("text", index, {
           x: element.x,
           y: element.y,
-          width: element.width,
+          width: getTextElementWidth(element),
           fontSize: element.fontSize,
           fontWeight: element.fontWeight,
           align: element.align,
-          value: field ? (field.defaultValue ?? "") : (element.value ?? ""),
+          value: resolveInitialFieldValue(field) ?? element.value ?? "",
           maxLines: element.maxLines,
           rotation: element.rotation,
           binding: field ? { fieldKey: field.key, kind: "text" } : undefined,
@@ -556,7 +594,7 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
           y: element.y,
           width: element.width,
           height: element.height,
-          value: field ? (field.defaultValue ?? "") : (element.value ?? ""),
+          value: resolveInitialFieldValue(field) ?? element.value ?? "",
           format: element.format,
           showValue: element.showValue,
           rotation: element.rotation,
@@ -568,7 +606,7 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
           x: element.x,
           y: element.y,
           size: element.size,
-          value: field ? (field.defaultValue ?? "") : (element.value ?? ""),
+          value: resolveInitialFieldValue(field) ?? element.value ?? "",
           errorCorrectionLevel: element.errorCorrectionLevel,
           rotation: element.rotation,
           binding: field ? { fieldKey: field.key, kind: "qr" } : undefined,
