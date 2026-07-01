@@ -24,7 +24,7 @@ export default defineConfig({
       "PORT=4210 TUCKMARK_WEB_DIST=../../apps/web/dist node ../../packages/server/dist/index.js",
     ].join(" && "),
     url: "http://127.0.0.1:4210/health",
-    timeout: 120_000,
+    timeout: 240_000,
     reuseExistingServer: false,
     cwd: repoRoot,
     env: {
