@@ -15,6 +15,7 @@ import {
   ScanSearch,
   Settings2,
   Trash2,
+  Upload,
   Wifi,
 } from "lucide-react"
 import React from "react"
@@ -29,13 +30,18 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom"
-import { buildSvg, getTemplateById } from "../../../packages/core/src/web.js"
+import {
+  buildSvg,
+  getTemplateById,
+  parseUserTemplatePackage,
+} from "../../../packages/core/src/web.js"
 
 import type { ApiClient } from "./api-client.js"
 import type { BrowserPrintSource } from "./browser-print-payload.js"
 import {
   type CanvasStoryScenario,
   compileDraftToFilledCanvasDefinition,
+  createDraftFromUserTemplatePackage,
 } from "./canvas-editor-model.js"
 import { CanvasWorkspace } from "./canvas-page.js"
 import { ProductMark } from "./components/product-mark.js"
@@ -65,7 +71,11 @@ import type {
   TemplateField,
   UserTemplateSummary,
 } from "./types.js"
-import { loadWorkingCopy, readUserTemplateHistory } from "./user-template-store.js"
+import {
+  loadWorkingCopy,
+  readUserTemplateHistory,
+  saveUserTemplate,
+} from "./user-template-store.js"
 import { createInitialTemplateRows, useWorkbenchController } from "./workbench-controller.js"
 
 type AppProps = {
@@ -1562,6 +1572,9 @@ function TemplatesPage({
     !state.selectedTemplateRow ||
     activeUserTemplatePending
   const [listMode, setListMode] = React.useState<TemplateListMode>("large")
+  const importInputId = React.useId()
+  const importInputRef = React.useRef<HTMLInputElement | null>(null)
+  const [importStatus, setImportStatus] = React.useState("")
   const [tableShellElement, setTableShellElement] = React.useState<HTMLDivElement | null>(null)
   const tableShellWidth = useElementClientWidth(tableShellElement)
   const activeTemplateFields = state.activeTemplate ? toTemplateFieldList(state.activeTemplate) : []
@@ -1573,6 +1586,29 @@ function TemplatesPage({
   React.useEffect(() => {
     void controller.refreshUserTemplates()
   }, [controller.refreshUserTemplates])
+
+  const importTemplatePackage = React.useCallback(
+    async (file: File) => {
+      try {
+        const templatePackage = parseUserTemplatePackage(JSON.parse(await file.text()))
+        const draft = createDraftFromUserTemplatePackage(templatePackage)
+        await saveUserTemplate({
+          name: templatePackage.name,
+          description: templatePackage.description,
+          document: draft,
+        })
+        await controller.refreshUserTemplates()
+        setImportStatus(`已导入 ${templatePackage.name}`)
+      } catch (error) {
+        setImportStatus(error instanceof Error ? `导入失败：${error.message}` : "导入失败。")
+      } finally {
+        if (importInputRef.current) {
+          importInputRef.current.value = ""
+        }
+      }
+    },
+    [controller.refreshUserTemplates]
+  )
 
   return (
     <section className="tm-workspace">
@@ -1594,6 +1630,29 @@ function TemplatesPage({
               title="模板列表"
               actions={
                 <div className="flex flex-wrap justify-end gap-2">
+                  <input
+                    ref={importInputRef}
+                    id={importInputId}
+                    type="file"
+                    accept="application/json,.json"
+                    className="sr-only"
+                    aria-label="选择模板包文件"
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0]
+                      if (file) {
+                        void importTemplatePackage(file)
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => importInputRef.current?.click()}
+                  >
+                    <Upload className="size-4" />
+                    <span>导入模板</span>
+                  </Button>
                   <Button
                     type="button"
                     size="sm"
@@ -1682,6 +1741,11 @@ function TemplatesPage({
                   navigate(`/canvas?source=user-template&templateId=${entry.template.id}`)
                 }}
               />
+              {importStatus ? (
+                <div className="tm-template-list__status" role="status">
+                  {importStatus}
+                </div>
+              ) : null}
             </div>
           </aside>
         ) : null}

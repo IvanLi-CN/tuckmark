@@ -125,6 +125,16 @@
 - Browser-local user template preview/print reuses the shared canvas artifact
   seam by compiling row values into a concrete `DirectCanvasDefinition` on the
   client before preview or print dispatch.
+- Agent-generated user template packages are covered by a shared core schema
+  and compiler. CLI commands can validate, preview, generate packets, and print
+  packages through the existing canvas artifact seam.
+- The template workspace can import a `tuckmark.user-template-package.v1` JSON
+  file and save it as a browser-local user template.
+- Repo-local developer and user skills document the source-tree and released
+  CLI workflows for agent template generation and printing.
+- A high-cost agent practice script can call `codex exec` to generate multiple
+  electronics organizer label packages, validate and preview them, and write a
+  static HTML self-evaluation report. It does not support physical printing.
 - Same-device sync intentionally stops at:
   - recent templates
   - recent prints

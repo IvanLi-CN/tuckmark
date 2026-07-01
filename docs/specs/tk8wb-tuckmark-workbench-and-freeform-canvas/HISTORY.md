@@ -85,3 +85,11 @@ while the workbench was being productized:
   - canvas drag, marquee, pan, and zoom flows now avoid stray page-level text
     highlights while preserving inline text editing and structured-input copy
     paths
+- Agent template package support was then added as the deterministic bridge
+  between LLM-assisted template authoring and Tuckmark's local-first printing
+  model:
+  - agents generate `tuckmark.user-template-package.v1` JSON instead of relying
+    on a runtime LLM inside Tuckmark
+  - CLI validates and renders packages through the same canvas artifact seam
+  - Web import saves packages as browser-local user templates without changing
+    the service sync boundary

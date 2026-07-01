@@ -11,6 +11,7 @@ import {
   createCanvasElement,
   createDraftFromPreset,
   createDraftFromSystemTemplate,
+  createDraftFromUserTemplatePackage,
   getElementBounds,
   getElementGeometry,
   getElementSelectionBounds,
@@ -151,6 +152,59 @@ describe("canvas-editor-model monochrome contract", () => {
     expect(rect.stroke).toBe("#111111")
     assertLineElement(line)
     expect(line.stroke).toBe("#111111")
+  })
+
+  it("imports agent user template packages into bindable canvas drafts", () => {
+    const draft = createDraftFromUserTemplatePackage({
+      schema: "tuckmark.user-template-package.v1",
+      id: "ina219-module-bin",
+      name: "INA219 Module Bin",
+      description: "Sensor storage label",
+      canvas: { width: 192, height: 96 },
+      fields: [
+        { key: "part", label: "Part", defaultValue: "INA226", multiline: false },
+        { key: "bus", label: "Bus", defaultValue: "I2C", multiline: false },
+      ],
+      elements: [
+        {
+          kind: "text",
+          key: "part",
+          x: 10,
+          y: 34,
+          width: 172,
+          fontSize: 24,
+          fontWeight: "bold",
+          align: "center",
+          maxLines: 1,
+          rotation: 0,
+        },
+        {
+          kind: "text",
+          key: "bus",
+          x: 10,
+          y: 66,
+          width: 172,
+          fontSize: 14,
+          fontWeight: "normal",
+          align: "center",
+          maxLines: 1,
+          rotation: 0,
+        },
+      ],
+      sampleInput: { part: "INA219", bus: "I2C" },
+      renderOptions: { paperType: "gap", printWidthDots: 384 },
+      tags: ["electronics"],
+    })
+
+    expect(draft.name).toBe("INA219 Module Bin")
+    expect(draft.source.kind).toBe("scratch")
+    expect(draft.fields.map((field) => field.key)).toEqual(["part", "bus"])
+    expect(draft.fields[0]).toMatchObject({ key: "part", defaultValue: "INA219" })
+    expect(draft.elements[0]).toMatchObject({
+      kind: "text",
+      value: "INA219",
+      binding: { fieldKey: "part", kind: "text" },
+    })
   })
 
   it("persists monochrome drafts and clears preset-scoped storage", () => {

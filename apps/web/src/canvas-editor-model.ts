@@ -3,6 +3,7 @@ import {
   estimateCharsPerLine,
   presetTemplateData,
   type TemplateDefinition,
+  type UserTemplatePackage,
   wrapText,
 } from "../../../packages/core/src/web.js"
 
@@ -639,6 +640,37 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
     editor: {
       gridEnabled: true,
       snapEnabled: true,
+    },
+  })
+}
+
+export function createDraftFromUserTemplatePackage(
+  templatePackage: UserTemplatePackage
+): CanvasDraftDocument {
+  const template: TemplateDefinition = {
+    id: templatePackage.id,
+    name: templatePackage.name,
+    description: templatePackage.description,
+    width: templatePackage.canvas.width,
+    height: templatePackage.canvas.height,
+    fields: templatePackage.fields.map((field) => ({
+      key: field.key,
+      label: field.label,
+      required: false,
+      multiline: field.multiline,
+      defaultValue: templatePackage.sampleInput[field.key] ?? field.defaultValue,
+    })),
+    elements: templatePackage.elements,
+    tags: templatePackage.tags,
+  }
+
+  return normalizeDraftDocument({
+    ...createDraftFromSystemTemplate(template),
+    id: `agent-template-${templatePackage.id}`,
+    presetId: templatePackage.id,
+    source: {
+      kind: "scratch",
+      presetId: templatePackage.id,
     },
   })
 }

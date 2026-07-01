@@ -29,6 +29,25 @@ You can still override this with `TUCKMARK_DETONGER_COMMAND` or `TUCKMARK_DETONG
 - `packages/mcp`: MCP server
 - `apps/web`: Web UI
 
+## Agent Template Packages
+
+Agents can create fixed-size user template packages without calling an LLM from
+Tuckmark itself. A package uses the `tuckmark.user-template-package.v1` schema,
+declares a fixed mono canvas, fixed elements, fields, sample input, and render
+options, then compiles to the same canvas artifact path used by direct printing.
+
+Useful local commands:
+
+- `bun tsx packages/cli/src/index.ts template-package validate --file <package.json>`
+- `bun tsx packages/cli/src/index.ts template-package preview --file <package.json>`
+- `bun tsx packages/cli/src/index.ts template-package packets --file <package.json>`
+- `TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 bun tsx packages/cli/src/index.ts template-package print --printer <name> --file <package.json>`
+
+The print command remains gated by `TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1` and
+the existing printer capability checks. High-cost agent practice scripts only
+generate packages, previews, packets, self-evaluation data, and HTML reports;
+they do not contain a physical print path.
+
 ## Local Preview
 
 ### Recommended startup path
