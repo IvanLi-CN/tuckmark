@@ -312,10 +312,10 @@ output.
   PR: include
   ![Template workspace](./assets/templates-1100x820-disabled-rail.png)
 
-- `1280×800` template large-card grid remains two-up inside the left workspace pane
+- `1440×900` template large-card grid keeps same-row cards equal height and exposes add-template entry points in both the list header and empty user-template group
 
   PR: include
-  ![Template large grid](./assets/templates-large-grid-1280x800.png)
+  ![Template large grid with add-template actions](./assets/templates-large-grid-add-button-1440x900.png)
 
 - `1280×800` canvas workspace in professional three-column editor mode
 

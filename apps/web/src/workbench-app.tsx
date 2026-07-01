@@ -1597,7 +1597,16 @@ function TemplatesPage({
               icon={LayoutTemplate}
               title="模板列表"
               actions={
-                <div className="flex gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate("/canvas")}
+                  >
+                    <Plus className="size-4" />
+                    <span>新增模板</span>
+                  </Button>
                   <Button
                     type="button"
                     size="sm"
@@ -1651,6 +1660,16 @@ function TemplatesPage({
                 listMode={listMode}
                 activeEntryId={state.activeTemplateEntry?.id ?? ""}
                 emptyText="还没有保存到浏览器本地的用户模板。"
+                emptyAction={
+                  <button
+                    type="button"
+                    className="tm-template-list__empty-action-button"
+                    onClick={() => navigate("/canvas")}
+                  >
+                    <Plus className="size-4" />
+                    <span>新增模板</span>
+                  </button>
+                }
                 onSelect={(entryId) => {
                   state.setTemplateEntryId(entryId)
                   if (usesSingleOutletFlow) {
@@ -2225,10 +2244,11 @@ function FocusPairSwitch({
   )
 }
 
-function EmptyMini({ text }: { text: string }) {
+function EmptyMini({ children, text }: { children?: React.ReactNode; text: string }) {
   return (
-    <div className="tm-selectable-none rounded-2xl border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
-      {text}
+    <div className="tm-template-list__empty-box">
+      <div>{text}</div>
+      {children}
     </div>
   )
 }
@@ -2301,6 +2321,7 @@ function TemplateGroup({
   listMode,
   activeEntryId,
   emptyText = "当前分组没有模板。",
+  emptyAction,
   onSelect,
   onEdit,
 }: {
@@ -2309,6 +2330,7 @@ function TemplateGroup({
   listMode: TemplateListMode
   activeEntryId: string
   emptyText?: string
+  emptyAction?: React.ReactNode
   onSelect: (entryId: string) => void
   onEdit: (entryId: string) => void
 }) {
@@ -2319,7 +2341,11 @@ function TemplateGroup({
       </div>
       {entries.length === 0 ? (
         <div className="tm-template-list__section-empty">
-          <EmptyMini text={emptyText} />
+          <EmptyMini text={emptyText}>
+            {emptyAction ? (
+              <div className="tm-template-list__section-empty-action">{emptyAction}</div>
+            ) : null}
+          </EmptyMini>
         </div>
       ) : (
         <div
