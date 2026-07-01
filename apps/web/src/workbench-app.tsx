@@ -1647,7 +1647,7 @@ function TemplatesPage({
                       icon={LayoutGrid}
                       mode="icon"
                       size="xs"
-                      variant="outline"
+                      variant="ghost"
                       selected={listMode === "large"}
                       onClick={() => setListMode("large")}
                     />
@@ -1657,7 +1657,7 @@ function TemplatesPage({
                       icon={LayoutList}
                       mode="icon"
                       size="xs"
-                      variant="outline"
+                      variant="ghost"
                       selected={listMode === "list"}
                       onClick={() => setListMode("list")}
                     />

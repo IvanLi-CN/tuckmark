@@ -65,10 +65,10 @@ export const Gallery: Story = {
             icon={LayoutGrid}
             mode="icon"
             size="xs"
-            variant="outline"
+            variant="ghost"
             selected
           />
-          <ActionButton name="列表" icon={LayoutList} mode="icon" size="xs" variant="outline" />
+          <ActionButton name="列表" icon={LayoutList} mode="icon" size="xs" variant="ghost" />
         </ActionButtonGroup>
       </section>
     </div>
