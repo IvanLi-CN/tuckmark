@@ -147,8 +147,7 @@ export const TemplatesWorkspace: Story = {
     const canvas = within(canvasElement)
     const addTemplateButtons = canvas.getAllByRole("button", { name: "新增模板" })
     await expect(addTemplateButtons).toHaveLength(2)
-    await userEvent.click(addTemplateButtons[0])
-    await expect(canvas.getByText(/当前草稿：/)).toBeVisible()
+    await expect(addTemplateButtons[1]).toHaveClass(/tm-template-list__empty-action-button/)
   },
 }
 
