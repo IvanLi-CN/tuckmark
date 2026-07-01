@@ -38,6 +38,16 @@ const browserPayloadMocks = vi.hoisted(() => ({
   materializeBrowserArtifactData: vi.fn(),
 }))
 
+const pwaToastMocks = vi.hoisted(() => ({
+  confirmAndApplyPwaUpdate: vi.fn(),
+  usePwaUpdate: vi.fn(() => ({
+    status: "idle",
+    registration: null,
+    waitingWorker: null,
+    error: null,
+  })),
+}))
+
 vi.mock("react-konva", async () => {
   const React = await import("react")
   const createMockNode = (options?: { imperativeHandle?: object }) =>
@@ -70,6 +80,36 @@ vi.mock("react-konva", async () => {
 
 vi.mock("./browser-printer.js", () => browserPrinterMocks)
 vi.mock("./browser-print-payload.js", () => browserPayloadMocks)
+vi.mock("./pwa-update-toast.js", async () => {
+  const React = await import("react")
+  return {
+    confirmAndApplyPwaUpdate: pwaToastMocks.confirmAndApplyPwaUpdate,
+    usePwaUpdate: pwaToastMocks.usePwaUpdate,
+    PwaUpdateToast({
+      snapshot,
+      onUpdate,
+    }: {
+      snapshot: { status: string; error: string | null }
+      onUpdate: () => void
+    }) {
+      if (snapshot.status !== "ready") {
+        return null
+      }
+      return React.createElement(
+        "aside",
+        { "aria-label": "Tuckmark Web update status" },
+        React.createElement("span", null, "新版本可用"),
+        React.createElement(
+          "button",
+          {
+            onClick: onUpdate,
+          },
+          "更新"
+        )
+      )
+    },
+  }
+})
 
 const fetchMock = vi.fn<typeof fetch>()
 const originalFetch = globalThis.fetch
@@ -695,6 +735,13 @@ beforeEach(async () => {
   browserPayloadMocks.materializeBrowserArtifactData.mockImplementation(async (source) =>
     makeBrowserMaterialization(source.kind)
   )
+  pwaToastMocks.confirmAndApplyPwaUpdate.mockReset()
+  pwaToastMocks.usePwaUpdate.mockReturnValue({
+    status: "idle",
+    registration: null,
+    waitingWorker: null,
+    error: null,
+  })
 
   memoryStorage.clear()
   await resetUserTemplateStoreForTest()
@@ -727,6 +774,43 @@ describe("web workbench app", () => {
     expect(document.body.textContent).toContain("系统")
     expect(document.body.textContent).toContain("Browser static")
     expect(document.body.textContent).toContain("Runtime mode")
+  })
+
+  it("shows a non-blocking PWA update prompt when a new browser-static version is ready", async () => {
+    pwaToastMocks.usePwaUpdate.mockReturnValue({
+      status: "ready",
+      registration: null,
+      waitingWorker: null,
+      error: null,
+    })
+
+    await renderApp(browserRuntimeContext)
+
+    expect(document.body.textContent).toContain("新版本可用")
+
+    await act(async () => {
+      queryButton("更新").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush()
+    })
+
+    expect(pwaToastMocks.confirmAndApplyPwaUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "ready" })
+    )
+  })
+
+  it("keeps new-version caching silent until the update is ready", async () => {
+    pwaToastMocks.usePwaUpdate.mockReturnValue({
+      status: "installing",
+      registration: null,
+      waitingWorker: null,
+      error: null,
+    })
+
+    await renderApp(browserRuntimeContext)
+
+    expect(document.body.textContent).not.toContain("新版本可用")
+    expect(document.body.textContent).not.toContain("正在缓存")
+    expect(document.querySelector('[aria-label="Tuckmark Web update status"]')).toBeNull()
   })
 
   it("marks shared shell chrome as non-selectable", async () => {
