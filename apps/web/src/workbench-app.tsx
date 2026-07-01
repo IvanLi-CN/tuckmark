@@ -61,6 +61,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
 import { cn } from "./lib/utils.js"
+import { confirmAndApplyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
 import type {
   AppContext,
   CanvasDocumentPreset,
@@ -1176,6 +1177,7 @@ function WorkbenchLayout({
 }) {
   const location = useLocation()
   const [drawerOpen, setDrawerOpen] = React.useState(false)
+  const pwaUpdate = usePwaUpdate(controller.context)
   const isCanvasRoute = location.pathname === "/canvas"
 
   const surfaceLabel =
@@ -1244,6 +1246,8 @@ function WorkbenchLayout({
           </span>
         </div>
       </footer>
+
+      <PwaUpdateToast snapshot={pwaUpdate} onUpdate={() => confirmAndApplyPwaUpdate(pwaUpdate)} />
 
       <DeviceDrawer controller={controller} open={drawerOpen} onOpenChange={setDrawerOpen} />
     </div>

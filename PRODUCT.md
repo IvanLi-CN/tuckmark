@@ -104,6 +104,12 @@ behavior must never fork into a separate demo-only page tree.
 Static deployments keep browser history routing semantics and must ship a
 `404.html` fallback for deep-link recovery.
 
+`browser-static` is a Progressive Web App after the first successful online
+load. It precaches the workbench app shell and static runtime assets so the
+formal pages can refresh offline, while new versions cache in the background
+silently and prompt for a user-confirmed refresh only after the update is ready
+to activate.
+
 GitHub Pages is an owner-facing static Web runtime. It is not a Storybook
 replacement, not a docs site, and not a second product surface.
 

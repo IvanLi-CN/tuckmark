@@ -25,6 +25,8 @@ function normalizeBasePath(value: string): string {
 function contentType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase()
   switch (ext) {
+    case ".webmanifest":
+      return "application/manifest+json; charset=utf-8"
     case ".css":
       return "text/css; charset=utf-8"
     case ".js":
@@ -60,6 +62,20 @@ const basePath = normalizeBasePath(parseFlag("--base", "/"))
 const port = Number.parseInt(parseFlag("--port", "4173"), 10)
 const indexPath = path.join(root, "index.html")
 
+function resolveStaticPath(relativePath: string): string | null {
+  const normalized = relativePath || "index.html"
+  const candidate = path.resolve(root, normalized)
+  const relativeToRoot = path.relative(root, candidate)
+  if (relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) {
+    return null
+  }
+  return candidate
+}
+
+function requestAcceptsHtml(req: http.IncomingMessage): boolean {
+  return req.headers.accept?.includes("text/html") ?? false
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`)
@@ -68,25 +84,28 @@ const server = http.createServer(async (req, res) => {
       ? pathname.slice(basePath.length)
       : pathname.slice(1)
 
-    if (relativePath.startsWith("assets/")) {
-      const assetPath = path.join(root, relativePath)
-      try {
-        const assetStat = await fs.stat(assetPath)
-        if (assetStat.isFile()) {
-          await sendFile(res, assetPath)
-          return
-        }
-      } catch {
-        res.writeHead(404, { "content-type": "text/plain; charset=utf-8" })
-        res.end("Not Found")
-        return
-      }
-    }
-
     if (pathname === "/" && basePath !== "/") {
       res.writeHead(302, { location: basePath })
       res.end()
       return
+    }
+
+    const staticPath = resolveStaticPath(relativePath)
+    if (staticPath) {
+      try {
+        const assetStat = await fs.stat(staticPath)
+        if (assetStat.isFile()) {
+          await sendFile(res, staticPath)
+          return
+        }
+      } catch {
+        const looksLikeStaticFile = path.extname(relativePath) !== ""
+        if (looksLikeStaticFile || !requestAcceptsHtml(req)) {
+          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" })
+          res.end("Not Found")
+          return
+        }
+      }
     }
 
     await sendFile(res, indexPath)

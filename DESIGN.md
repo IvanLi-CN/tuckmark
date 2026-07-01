@@ -99,6 +99,10 @@ Pages must remain static:
 - no server-side API dependency
 - no authenticated production backend
 - no release-side runtime coupling
+- first successful online load installs a `browser-static` PWA app shell that
+  can refresh `home`, `templates`, `canvas`, and `system` offline
+- new static versions cache silently in the background and surface a
+  non-blocking update prompt only after they are ready to activate
 
 `browser-static` runtime performs template loading, preview generation, artifact
 storage, and packet encoding fully in the browser. The browser-direct print path
@@ -109,6 +113,9 @@ explicit hardware gating.
 
 `browser-static` keeps BrowserRouter semantics. It must not switch to hash
 routing as a deployment workaround.
+
+The PWA contract belongs to `browser-static` only. It does not make
+`server-http` usable without its server process.
 
 ## Responsive Contract
 
