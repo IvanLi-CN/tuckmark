@@ -232,6 +232,36 @@ test("template large mode keeps two columns in the standard three-pane width", a
   expect(gridMetrics.firstTwo[0]?.width).toBeGreaterThan(120)
 })
 
+test("template page keeps all three panes equal height on desktop", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto("/templates?demo=true")
+
+  const paneMetrics = await page.locator(".tm-pane-grid--template").evaluate((grid) => {
+    const leftPane = grid.querySelector(".tm-pane--left")
+    const centerPane = grid.querySelector(".tm-pane--center")
+    const rightPane = grid.querySelector(".tm-pane--right")
+    if (!leftPane || !centerPane || !rightPane) {
+      return null
+    }
+
+    return [leftPane, centerPane, rightPane].map((pane) => {
+      const rect = pane.getBoundingClientRect()
+      return {
+        top: Math.round(rect.top),
+        height: Math.round(rect.height),
+      }
+    })
+  })
+
+  expect(paneMetrics).not.toBeNull()
+  const tops = paneMetrics?.map((pane) => pane.top) ?? []
+  expect(new Set(tops).size).toBe(1)
+
+  const heights = paneMetrics?.map((pane) => pane.height) ?? []
+  expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(1)
+  expect(heights[0]).toBeGreaterThan(650)
+})
+
 test("template list exposes add-template actions that open the canvas workspace", async ({
   page,
 }) => {
