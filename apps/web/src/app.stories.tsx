@@ -143,6 +143,12 @@ export const TemplatesWorkspace: Story = {
     context: runtimeContext,
     initialEntries: ["/templates"],
   },
+  loaders: [
+    async () => {
+      await resetUserTemplateStoreForTest()
+      return {}
+    },
+  ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const addTemplateButtons = canvas.getAllByRole("button", { name: "新增模板" })
