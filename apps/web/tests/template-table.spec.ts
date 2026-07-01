@@ -271,7 +271,20 @@ test("template list exposes add-template actions that open the canvas workspace"
   const listPane = page.locator(".tm-pane--left")
   await expect(listPane.getByRole("button", { name: "新增模板" })).toHaveCount(2)
   await expect(
-    listPane.locator(".tm-pane__header").getByRole("button", { name: "新增模板" })
+    listPane.locator(".tm-pane__header").getByRole("button", { name: "大图" })
+  ).toBeVisible()
+  await expect(
+    listPane.locator(".tm-pane__header").getByRole("button", { name: "列表" })
+  ).toBeVisible()
+  await expect(
+    listPane.locator(".tm-template-list__primary-actions").getByRole("button", {
+      name: "导入模板",
+    })
+  ).toBeVisible()
+  await expect(
+    listPane.locator(".tm-template-list__primary-actions").getByRole("button", {
+      name: "新增模板",
+    })
   ).toBeVisible()
   await expect(
     listPane.locator(".tm-template-list__section-empty").getByRole("button", { name: "新增模板" })
