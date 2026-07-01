@@ -126,6 +126,96 @@
 }
 
 @layer components {
+  .tm-action-button {
+    position: relative;
+    display: inline-flex;
+    min-width: 0;
+  }
+
+  .tm-action-button::after {
+    position: absolute;
+    z-index: 50;
+    bottom: calc(100% + 0.45rem);
+    left: 50%;
+    max-width: min(14rem, 70vw);
+    transform: translateX(-50%) translateY(2px);
+    border: 1px solid color-mix(in oklab, var(--border) 78%, black);
+    border-radius: 0.5rem;
+    background: rgba(34, 28, 24, 0.96);
+    color: white;
+    content: attr(data-tooltip);
+    opacity: 0;
+    pointer-events: none;
+    padding: 0.35rem 0.5rem;
+    box-shadow: 0 10px 24px rgba(44, 34, 25, 0.18);
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1;
+    overflow-wrap: anywhere;
+    transition:
+      opacity 120ms ease,
+      transform 120ms ease;
+    white-space: nowrap;
+  }
+
+  .tm-action-button:hover::after,
+  .tm-action-button:focus-within::after,
+  .tm-action-button--tooltip-open::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .tm-action-button__control {
+    min-width: 0;
+  }
+
+  .tm-action-button__control--xs {
+    height: 1.8rem;
+    border-radius: 0.5rem;
+    padding-inline: 0.6rem;
+    font-size: 0.72rem;
+  }
+
+  .tm-action-button--icon-only .tm-action-button__control {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+  }
+
+  .tm-action-button--xs.tm-action-button--icon-only .tm-action-button__control {
+    width: 1.8rem;
+    height: 1.8rem;
+  }
+
+  .tm-action-button__control--selected {
+    border-color: rgba(168, 115, 69, 0.48);
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+  }
+
+  .tm-action-button-group {
+    @apply inline-flex items-center rounded-lg border border-border/75 bg-background/70 p-0.5 shadow-sm;
+    gap: 0.125rem;
+  }
+
+  .tm-action-button-group .tm-action-button__control {
+    box-shadow: none;
+  }
+
+  .tm-action-button-group .tm-action-button__control:not(.tm-action-button__control--selected) {
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .tm-template-list__header-actions {
+    @apply flex min-w-0 flex-wrap items-center justify-end gap-2;
+  }
+
+  .tm-template-list__primary-actions {
+    @apply flex flex-wrap gap-2;
+    padding: 0 0.625rem;
+  }
+
   .tm-shell {
     @apply min-h-screen px-4 py-4 md:px-5 lg:px-6;
     display: grid;

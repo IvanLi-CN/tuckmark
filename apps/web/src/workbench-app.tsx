@@ -3,7 +3,11 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Copy,
+  Eye,
   Layers3,
+  LayoutGrid,
+  LayoutList,
   LayoutTemplate,
   MonitorCog,
   Package2,
@@ -14,6 +18,7 @@ import {
   Rows3,
   ScanSearch,
   Settings2,
+  SquarePen,
   Trash2,
   Upload,
   Wifi,
@@ -45,6 +50,7 @@ import {
 } from "./canvas-editor-model.js"
 import { CanvasWorkspace } from "./canvas-page.js"
 import { ProductMark } from "./components/product-mark.js"
+import { ActionButton, ActionButtonGroup } from "./components/ui/action-button.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
 import { Button } from "./components/ui/button.js"
@@ -1633,58 +1639,66 @@ function TemplatesPage({
               icon={LayoutTemplate}
               title="模板列表"
               actions={
-                <div className="flex flex-wrap justify-end gap-2">
-                  <input
-                    ref={importInputRef}
-                    id={importInputId}
-                    type="file"
-                    accept="application/json,.json"
-                    className="sr-only"
-                    aria-label="选择模板包文件"
-                    onChange={(event) => {
-                      const file = event.currentTarget.files?.[0]
-                      if (file) {
-                        void importTemplatePackage(file)
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => importInputRef.current?.click()}
-                  >
-                    <Upload className="size-4" />
-                    <span>导入模板</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigate("/canvas")}
-                  >
-                    <Plus className="size-4" />
-                    <span>新增模板</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={listMode === "large" ? "default" : "outline"}
-                    onClick={() => setListMode("large")}
-                  >
-                    大图
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={listMode === "list" ? "default" : "outline"}
-                    onClick={() => setListMode("list")}
-                  >
-                    列表
-                  </Button>
+                <div className="tm-template-list__header-actions">
+                  <ActionButtonGroup aria-label="模板列表视图">
+                    <ActionButton
+                      type="button"
+                      name="大图"
+                      icon={LayoutGrid}
+                      mode="icon"
+                      size="xs"
+                      variant="outline"
+                      selected={listMode === "large"}
+                      onClick={() => setListMode("large")}
+                    />
+                    <ActionButton
+                      type="button"
+                      name="列表"
+                      icon={LayoutList}
+                      mode="icon"
+                      size="xs"
+                      variant="outline"
+                      selected={listMode === "list"}
+                      onClick={() => setListMode("list")}
+                    />
+                  </ActionButtonGroup>
                 </div>
               }
             />
+            <div className="tm-template-list__primary-actions">
+              <input
+                ref={importInputRef}
+                id={importInputId}
+                type="file"
+                accept="application/json,.json"
+                className="sr-only"
+                aria-label="选择模板包文件"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0]
+                  if (file) {
+                    void importTemplatePackage(file)
+                  }
+                }}
+              />
+              <ActionButton
+                type="button"
+                name="导入模板"
+                icon={Upload}
+                mode="icon-text"
+                size="sm"
+                variant="outline"
+                onClick={() => importInputRef.current?.click()}
+              />
+              <ActionButton
+                type="button"
+                name="新增模板"
+                icon={Plus}
+                mode="icon-text"
+                size="sm"
+                variant="outline"
+                onClick={() => navigate("/canvas")}
+              />
+            </div>
             <div
               className={cn(
                 "tm-pane__body",
@@ -1720,14 +1734,16 @@ function TemplatesPage({
                 activeEntryId={state.activeTemplateEntry?.id ?? ""}
                 emptyText="还没有保存到浏览器本地的用户模板。"
                 emptyAction={
-                  <button
+                  <ActionButton
                     type="button"
+                    name="新增模板"
+                    icon={Plus}
+                    mode="icon-text"
+                    size="sm"
+                    variant="outline"
                     className="tm-template-list__empty-action-button"
                     onClick={() => navigate("/canvas")}
-                  >
-                    <Plus className="size-4" />
-                    <span>新增模板</span>
-                  </button>
+                  />
                 }
                 onSelect={(entryId) => {
                   state.setTemplateEntryId(entryId)
@@ -1762,38 +1778,43 @@ function TemplatesPage({
               actions={
                 <div className="flex flex-wrap gap-2">
                   {usesSingleOutletFlow ? (
-                    <Button
+                    <ActionButton
                       type="button"
+                      name="返回模板"
+                      icon={ChevronLeft}
+                      mode="icon-text"
                       variant="outline"
                       size="sm"
                       onClick={() => state.setTemplateNarrowStage("list")}
-                    >
-                      <ChevronLeft className="size-4" />
-                      返回模板
-                    </Button>
+                    />
                   ) : null}
-                  <Button type="button" variant="outline" size="sm" onClick={state.addTemplateRow}>
-                    <Plus className="size-4" />
-                    <span>新增行</span>
-                  </Button>
-                  <Button
+                  <ActionButton
                     type="button"
+                    name="新增行"
+                    icon={Plus}
+                    mode="icon-text"
+                    variant="outline"
+                    size="sm"
+                    onClick={state.addTemplateRow}
+                  />
+                  <ActionButton
+                    type="button"
+                    name="复制行"
+                    icon={Copy}
+                    mode="icon-text"
                     variant="outline"
                     size="sm"
                     onClick={state.duplicateTemplateRow}
-                  >
-                    <Rows3 className="size-4" />
-                    <span>复制行</span>
-                  </Button>
-                  <Button
+                  />
+                  <ActionButton
                     type="button"
+                    name="删除行"
+                    icon={Trash2}
+                    mode="icon-text"
                     variant="outline"
                     size="sm"
                     onClick={state.deleteTemplateRow}
-                  >
-                    <Trash2 className="size-4" />
-                    <span>删除行</span>
-                  </Button>
+                  />
                 </div>
               }
             />
@@ -2095,17 +2116,23 @@ function CanvasPageLegacy({
             title="属性与打印"
             actions={
               <div className="flex flex-wrap gap-2">
-                <Button
+                <ActionButton
                   type="button"
+                  name="生成预览"
+                  icon={Eye}
+                  mode="icon-text"
                   variant="outline"
                   size="sm"
                   onClick={() => void state.previewCanvas()}
-                >
-                  生成预览
-                </Button>
-                <Button type="button" size="sm" onClick={() => void state.printCanvas()}>
-                  直接打印
-                </Button>
+                />
+                <ActionButton
+                  type="button"
+                  name="直接打印"
+                  icon={Printer}
+                  mode="icon-text"
+                  size="sm"
+                  onClick={() => void state.printCanvas()}
+                />
               </div>
             }
           />
@@ -2239,23 +2266,25 @@ function TemplatesPrintRail({
         title="预览与打印"
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button
+            <ActionButton
               type="button"
+              name="生成预览"
+              icon={Eye}
+              mode="icon-text"
               variant="outline"
               size="sm"
               disabled={disabled}
               onClick={() => void state.previewSelectedTemplateRow()}
-            >
-              生成预览
-            </Button>
-            <Button
+            />
+            <ActionButton
               type="button"
+              name="直接打印"
+              icon={Printer}
+              mode="icon-text"
               size="sm"
               disabled={disabled}
               onClick={() => void state.printSelectedTemplateRow()}
-            >
-              直接打印
-            </Button>
+            />
           </div>
         }
       />
@@ -2371,9 +2400,16 @@ function TemplateCard({
         </div>
       </button>
       <div className="tm-template-card__actions">
-        <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={onEdit}>
-          编辑模板
-        </Button>
+        <ActionButton
+          type="button"
+          name="编辑模板"
+          icon={SquarePen}
+          mode="icon-text"
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          onClick={onEdit}
+        />
       </div>
     </article>
   )
