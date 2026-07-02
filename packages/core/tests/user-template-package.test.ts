@@ -189,6 +189,57 @@ describe("UserTemplatePackage", () => {
     ).toThrow(/outside the canvas/)
   })
 
+  it("rejects rect strokes that extend beyond the canvas", () => {
+    expect(() =>
+      parseUserTemplatePackage({
+        ...componentPackage,
+        elements: [
+          {
+            kind: "rect",
+            x: 0,
+            y: 0,
+            width: 192,
+            height: 96,
+            strokeWidth: 4,
+            fill: "white",
+            stroke: "#111111",
+            radius: 0,
+            rotation: 0,
+          },
+        ],
+      })
+    ).toThrow(/rotated canvas bounds/)
+  })
+
+  it("rejects wrapped text that extends beyond the canvas", () => {
+    expect(() =>
+      parseUserTemplatePackage({
+        ...componentPackage,
+        fields: [
+          {
+            key: "x",
+            label: "Text",
+            defaultValue: "LONG WRAPPED TEXT THAT NEEDS THREE LINES",
+          },
+        ],
+        elements: [
+          {
+            kind: "text",
+            key: "x",
+            x: 4,
+            y: 82,
+            width: 60,
+            fontSize: 16,
+            fontWeight: "normal",
+            align: "left",
+            maxLines: 3,
+            rotation: 0,
+          },
+        ],
+      })
+    ).toThrow(/rotated canvas bounds/)
+  })
+
   it("rejects widthless text that renders beyond the canvas", () => {
     expect(() =>
       parseUserTemplatePackage({

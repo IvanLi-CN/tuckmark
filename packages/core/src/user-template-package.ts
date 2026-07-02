@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { wrapText } from "./svg-renderer.js"
 import {
   type DirectCanvasDefinition,
   directCanvasSchema,
@@ -120,12 +121,13 @@ function validateElementBounds(
   switch (element.kind) {
     case "text": {
       const textWidth = element.width ?? estimateTextWidth(element, fieldDefaults)
+      const textHeight = estimateTextHeight(element, fieldDefaults)
       validateRectBounds(
         {
           left: getTextBoundsLeft(element, textWidth),
           top: element.y - element.fontSize,
           width: textWidth,
-          height: element.fontSize + 4,
+          height: textHeight,
           rotation: element.rotation,
         },
         width,
@@ -134,13 +136,14 @@ function validateElementBounds(
       )
       return
     }
-    case "rect":
+    case "rect": {
+      const strokeInset = element.strokeWidth / 2
       validateRectBounds(
         {
-          left: element.x,
-          top: element.y,
-          width: element.width,
-          height: element.height,
+          left: element.x - strokeInset,
+          top: element.y - strokeInset,
+          width: element.width + element.strokeWidth,
+          height: element.height + element.strokeWidth,
           rotation: element.rotation,
         },
         width,
@@ -148,6 +151,7 @@ function validateElementBounds(
         fail
       )
       return
+    }
     case "line":
       if (
         Math.min(element.x1, element.x2) - element.strokeWidth / 2 < 0 ||
@@ -199,6 +203,28 @@ function estimateTextWidth(
 ): number {
   const text = resolveTemplateElementValue(element, fieldDefaults) || element.key
   return Math.max(text.length, 1) * element.fontSize * 0.6
+}
+
+function estimateTextHeight(
+  element: Extract<TemplateElement, { kind: "text" }>,
+  fieldDefaults: Map<string, string>
+): number {
+  const text = resolveTemplateElementValue(element, fieldDefaults)
+  const lines = wrapText(
+    text,
+    estimateCharsPerLine(element.fontSize, element.width),
+    element.maxLines
+  )
+  const lineCount = Math.max(lines.length, 1)
+  const lineHeight = element.fontSize + 4
+  return Math.max(lineHeight, element.fontSize + (lineCount - 1) * lineHeight)
+}
+
+function estimateCharsPerLine(fontSize: number, width?: number): number {
+  if (!width) {
+    return 100
+  }
+  return Math.max(4, Math.floor(width / (fontSize * 0.6)))
 }
 
 function getTextBoundsLeft(
