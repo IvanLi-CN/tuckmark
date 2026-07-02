@@ -88,6 +88,7 @@ import {
   SheetTrigger,
 } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
+import { defaultRenderOptions } from "./demo-data.js"
 import { cn } from "./lib/utils.js"
 import type {
   CanvasDraftDocument,
@@ -3268,12 +3269,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         if (cancelled) {
           return
         }
-        if (loaded.draft.renderOptions) {
-          controller.setRenderOptions((current) => ({
-            ...current,
-            ...loaded.draft.renderOptions,
-          }))
-        }
+        controller.setRenderOptions({ ...defaultRenderOptions, ...loaded.draft.renderOptions })
         setState(
           createCanvasStateFromDraft(loaded.draft, {
             loading: false,

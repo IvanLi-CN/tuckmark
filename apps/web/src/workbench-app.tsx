@@ -67,6 +67,7 @@ import {
 } from "./components/ui/select.js"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
+import { defaultRenderOptions } from "./demo-data.js"
 import { cn } from "./lib/utils.js"
 import { confirmAndApplyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
 import type {
@@ -303,6 +304,22 @@ function createPreviewRenderOptions(renderOptions: RenderOptions) {
   }
 }
 
+function mergeDraftRenderOptions(
+  draftRenderOptions: CanvasDraftDocument["renderOptions"],
+  renderOptions: RenderOptions
+): RenderOptions {
+  const userOverrides = Object.fromEntries(
+    Object.entries(renderOptions).filter(
+      ([key, value]) => value !== defaultRenderOptions[key as keyof RenderOptions]
+    )
+  )
+  return {
+    ...defaultRenderOptions,
+    ...draftRenderOptions,
+    ...userOverrides,
+  }
+}
+
 function createTemplatePrintSource(
   template: Template,
   row: TemplateRow,
@@ -326,10 +343,9 @@ function createUserTemplatePrintSource(
   return {
     kind: "canvas",
     canvas: compileDraftToFilledCanvasDefinition(draft, row.values),
-    renderOptions: createPreviewRenderOptions({
-      ...draft.renderOptions,
-      ...renderOptions,
-    }),
+    renderOptions: createPreviewRenderOptions(
+      mergeDraftRenderOptions(draft.renderOptions, renderOptions)
+    ),
     templateUsage: {
       id: template.id,
       name: template.name,

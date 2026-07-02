@@ -118,12 +118,13 @@ function validateElementBounds(
   }
 
   switch (element.kind) {
-    case "text":
+    case "text": {
+      const textWidth = element.width ?? estimateTextWidth(element, fieldDefaults)
       validateRectBounds(
         {
-          left: element.x,
+          left: getTextBoundsLeft(element, textWidth),
           top: element.y - element.fontSize,
-          width: element.width ?? estimateTextWidth(element, fieldDefaults),
+          width: textWidth,
           height: element.fontSize + 4,
           rotation: element.rotation,
         },
@@ -132,6 +133,7 @@ function validateElementBounds(
         fail
       )
       return
+    }
     case "rect":
       validateRectBounds(
         {
@@ -190,6 +192,22 @@ function estimateTextWidth(
 ): number {
   const text = resolveTemplateElementValue(element, fieldDefaults) || element.key
   return Math.max(text.length, 1) * element.fontSize * 0.6
+}
+
+function getTextBoundsLeft(
+  element: Extract<TemplateElement, { kind: "text" }>,
+  width: number
+): number {
+  if (element.width) {
+    return element.x
+  }
+  if (element.align === "center") {
+    return element.x - width / 2
+  }
+  if (element.align === "right") {
+    return element.x - width
+  }
+  return element.x
 }
 
 function resolveTemplateElementValue(

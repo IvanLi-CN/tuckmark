@@ -193,6 +193,28 @@ describe("UserTemplatePackage", () => {
     ).toThrow(/rotated canvas bounds/)
   })
 
+  it("rejects widthless centered text that overflows left of its anchor", () => {
+    expect(() =>
+      parseUserTemplatePackage({
+        ...componentPackage,
+        fields: [{ key: "x", label: "Text", defaultValue: "LONG_TEXT" }],
+        elements: [
+          {
+            kind: "text",
+            key: "x",
+            x: 8,
+            y: 40,
+            fontSize: 24,
+            fontWeight: "normal",
+            align: "center",
+            rotation: 0,
+          },
+        ],
+        sampleInput: {},
+      })
+    ).toThrow(/rotated canvas bounds/)
+  })
+
   it("rejects bindable elements that reference unknown fields", () => {
     expect(() =>
       parseUserTemplatePackage({
