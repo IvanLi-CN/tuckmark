@@ -86,10 +86,7 @@ function validateUserTemplatePackageSemantics(templatePackage: UserTemplatePacka
       throw new Error(`Duplicate field key: ${field.key}`)
     }
     fieldKeys.add(field.key)
-    fieldDefaults.set(
-      field.key,
-      templatePackage.sampleInput[field.key] ?? field.defaultValue
-    )
+    fieldDefaults.set(field.key, templatePackage.sampleInput[field.key] ?? field.defaultValue)
   }
 
   for (const [index, element] of templatePackage.elements.entries()) {
