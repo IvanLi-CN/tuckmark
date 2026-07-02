@@ -132,18 +132,15 @@
     min-width: 0;
   }
 
-  .tm-action-button::after {
-    position: absolute;
-    z-index: 50;
-    bottom: calc(100% + 0.45rem);
-    left: 50%;
-    max-width: min(14rem, 70vw);
-    transform: translateX(-50%) translateY(2px);
+  .tm-action-button-tooltip {
+    position: fixed;
+    z-index: 60;
+    max-width: min(14rem, calc(100vw - 1rem));
+    transform: translateY(2px);
     border: 1px solid color-mix(in oklab, var(--border) 78%, black);
     border-radius: 0.5rem;
     background: rgba(34, 28, 24, 0.96);
     color: white;
-    content: attr(data-tooltip);
     opacity: 0;
     pointer-events: none;
     padding: 0.35rem 0.5rem;
@@ -158,11 +155,9 @@
     white-space: nowrap;
   }
 
-  .tm-action-button:hover::after,
-  .tm-action-button:focus-within::after,
-  .tm-action-button--tooltip-open::after {
+  .tm-action-button-tooltip--positioned {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
   }
 
   .tm-action-button__control {
