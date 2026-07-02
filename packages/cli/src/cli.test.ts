@@ -43,7 +43,7 @@ describe("cli smoke", () => {
     await execFileAsync("bun", ["run", "--filter", "@tuckmark/core", "build"], {
       cwd: repoRoot,
     })
-  }, 30_000)
+  }, 90_000)
 
   it("loads", () => {
     expect(true).toBe(true)

@@ -48,8 +48,12 @@ export function compileUserTemplatePackageToCanvas(
   templatePackage: UserTemplatePackage,
   input: Record<string, string> = templatePackage.sampleInput
 ): DirectCanvasDefinition {
+  const mergedInput = {
+    ...templatePackage.sampleInput,
+    ...input,
+  }
   const fieldDefaults = new Map(
-    templatePackage.fields.map((field) => [field.key, input[field.key] ?? field.defaultValue])
+    templatePackage.fields.map((field) => [field.key, mergedInput[field.key] ?? field.defaultValue])
   )
 
   return directCanvasSchema.parse({

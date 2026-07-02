@@ -668,6 +668,7 @@ export function createDraftFromUserTemplatePackage(
     ...createDraftFromSystemTemplate(template),
     id: `agent-template-${templatePackage.id}`,
     presetId: templatePackage.id,
+    renderOptions: templatePackage.renderOptions,
     source: {
       kind: "scratch",
       presetId: templatePackage.id,

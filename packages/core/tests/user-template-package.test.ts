@@ -95,6 +95,14 @@ describe("UserTemplatePackage", () => {
     expect(canvas.elements[0]).toMatchObject({ kind: "text", value: "ESP32" })
   })
 
+  it("merges partial field input over sample input before falling back to defaults", () => {
+    const parsed = parseUserTemplatePackage(componentPackage)
+    const canvas = compileUserTemplatePackageToCanvas(parsed, { value: "ESP32-C3" })
+
+    expect(canvas.elements[1]).toMatchObject({ kind: "text", value: "ESP32-C3" })
+    expect(canvas.elements[2]).toMatchObject({ kind: "text", value: "SMAF" })
+  })
+
   it("rejects packages wider than the current printer capability default", () => {
     expect(() =>
       parseUserTemplatePackage({

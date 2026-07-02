@@ -198,6 +198,7 @@ describe("canvas-editor-model monochrome contract", () => {
 
     expect(draft.name).toBe("INA219 Module Bin")
     expect(draft.source.kind).toBe("scratch")
+    expect(draft.renderOptions).toMatchObject({ paperType: "gap", printWidthDots: 384 })
     expect(draft.fields.map((field) => field.key)).toEqual(["part", "bus"])
     expect(draft.fields[0]).toMatchObject({ key: "part", defaultValue: "INA219" })
     expect(draft.elements[0]).toMatchObject({

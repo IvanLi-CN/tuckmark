@@ -181,6 +181,7 @@ export type CanvasDraftDocument = {
   lastSavedAt?: string
   width: number
   height: number
+  renderOptions?: Partial<RenderOptions>
   fields: CanvasDraftField[]
   elements: CanvasDraftElement[]
   editor: {
