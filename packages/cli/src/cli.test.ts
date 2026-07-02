@@ -8,13 +8,14 @@ import { beforeAll, describe, expect, it } from "vitest"
 const execFileAsync = promisify(execFile)
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
 const cliPath = path.join(repoRoot, "packages/cli/src/index.ts")
+const cliTsconfigPath = path.join(repoRoot, "packages/cli/tsconfig.typecheck.json")
 const fixturePath = path.join(
   repoRoot,
   "packages/core/fixtures/electronics-component-label.package.json"
 )
 
 async function runCli(args: string[]) {
-  return execFileAsync("bun", ["tsx", cliPath, ...args], {
+  return execFileAsync("bun", ["tsx", "--tsconfig", cliTsconfigPath, cliPath, ...args], {
     cwd: repoRoot,
     env: {
       ...process.env,

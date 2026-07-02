@@ -17,10 +17,10 @@ Use this skill when working inside the Tuckmark repository source tree.
 
 ## Source Commands
 
-- Validate: `bun tsx packages/cli/src/index.ts template-package validate --file <package.json>`
-- Preview: `bun tsx packages/cli/src/index.ts template-package preview --file <package.json>`
-- Generate packets: `bun tsx packages/cli/src/index.ts template-package packets --file <package.json>`
-- Print after explicit owner approval: `TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 bun tsx packages/cli/src/index.ts template-package print --printer <id> --file <package.json>`
+- Validate: `bun tsx --tsconfig packages/cli/tsconfig.typecheck.json packages/cli/src/index.ts template-package validate --file <package.json>`
+- Preview: `bun tsx --tsconfig packages/cli/tsconfig.typecheck.json packages/cli/src/index.ts template-package preview --file <package.json>`
+- Generate packets: `bun tsx --tsconfig packages/cli/tsconfig.typecheck.json packages/cli/src/index.ts template-package packets --file <package.json>`
+- Print after explicit owner approval: `TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 bun tsx --tsconfig packages/cli/tsconfig.typecheck.json packages/cli/src/index.ts template-package print --printer <id> --file <package.json>`
 - Focused checks: `bun run --filter @tuckmark/core test`, `bun run --filter @tuckmark/cli test`, and `bun run --filter @tuckmark/web test`
 
 ## Package Shape

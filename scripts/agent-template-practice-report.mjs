@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile)
 const repoRoot = process.cwd()
 const outDir = path.resolve(process.argv[2] ?? "work/agent-template-practice")
 const cliPath = path.join(repoRoot, "packages/cli/src/index.ts")
+const cliTsconfigPath = path.join(repoRoot, "packages/cli/tsconfig.typecheck.json")
 
 const scenarios = [
   {
@@ -83,16 +84,20 @@ async function runCodexScenario(scenario) {
 }
 
 async function runCli(args) {
-  const result = await execFileAsync("bun", ["tsx", cliPath, ...args], {
-    cwd: repoRoot,
-    timeout: 120_000,
-    maxBuffer: 1024 * 1024 * 8,
-    env: {
-      ...process.env,
-      TUCKMARK_DETONGER_PACKET_ENCODER: "lpapi",
-      TUCKMARK_MOCK_PRINTERS: "1",
-    },
-  })
+  const result = await execFileAsync(
+    "bun",
+    ["tsx", "--tsconfig", cliTsconfigPath, cliPath, ...args],
+    {
+      cwd: repoRoot,
+      timeout: 120_000,
+      maxBuffer: 1024 * 1024 * 8,
+      env: {
+        ...process.env,
+        TUCKMARK_DETONGER_PACKET_ENCODER: "lpapi",
+        TUCKMARK_MOCK_PRINTERS: "1",
+      },
+    }
+  )
   return JSON.parse(result.stdout)
 }
 
