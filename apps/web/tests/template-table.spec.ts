@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test"
 test("template table keeps the cell size stable when a cell enters edit mode", async ({ page }) => {
   await page.goto("/templates?demo=true")
 
-  await page.getByRole("button", { name: "列表" }).click()
+  await page.getByRole("tab", { name: "列表" }).click()
 
   const table = page.getByRole("table")
   const firstRow = table.locator("tbody tr").first()
@@ -29,7 +29,7 @@ test("template table keeps the cell size stable when a cell enters edit mode", a
 test("template table keeps one adaptive width per column", async ({ page }) => {
   await page.goto("/templates?demo=true")
 
-  await page.getByRole("button", { name: "列表" }).click()
+  await page.getByRole("tab", { name: "列表" }).click()
 
   const table = page.getByRole("table")
   const rows = table.locator("tbody tr")
@@ -63,7 +63,7 @@ test("template table stretches its columns to fill the available table width", a
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto("/templates?demo=true")
 
-  await page.getByRole("button", { name: "列表" }).click()
+  await page.getByRole("tab", { name: "列表" }).click()
 
   const measurements = await page.locator(".tm-table-shell").evaluate((shell) => {
     const table = shell.querySelector("table")
@@ -107,7 +107,7 @@ test("template table auto-generates preview when a row is clicked or a cell is f
 }) => {
   await page.goto("/templates?demo=true")
 
-  await page.getByRole("button", { name: "列表" }).click()
+  await page.getByRole("tab", { name: "列表" }).click()
 
   const previewImage = page.locator("img[alt='preview artifact']")
   await expect(previewImage).toHaveCount(0)
@@ -134,7 +134,7 @@ test("template table auto-generates preview when a row is clicked or a cell is f
 test("template table refreshes preview after a debounced edit", async ({ page }) => {
   await page.goto("/templates?demo=true")
 
-  await page.getByRole("button", { name: "列表" }).click()
+  await page.getByRole("tab", { name: "列表" }).click()
 
   const table = page.getByRole("table")
   const firstRow = table.locator("tbody tr").first()
@@ -166,7 +166,7 @@ test("template large mode uses a two-column grid layout", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto("/templates?demo=true")
 
-  await page.getByRole("button", { name: "大图" }).click()
+  await page.getByRole("tab", { name: "大图" }).click()
 
   const gridMetrics = await page.locator(".tm-template-group__grid--large").evaluate((grid) => {
     const cards = Array.from(grid.querySelectorAll(".tm-template-card"))
@@ -201,7 +201,7 @@ test("template large mode keeps two columns in the standard three-pane width", a
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto("/templates?demo=true")
 
-  await page.getByRole("button", { name: "大图" }).click()
+  await page.getByRole("tab", { name: "大图" }).click()
 
   const gridMetrics = await page.locator(".tm-template-group__grid--large").evaluate((grid) => {
     const cards = Array.from(grid.querySelectorAll(".tm-template-card"))
@@ -271,10 +271,10 @@ test("template list exposes add-template actions that open the canvas workspace"
   const listPane = page.locator(".tm-pane--left")
   await expect(listPane.getByRole("button", { name: "新增模板" })).toHaveCount(2)
   await expect(
-    listPane.locator(".tm-pane__header").getByRole("button", { name: "大图" })
+    listPane.locator(".tm-pane__header").getByRole("tab", { name: "大图" })
   ).toBeVisible()
   await expect(
-    listPane.locator(".tm-pane__header").getByRole("button", { name: "列表" })
+    listPane.locator(".tm-pane__header").getByRole("tab", { name: "列表" })
   ).toBeVisible()
   await expect(
     listPane.locator(".tm-template-list__primary-actions").getByRole("button", {

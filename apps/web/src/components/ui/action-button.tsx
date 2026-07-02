@@ -24,23 +24,26 @@ type TooltipPosition = {
   top: number
 }
 
-function ActionButton({
-  name,
-  icon: Icon,
-  mode = Icon ? "icon-text" : "text",
-  size = "sm",
-  selected,
-  className,
-  onPointerEnter,
-  onPointerDown,
-  onPointerUp,
-  onPointerCancel,
-  onPointerLeave,
-  onFocus,
-  onBlur,
-  "aria-pressed": ariaPressed,
-  ...props
-}: ActionButtonProps) {
+const ActionButton = React.forwardRef<HTMLSpanElement, ActionButtonProps>(function ActionButton(
+  {
+    name,
+    icon: Icon,
+    mode = Icon ? "icon-text" : "text",
+    size = "sm",
+    selected,
+    className,
+    onPointerEnter,
+    onPointerDown,
+    onPointerUp,
+    onPointerCancel,
+    onPointerLeave,
+    onFocus,
+    onBlur,
+    "aria-pressed": ariaPressed,
+    ...props
+  },
+  forwardedRef
+) {
   const [touchTooltipOpen, setTouchTooltipOpen] = React.useState(false)
   const [hoverTooltipOpen, setHoverTooltipOpen] = React.useState(false)
   const [focusTooltipOpen, setFocusTooltipOpen] = React.useState(false)
@@ -55,6 +58,19 @@ function ActionButton({
   const showsTooltip = mode === "icon"
   const tooltipOpen = showsTooltip && (hoverTooltipOpen || focusTooltipOpen || touchTooltipOpen)
   const buttonSize = size === "xs" ? "sm" : size
+  const isTab = props.role === "tab"
+
+  const setAnchorRef = React.useCallback(
+    (node: HTMLSpanElement | null) => {
+      anchorRef.current = node
+      if (typeof forwardedRef === "function") {
+        forwardedRef(node)
+      } else if (forwardedRef) {
+        forwardedRef.current = node
+      }
+    },
+    [forwardedRef]
+  )
 
   const clearLongPress = React.useCallback(() => {
     if (longPressTimer.current !== null) {
@@ -134,7 +150,7 @@ function ActionButton({
 
   return (
     <span
-      ref={anchorRef}
+      ref={setAnchorRef}
       className={cn(
         "tm-action-button",
         size === "xs" && "tm-action-button--xs",
@@ -144,7 +160,7 @@ function ActionButton({
       <Button
         {...props}
         aria-label={mode === "icon" ? name : props["aria-label"]}
-        aria-pressed={ariaPressed ?? selected}
+        aria-pressed={isTab ? ariaPressed : (ariaPressed ?? selected)}
         aria-describedby={tooltipOpen ? tooltipId : props["aria-describedby"]}
         size={mode === "icon" ? "icon" : buttonSize}
         className={cn(
@@ -204,15 +220,9 @@ function ActionButton({
       {tooltip}
     </span>
   )
-}
+})
 
-function ActionButtonGroup({ children, className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div className={cn("tm-action-button-group", className)} {...props}>
-      {children}
-    </div>
-  )
-}
+ActionButton.displayName = "ActionButton"
 
 export type { ActionButtonMode, ActionButtonProps }
-export { ActionButton, ActionButtonGroup }
+export { ActionButton }

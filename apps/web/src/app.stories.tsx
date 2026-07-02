@@ -243,7 +243,7 @@ export const TemplatesList: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole("button", { name: "列表" }))
+    await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
   },
 }
 
@@ -254,7 +254,7 @@ export const TemplatesListEditing: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole("button", { name: "列表" }))
+    await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
     const [firstRecipientButton] = canvas.getAllByRole("button", { name: "Koha Cat" })
     await userEvent.click(firstRecipientButton)
   },
@@ -267,7 +267,7 @@ export const TemplatesSelectableEditing: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole("button", { name: "列表" }))
+    await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
     const [firstRecipientButton] = canvas.getAllByRole("button", { name: "Koha Cat" })
     await userEvent.click(firstRecipientButton)
   },
@@ -544,7 +544,7 @@ export const TemplatesLargeGridLongTitle: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole("button", { name: "大图" }))
+    await userEvent.click(canvas.getByRole("tab", { name: "大图" }))
   },
 }
 

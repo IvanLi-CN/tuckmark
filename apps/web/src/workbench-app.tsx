@@ -50,13 +50,14 @@ import {
 } from "./canvas-editor-model.js"
 import { CanvasWorkspace } from "./canvas-page.js"
 import { ProductMark } from "./components/product-mark.js"
-import { ActionButton, ActionButtonGroup } from "./components/ui/action-button.js"
+import { ActionButton } from "./components/ui/action-button.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
 import { Button } from "./components/ui/button.js"
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card.js"
 import { Input } from "./components/ui/input.js"
 import { Label } from "./components/ui/label.js"
+import { SegmentedTabs } from "./components/ui/segmented-tabs.js"
 import {
   Select,
   SelectContent,
@@ -1640,28 +1641,17 @@ function TemplatesPage({
               title="模板列表"
               actions={
                 <div className="tm-template-list__header-actions">
-                  <ActionButtonGroup aria-label="模板列表视图">
-                    <ActionButton
-                      type="button"
-                      name="大图"
-                      icon={LayoutGrid}
-                      mode="icon"
-                      size="xs"
-                      variant="ghost"
-                      selected={listMode === "large"}
-                      onClick={() => setListMode("large")}
-                    />
-                    <ActionButton
-                      type="button"
-                      name="列表"
-                      icon={LayoutList}
-                      mode="icon"
-                      size="xs"
-                      variant="ghost"
-                      selected={listMode === "list"}
-                      onClick={() => setListMode("list")}
-                    />
-                  </ActionButtonGroup>
+                  <SegmentedTabs
+                    ariaLabel="模板列表视图"
+                    value={listMode}
+                    onValueChange={(nextMode) =>
+                      setListMode(nextMode === "list" ? "list" : "large")
+                    }
+                    items={[
+                      { value: "large", name: "大图", icon: LayoutGrid },
+                      { value: "list", name: "列表", icon: LayoutList },
+                    ]}
+                  />
                 </div>
               }
             />

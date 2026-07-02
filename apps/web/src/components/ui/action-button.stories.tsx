@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { Copy, Eye, LayoutGrid, LayoutList, Plus, Trash2, Upload } from "lucide-react"
+import { Copy, Eye, Plus, Trash2, Upload } from "lucide-react"
 
-import { ActionButton, ActionButtonGroup } from "./action-button.js"
+import { ActionButton } from "./action-button.js"
 
 const meta = {
   title: "Tuckmark/UI/ActionButton",
@@ -50,26 +50,6 @@ export const Gallery: Story = {
           <ActionButton name="删除行" icon={Trash2} mode="icon-text" variant="outline" />
           <ActionButton name="生成预览" icon={Eye} mode="icon-text" size="lg" />
         </div>
-      </section>
-
-      <section className="grid gap-4">
-        <div className="grid gap-1">
-          <h2 className="text-lg font-semibold text-foreground">Grouped icon tabs</h2>
-          <p className="text-sm text-muted-foreground">
-            Template list view switching uses selected icon buttons inside a grouped control.
-          </p>
-        </div>
-        <ActionButtonGroup aria-label="模板列表视图">
-          <ActionButton
-            name="大图"
-            icon={LayoutGrid}
-            mode="icon"
-            size="xs"
-            variant="ghost"
-            selected
-          />
-          <ActionButton name="列表" icon={LayoutList} mode="icon" size="xs" variant="ghost" />
-        </ActionButtonGroup>
       </section>
     </div>
   ),
