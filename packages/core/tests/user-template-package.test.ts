@@ -95,6 +95,32 @@ describe("UserTemplatePackage", () => {
     expect(canvas.elements[0]).toMatchObject({ kind: "text", value: "ESP32" })
   })
 
+  it("preserves bindable element literals when fields have no value", () => {
+    const parsed = parseUserTemplatePackage({
+      ...componentPackage,
+      fields: [{ key: "value", label: "Value", defaultValue: "" }],
+      elements: [
+        {
+          kind: "text",
+          key: "value",
+          value: "Fallback",
+          x: 12,
+          y: 38,
+          width: 168,
+          fontSize: 26,
+          fontWeight: "bold",
+          align: "center",
+          maxLines: 1,
+          rotation: 0,
+        },
+      ],
+      sampleInput: {},
+    })
+    const canvas = compileUserTemplatePackageToCanvas(parsed)
+
+    expect(canvas.elements[0]).toMatchObject({ kind: "text", value: "Fallback" })
+  })
+
   it("merges partial field input over sample input before falling back to defaults", () => {
     const parsed = parseUserTemplatePackage(componentPackage)
     const canvas = compileUserTemplatePackageToCanvas(parsed, { value: "ESP32-C3" })
@@ -140,6 +166,29 @@ describe("UserTemplatePackage", () => {
             rotation: 90,
           },
         ],
+      })
+    ).toThrow(/rotated canvas bounds/)
+  })
+
+  it("rejects widthless text that renders beyond the canvas", () => {
+    expect(() =>
+      parseUserTemplatePackage({
+        ...componentPackage,
+        canvas: { width: 192, height: 96 },
+        fields: [{ key: "x", label: "Text", defaultValue: "LONG_LONG_LONG_TEXT" }],
+        elements: [
+          {
+            kind: "text",
+            key: "x",
+            x: 150,
+            y: 40,
+            fontSize: 20,
+            fontWeight: "normal",
+            align: "left",
+            rotation: 0,
+          },
+        ],
+        sampleInput: {},
       })
     ).toThrow(/rotated canvas bounds/)
   })

@@ -80,11 +80,16 @@ function validateUserTemplatePackageSemantics(templatePackage: UserTemplatePacka
   }
 
   const fieldKeys = new Set<string>()
+  const fieldDefaults = new Map<string, string>()
   for (const field of templatePackage.fields) {
     if (fieldKeys.has(field.key)) {
       throw new Error(`Duplicate field key: ${field.key}`)
     }
     fieldKeys.add(field.key)
+    fieldDefaults.set(
+      field.key,
+      templatePackage.sampleInput[field.key] ?? field.defaultValue
+    )
   }
 
   for (const [index, element] of templatePackage.elements.entries()) {
@@ -93,14 +98,15 @@ function validateUserTemplatePackageSemantics(templatePackage: UserTemplatePacka
         throw new Error(`Element ${index + 1} references unknown field: ${element.key}`)
       }
     }
-    validateElementBounds(templatePackage, element, index)
+    validateElementBounds(templatePackage, element, index, fieldDefaults)
   }
 }
 
 function validateElementBounds(
   templatePackage: UserTemplatePackage,
   element: TemplateElement,
-  index: number
+  index: number,
+  fieldDefaults: Map<string, string>
 ): void {
   const width = templatePackage.canvas.width
   const height = templatePackage.canvas.height
@@ -114,7 +120,7 @@ function validateElementBounds(
         {
           left: element.x,
           top: element.y - element.fontSize,
-          width: element.width ?? estimateTextWidth(element),
+          width: element.width ?? estimateTextWidth(element, fieldDefaults),
           height: element.fontSize + 4,
           rotation: element.rotation,
         },
@@ -175,8 +181,12 @@ function validateElementBounds(
   }
 }
 
-function estimateTextWidth(element: Extract<TemplateElement, { kind: "text" }>): number {
-  return Math.max(element.key.length, 1) * element.fontSize * 0.6
+function estimateTextWidth(
+  element: Extract<TemplateElement, { kind: "text" }>,
+  fieldDefaults: Map<string, string>
+): number {
+  const text = fieldDefaults.get(element.key) || element.value || element.key
+  return Math.max(text.length, 1) * element.fontSize * 0.6
 }
 
 function validateRectBounds(
@@ -245,9 +255,10 @@ function materializeTemplateElement(
   fieldDefaults: Map<string, string>
 ): TemplateElement {
   if (element.kind === "text" || element.kind === "barcode" || element.kind === "qr") {
+    const fieldValue = fieldDefaults.get(element.key)
     return {
       ...element,
-      value: fieldDefaults.get(element.key) ?? element.value ?? "",
+      value: fieldValue && fieldValue.length > 0 ? fieldValue : (element.value ?? ""),
     }
   }
   return element

@@ -327,8 +327,8 @@ function createUserTemplatePrintSource(
     kind: "canvas",
     canvas: compileDraftToFilledCanvasDefinition(draft, row.values),
     renderOptions: createPreviewRenderOptions({
-      ...renderOptions,
       ...draft.renderOptions,
+      ...renderOptions,
     }),
     templateUsage: {
       id: template.id,
