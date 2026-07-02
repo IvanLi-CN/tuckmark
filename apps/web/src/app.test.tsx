@@ -1416,22 +1416,28 @@ describe("web workbench app", () => {
   })
 
   it("uses imported package sample values for initial template rows", () => {
+    const importedTemplate = {
+      id: "imported-component",
+      name: "Imported Component",
+      description: "",
+      width: 192,
+      height: 96,
+      fields: [
+        {
+          key: "part",
+          label: "Part",
+          required: false,
+          defaultValue: "INA226",
+          sampleValue: "INA219",
+        },
+      ],
+    }
+
+    expect(buildInputFromTemplate(importedTemplate)).toMatchObject({ part: "INA219" })
     expect(
       buildInputFromTemplate({
-        id: "imported-component",
-        name: "Imported Component",
-        description: "",
-        width: 192,
-        height: 96,
-        fields: [
-          {
-            key: "part",
-            label: "Part",
-            required: false,
-            defaultValue: "INA226",
-            sampleValue: "INA219",
-          },
-        ],
+        ...importedTemplate,
+        id: "imported-component-with-fallback",
       })
     ).toMatchObject({ part: "INA219" })
   })

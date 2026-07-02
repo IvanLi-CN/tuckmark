@@ -44,6 +44,7 @@ import {
 import type { ApiClient } from "./api-client.js"
 import type { BrowserPrintSource } from "./browser-print-payload.js"
 import {
+  buildTemplateFieldsFromDraft,
   type CanvasStoryScenario,
   compileDraftToFilledCanvasDefinition,
   createDraftFromUserTemplatePackage,
@@ -67,7 +68,7 @@ import {
 } from "./components/ui/select.js"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
-import { defaultRenderOptions } from "./demo-data.js"
+import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
 import { cn } from "./lib/utils.js"
 import { confirmAndApplyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
 import type {
@@ -270,9 +271,14 @@ function buildUserTemplatePreviewSvg(draft: CanvasDraftDocument | null): string 
   }
 
   try {
-    const input = Object.fromEntries(
-      draft.fields.map((field) => [field.key, field.defaultValue ?? ""])
-    )
+    const input = buildInputFromTemplate({
+      id: draft.id,
+      name: draft.name,
+      description: "",
+      width: draft.width,
+      height: draft.height,
+      fields: buildTemplateFieldsFromDraft(draft),
+    })
     const compiled = compileDraftToFilledCanvasDefinition(draft, input)
     return buildSvg(compiled.width, compiled.height, compiled.elements, {})
   } catch {
@@ -862,20 +868,24 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     if (!activeTemplate) {
       return
     }
-    const fields =
-      activeTemplateEntry?.kind === "user"
-        ? activeTemplateEntry.template.fields
-        : activeTemplate.fields
+    const fields = toTemplateFieldList(activeTemplate)
     const row: TemplateRow = {
       id: `${activeTemplate.id}-${crypto.randomUUID()}`,
-      values: Object.fromEntries(fields.map((field) => [field.key, field.defaultValue ?? ""])),
+      values: buildInputFromTemplate({
+        id: activeTemplate.id,
+        name: activeTemplate.name,
+        description: activeTemplate.description,
+        width: activeTemplate.width,
+        height: activeTemplate.height,
+        fields,
+      }),
     }
     setTemplateRows((currentRows) => [...currentRows, row])
     setSelectedRowId(row.id)
     setEditingTemplateCell(fields[0] ? { rowId: row.id, fieldKey: fields[0].key } : null)
     setTemplateFocus("left-center")
     setTemplateNarrowStage("table")
-  }, [activeTemplate, activeTemplateEntry])
+  }, [activeTemplate])
 
   const duplicateTemplateRow = React.useCallback(() => {
     if (!selectedTemplateRow) {
