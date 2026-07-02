@@ -77,6 +77,10 @@ function getNextSavedVersionNumber(versions: Iterable<UserTemplateVersionSnapsho
 function toComparableDraft(draft: CanvasDraftDocument) {
   return {
     ...draft,
+    id: undefined,
+    presetId: undefined,
+    source: undefined,
+    templateId: undefined,
     baseVersionId: undefined,
     lastSavedAt: undefined,
   }

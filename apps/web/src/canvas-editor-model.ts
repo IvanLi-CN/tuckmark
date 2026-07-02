@@ -659,6 +659,7 @@ export function createDraftFromUserTemplatePackage(
       required: false,
       multiline: field.multiline,
       defaultValue: field.defaultValue,
+      sampleValue: templatePackage.sampleInput[field.key],
     })),
     elements: templatePackage.elements,
     tags: templatePackage.tags,
@@ -677,6 +678,10 @@ export function createDraftFromUserTemplatePackage(
   const sampleInput = templatePackage.sampleInput
   return {
     ...draft,
+    fields: draft.fields.map((field) => ({
+      ...field,
+      sampleValue: sampleInput[field.key],
+    })),
     elements: draft.elements.map((element) => {
       if (!isBindableKind(element) || !element.binding) {
         return element
@@ -1341,6 +1346,7 @@ export function buildTemplateFieldsFromDraft(document: CanvasDraftDocument) {
     required: false,
     multiline: field.multiline,
     defaultValue: field.defaultValue,
+    sampleValue: field.sampleValue,
   }))
 }
 

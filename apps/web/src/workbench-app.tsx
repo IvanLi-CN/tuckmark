@@ -290,6 +290,7 @@ function toTemplateFieldList(template: Template | UserTemplateSummary): Template
     required: false,
     multiline: field.multiline,
     defaultValue: field.defaultValue,
+    sampleValue: field.sampleValue,
   }))
 }
 
