@@ -104,3 +104,10 @@ while the workbench was being productized:
   - printer width capability remains an output-time constraint, which keeps
     editing and preview non-blocking while still preventing invalid direct
     print submission
+- The shared footer also became an operator support surface:
+  - repository link and site rights notice are visible without opening
+    developer tools
+  - the displayed app version is injected from build metadata with environment
+    overrides
+  - Service API and browser-direct readiness stay visible beside the support
+    metadata

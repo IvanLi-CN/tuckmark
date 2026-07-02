@@ -799,6 +799,19 @@ describe("web workbench app", () => {
     expect(document.body.textContent).toContain("系统")
     expect(document.body.textContent).toContain("Browser static")
     expect(document.body.textContent).toContain("Runtime mode")
+    expect(document.body.textContent).toContain("GitHub")
+    expect(document.body.textContent).toContain("v0.1.0")
+    expect(document.body.textContent).toContain("© 2026 Ivan Li")
+    expect(document.body.textContent).not.toContain("Releases")
+    expect(document.body.textContent).toContain("Service API: disabled")
+    expect(document.body.textContent).toContain("Browser direct: available")
+
+    const githubLink = document.querySelector<HTMLAnchorElement>(
+      'a[href="https://github.com/IvanLi-CN/tuckmark"]'
+    )
+    const rightsLink = document.querySelector<HTMLAnchorElement>('a[href="https://ivanli.cc/"]')
+    expect(githubLink?.textContent).toBe("GitHub")
+    expect(rightsLink?.textContent).toBe("© 2026 Ivan Li")
   })
 
   it("shows a non-blocking PWA update prompt when a new browser-static version is ready", async () => {

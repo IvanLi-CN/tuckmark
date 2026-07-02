@@ -164,6 +164,11 @@ export const TemplatesWorkspace: Story = {
     const addTemplateButtons = canvas.getAllByRole("button", { name: "新增模板" })
     await expect(addTemplateButtons).toHaveLength(2)
     await expect(addTemplateButtons[1]).toHaveClass(/tm-template-list__empty-action-button/)
+    await canvas.findByRole("link", { name: "GitHub" })
+    await canvas.findByText("v0.1.0")
+    await canvas.findByRole("link", { name: "© 2026 Ivan Li" })
+    await canvas.findByText("Service API: disabled")
+    await canvas.findByText("Browser direct: available")
   },
 }
 

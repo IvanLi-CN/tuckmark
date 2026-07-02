@@ -5,6 +5,7 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import type { HtmlTagDescriptor, Plugin } from "vite"
 import { defineConfig, loadEnv } from "vite"
+import rootPackageJson from "../../package.json" with { type: "json" }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PWA_MANIFEST_FILE = "manifest.webmanifest"
@@ -289,6 +290,9 @@ function tuckmarkPwaPlugin(surface: "server-http" | "browser-static"): Plugin {
   }
 }
 
+const DEFAULT_REPOSITORY_URL = "https://github.com/IvanLi-CN/tuckmark"
+const DEFAULT_RIGHTS_URL = "https://ivanli.cc/"
+
 export function resolveApiOrigin(env: Record<string, string | undefined>): string {
   if (env.TUCKMARK_API_ORIGIN) {
     return env.TUCKMARK_API_ORIGIN
@@ -321,13 +325,31 @@ export function resolvePublicBase(
   return resolveServeBase(env, command)
 }
 
+export function resolveAppVersion(env: Record<string, string | undefined>): string {
+  return env.TUCKMARK_APP_VERSION || rootPackageJson.version
+}
+
+export function resolveRepositoryUrl(env: Record<string, string | undefined>): string {
+  return env.TUCKMARK_REPOSITORY_URL || DEFAULT_REPOSITORY_URL
+}
+
+export function resolveRightsUrl(env: Record<string, string | undefined>): string {
+  return env.TUCKMARK_RIGHTS_URL || DEFAULT_RIGHTS_URL
+}
+
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "")
   const surface = resolveBuildSurface(env)
+  const appVersion = resolveAppVersion(env)
+  const repositoryUrl = resolveRepositoryUrl(env)
+  const rightsUrl = resolveRightsUrl(env)
 
   return {
     base: resolvePublicBase(env, command),
     define: {
+      __TUCKMARK_APP_VERSION__: JSON.stringify(appVersion),
+      __TUCKMARK_REPOSITORY_URL__: JSON.stringify(repositoryUrl),
+      __TUCKMARK_RIGHTS_URL__: JSON.stringify(rightsUrl),
       __TUCKMARK_WEB_SURFACE__: JSON.stringify(surface),
       "import.meta.env.TUCKMARK_API_ORIGIN": JSON.stringify(env.TUCKMARK_API_ORIGIN ?? ""),
       "import.meta.env.TUCKMARK_SERVER_PORT": JSON.stringify(env.TUCKMARK_SERVER_PORT ?? ""),

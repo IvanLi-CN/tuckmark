@@ -50,6 +50,12 @@ output.
   - left: product mark and primary navigation
   - right: device entry button
 - The device entry button opens a right-side `device drawer`.
+- `StatusFooter` contains:
+  - left: active surface, mode, and route path
+  - right: GitHub repository link, current app version, site rights notice,
+    Service API readiness, and browser-direct print readiness
+- Footer version and repository metadata must come from build-time metadata with
+  environment overrides, not from hard-coded component literals.
 - `browser-static`, `server-http`, and `demo` reuse the same route tree and the
   same page components.
 - Static Pages keeps browser history routing semantics and ships a `404.html`
@@ -376,6 +382,10 @@ output.
 
   PR: include
   ![Template segmented tabs](./assets/templates-segmented-tabs-1440x900.jpg)
+
+- `1280×800` template workspace footer showing GitHub repository, current app version, site rights notice, and runtime diagnostics together
+
+  ![Template footer metadata](./assets/templates-footer-metadata-1280x800.png)
 
 - `1280×800` canvas workspace in professional three-column editor mode
 
