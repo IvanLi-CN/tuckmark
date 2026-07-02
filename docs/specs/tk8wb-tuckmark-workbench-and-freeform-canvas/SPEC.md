@@ -249,6 +249,14 @@ output.
     definition before preview or print, so `browser-static` and `server-http`
     reuse the existing canvas artifact seam without a new template persistence
     API
+  - agent-generated user template packages use the
+    `tuckmark.user-template-package.v1` JSON contract and compile into the same
+    canvas artifact seam
+  - package import saves into browser-local user templates only; it does not
+    introduce a remote template library or service-owned template history
+  - Tuckmark CLI and Web validate, preview, import, packetize, and print
+    template packages deterministically; they do not embed an LLM for template
+    generation
 - Canvas editor contract:
   - system template elements with fixed keys such as `__title` stay static when
     imported into the editor
@@ -316,6 +324,11 @@ output.
 
   PR: include
   ![Template large grid with add-template actions](./assets/templates-large-grid-add-button-1440x900.png)
+
+- `1440×900` template list segmented tabs use matching outer, indicator, and button geometry
+
+  PR: include
+  ![Template segmented tabs](./assets/templates-segmented-tabs-1440x900.jpg)
 
 - `1280×800` canvas workspace in professional three-column editor mode
 

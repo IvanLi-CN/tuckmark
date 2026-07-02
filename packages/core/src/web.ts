@@ -37,3 +37,10 @@ export type {
   TemplateElement,
   TemplateField,
 } from "./types.js"
+export type { UserTemplatePackage, UserTemplatePackageField } from "./user-template-package.js"
+export {
+  compileUserTemplatePackageToCanvas,
+  parseUserTemplatePackage,
+  resolveUserTemplatePackageRenderOptions,
+  userTemplatePackageSchema,
+} from "./user-template-package.js"

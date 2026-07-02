@@ -1,0 +1,88 @@
+{
+  "schema": "tuckmark.user-template-package.v1",
+  "id": "component-bin-sot23",
+  "name": "Component Bin SOT-23",
+  "description": "Small electronics organizer label for SOT-23 parts.",
+  "canvas": {
+    "width": 192,
+    "height": 96
+  },
+  "fields": [
+    {
+      "key": "part",
+      "label": "Part",
+      "defaultValue": "SS34"
+    },
+    {
+      "key": "rating",
+      "label": "Rating",
+      "defaultValue": "40V 3A"
+    },
+    {
+      "key": "package",
+      "label": "Package",
+      "defaultValue": "SMAF"
+    }
+  ],
+  "elements": [
+    {
+      "kind": "rect",
+      "x": 2,
+      "y": 2,
+      "width": 188,
+      "height": 92,
+      "strokeWidth": 2,
+      "fill": "white",
+      "stroke": "#111111",
+      "radius": 8,
+      "rotation": 0
+    },
+    {
+      "kind": "text",
+      "key": "part",
+      "x": 10,
+      "y": 30,
+      "width": 172,
+      "fontSize": 24,
+      "fontWeight": "bold",
+      "align": "center",
+      "maxLines": 1,
+      "rotation": 0
+    },
+    {
+      "kind": "text",
+      "key": "rating",
+      "x": 10,
+      "y": 58,
+      "width": 172,
+      "fontSize": 16,
+      "fontWeight": "normal",
+      "align": "center",
+      "maxLines": 1,
+      "rotation": 0
+    },
+    {
+      "kind": "text",
+      "key": "package",
+      "x": 10,
+      "y": 80,
+      "width": 172,
+      "fontSize": 12,
+      "fontWeight": "normal",
+      "align": "center",
+      "maxLines": 1,
+      "rotation": 0
+    }
+  ],
+  "sampleInput": {
+    "part": "SS34",
+    "rating": "40V 3A",
+    "package": "SMAF"
+  },
+  "renderOptions": {
+    "paperType": "gap",
+    "printWidthDots": 384,
+    "threshold": 80
+  },
+  "tags": ["electronics", "component-bin"]
+}

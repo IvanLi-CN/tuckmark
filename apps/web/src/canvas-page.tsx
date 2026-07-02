@@ -88,6 +88,7 @@ import {
   SheetTrigger,
 } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
+import { defaultRenderOptions } from "./demo-data.js"
 import { cn } from "./lib/utils.js"
 import type {
   CanvasDraftDocument,
@@ -199,6 +200,14 @@ function cloneDraft(draft: CanvasDraftDocument): CanvasDraftDocument {
 function toComparableDraft(draft: CanvasDraftDocument) {
   return {
     ...draft,
+    id: undefined,
+    presetId: undefined,
+    renderOptions: {
+      ...defaultRenderOptions,
+      ...draft.renderOptions,
+    },
+    source: undefined,
+    templateId: undefined,
     baseVersionId: undefined,
     lastSavedAt: undefined,
   }
@@ -3253,6 +3262,17 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     )
   }, [state.liveDraft.templateId])
 
+  const draftWithCurrentRenderOptions = React.useCallback(
+    (draft: CanvasDraftDocument): CanvasDraftDocument => ({
+      ...cloneDraft(draft),
+      renderOptions: {
+        ...draft.renderOptions,
+        ...controller.renderOptions,
+      },
+    }),
+    [controller.renderOptions]
+  )
+
   React.useEffect(() => {
     if (initialScenario) {
       return
@@ -3268,6 +3288,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         if (cancelled) {
           return
         }
+        controller.setRenderOptions({ ...defaultRenderOptions, ...loaded.draft.renderOptions })
         setState(
           createCanvasStateFromDraft(loaded.draft, {
             loading: false,
@@ -3324,7 +3345,15 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     return () => {
       cancelled = true
     }
-  }, [initialPanel, initialScenario, initialStatus, routeSource, searchParams, startupSyncPending])
+  }, [
+    controller.setRenderOptions,
+    initialPanel,
+    initialScenario,
+    initialStatus,
+    routeSource,
+    searchParams,
+    startupSyncPending,
+  ])
 
   const autosaveLiveDraft = state.liveDraft
   const autosaveLoading = state.loading
@@ -3337,6 +3366,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       return
     }
 
+    const autosaveDocument = draftWithCurrentRenderOptions(autosaveLiveDraft)
     const autosaveBaseline = getAutosaveBaselineDraft({
       liveDraft: autosaveLiveDraft,
       readOnlyVersion: autosaveReadOnlyVersion,
@@ -3346,7 +3376,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     const shouldCreateAutosave =
       autosaveRouteSource.kind !== "user-template" ||
       !autosaveBaseline ||
-      !sameDraftContent(autosaveLiveDraft, autosaveBaseline)
+      !sameDraftContent(autosaveDocument, autosaveBaseline)
 
     if (
       shouldCreateAutosave &&
@@ -3356,7 +3386,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       void saveUserTemplateAutosave({
         templateId: autosaveLiveDraft.templateId,
         source: autosaveRouteSource,
-        document: autosaveLiveDraft,
+        document: autosaveDocument,
         sourceVersionId: autosaveLiveDraft.baseVersionId,
       })
     }
@@ -3366,7 +3396,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       !startupSyncPending &&
       state.storageMode !== "reset-pending"
     ) {
-      persistDraftDocument(autosaveLiveDraft)
+      persistDraftDocument(autosaveDocument)
     }
   }, [
     autosaveLiveDraft,
@@ -3374,6 +3404,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     autosaveReadOnlyVersion,
     autosaveRouteSource,
     autosaveVersionHistory,
+    draftWithCurrentRenderOptions,
     initialScenario,
     readOnly,
     state.storageMode,
@@ -3389,11 +3420,12 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         controller.deleteCanvasDraft(state.presetId)
         return
       }
-      controller.recordCanvasDraft(state.presetId, state.liveDraft)
+      controller.recordCanvasDraft(state.presetId, draftWithCurrentRenderOptions(state.liveDraft))
     }
   }, [
     controller.deleteCanvasDraft,
     controller.recordCanvasDraft,
+    draftWithCurrentRenderOptions,
     initialScenario,
     startupSyncPending,
     state.liveDraft,
@@ -3628,10 +3660,10 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       const documentForSave =
         mode === "save" && existingTemplateId
           ? {
-              ...cloneDraft(baseDraft),
+              ...draftWithCurrentRenderOptions(baseDraft),
               name: nextName,
             }
-          : duplicateDraftAsTemplate(baseDraft, nextName)
+          : duplicateDraftAsTemplate(draftWithCurrentRenderOptions(baseDraft), nextName)
 
       const result = await saveUserTemplate({
         name: nextName,
@@ -3666,6 +3698,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     },
     [
       controller.refreshUserTemplates,
+      draftWithCurrentRenderOptions,
       navigate,
       readOnly,
       state.liveDraft,

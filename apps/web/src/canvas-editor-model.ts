@@ -3,6 +3,7 @@ import {
   estimateCharsPerLine,
   presetTemplateData,
   type TemplateDefinition,
+  type UserTemplatePackage,
   wrapText,
 } from "../../../packages/core/src/web.js"
 
@@ -237,9 +238,11 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     fields.length > 0 &&
     fields.every((field) => field.defaultValue === "")
       ? (() => {
-          const templateFields = new Map(
-            getSystemTemplateById(source.presetId).fields.map((field) => [field.key, field])
-          )
+          const template = presetTemplateData.find((item) => item.id === source.presetId)
+          if (!template) {
+            return fields
+          }
+          const templateFields = new Map(template.fields.map((field) => [field.key, field]))
           return fields.map((field) => {
             const templateField = templateFields.get(field.key)
             if (!templateField) {
@@ -641,6 +644,62 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
       snapEnabled: true,
     },
   })
+}
+
+export function createDraftFromUserTemplatePackage(
+  templatePackage: UserTemplatePackage
+): CanvasDraftDocument {
+  const template: TemplateDefinition = {
+    id: templatePackage.id,
+    name: templatePackage.name,
+    description: templatePackage.description,
+    width: templatePackage.canvas.width,
+    height: templatePackage.canvas.height,
+    fields: templatePackage.fields.map((field) => ({
+      key: field.key,
+      label: field.label,
+      required: false,
+      multiline: field.multiline,
+      defaultValue: field.defaultValue,
+      sampleValue: templatePackage.sampleInput[field.key],
+    })),
+    elements: templatePackage.elements,
+    tags: templatePackage.tags,
+  }
+
+  const draft = normalizeDraftDocument({
+    ...createDraftFromSystemTemplate(template),
+    id: `agent-template-${templatePackage.id}`,
+    presetId: templatePackage.id,
+    renderOptions: templatePackage.renderOptions,
+    source: {
+      kind: "scratch",
+      presetId: templatePackage.id,
+    },
+  })
+  const sampleInput = templatePackage.sampleInput
+  return {
+    ...draft,
+    fields: draft.fields.map((field) => ({
+      ...field,
+      sampleValue: sampleInput[field.key],
+    })),
+    elements: draft.elements.map((element, index) => {
+      if (!isBindableKind(element) || !element.binding) {
+        return element
+      }
+      const sourceElement = templatePackage.elements[index]
+      const literalValue =
+        sourceElement?.kind === "text" ||
+        sourceElement?.kind === "barcode" ||
+        sourceElement?.kind === "qr"
+          ? sourceElement.value
+          : undefined
+      const sampleValue = sampleInput[element.binding.fieldKey]
+      const value = sampleValue ?? literalValue
+      return value === undefined ? element : { ...element, value }
+    }),
+  }
 }
 
 export function duplicateDraftAsTemplate(
@@ -1297,6 +1356,7 @@ export function buildTemplateFieldsFromDraft(document: CanvasDraftDocument) {
     required: false,
     multiline: field.multiline,
     defaultValue: field.defaultValue,
+    sampleValue: field.sampleValue,
   }))
 }
 
@@ -1314,7 +1374,10 @@ export function toCanvasPrintSource(
   return {
     kind: "canvas",
     canvas: compileDraftToCanvasDefinition(document),
-    renderOptions: createPreviewRenderOptions(renderOptions),
+    renderOptions: createPreviewRenderOptions({
+      ...document.renderOptions,
+      ...renderOptions,
+    }),
   }
 }
 

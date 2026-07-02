@@ -20,6 +20,7 @@
     "dev:server": "bun run --filter @tuckmark/server dev",
     "dev:storybook": "bun run --filter @tuckmark/web storybook",
     "dev:web": "bun run --filter @tuckmark/web dev",
+    "practice:agent-templates": "node scripts/agent-template-practice-report.mjs",
     "preview:web:pages": "bun scripts/serve-pages-preview.ts --root apps/web/dist --base / --port 4173",
     "format": "bun scripts/run-biome.ts write",
     "format:check": "bun scripts/run-biome.ts check",

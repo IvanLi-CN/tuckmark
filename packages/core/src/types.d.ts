@@ -42,6 +42,46 @@ export declare const printerSchema: z.ZodObject<{
     }, z.core.$strip>;
 }, z.core.$strip>;
 export type Printer = z.infer<typeof printerSchema>;
+export declare const printerProbeStageSchema: z.ZodEnum<{
+    not_found: "not_found";
+    open: "open";
+    connect: "connect";
+    discover_service: "discover_service";
+    discover_characteristic: "discover_characteristic";
+    disconnect: "disconnect";
+    complete: "complete";
+}>;
+export type PrinterProbeStage = z.infer<typeof printerProbeStageSchema>;
+export declare const printerProbeTimingsSchema: z.ZodObject<{
+    connectMs: z.ZodOptional<z.ZodNumber>;
+    discoverServiceMs: z.ZodOptional<z.ZodNumber>;
+    discoverCharacteristicMs: z.ZodOptional<z.ZodNumber>;
+    disconnectMs: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strip>;
+export type PrinterProbeTimings = z.infer<typeof printerProbeTimingsSchema>;
+export declare const printerProbeResultSchema: z.ZodObject<{
+    ok: z.ZodBoolean;
+    printerId: z.ZodString;
+    printerName: z.ZodOptional<z.ZodString>;
+    stage: z.ZodEnum<{
+        not_found: "not_found";
+        open: "open";
+        connect: "connect";
+        discover_service: "discover_service";
+        discover_characteristic: "discover_characteristic";
+        disconnect: "disconnect";
+        complete: "complete";
+    }>;
+    message: z.ZodString;
+    log: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    timingsMs: z.ZodDefault<z.ZodObject<{
+        connectMs: z.ZodOptional<z.ZodNumber>;
+        discoverServiceMs: z.ZodOptional<z.ZodNumber>;
+        discoverCharacteristicMs: z.ZodOptional<z.ZodNumber>;
+        disconnectMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+}, z.core.$strip>;
+export type PrinterProbeResult = z.infer<typeof printerProbeResultSchema>;
 export declare const templateFieldSchema: z.ZodObject<{
     key: z.ZodString;
     label: z.ZodString;
@@ -69,6 +109,7 @@ export declare const textElementSchema: z.ZodObject<{
     }>>;
     value: z.ZodOptional<z.ZodString>;
     maxLines: z.ZodOptional<z.ZodNumber>;
+    rotation: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>;
 export declare const rectElementSchema: z.ZodObject<{
     kind: z.ZodLiteral<"rect">;
@@ -80,6 +121,7 @@ export declare const rectElementSchema: z.ZodObject<{
     fill: z.ZodDefault<z.ZodString>;
     stroke: z.ZodDefault<z.ZodString>;
     radius: z.ZodDefault<z.ZodNumber>;
+    rotation: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>;
 export declare const lineElementSchema: z.ZodObject<{
     kind: z.ZodLiteral<"line">;
@@ -89,6 +131,33 @@ export declare const lineElementSchema: z.ZodObject<{
     y2: z.ZodNumber;
     strokeWidth: z.ZodDefault<z.ZodNumber>;
     stroke: z.ZodDefault<z.ZodString>;
+}, z.core.$strip>;
+export declare const barcodeElementSchema: z.ZodObject<{
+    kind: z.ZodLiteral<"barcode">;
+    key: z.ZodString;
+    x: z.ZodNumber;
+    y: z.ZodNumber;
+    width: z.ZodNumber;
+    height: z.ZodNumber;
+    value: z.ZodOptional<z.ZodString>;
+    format: z.ZodDefault<z.ZodLiteral<"CODE128">>;
+    showValue: z.ZodDefault<z.ZodBoolean>;
+    rotation: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strip>;
+export declare const qrElementSchema: z.ZodObject<{
+    kind: z.ZodLiteral<"qr">;
+    key: z.ZodString;
+    x: z.ZodNumber;
+    y: z.ZodNumber;
+    size: z.ZodNumber;
+    value: z.ZodOptional<z.ZodString>;
+    errorCorrectionLevel: z.ZodDefault<z.ZodEnum<{
+        L: "L";
+        M: "M";
+        Q: "Q";
+        H: "H";
+    }>>;
+    rotation: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>;
 export declare const templateElementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     kind: z.ZodLiteral<"text">;
@@ -108,6 +177,7 @@ export declare const templateElementSchema: z.ZodDiscriminatedUnion<[z.ZodObject
     }>>;
     value: z.ZodOptional<z.ZodString>;
     maxLines: z.ZodOptional<z.ZodNumber>;
+    rotation: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>, z.ZodObject<{
     kind: z.ZodLiteral<"rect">;
     x: z.ZodNumber;
@@ -118,6 +188,7 @@ export declare const templateElementSchema: z.ZodDiscriminatedUnion<[z.ZodObject
     fill: z.ZodDefault<z.ZodString>;
     stroke: z.ZodDefault<z.ZodString>;
     radius: z.ZodDefault<z.ZodNumber>;
+    rotation: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>, z.ZodObject<{
     kind: z.ZodLiteral<"line">;
     x1: z.ZodNumber;
@@ -126,6 +197,31 @@ export declare const templateElementSchema: z.ZodDiscriminatedUnion<[z.ZodObject
     y2: z.ZodNumber;
     strokeWidth: z.ZodDefault<z.ZodNumber>;
     stroke: z.ZodDefault<z.ZodString>;
+}, z.core.$strip>, z.ZodObject<{
+    kind: z.ZodLiteral<"barcode">;
+    key: z.ZodString;
+    x: z.ZodNumber;
+    y: z.ZodNumber;
+    width: z.ZodNumber;
+    height: z.ZodNumber;
+    value: z.ZodOptional<z.ZodString>;
+    format: z.ZodDefault<z.ZodLiteral<"CODE128">>;
+    showValue: z.ZodDefault<z.ZodBoolean>;
+    rotation: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strip>, z.ZodObject<{
+    kind: z.ZodLiteral<"qr">;
+    key: z.ZodString;
+    x: z.ZodNumber;
+    y: z.ZodNumber;
+    size: z.ZodNumber;
+    value: z.ZodOptional<z.ZodString>;
+    errorCorrectionLevel: z.ZodDefault<z.ZodEnum<{
+        L: "L";
+        M: "M";
+        Q: "Q";
+        H: "H";
+    }>>;
+    rotation: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>], "kind">;
 export type TemplateElement = z.infer<typeof templateElementSchema>;
 export declare const templateSchema: z.ZodObject<{
@@ -160,6 +256,7 @@ export declare const templateSchema: z.ZodObject<{
         }>>;
         value: z.ZodOptional<z.ZodString>;
         maxLines: z.ZodOptional<z.ZodNumber>;
+        rotation: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>, z.ZodObject<{
         kind: z.ZodLiteral<"rect">;
         x: z.ZodNumber;
@@ -170,6 +267,7 @@ export declare const templateSchema: z.ZodObject<{
         fill: z.ZodDefault<z.ZodString>;
         stroke: z.ZodDefault<z.ZodString>;
         radius: z.ZodDefault<z.ZodNumber>;
+        rotation: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>, z.ZodObject<{
         kind: z.ZodLiteral<"line">;
         x1: z.ZodNumber;
@@ -178,6 +276,31 @@ export declare const templateSchema: z.ZodObject<{
         y2: z.ZodNumber;
         strokeWidth: z.ZodDefault<z.ZodNumber>;
         stroke: z.ZodDefault<z.ZodString>;
+    }, z.core.$strip>, z.ZodObject<{
+        kind: z.ZodLiteral<"barcode">;
+        key: z.ZodString;
+        x: z.ZodNumber;
+        y: z.ZodNumber;
+        width: z.ZodNumber;
+        height: z.ZodNumber;
+        value: z.ZodOptional<z.ZodString>;
+        format: z.ZodDefault<z.ZodLiteral<"CODE128">>;
+        showValue: z.ZodDefault<z.ZodBoolean>;
+        rotation: z.ZodDefault<z.ZodNumber>;
+    }, z.core.$strip>, z.ZodObject<{
+        kind: z.ZodLiteral<"qr">;
+        key: z.ZodString;
+        x: z.ZodNumber;
+        y: z.ZodNumber;
+        size: z.ZodNumber;
+        value: z.ZodOptional<z.ZodString>;
+        errorCorrectionLevel: z.ZodDefault<z.ZodEnum<{
+            L: "L";
+            M: "M";
+            Q: "Q";
+            H: "H";
+        }>>;
+        rotation: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>], "kind">>;
     tags: z.ZodDefault<z.ZodArray<z.ZodString>>;
 }, z.core.$strip>;
@@ -205,6 +328,7 @@ export declare const directCanvasSchema: z.ZodObject<{
         }>>;
         value: z.ZodOptional<z.ZodString>;
         maxLines: z.ZodOptional<z.ZodNumber>;
+        rotation: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>, z.ZodObject<{
         kind: z.ZodLiteral<"rect">;
         x: z.ZodNumber;
@@ -215,6 +339,7 @@ export declare const directCanvasSchema: z.ZodObject<{
         fill: z.ZodDefault<z.ZodString>;
         stroke: z.ZodDefault<z.ZodString>;
         radius: z.ZodDefault<z.ZodNumber>;
+        rotation: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>, z.ZodObject<{
         kind: z.ZodLiteral<"line">;
         x1: z.ZodNumber;
@@ -223,6 +348,31 @@ export declare const directCanvasSchema: z.ZodObject<{
         y2: z.ZodNumber;
         strokeWidth: z.ZodDefault<z.ZodNumber>;
         stroke: z.ZodDefault<z.ZodString>;
+    }, z.core.$strip>, z.ZodObject<{
+        kind: z.ZodLiteral<"barcode">;
+        key: z.ZodString;
+        x: z.ZodNumber;
+        y: z.ZodNumber;
+        width: z.ZodNumber;
+        height: z.ZodNumber;
+        value: z.ZodOptional<z.ZodString>;
+        format: z.ZodDefault<z.ZodLiteral<"CODE128">>;
+        showValue: z.ZodDefault<z.ZodBoolean>;
+        rotation: z.ZodDefault<z.ZodNumber>;
+    }, z.core.$strip>, z.ZodObject<{
+        kind: z.ZodLiteral<"qr">;
+        key: z.ZodString;
+        x: z.ZodNumber;
+        y: z.ZodNumber;
+        size: z.ZodNumber;
+        value: z.ZodOptional<z.ZodString>;
+        errorCorrectionLevel: z.ZodDefault<z.ZodEnum<{
+            L: "L";
+            M: "M";
+            Q: "Q";
+            H: "H";
+        }>>;
+        rotation: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>], "kind">>;
 }, z.core.$strip>;
 export type DirectCanvasDefinition = z.infer<typeof directCanvasSchema>;
@@ -230,6 +380,7 @@ export declare const previewSourceSchema: z.ZodEnum<{
     canvas: "canvas";
     template: "template";
     batch_row: "batch_row";
+    safe_text: "safe_text";
 }>;
 export type PreviewSource = z.infer<typeof previewSourceSchema>;
 export declare const safeTextLabelSchema: z.ZodObject<{
@@ -254,6 +405,7 @@ export declare const previewArtifactSchema: z.ZodObject<{
         canvas: "canvas";
         template: "template";
         batch_row: "batch_row";
+        safe_text: "safe_text";
     }>;
     name: z.ZodString;
     templateId: z.ZodOptional<z.ZodString>;
@@ -286,6 +438,7 @@ export declare const previewBatchItemSchema: z.ZodObject<{
             canvas: "canvas";
             template: "template";
             batch_row: "batch_row";
+            safe_text: "safe_text";
         }>;
         name: z.ZodString;
         templateId: z.ZodOptional<z.ZodString>;
@@ -317,6 +470,7 @@ export declare const previewResultSchema: z.ZodObject<{
             canvas: "canvas";
             template: "template";
             batch_row: "batch_row";
+            safe_text: "safe_text";
         }>;
         name: z.ZodString;
         templateId: z.ZodOptional<z.ZodString>;
@@ -341,6 +495,14 @@ export declare const previewResultSchema: z.ZodObject<{
     }, z.core.$strip>;
 }, z.core.$strip>;
 export type PreviewResult = z.infer<typeof previewResultSchema>;
+export declare const artifactPacketsSchema: z.ZodObject<{
+    artifactId: z.ZodString;
+    packetsJsonPath: z.ZodString;
+    packets: z.ZodArray<z.ZodString>;
+    packetCount: z.ZodNumber;
+    totalBytes: z.ZodNumber;
+}, z.core.$strip>;
+export type ArtifactPackets = z.infer<typeof artifactPacketsSchema>;
 export declare const batchPreviewResultSchema: z.ZodObject<{
     templateId: z.ZodString;
     total: z.ZodNumber;
@@ -353,6 +515,7 @@ export declare const batchPreviewResultSchema: z.ZodObject<{
                 canvas: "canvas";
                 template: "template";
                 batch_row: "batch_row";
+                safe_text: "safe_text";
             }>;
             name: z.ZodString;
             templateId: z.ZodOptional<z.ZodString>;
@@ -445,6 +608,7 @@ export declare const directCanvasPreviewRequestSchema: z.ZodObject<{
             }>>;
             value: z.ZodOptional<z.ZodString>;
             maxLines: z.ZodOptional<z.ZodNumber>;
+            rotation: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>, z.ZodObject<{
             kind: z.ZodLiteral<"rect">;
             x: z.ZodNumber;
@@ -455,6 +619,7 @@ export declare const directCanvasPreviewRequestSchema: z.ZodObject<{
             fill: z.ZodDefault<z.ZodString>;
             stroke: z.ZodDefault<z.ZodString>;
             radius: z.ZodDefault<z.ZodNumber>;
+            rotation: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>, z.ZodObject<{
             kind: z.ZodLiteral<"line">;
             x1: z.ZodNumber;
@@ -463,6 +628,31 @@ export declare const directCanvasPreviewRequestSchema: z.ZodObject<{
             y2: z.ZodNumber;
             strokeWidth: z.ZodDefault<z.ZodNumber>;
             stroke: z.ZodDefault<z.ZodString>;
+        }, z.core.$strip>, z.ZodObject<{
+            kind: z.ZodLiteral<"barcode">;
+            key: z.ZodString;
+            x: z.ZodNumber;
+            y: z.ZodNumber;
+            width: z.ZodNumber;
+            height: z.ZodNumber;
+            value: z.ZodOptional<z.ZodString>;
+            format: z.ZodDefault<z.ZodLiteral<"CODE128">>;
+            showValue: z.ZodDefault<z.ZodBoolean>;
+            rotation: z.ZodDefault<z.ZodNumber>;
+        }, z.core.$strip>, z.ZodObject<{
+            kind: z.ZodLiteral<"qr">;
+            key: z.ZodString;
+            x: z.ZodNumber;
+            y: z.ZodNumber;
+            size: z.ZodNumber;
+            value: z.ZodOptional<z.ZodString>;
+            errorCorrectionLevel: z.ZodDefault<z.ZodEnum<{
+                L: "L";
+                M: "M";
+                Q: "Q";
+                H: "H";
+            }>>;
+            rotation: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>], "kind">>;
     }, z.core.$strip>;
     renderOptions: z.ZodOptional<z.ZodObject<{
@@ -479,16 +669,19 @@ export declare const directCanvasPreviewRequestSchema: z.ZodObject<{
 export type DirectCanvasPreviewRequest = z.infer<typeof directCanvasPreviewRequestSchema>;
 export declare const printByArtifactRequestSchema: z.ZodObject<{
     printerId: z.ZodString;
+    printerName: z.ZodOptional<z.ZodString>;
     artifactId: z.ZodString;
 }, z.core.$strip>;
 export type PrintByArtifactRequest = z.infer<typeof printByArtifactRequestSchema>;
 export declare const printBatchRequestSchema: z.ZodObject<{
     printerId: z.ZodString;
+    printerName: z.ZodOptional<z.ZodString>;
     artifactIds: z.ZodArray<z.ZodString>;
 }, z.core.$strip>;
 export type PrintBatchRequest = z.infer<typeof printBatchRequestSchema>;
 export declare const printByTemplateRequestSchema: z.ZodObject<{
     printerId: z.ZodString;
+    printerName: z.ZodOptional<z.ZodString>;
     templateId: z.ZodString;
     input: z.ZodRecord<z.ZodString, z.ZodString>;
     renderOptions: z.ZodOptional<z.ZodObject<{
@@ -505,6 +698,7 @@ export declare const printByTemplateRequestSchema: z.ZodObject<{
 export type PrintByTemplateRequest = z.infer<typeof printByTemplateRequestSchema>;
 export declare const printCanvasRequestSchema: z.ZodObject<{
     printerId: z.ZodString;
+    printerName: z.ZodOptional<z.ZodString>;
     canvas: z.ZodObject<{
         id: z.ZodDefault<z.ZodString>;
         name: z.ZodDefault<z.ZodString>;
@@ -528,6 +722,7 @@ export declare const printCanvasRequestSchema: z.ZodObject<{
             }>>;
             value: z.ZodOptional<z.ZodString>;
             maxLines: z.ZodOptional<z.ZodNumber>;
+            rotation: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>, z.ZodObject<{
             kind: z.ZodLiteral<"rect">;
             x: z.ZodNumber;
@@ -538,6 +733,7 @@ export declare const printCanvasRequestSchema: z.ZodObject<{
             fill: z.ZodDefault<z.ZodString>;
             stroke: z.ZodDefault<z.ZodString>;
             radius: z.ZodDefault<z.ZodNumber>;
+            rotation: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>, z.ZodObject<{
             kind: z.ZodLiteral<"line">;
             x1: z.ZodNumber;
@@ -546,6 +742,31 @@ export declare const printCanvasRequestSchema: z.ZodObject<{
             y2: z.ZodNumber;
             strokeWidth: z.ZodDefault<z.ZodNumber>;
             stroke: z.ZodDefault<z.ZodString>;
+        }, z.core.$strip>, z.ZodObject<{
+            kind: z.ZodLiteral<"barcode">;
+            key: z.ZodString;
+            x: z.ZodNumber;
+            y: z.ZodNumber;
+            width: z.ZodNumber;
+            height: z.ZodNumber;
+            value: z.ZodOptional<z.ZodString>;
+            format: z.ZodDefault<z.ZodLiteral<"CODE128">>;
+            showValue: z.ZodDefault<z.ZodBoolean>;
+            rotation: z.ZodDefault<z.ZodNumber>;
+        }, z.core.$strip>, z.ZodObject<{
+            kind: z.ZodLiteral<"qr">;
+            key: z.ZodString;
+            x: z.ZodNumber;
+            y: z.ZodNumber;
+            size: z.ZodNumber;
+            value: z.ZodOptional<z.ZodString>;
+            errorCorrectionLevel: z.ZodDefault<z.ZodEnum<{
+                L: "L";
+                M: "M";
+                Q: "Q";
+                H: "H";
+            }>>;
+            rotation: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>], "kind">>;
     }, z.core.$strip>;
     renderOptions: z.ZodOptional<z.ZodObject<{

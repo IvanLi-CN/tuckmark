@@ -125,6 +125,36 @@ describe("user-template-store", () => {
     expect(history?.autosaves).toHaveLength(0)
   })
 
+  it("persists render options as saved template content", async () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Render Options Template",
+      document: {
+        ...draft,
+        renderOptions: { paperType: "gap", threshold: 80, printWidthDots: 192 },
+      },
+    })
+
+    const editedDraft = structuredClone(saved.workingCopy.draft)
+    editedDraft.renderOptions = {
+      ...editedDraft.renderOptions,
+      threshold: 150,
+    }
+
+    const updated = await saveUserTemplate({
+      name: "Render Options Template",
+      templateId: saved.template.id,
+      sourceVersionId: saved.version.id,
+      document: editedDraft,
+    })
+
+    expect(updated.version.document.renderOptions).toMatchObject({
+      paperType: "gap",
+      threshold: 150,
+      printWidthDots: 192,
+    })
+  })
+
   it("clears autosave history without touching saved versions", async () => {
     const draft = createDraftFromPreset(getPresetById("shipping-wide"))
     const saved = await saveUserTemplate({

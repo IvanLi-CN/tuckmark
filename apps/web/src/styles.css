@@ -126,6 +126,149 @@
 }
 
 @layer components {
+  .tm-action-button {
+    position: relative;
+    display: inline-flex;
+    min-width: 0;
+  }
+
+  .tm-action-button-tooltip {
+    position: fixed;
+    z-index: 60;
+    max-width: min(14rem, calc(100vw - 1rem));
+    transform: translateY(2px);
+    border: 1px solid color-mix(in oklab, var(--border) 78%, black);
+    border-radius: 0.5rem;
+    background: rgba(34, 28, 24, 0.96);
+    color: white;
+    opacity: 0;
+    pointer-events: none;
+    padding: 0.35rem 0.5rem;
+    box-shadow: 0 10px 24px rgba(44, 34, 25, 0.18);
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1;
+    overflow-wrap: anywhere;
+    transition:
+      opacity 120ms ease,
+      transform 120ms ease;
+    white-space: nowrap;
+  }
+
+  .tm-action-button-tooltip--positioned {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .tm-action-button__control {
+    min-width: 0;
+  }
+
+  .tm-action-button__control--xs {
+    height: 1.8rem;
+    border-radius: 0.5rem;
+    padding-inline: 0.6rem;
+    font-size: 0.72rem;
+  }
+
+  .tm-action-button--icon-only .tm-action-button__control {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+  }
+
+  .tm-action-button--xs.tm-action-button--icon-only .tm-action-button__control {
+    width: 1.8rem;
+    height: 1.8rem;
+  }
+
+  .tm-action-button__control--selected {
+    border-color: rgba(168, 115, 69, 0.48);
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+
+  .tm-segmented-tabs {
+    @apply relative inline-flex items-center border border-border/80 bg-background/80;
+    --tm-segmented-tabs-inset: 0.1875rem;
+    --tm-segmented-tabs-radius: 999px;
+    --tm-segmented-tabs-indicator-radius: 999px;
+    border-radius: var(--tm-segmented-tabs-radius);
+    gap: 0;
+    justify-self: start;
+    padding: var(--tm-segmented-tabs-inset);
+    width: max-content;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.7),
+      0 1px 2px rgba(73, 46, 24, 0.05);
+  }
+
+  .tm-segmented-tabs .tm-action-button {
+    position: relative;
+    z-index: 1;
+  }
+
+  .tm-segmented-tabs__indicator {
+    position: absolute;
+    z-index: 0;
+    top: var(--tm-segmented-tabs-inset);
+    bottom: var(--tm-segmented-tabs-inset);
+    left: 0;
+    border-radius: var(--tm-segmented-tabs-indicator-radius);
+    background: rgba(168, 115, 69, 0.18);
+    box-shadow:
+      inset 0 0 0 1px rgba(168, 115, 69, 0.42),
+      0 1px 2px rgba(73, 46, 24, 0.08);
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      width 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 100ms ease;
+  }
+
+  .tm-segmented-tabs--ready .tm-segmented-tabs__indicator {
+    opacity: 1;
+  }
+
+  .tm-segmented-tabs .tm-action-button__control {
+    position: relative;
+    z-index: 1;
+    border-color: transparent;
+    border-width: 0;
+    border-radius: var(--tm-segmented-tabs-indicator-radius);
+    background: transparent;
+    box-shadow: none;
+    color: var(--muted-foreground);
+  }
+
+  .tm-segmented-tabs .tm-action-button__control:hover {
+    background: transparent;
+    color: var(--foreground);
+  }
+
+  .tm-segmented-tabs .tm-action-button__control--selected,
+  .tm-segmented-tabs .tm-action-button__control--selected:hover {
+    background: transparent;
+    color: var(--primary);
+    box-shadow: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tm-segmented-tabs__indicator {
+      transition: opacity 80ms ease;
+    }
+  }
+
+  .tm-template-list__header-actions {
+    @apply flex min-w-0 flex-wrap items-center justify-end gap-2;
+  }
+
+  .tm-template-list__primary-actions {
+    @apply flex flex-wrap gap-2;
+    padding: 0 0.625rem;
+  }
+
   .tm-shell {
     @apply min-h-screen px-4 py-4 md:px-5 lg:px-6;
     display: grid;
@@ -757,6 +900,10 @@
 
   .tm-template-list__empty-action-button svg {
     @apply size-4 shrink-0;
+  }
+
+  .tm-template-list__status {
+    @apply rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-xs text-muted-foreground;
   }
 
   .tm-template-card--list .tm-template-card__preview {

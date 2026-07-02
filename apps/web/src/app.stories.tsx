@@ -157,6 +157,72 @@ export const TemplatesWorkspace: Story = {
   },
 }
 
+export const TemplatesWorkspaceImportPackage: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+  },
+  loaders: [
+    async () => {
+      await resetUserTemplateStoreForTest()
+      return {}
+    },
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const chooser = canvas.getByLabelText("选择模板包文件")
+    const file = new File(
+      [
+        JSON.stringify({
+          schema: "tuckmark.user-template-package.v1",
+          id: "agent-ina219-bin",
+          name: "INA219 模块盒",
+          description: "Agent generated module storage label",
+          canvas: { width: 192, height: 96 },
+          fields: [
+            { key: "part", label: "型号", defaultValue: "INA219", multiline: false },
+            { key: "bus", label: "接口", defaultValue: "I2C", multiline: false },
+          ],
+          elements: [
+            {
+              kind: "text",
+              key: "part",
+              x: 10,
+              y: 36,
+              width: 172,
+              fontSize: 24,
+              fontWeight: "bold",
+              align: "center",
+              maxLines: 1,
+              rotation: 0,
+            },
+            {
+              kind: "text",
+              key: "bus",
+              x: 10,
+              y: 68,
+              width: 172,
+              fontSize: 14,
+              fontWeight: "normal",
+              align: "center",
+              maxLines: 1,
+              rotation: 0,
+            },
+          ],
+          sampleInput: { part: "INA219", bus: "I2C" },
+          renderOptions: { paperType: "gap", printWidthDots: 384 },
+        }),
+      ],
+      "ina219.package.json",
+      { type: "application/json" }
+    )
+
+    await userEvent.upload(chooser, file)
+    await canvas.findByText("INA219 模块盒")
+    await canvas.findByText("已导入 INA219 模块盒")
+  },
+}
+
 export const TemplatesWorkspaceWithUserTemplates: Story = {
   args: {
     context: runtimeContext,
@@ -177,7 +243,7 @@ export const TemplatesList: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole("button", { name: "列表" }))
+    await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
   },
 }
 
@@ -188,7 +254,7 @@ export const TemplatesListEditing: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole("button", { name: "列表" }))
+    await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
     const [firstRecipientButton] = canvas.getAllByRole("button", { name: "Koha Cat" })
     await userEvent.click(firstRecipientButton)
   },
@@ -201,7 +267,7 @@ export const TemplatesSelectableEditing: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole("button", { name: "列表" }))
+    await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
     const [firstRecipientButton] = canvas.getAllByRole("button", { name: "Koha Cat" })
     await userEvent.click(firstRecipientButton)
   },
@@ -478,7 +544,7 @@ export const TemplatesLargeGridLongTitle: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole("button", { name: "大图" }))
+    await userEvent.click(canvas.getByRole("tab", { name: "大图" }))
   },
 }
 

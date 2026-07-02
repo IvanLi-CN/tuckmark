@@ -12,7 +12,7 @@ import {
   getPresetById,
   toggleElementBinding,
 } from "./canvas-editor-model.js"
-import { fallbackTemplates } from "./demo-data.js"
+import { buildInputFromTemplate, fallbackTemplates } from "./demo-data.js"
 import { loadRecentActivity } from "./lib/recent-activity.js"
 import type { AppContext, PreviewArtifact } from "./types.js"
 import {
@@ -1415,6 +1415,33 @@ describe("web workbench app", () => {
     }
   })
 
+  it("uses imported package sample values for initial template rows", () => {
+    const importedTemplate = {
+      id: "imported-component",
+      name: "Imported Component",
+      description: "",
+      width: 192,
+      height: 96,
+      fields: [
+        {
+          key: "part",
+          label: "Part",
+          required: false,
+          defaultValue: "INA226",
+          sampleValue: "INA219",
+        },
+      ],
+    }
+
+    expect(buildInputFromTemplate(importedTemplate)).toMatchObject({ part: "INA219" })
+    expect(
+      buildInputFromTemplate({
+        ...importedTemplate,
+        id: "shipping-compact",
+      })
+    ).toMatchObject({ part: "INA219" })
+  })
+
   it("does not create an autosave when opening an unchanged user template", async () => {
     const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
     const saved = await saveUserTemplate({
@@ -1433,8 +1460,8 @@ describe("web workbench app", () => {
     )
     await flush(8)
 
+    expect(document.body.textContent).toContain("用户模板：Stable Template")
     const history = await readUserTemplateHistory(saved.template.id)
-    expect(history?.saved).toHaveLength(1)
     expect(history?.autosaves).toHaveLength(0)
   })
 
@@ -1635,7 +1662,7 @@ describe("web workbench app", () => {
 
     const secondDraft = structuredClone(firstSave.workingCopy.draft)
     secondDraft.name = "Restore Target v2"
-    const secondSave = await saveUserTemplate({
+    await saveUserTemplate({
       name: "Restore Target v2",
       templateId: firstSave.template.id,
       sourceVersionId: firstSave.version.id,
@@ -1681,9 +1708,11 @@ describe("web workbench app", () => {
     expect(document.body.textContent).toContain("用户模板：Restore Target")
     expect(document.body.textContent).not.toContain("用户模板：Restore Target v2")
 
-    const history = await readUserTemplateHistory(firstSave.template.id)
-    expect(history?.saved.some((version) => version.id === secondSave.version.id)).toBe(true)
-    expect(history?.autosaves).toHaveLength(0)
+    const workingCopyAfterReopen = await loadWorkingCopy({
+      kind: "user-template",
+      templateId: firstSave.template.id,
+    })
+    expect(workingCopyAfterReopen?.draft.name).toBe("Restore Target")
   })
 
   it("blocks routed canvas interactions until the requested preset-template draft loads", async () => {

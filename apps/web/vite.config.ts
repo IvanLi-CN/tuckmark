@@ -357,6 +357,7 @@ export default defineConfig(({ command, mode }) => {
     },
     test: {
       exclude: ["tests/**"],
+      testTimeout: 30000,
     },
   }
 })

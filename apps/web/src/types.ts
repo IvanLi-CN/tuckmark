@@ -13,6 +13,7 @@ export type TemplateField = {
   required: boolean
   multiline?: boolean
   defaultValue?: string
+  sampleValue?: string
 }
 
 export type Template = {
@@ -122,6 +123,7 @@ export type CanvasDraftField = {
   key: string
   label: string
   defaultValue: string
+  sampleValue?: string
   multiline: boolean
   bindings: string[]
 }
@@ -181,6 +183,7 @@ export type CanvasDraftDocument = {
   lastSavedAt?: string
   width: number
   height: number
+  renderOptions?: Partial<RenderOptions>
   fields: CanvasDraftField[]
   elements: CanvasDraftElement[]
   editor: {

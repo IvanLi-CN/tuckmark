@@ -68,6 +68,9 @@ export function buildInputFromTemplate(template: Template | undefined): Record<s
 
   const fallback = fallbackInputs[template.id] ?? {}
   return Object.fromEntries(
-    template.fields.map((field) => [field.key, fallback[field.key] ?? field.defaultValue ?? ""])
+    template.fields.map((field) => [
+      field.key,
+      field.sampleValue ?? fallback[field.key] ?? field.defaultValue ?? "",
+    ])
   )
 }

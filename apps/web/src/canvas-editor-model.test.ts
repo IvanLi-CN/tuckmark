@@ -11,6 +11,7 @@ import {
   createCanvasElement,
   createDraftFromPreset,
   createDraftFromSystemTemplate,
+  createDraftFromUserTemplatePackage,
   getElementBounds,
   getElementGeometry,
   getElementSelectionBounds,
@@ -19,6 +20,7 @@ import {
   loadStoredDraftDocument,
   normalizeDraftDocument,
   persistDraftDocument,
+  toCanvasPrintSource,
   toggleElementBinding,
 } from "./canvas-editor-model.js"
 import type { CanvasDraftElement } from "./types.js"
@@ -151,6 +153,138 @@ describe("canvas-editor-model monochrome contract", () => {
     expect(rect.stroke).toBe("#111111")
     assertLineElement(line)
     expect(line.stroke).toBe("#111111")
+  })
+
+  it("imports agent user template packages into bindable canvas drafts", () => {
+    const draft = createDraftFromUserTemplatePackage({
+      schema: "tuckmark.user-template-package.v1",
+      id: "ina219-module-bin",
+      name: "INA219 Module Bin",
+      description: "Sensor storage label",
+      canvas: { width: 192, height: 96 },
+      fields: [
+        { key: "part", label: "Part", defaultValue: "INA226", multiline: false },
+        { key: "bus", label: "Bus", defaultValue: "I2C", multiline: false },
+      ],
+      elements: [
+        {
+          kind: "text",
+          key: "part",
+          x: 10,
+          y: 34,
+          width: 172,
+          fontSize: 24,
+          fontWeight: "bold",
+          align: "center",
+          maxLines: 1,
+          rotation: 0,
+        },
+        {
+          kind: "text",
+          key: "bus",
+          x: 10,
+          y: 66,
+          width: 172,
+          fontSize: 14,
+          fontWeight: "normal",
+          align: "center",
+          maxLines: 1,
+          rotation: 0,
+        },
+      ],
+      sampleInput: { part: "INA219", bus: "I2C" },
+      renderOptions: { paperType: "gap", printWidthDots: 384 },
+      tags: ["electronics"],
+    })
+
+    expect(draft.name).toBe("INA219 Module Bin")
+    expect(draft.source.kind).toBe("scratch")
+    expect(draft.renderOptions).toMatchObject({ paperType: "gap", printWidthDots: 384 })
+    expect(draft.fields.map((field) => field.key)).toEqual(["part", "bus"])
+    expect(draft.fields[0]).toMatchObject({
+      key: "part",
+      defaultValue: "INA226",
+      sampleValue: "INA219",
+    })
+    expect(draft.elements[0]).toMatchObject({
+      kind: "text",
+      value: "INA219",
+      binding: { fieldKey: "part", kind: "text" },
+    })
+  })
+
+  it("preserves imported bound element literal fallback values without samples", () => {
+    const draft = createDraftFromUserTemplatePackage({
+      schema: "tuckmark.user-template-package.v1",
+      id: "qr-fallback-label",
+      name: "QR Fallback Label",
+      description: "QR label",
+      canvas: { width: 192, height: 96 },
+      fields: [{ key: "url", label: "URL", defaultValue: "", multiline: false }],
+      elements: [
+        {
+          kind: "qr",
+          key: "url",
+          value: "https://example.test/device/ina219",
+          x: 8,
+          y: 8,
+          size: 72,
+          errorCorrectionLevel: "M",
+          rotation: 0,
+        },
+      ],
+      sampleInput: {},
+      renderOptions: { paperType: "gap", printWidthDots: 384 },
+      tags: ["electronics"],
+    })
+
+    expect(draft.elements[0]).toMatchObject({
+      kind: "qr",
+      value: "https://example.test/device/ina219",
+      binding: { fieldKey: "url", kind: "qr" },
+    })
+  })
+
+  it("keeps imported package render options in canvas print sources", () => {
+    const draft = createDraftFromUserTemplatePackage({
+      schema: "tuckmark.user-template-package.v1",
+      id: "continuous-agent-label",
+      name: "Continuous Agent Label",
+      description: "Continuous label",
+      canvas: { width: 192, height: 96 },
+      fields: [{ key: "part", label: "Part", defaultValue: "INA219", multiline: false }],
+      elements: [
+        {
+          kind: "text",
+          key: "part",
+          x: 10,
+          y: 34,
+          width: 172,
+          fontSize: 24,
+          fontWeight: "bold",
+          align: "center",
+          maxLines: 1,
+          rotation: 0,
+        },
+      ],
+      sampleInput: { part: "INA219" },
+      renderOptions: { paperType: "continuous", threshold: 80, printWidthDots: 192 },
+      tags: ["electronics"],
+    })
+
+    const source = toCanvasPrintSource(draft, {
+      paperType: "gap",
+      threshold: 150,
+      xOffsetDots: 0,
+      printWidthDots: 384,
+    })
+
+    expect(source.renderOptions).toMatchObject({
+      paperType: "gap",
+      threshold: 150,
+      printWidthDots: 384,
+      previewScale: 4,
+    })
   })
 
   it("persists monochrome drafts and clears preset-scoped storage", () => {

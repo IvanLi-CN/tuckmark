@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises"
 import path from "node:path"
-import { TuckmarkService } from "@tuckmark/core"
+import {
+  compileUserTemplatePackageToCanvas,
+  parseUserTemplatePackage,
+  resolveUserTemplatePackageRenderOptions,
+  TuckmarkService,
+} from "@tuckmark/core"
 import { z } from "zod"
 
 const service = new TuckmarkService()
@@ -57,6 +62,9 @@ async function main(): Promise<void> {
     case "print":
       await handlePrint(argv.slice(1))
       break
+    case "template-package":
+      await handleTemplatePackage(argv.slice(1))
+      break
     default:
       printHelp()
       process.exitCode = 1
@@ -65,7 +73,11 @@ async function main(): Promise<void> {
 
 function printHelp(): void {
   console.log(
-    "tuckmark commands:\n  tuckmark templates\n  tuckmark printers\n  tuckmark probe --printer <id> [--printer-name <name>]\n  tuckmark preview --template <id> --input <json> [--render-options <json>]\n  tuckmark preview --canvas <json> [--render-options <json>]\n  tuckmark preview --safe-text <json> [--render-options <json>]\n  tuckmark batch-preview --template <id> --csv <path> [--render-options <json>]\n  tuckmark print --printer <id> [--printer-name <name>] --artifact <id>\n  tuckmark print --printer <id> [--printer-name <name>] --artifacts <json-array>\n  tuckmark print --printer <id> [--printer-name <name>] --safe-text <json> [--render-options <json>]\n  tuckmark print --printer <id> [--printer-name <name>] --template <id> --input <json> [--render-options <json>]"
+    "tuckmark commands:\n  tuckmark templates\n  tuckmark printers\n  tuckmark probe --printer <id> [--printer-name <name>]\n  tuckmark preview --template <id> --input <json> [--render-options <json>]\n  tuckmark preview --canvas <json> [--render-options <json>]\n  tuckmark preview --safe-text <json> [--render-options <json>]\n  tuckmark batch-preview --template <id> --csv <path> [--render-options <json>]\n  tuckmark print --printer <id> [--printer-name <name>] --artifact <id>\n  tuckmark print --printer <id> [--printer-name <name>] --artifacts <json-array>\n  tuckmark print --printer <id> [--printer-name <name>] --safe-text <json> [--render-options <json>]\n  tuckmark print --printer <id> [--printer-name <name>] --template <id> --input <json> [--render-options <json>]" +
+      "\n  tuckmark template-package validate --file <path>" +
+      "\n  tuckmark template-package preview --file <path> [--input <json>] [--render-options <json>]" +
+      "\n  tuckmark template-package packets --file <path> [--input <json>] [--render-options <json>]" +
+      "\n  tuckmark template-package print --printer <id> [--printer-name <name>] --file <path> [--input <json>] [--render-options <json>]"
   )
 }
 
@@ -80,7 +92,7 @@ function parseRenderOptions(args: string[]): z.infer<typeof renderOptionsSchema>
   if (!raw) {
     return undefined
   }
-  return renderOptionsSchema.parse(JSON.parse(raw))
+  return renderOptionsSchema.partial().parse(JSON.parse(raw))
 }
 
 async function handlePreview(args: string[]): Promise<void> {
@@ -230,6 +242,88 @@ async function handlePrint(args: string[]): Promise<void> {
     return
   }
   throw new Error("print requires --artifact or --template")
+}
+
+async function readTemplatePackageFromArgs(args: string[]) {
+  const filePath = parseFlag(args, "--file")
+  if (!filePath) throw new Error("template-package requires --file")
+  const raw = await readFile(path.resolve(filePath), "utf8")
+  return parseUserTemplatePackage(JSON.parse(raw))
+}
+
+function parseTemplatePackageInput(args: string[]): Record<string, string> | undefined {
+  const raw = parseFlag(args, "--input")
+  return raw ? z.record(z.string(), z.string()).parse(JSON.parse(raw)) : undefined
+}
+
+async function previewTemplatePackage(args: string[]) {
+  const templatePackage = await readTemplatePackageFromArgs(args)
+  const input = parseTemplatePackageInput(args) ?? templatePackage.sampleInput
+  const renderOptions = {
+    ...resolveUserTemplatePackageRenderOptions(templatePackage),
+    ...parseRenderOptions(args),
+  }
+  return service.previewCanvas({
+    canvas: compileUserTemplatePackageToCanvas(templatePackage, input),
+    renderOptions,
+  })
+}
+
+async function handleTemplatePackage(args: string[]): Promise<void> {
+  const subcommand = args[0] ?? "help"
+  const rest = args.slice(1)
+
+  switch (subcommand) {
+    case "validate": {
+      const templatePackage = await readTemplatePackageFromArgs(rest)
+      console.log(
+        JSON.stringify(
+          {
+            ok: true,
+            id: templatePackage.id,
+            name: templatePackage.name,
+            width: templatePackage.canvas.width,
+            height: templatePackage.canvas.height,
+            fields: templatePackage.fields.map((field) => field.key),
+          },
+          null,
+          2
+        )
+      )
+      return
+    }
+    case "preview": {
+      console.log(JSON.stringify(await previewTemplatePackage(rest), null, 2))
+      return
+    }
+    case "packets": {
+      const preview = await previewTemplatePackage(rest)
+      const packets = await service.getArtifactPackets(preview.artifact.id)
+      console.log(JSON.stringify({ preview, packets }, null, 2))
+      return
+    }
+    case "print": {
+      const printerId = parseFlag(rest, "--printer")
+      const printerName = parseFlag(rest, "--printer-name")
+      if (!printerId) throw new Error("template-package print requires --printer")
+      if (!service.serverSidePrintEnabled) {
+        throw new Error(
+          "Server-side printer control is disabled. Set TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 to enable it."
+        )
+      }
+      const preview = await previewTemplatePackage(rest)
+      const job = await service.printByArtifact({
+        printerId,
+        printerName,
+        artifactId: preview.artifact.id,
+      })
+      console.log(JSON.stringify({ preview, job }, null, 2))
+      return
+    }
+    default:
+      printHelp()
+      process.exitCode = 1
+  }
 }
 
 main().catch((error) => {
