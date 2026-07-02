@@ -212,4 +212,24 @@ describe("UserTemplatePackage", () => {
       })
     ).toThrow(/unknown field/)
   })
+
+  it("rejects empty barcode or QR defaults before preview", () => {
+    expect(() =>
+      parseUserTemplatePackage({
+        ...componentPackage,
+        fields: [{ key: "code", label: "Code", defaultValue: "" }],
+        sampleInput: {},
+        elements: [
+          {
+            kind: "qr",
+            key: "code",
+            x: 10,
+            y: 10,
+            size: 64,
+            rotation: 0,
+          },
+        ],
+      })
+    ).toThrow(/requires default qr content/)
+  })
 })

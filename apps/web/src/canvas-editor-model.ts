@@ -1347,7 +1347,10 @@ export function toCanvasPrintSource(
   return {
     kind: "canvas",
     canvas: compileDraftToCanvasDefinition(document),
-    renderOptions: createPreviewRenderOptions(renderOptions),
+    renderOptions: createPreviewRenderOptions({
+      ...document.renderOptions,
+      ...renderOptions,
+    }),
   }
 }
 

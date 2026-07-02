@@ -94,6 +94,12 @@ function validateUserTemplatePackageSemantics(templatePackage: UserTemplatePacka
       if (!element.value && !fieldKeys.has(element.key)) {
         throw new Error(`Element ${index + 1} references unknown field: ${element.key}`)
       }
+      if (
+        (element.kind === "barcode" || element.kind === "qr") &&
+        resolveTemplateElementValue(element, fieldDefaults).trim().length === 0
+      ) {
+        throw new Error(`Element ${index + 1} requires default ${element.kind} content`)
+      }
     }
     validateElementBounds(templatePackage, element, index, fieldDefaults)
   }
@@ -182,8 +188,16 @@ function estimateTextWidth(
   element: Extract<TemplateElement, { kind: "text" }>,
   fieldDefaults: Map<string, string>
 ): number {
-  const text = fieldDefaults.get(element.key) || element.value || element.key
+  const text = resolveTemplateElementValue(element, fieldDefaults) || element.key
   return Math.max(text.length, 1) * element.fontSize * 0.6
+}
+
+function resolveTemplateElementValue(
+  element: Extract<TemplateElement, { kind: "text" | "barcode" | "qr" }>,
+  fieldDefaults: Map<string, string>
+): string {
+  const fieldValue = fieldDefaults.get(element.key)
+  return fieldValue && fieldValue.length > 0 ? fieldValue : (element.value ?? "")
 }
 
 function validateRectBounds(

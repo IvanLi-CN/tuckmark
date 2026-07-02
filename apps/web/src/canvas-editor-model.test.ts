@@ -20,6 +20,7 @@ import {
   loadStoredDraftDocument,
   normalizeDraftDocument,
   persistDraftDocument,
+  toCanvasPrintSource,
   toggleElementBinding,
 } from "./canvas-editor-model.js"
 import type { CanvasDraftElement } from "./types.js"
@@ -205,6 +206,48 @@ describe("canvas-editor-model monochrome contract", () => {
       kind: "text",
       value: "INA219",
       binding: { fieldKey: "part", kind: "text" },
+    })
+  })
+
+  it("keeps imported package render options in canvas print sources", () => {
+    const draft = createDraftFromUserTemplatePackage({
+      schema: "tuckmark.user-template-package.v1",
+      id: "continuous-agent-label",
+      name: "Continuous Agent Label",
+      description: "Continuous label",
+      canvas: { width: 192, height: 96 },
+      fields: [{ key: "part", label: "Part", defaultValue: "INA219", multiline: false }],
+      elements: [
+        {
+          kind: "text",
+          key: "part",
+          x: 10,
+          y: 34,
+          width: 172,
+          fontSize: 24,
+          fontWeight: "bold",
+          align: "center",
+          maxLines: 1,
+          rotation: 0,
+        },
+      ],
+      sampleInput: { part: "INA219" },
+      renderOptions: { paperType: "continuous", threshold: 80, printWidthDots: 192 },
+      tags: ["electronics"],
+    })
+
+    const source = toCanvasPrintSource(draft, {
+      paperType: "gap",
+      threshold: 150,
+      xOffsetDots: 0,
+      printWidthDots: 384,
+    })
+
+    expect(source.renderOptions).toMatchObject({
+      paperType: "gap",
+      threshold: 150,
+      printWidthDots: 384,
+      previewScale: 4,
     })
   })
 

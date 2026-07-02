@@ -3268,6 +3268,12 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         if (cancelled) {
           return
         }
+        if (loaded.draft.renderOptions) {
+          controller.setRenderOptions((current) => ({
+            ...current,
+            ...loaded.draft.renderOptions,
+          }))
+        }
         setState(
           createCanvasStateFromDraft(loaded.draft, {
             loading: false,
@@ -3324,7 +3330,15 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     return () => {
       cancelled = true
     }
-  }, [initialPanel, initialScenario, initialStatus, routeSource, searchParams, startupSyncPending])
+  }, [
+    controller.setRenderOptions,
+    initialPanel,
+    initialScenario,
+    initialStatus,
+    routeSource,
+    searchParams,
+    startupSyncPending,
+  ])
 
   const autosaveLiveDraft = state.liveDraft
   const autosaveLoading = state.loading
