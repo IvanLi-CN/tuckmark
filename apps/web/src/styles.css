@@ -238,7 +238,7 @@
   }
 
   .tm-segmented-tabs .tm-action-button__control:hover {
-    background: rgba(247, 239, 231, 0.62);
+    background: transparent;
     color: var(--foreground);
   }
 

@@ -166,7 +166,7 @@ function SegmentedTabs({
             icon={item.icon}
             mode={mode}
             size={size}
-            variant="ghost"
+            variant="bare"
             selected={selected}
             disabled={item.disabled}
             onClick={() => onValueChange(item.value)}
