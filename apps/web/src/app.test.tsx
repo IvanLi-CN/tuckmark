@@ -1437,7 +1437,7 @@ describe("web workbench app", () => {
     expect(
       buildInputFromTemplate({
         ...importedTemplate,
-        id: "imported-component-with-fallback",
+        id: "shipping-compact",
       })
     ).toMatchObject({ part: "INA219" })
   })
@@ -1461,6 +1461,8 @@ describe("web workbench app", () => {
     await flush(8)
 
     expect(document.body.textContent).toContain("用户模板：Stable Template")
+    const history = await readUserTemplateHistory(saved.template.id)
+    expect(history?.autosaves).toHaveLength(0)
   })
 
   it("does not persist user-template undo state into scratch draft storage", async () => {

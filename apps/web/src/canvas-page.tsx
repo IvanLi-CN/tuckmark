@@ -202,6 +202,10 @@ function toComparableDraft(draft: CanvasDraftDocument) {
     ...draft,
     id: undefined,
     presetId: undefined,
+    renderOptions: {
+      ...defaultRenderOptions,
+      ...draft.renderOptions,
+    },
     source: undefined,
     templateId: undefined,
     baseVersionId: undefined,

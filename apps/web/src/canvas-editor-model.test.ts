@@ -213,6 +213,38 @@ describe("canvas-editor-model monochrome contract", () => {
     })
   })
 
+  it("preserves imported bound element literal fallback values without samples", () => {
+    const draft = createDraftFromUserTemplatePackage({
+      schema: "tuckmark.user-template-package.v1",
+      id: "qr-fallback-label",
+      name: "QR Fallback Label",
+      description: "QR label",
+      canvas: { width: 192, height: 96 },
+      fields: [{ key: "url", label: "URL", defaultValue: "", multiline: false }],
+      elements: [
+        {
+          kind: "qr",
+          key: "url",
+          value: "https://example.test/device/ina219",
+          x: 8,
+          y: 8,
+          size: 72,
+          errorCorrectionLevel: "M",
+          rotation: 0,
+        },
+      ],
+      sampleInput: {},
+      renderOptions: { paperType: "gap", printWidthDots: 384 },
+      tags: ["electronics"],
+    })
+
+    expect(draft.elements[0]).toMatchObject({
+      kind: "qr",
+      value: "https://example.test/device/ina219",
+      binding: { fieldKey: "url", kind: "qr" },
+    })
+  })
+
   it("keeps imported package render options in canvas print sources", () => {
     const draft = createDraftFromUserTemplatePackage({
       schema: "tuckmark.user-template-package.v1",

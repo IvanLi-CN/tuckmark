@@ -238,9 +238,11 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     fields.length > 0 &&
     fields.every((field) => field.defaultValue === "")
       ? (() => {
-          const templateFields = new Map(
-            getSystemTemplateById(source.presetId).fields.map((field) => [field.key, field])
-          )
+          const template = presetTemplateData.find((item) => item.id === source.presetId)
+          if (!template) {
+            return fields
+          }
+          const templateFields = new Map(template.fields.map((field) => [field.key, field]))
           return fields.map((field) => {
             const templateField = templateFields.get(field.key)
             if (!templateField) {
@@ -682,12 +684,20 @@ export function createDraftFromUserTemplatePackage(
       ...field,
       sampleValue: sampleInput[field.key],
     })),
-    elements: draft.elements.map((element) => {
+    elements: draft.elements.map((element, index) => {
       if (!isBindableKind(element) || !element.binding) {
         return element
       }
+      const sourceElement = templatePackage.elements[index]
+      const literalValue =
+        sourceElement?.kind === "text" ||
+        sourceElement?.kind === "barcode" ||
+        sourceElement?.kind === "qr"
+          ? sourceElement.value
+          : undefined
       const sampleValue = sampleInput[element.binding.fieldKey]
-      return sampleValue === undefined ? element : { ...element, value: sampleValue }
+      const value = sampleValue ?? literalValue
+      return value === undefined ? element : { ...element, value }
     }),
   }
 }
