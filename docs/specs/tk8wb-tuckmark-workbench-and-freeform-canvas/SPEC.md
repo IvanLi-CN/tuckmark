@@ -325,6 +325,11 @@ output.
   PR: include
   ![Template large grid with add-template actions](./assets/templates-large-grid-add-button-1440x900.png)
 
+- `1440×900` template list segmented tabs use matching outer, indicator, and button geometry
+
+  PR: include
+  ![Template segmented tabs](./assets/templates-segmented-tabs-1440x900.jpg)
+
 - `1280×800` canvas workspace in professional three-column editor mode
 
   PR: include
