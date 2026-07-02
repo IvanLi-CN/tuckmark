@@ -72,6 +72,13 @@ export function resolveUserTemplatePackageRenderOptions(templatePackage: UserTem
 }
 
 function validateUserTemplatePackageSemantics(templatePackage: UserTemplatePackage): void {
+  const printWidthDots = templatePackage.renderOptions.printWidthDots
+  if (printWidthDots !== undefined && templatePackage.canvas.width > printWidthDots) {
+    throw new Error(
+      `Canvas width ${templatePackage.canvas.width} exceeds render print width ${printWidthDots}`
+    )
+  }
+
   const fieldKeys = new Set<string>()
   for (const field of templatePackage.fields) {
     if (fieldKeys.has(field.key)) {
@@ -103,14 +110,32 @@ function validateElementBounds(
 
   switch (element.kind) {
     case "text":
-      if (element.x < 0 || element.y < 0) fail("is outside the canvas")
-      if (element.width && element.x + element.width > width) fail("exceeds canvas width")
-      if (element.y > height) fail("exceeds canvas height")
+      validateRectBounds(
+        {
+          left: element.x,
+          top: element.y - element.fontSize,
+          width: element.width ?? estimateTextWidth(element),
+          height: element.fontSize + 4,
+          rotation: element.rotation,
+        },
+        width,
+        height,
+        fail
+      )
       return
     case "rect":
-      if (element.x < 0 || element.y < 0) fail("is outside the canvas")
-      if (element.x + element.width > width) fail("exceeds canvas width")
-      if (element.y + element.height > height) fail("exceeds canvas height")
+      validateRectBounds(
+        {
+          left: element.x,
+          top: element.y,
+          width: element.width,
+          height: element.height,
+          rotation: element.rotation,
+        },
+        width,
+        height,
+        fail
+      )
       return
     case "line":
       if (Math.min(element.x1, element.x2) < 0 || Math.min(element.y1, element.y2) < 0) {
@@ -120,15 +145,98 @@ function validateElementBounds(
       if (Math.max(element.y1, element.y2) > height) fail("exceeds canvas height")
       return
     case "barcode":
-      if (element.x < 0 || element.y < 0) fail("is outside the canvas")
-      if (element.x + element.width > width) fail("exceeds canvas width")
-      if (element.y + element.height > height) fail("exceeds canvas height")
+      validateRectBounds(
+        {
+          left: element.x,
+          top: element.y,
+          width: element.width,
+          height: element.height,
+          rotation: element.rotation,
+        },
+        width,
+        height,
+        fail
+      )
       return
     case "qr":
-      if (element.x < 0 || element.y < 0) fail("is outside the canvas")
-      if (element.x + element.size > width) fail("exceeds canvas width")
-      if (element.y + element.size > height) fail("exceeds canvas height")
+      validateRectBounds(
+        {
+          left: element.x,
+          top: element.y,
+          width: element.size,
+          height: element.size,
+          rotation: element.rotation,
+        },
+        width,
+        height,
+        fail
+      )
       return
+  }
+}
+
+function estimateTextWidth(element: Extract<TemplateElement, { kind: "text" }>): number {
+  return Math.max(element.key.length, 1) * element.fontSize * 0.6
+}
+
+function validateRectBounds(
+  box: { left: number; top: number; width: number; height: number; rotation?: number },
+  canvasWidth: number,
+  canvasHeight: number,
+  fail: (message: string) => never
+): void {
+  const bounds = getRotatedBounds(box)
+  if (
+    bounds.left < 0 ||
+    bounds.top < 0 ||
+    bounds.right > canvasWidth ||
+    bounds.bottom > canvasHeight
+  ) {
+    fail("exceeds rotated canvas bounds")
+  }
+}
+
+function getRotatedBounds(box: {
+  left: number
+  top: number
+  width: number
+  height: number
+  rotation?: number
+}) {
+  const rotation = box.rotation ?? 0
+  if (rotation === 0) {
+    return {
+      left: box.left,
+      top: box.top,
+      right: box.left + box.width,
+      bottom: box.top + box.height,
+    }
+  }
+
+  const radians = (rotation * Math.PI) / 180
+  const cos = Math.cos(radians)
+  const sin = Math.sin(radians)
+  const originX = box.left + box.width / 2
+  const originY = box.top + box.height / 2
+  const corners = [
+    { x: box.left, y: box.top },
+    { x: box.left + box.width, y: box.top },
+    { x: box.left + box.width, y: box.top + box.height },
+    { x: box.left, y: box.top + box.height },
+  ].map((corner) => {
+    const dx = corner.x - originX
+    const dy = corner.y - originY
+    return {
+      x: originX + dx * cos - dy * sin,
+      y: originY + dx * sin + dy * cos,
+    }
+  })
+
+  return {
+    left: Math.min(...corners.map((corner) => corner.x)),
+    top: Math.min(...corners.map((corner) => corner.y)),
+    right: Math.max(...corners.map((corner) => corner.x)),
+    bottom: Math.max(...corners.map((corner) => corner.y)),
   }
 }
 

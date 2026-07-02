@@ -112,6 +112,38 @@ describe("UserTemplatePackage", () => {
     ).toThrow()
   })
 
+  it("rejects packages wider than their configured render print width", () => {
+    expect(() =>
+      parseUserTemplatePackage({
+        ...componentPackage,
+        canvas: { width: 384, height: 96 },
+        renderOptions: { printWidthDots: 192 },
+      })
+    ).toThrow(/exceeds render print width/)
+  })
+
+  it("rejects rotated elements that exceed the canvas bounds", () => {
+    expect(() =>
+      parseUserTemplatePackage({
+        ...componentPackage,
+        elements: [
+          {
+            kind: "rect",
+            x: 0,
+            y: 20,
+            width: 10,
+            height: 80,
+            strokeWidth: 2,
+            fill: "white",
+            stroke: "#111111",
+            radius: 0,
+            rotation: 90,
+          },
+        ],
+      })
+    ).toThrow(/rotated canvas bounds/)
+  })
+
   it("rejects bindable elements that reference unknown fields", () => {
     expect(() =>
       parseUserTemplatePackage({
