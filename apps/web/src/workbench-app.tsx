@@ -304,22 +304,6 @@ function createPreviewRenderOptions(renderOptions: RenderOptions) {
   }
 }
 
-function mergeDraftRenderOptions(
-  draftRenderOptions: CanvasDraftDocument["renderOptions"],
-  renderOptions: RenderOptions
-): RenderOptions {
-  const userOverrides = Object.fromEntries(
-    Object.entries(renderOptions).filter(
-      ([key, value]) => value !== defaultRenderOptions[key as keyof RenderOptions]
-    )
-  )
-  return {
-    ...defaultRenderOptions,
-    ...draftRenderOptions,
-    ...userOverrides,
-  }
-}
-
 function createTemplatePrintSource(
   template: Template,
   row: TemplateRow,
@@ -343,9 +327,7 @@ function createUserTemplatePrintSource(
   return {
     kind: "canvas",
     canvas: compileDraftToFilledCanvasDefinition(draft, row.values),
-    renderOptions: createPreviewRenderOptions(
-      mergeDraftRenderOptions(draft.renderOptions, renderOptions)
-    ),
+    renderOptions: createPreviewRenderOptions(renderOptions),
     templateUsage: {
       id: template.id,
       name: template.name,
@@ -740,6 +722,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     if (activeTemplateEntry?.kind !== "user") {
       setActiveUserTemplateDraft(null)
       setActiveUserTemplateDraftLoading(false)
+      controller.setRenderOptions(defaultRenderOptions)
       return
     }
 
@@ -754,6 +737,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
         if (!cancelled) {
           if (version) {
             setActiveUserTemplateDraft(version)
+            controller.setRenderOptions({ ...defaultRenderOptions, ...version.renderOptions })
             return
           }
           const history = await readUserTemplateHistory(templateId)
@@ -762,7 +746,9 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
             history?.saved[0] ??
             null
           if (!cancelled) {
-            setActiveUserTemplateDraft(savedVersion?.document ?? null)
+            const draft = savedVersion?.document ?? null
+            setActiveUserTemplateDraft(draft)
+            controller.setRenderOptions({ ...defaultRenderOptions, ...draft?.renderOptions })
           }
         }
       } finally {
@@ -775,7 +761,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     return () => {
       cancelled = true
     }
-  }, [activeTemplateEntry])
+  }, [activeTemplateEntry, controller.setRenderOptions])
 
   React.useEffect(() => {
     if (!templateRows.some((row) => row.id === selectedRowId)) {

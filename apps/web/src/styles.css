@@ -191,11 +191,8 @@
   .tm-segmented-tabs {
     @apply relative inline-flex items-center border border-border/80 bg-background/80;
     --tm-segmented-tabs-inset: 0.1875rem;
-    --tm-segmented-tabs-radius: 1.45rem;
-    --tm-segmented-tabs-indicator-radius: calc(
-      var(--tm-segmented-tabs-radius) -
-      var(--tm-segmented-tabs-inset)
-    );
+    --tm-segmented-tabs-radius: 999px;
+    --tm-segmented-tabs-indicator-radius: 999px;
     border-radius: var(--tm-segmented-tabs-radius);
     gap: 0;
     justify-self: start;

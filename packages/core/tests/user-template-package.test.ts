@@ -170,6 +170,25 @@ describe("UserTemplatePackage", () => {
     ).toThrow(/rotated canvas bounds/)
   })
 
+  it("rejects line strokes that extend beyond the canvas", () => {
+    expect(() =>
+      parseUserTemplatePackage({
+        ...componentPackage,
+        elements: [
+          {
+            kind: "line",
+            x1: 0,
+            y1: 0,
+            x2: 192,
+            y2: 0,
+            strokeWidth: 8,
+            stroke: "#111111",
+          },
+        ],
+      })
+    ).toThrow(/outside the canvas/)
+  })
+
   it("rejects widthless text that renders beyond the canvas", () => {
     expect(() =>
       parseUserTemplatePackage({

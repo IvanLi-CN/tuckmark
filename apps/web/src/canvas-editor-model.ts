@@ -658,13 +658,13 @@ export function createDraftFromUserTemplatePackage(
       label: field.label,
       required: false,
       multiline: field.multiline,
-      defaultValue: templatePackage.sampleInput[field.key] ?? field.defaultValue,
+      defaultValue: field.defaultValue,
     })),
     elements: templatePackage.elements,
     tags: templatePackage.tags,
   }
 
-  return normalizeDraftDocument({
+  const draft = normalizeDraftDocument({
     ...createDraftFromSystemTemplate(template),
     id: `agent-template-${templatePackage.id}`,
     presetId: templatePackage.id,
@@ -674,6 +674,17 @@ export function createDraftFromUserTemplatePackage(
       presetId: templatePackage.id,
     },
   })
+  const sampleInput = templatePackage.sampleInput
+  return {
+    ...draft,
+    elements: draft.elements.map((element) => {
+      if (!isBindableKind(element) || !element.binding) {
+        return element
+      }
+      const sampleValue = sampleInput[element.binding.fieldKey]
+      return sampleValue === undefined ? element : { ...element, value: sampleValue }
+    }),
+  }
 }
 
 export function duplicateDraftAsTemplate(

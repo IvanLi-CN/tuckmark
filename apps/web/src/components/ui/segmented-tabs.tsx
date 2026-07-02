@@ -49,8 +49,10 @@ function SegmentedTabs({
 
     const rootRect = root.getBoundingClientRect()
     const selectedRect = selectedItem.getBoundingClientRect()
+    const rootStyle = window.getComputedStyle(root)
+    const rootBorderLeftWidth = Number.parseFloat(rootStyle.borderLeftWidth) || 0
     setIndicatorStyle({
-      left: selectedRect.left - rootRect.left,
+      left: selectedRect.left - rootRect.left - rootBorderLeftWidth,
       width: selectedRect.width,
     })
   }, [value])

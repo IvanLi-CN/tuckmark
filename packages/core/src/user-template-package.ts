@@ -149,11 +149,18 @@ function validateElementBounds(
       )
       return
     case "line":
-      if (Math.min(element.x1, element.x2) < 0 || Math.min(element.y1, element.y2) < 0) {
+      if (
+        Math.min(element.x1, element.x2) - element.strokeWidth / 2 < 0 ||
+        Math.min(element.y1, element.y2) - element.strokeWidth / 2 < 0
+      ) {
         fail("is outside the canvas")
       }
-      if (Math.max(element.x1, element.x2) > width) fail("exceeds canvas width")
-      if (Math.max(element.y1, element.y2) > height) fail("exceeds canvas height")
+      if (Math.max(element.x1, element.x2) + element.strokeWidth / 2 > width) {
+        fail("exceeds canvas width")
+      }
+      if (Math.max(element.y1, element.y2) + element.strokeWidth / 2 > height) {
+        fail("exceeds canvas height")
+      }
       return
     case "barcode":
       validateRectBounds(
