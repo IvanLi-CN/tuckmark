@@ -167,6 +167,7 @@ function SegmentedTabs({
             mode={mode}
             size={size}
             variant="bare"
+            className="rounded-[var(--tm-segmented-tabs-indicator-radius)]"
             selected={selected}
             disabled={item.disabled}
             onClick={() => onValueChange(item.value)}
