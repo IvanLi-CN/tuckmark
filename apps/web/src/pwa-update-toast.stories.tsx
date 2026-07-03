@@ -55,6 +55,9 @@ export const Ready: Story = {
     await expect(canvas.getByText("新版本可用")).toBeVisible()
     await expect(button).toBeEnabled()
     await userEvent.click(button)
+    const dialog = within(document.body).getByRole("dialog", { name: "确认更新 Tuckmark Web" })
+    await expect(dialog).toBeVisible()
+    await userEvent.click(within(dialog).getByRole("button", { name: "更新" }))
     await expect(args.onUpdate).toHaveBeenCalled()
   },
 }

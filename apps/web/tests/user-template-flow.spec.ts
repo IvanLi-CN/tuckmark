@@ -3,14 +3,16 @@ import { expect, test } from "@playwright/test"
 test("preset templates can be saved into browser-local user templates and reused from templates workspace", async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    window.prompt = () => "E2E Cable Tag"
-  })
-
   await page.goto("/canvas?source=preset-template&templateId=cable-tag")
 
   await expect(page.getByText("系统模板：Cable Tag")).toBeVisible()
   await page.getByRole("button", { name: "保存" }).click()
+  await expect(page.getByRole("dialog", { name: "保存为用户模板" })).toBeVisible()
+  await page.getByLabel("模板名称").fill("E2E Cable Tag")
+  await page
+    .getByRole("dialog", { name: "保存为用户模板" })
+    .getByRole("button", { name: "保存" })
+    .click()
 
   await expect(page.getByText("已保存为用户模板。")).toBeVisible()
   await expect(page.getByRole("dialog")).toBeVisible()

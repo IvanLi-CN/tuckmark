@@ -2,6 +2,7 @@ import { Loader2, RefreshCcw } from "lucide-react"
 import React from "react"
 
 import { Button } from "./components/ui/button.js"
+import { ConfirmDialog } from "./components/ui/dialog.js"
 import { cn } from "./lib/utils.js"
 import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import { pwaUpdateController } from "./pwa-lifecycle.js"
@@ -18,6 +19,8 @@ function shouldShowToast(status: PwaUpdateSnapshot["status"]): boolean {
 }
 
 export function PwaUpdateToast({ snapshot, onUpdate, placement = "fixed" }: PwaUpdateToastProps) {
+  const [confirmOpen, setConfirmOpen] = React.useState(false)
+
   if (!shouldShowToast(snapshot.status)) {
     return null
   }
@@ -45,7 +48,7 @@ export function PwaUpdateToast({ snapshot, onUpdate, placement = "fixed" }: PwaU
         type="button"
         size="sm"
         disabled={!isReady}
-        onClick={onUpdate}
+        onClick={() => setConfirmOpen(true)}
         className="tm-pwa-toast__button"
       >
         {isReady ? (
@@ -55,6 +58,15 @@ export function PwaUpdateToast({ snapshot, onUpdate, placement = "fixed" }: PwaU
         )}
         <span>{isReady ? "更新" : "更新中"}</span>
       </Button>
+      <ConfirmDialog
+        open={confirmOpen}
+        title="确认更新 Tuckmark Web"
+        description="更新会刷新当前页面。请先确认当前编辑内容已经保存。"
+        cancelLabel="稍后"
+        confirmLabel="更新"
+        onOpenChange={setConfirmOpen}
+        onConfirm={onUpdate}
+      />
     </aside>
   )
 }
@@ -83,14 +95,8 @@ export function usePwaUpdate(context: AppContext): PwaUpdateSnapshot {
   return snapshot
 }
 
-export function confirmAndApplyPwaUpdate(snapshot: PwaUpdateSnapshot): void {
+export function applyPwaUpdate(snapshot: PwaUpdateSnapshot): void {
   if (snapshot.status !== "ready") {
-    return
-  }
-  const shouldUpdate = window.confirm(
-    "检测到新版本。现在更新会刷新当前页面，请确认当前编辑内容已经保存。"
-  )
-  if (!shouldUpdate) {
     return
   }
   pwaUpdateController.applyUpdate()
