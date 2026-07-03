@@ -104,6 +104,8 @@
     template
   - save on an existing browser-local template creating a new saved version
   - save as creating a new template from the current draft or read-only version
+  - first-save and save-as template naming through a project-owned input dialog
+    instead of browser-native `prompt`
   - read-only historical restore creating a new current working copy instead of
     mutating saved history in place
 - System-template import keeps static template keys such as `__title` as fixed

@@ -268,6 +268,8 @@ output.
   - read-only historical mode only exposes `恢复`, `另存为`, and `返回当前草稿`
   - restoring a historical version creates a new current working copy instead
     of mutating saved history in place
+  - first-save and save-as template naming use the project-owned input dialog;
+    the canvas workspace must not call browser-native `prompt`
 
 ## Acceptance
 
@@ -294,6 +296,8 @@ output.
 - Save on a connected browser-local user template appends a new saved version.
 - Save as creates a distinct browser-local template without inheriting the
   source history.
+- First-save and save-as naming use the project-owned template-name dialog,
+  including cancel and empty-name validation paths.
 - Opening a historical version switches the stage into read-only mode and
   restore returns that version into the current working copy.
 - `/templates` displays both `系统模板` and `我的模板`; browser-local templates
@@ -379,6 +383,14 @@ output.
 
   PR: include
   ![Canvas version history workspace](./assets/canvas-version-history-1280x800.png)
+
+- Project-owned dialog states replacing browser-native script dialogs, including confirmation, input, and validation states
+
+  ![Project dialog state gallery](./assets/dialogs/dialog-state-gallery.png)
+
+- Canvas first-save and save-as naming dialog opened from the workspace instead of browser-native `prompt`
+
+  ![Canvas template name dialog](./assets/dialogs/canvas-template-name-dialog.png)
 
 - `1600×1024` system page in wide three-column mode
 
