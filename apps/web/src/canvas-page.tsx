@@ -65,6 +65,7 @@ import {
   translateElement,
   updateBoundElementValue,
 } from "./canvas-editor-model.js"
+import { DimensionPicker } from "./components/canvas/dimension-picker.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
 import { Button } from "./components/ui/button.js"
@@ -89,6 +90,16 @@ import {
 } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
 import { defaultRenderOptions } from "./demo-data.js"
+import {
+  buildCanvasDimensionOptions,
+  type CanvasDimension,
+  getCanvasDimensionCapabilityMessage,
+} from "./lib/canvas-dimensions.js"
+import {
+  CANVAS_DOTS_PER_MILLIMETER,
+  canvasDotsToMillimeters,
+  canvasMillimetersToDots,
+} from "./lib/canvas-units.js"
 import { cn } from "./lib/utils.js"
 import type {
   CanvasDraftDocument,
@@ -157,13 +168,13 @@ type CanvasPageState = {
   storageMode: "persisted" | "reset-pending"
 }
 
-const GRID_SIZE = 20
+const GRID_SIZE = 2.5
 const STAGE_VIEWPORT_WIDTH = 760
 const STAGE_VIEWPORT_HEIGHT = 520
 const ZOOM_MIN = 0.45
-const ZOOM_MAX = 3
+const ZOOM_MAX = 5
 const ZOOM_STEP = 1.08
-const SELECTION_HANDLE_SIZE = 8
+const SELECTION_HANDLE_SIZE = 1
 const MONO_INK = "#111111"
 const MONO_SURFACE = "#ffffff"
 const CANVAS_TEXT_FONT_FAMILY = "ui-sans-serif, system-ui, sans-serif"
@@ -233,15 +244,21 @@ function createViewport(
   viewportWidth = STAGE_VIEWPORT_WIDTH,
   viewportHeight = STAGE_VIEWPORT_HEIGHT
 ): StageViewport {
+  const displayWidth = width * CANVAS_DOTS_PER_MILLIMETER
+  const displayHeight = height * CANVAS_DOTS_PER_MILLIMETER
   const scale = clamp(
-    Math.min(viewportWidth / Math.max(width, 1), viewportHeight / Math.max(height, 1), ZOOM_MAX),
+    Math.min(
+      viewportWidth / Math.max(displayWidth, 1),
+      viewportHeight / Math.max(displayHeight, 1),
+      ZOOM_MAX
+    ),
     ZOOM_MIN,
     ZOOM_MAX
   )
   return {
     scale,
-    x: (viewportWidth - width * scale) / 2,
-    y: (viewportHeight - height * scale) / 2,
+    x: (viewportWidth - displayWidth * scale) / 2,
+    y: (viewportHeight - displayHeight * scale) / 2,
   }
 }
 
@@ -258,7 +275,7 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
 }
 
 function createCanvasStateFromDraft(
-  draft: CanvasDraftDocument,
+  rawDraft: CanvasDraftDocument,
   options?: {
     selectedIds?: string[]
     activePanel?: CanvasPageState["activePanel"]
@@ -269,6 +286,7 @@ function createCanvasStateFromDraft(
     versionsOpen?: boolean
   }
 ): CanvasPageState {
+  const draft = normalizeDraftDocument(rawDraft)
   return {
     routeSource: draft.source,
     presetId: draft.presetId,
@@ -431,8 +449,8 @@ function getStagePointer(
     return null
   }
   return {
-    x: (pointer.x - viewport.x) / viewport.scale,
-    y: (pointer.y - viewport.y) / viewport.scale,
+    x: (pointer.x - viewport.x) / (viewport.scale * CANVAS_DOTS_PER_MILLIMETER),
+    y: (pointer.y - viewport.y) / (viewport.scale * CANVAS_DOTS_PER_MILLIMETER),
   }
 }
 
@@ -447,15 +465,49 @@ function fitViewport(
   }
 }
 
+function resizeCanvasDraft(
+  state: CanvasPageState,
+  dimension: CanvasDimension,
+  viewportWidth = STAGE_VIEWPORT_WIDTH,
+  viewportHeight = STAGE_VIEWPORT_HEIGHT
+): CanvasPageState {
+  if (dimension.width === state.liveDraft.width && dimension.height === state.liveDraft.height) {
+    return state
+  }
+
+  const next = applyDraftUpdate(state, (draft) => ({
+    ...draft,
+    width: dimension.width,
+    height: dimension.height,
+  }))
+  return {
+    ...fitViewport(next, viewportWidth, viewportHeight),
+    outputStatus: "已更新标签尺寸。",
+  }
+}
+
+function getPrintTargetWidth(controller: WorkbenchController): number {
+  return (
+    controller.selectedPrinter?.capabilities.printWidthDots ??
+    controller.renderOptions.printWidthDots
+  )
+}
+
+function getCanvasCapabilityWarning(draft: CanvasDraftDocument, controller: WorkbenchController) {
+  const targetWidth = getPrintTargetWidth(controller)
+  return getCanvasDimensionCapabilityMessage(draft, targetWidth)
+}
+
 function getVisibleGridBounds(
   viewport: StageViewport,
   viewportWidth = STAGE_VIEWPORT_WIDTH,
   viewportHeight = STAGE_VIEWPORT_HEIGHT
 ) {
-  const left = -viewport.x / viewport.scale
-  const top = -viewport.y / viewport.scale
-  const right = left + viewportWidth / viewport.scale
-  const bottom = top + viewportHeight / viewport.scale
+  const displayScale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+  const left = -viewport.x / displayScale
+  const top = -viewport.y / displayScale
+  const right = left + viewportWidth / displayScale
+  const bottom = top + viewportHeight / displayScale
 
   return {
     left,
@@ -695,8 +747,8 @@ function applyTransformedNodeToElement(
   if (element.kind === "text") {
     node.scaleX(1)
     node.scaleY(1)
-    const nextWidth = Math.max(24, element.width * scaleX)
-    const nextFontSize = Math.max(8, element.fontSize * scaleY)
+    const nextWidth = Math.max(24 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
+    const nextFontSize = Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, element.fontSize * scaleY)
     const nextHeight = Math.max(
       nextFontSize + 4,
       nextFontSize + (Math.max(element.maxLines ?? 1, 1) - 1) * (nextFontSize + 4)
@@ -714,8 +766,8 @@ function applyTransformedNodeToElement(
   if (element.kind === "rect") {
     node.scaleX(1)
     node.scaleY(1)
-    const nextWidth = Math.max(16, element.width * scaleX)
-    const nextHeight = Math.max(16, element.height * scaleY)
+    const nextWidth = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
+    const nextHeight = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.height * scaleY)
     return {
       ...element,
       x: node.x() - nextWidth / 2,
@@ -729,8 +781,8 @@ function applyTransformedNodeToElement(
   if (element.kind === "barcode") {
     node.scaleX(1)
     node.scaleY(1)
-    const nextWidth = Math.max(36, element.width * scaleX)
-    const nextHeight = Math.max(18, element.height * scaleY)
+    const nextWidth = Math.max(36 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
+    const nextHeight = Math.max(18 / CANVAS_DOTS_PER_MILLIMETER, element.height * scaleY)
     return {
       ...element,
       x: node.x() - nextWidth / 2,
@@ -743,7 +795,10 @@ function applyTransformedNodeToElement(
 
   node.scaleX(1)
   node.scaleY(1)
-  const nextSize = Math.max(24, element.size * Math.max(scaleX, scaleY))
+  const nextSize = Math.max(
+    24 / CANVAS_DOTS_PER_MILLIMETER,
+    element.size * Math.max(scaleX, scaleY)
+  )
   return {
     ...element,
     x: node.x() - nextSize / 2,
@@ -771,7 +826,7 @@ function buildBarcodeRows(
     displayValue: false,
     margin: 0,
     width: 2,
-    height: Math.max(8, Math.round(element.height)),
+    height: Math.max(8, canvasMillimetersToDots(element.height)),
   })
 
   const encoding = encoded.encodings?.[0]
@@ -802,7 +857,7 @@ function buildBarcodeRows(
   const totalWidth = Math.max(cursor, 1)
   return modules.map((module) => ({
     x: (module.x / totalWidth) * element.width,
-    width: Math.max((module.width / totalWidth) * element.width, 1),
+    width: Math.max((module.width / totalWidth) * element.width, 1 / CANVAS_DOTS_PER_MILLIMETER),
   }))
 }
 
@@ -873,12 +928,41 @@ function getElementIssue(element: CanvasDraftElement): CanvasIssue | null {
   }
 }
 
+function getElementCanvasWarning(
+  draft: CanvasDraftDocument,
+  element: CanvasDraftElement
+): CanvasIssue | null {
+  const bounds = getElementSelectionBounds(element)
+  if (
+    bounds.x < 0 ||
+    bounds.y < 0 ||
+    bounds.x + bounds.width > draft.width ||
+    bounds.y + bounds.height > draft.height
+  ) {
+    return createCanvasIssue(
+      "元素超出画布",
+      "此元素仍会保留在草稿中，但超出标签边界的部分不会出现在最终画布内。"
+    )
+  }
+  return null
+}
+
 function getVisibleDraftIssues(draft: CanvasDraftDocument) {
   return draft.elements.flatMap((element) => {
     if (!element.meta.visible) {
       return []
     }
     const issue = getElementIssue(element)
+    return issue ? [{ element, issue }] : []
+  })
+}
+
+function getVisibleDraftWarnings(draft: CanvasDraftDocument) {
+  return draft.elements.flatMap((element) => {
+    if (!element.meta.visible) {
+      return []
+    }
+    const issue = getElementCanvasWarning(draft, element)
     return issue ? [{ element, issue }] : []
   })
 }
@@ -1150,9 +1234,10 @@ function TextInlineEditor({
     <div
       className="pointer-events-auto absolute z-20"
       style={{
-        left: viewport.x + element.x * viewport.scale,
-        top: viewport.y + (element.y - element.fontSize) * viewport.scale,
-        width: Math.max(element.width * viewport.scale, 160),
+        left: viewport.x + element.x * viewport.scale * CANVAS_DOTS_PER_MILLIMETER,
+        top:
+          viewport.y + (element.y - element.fontSize) * viewport.scale * CANVAS_DOTS_PER_MILLIMETER,
+        width: Math.max(element.width * viewport.scale * CANVAS_DOTS_PER_MILLIMETER, 160),
       }}
     >
       <Textarea
@@ -1161,7 +1246,7 @@ function TextInlineEditor({
         className="tm-selectable-text min-h-[92px] resize-none border-primary/35 bg-white/96 shadow-lg"
         style={{
           fontFamily: CANVAS_TEXT_FONT_FAMILY,
-          fontSize: `${Math.max(12, element.fontSize * viewport.scale * 0.68)}px`,
+          fontSize: `${Math.max(12, element.fontSize * viewport.scale * CANVAS_DOTS_PER_MILLIMETER * 0.68)}px`,
           lineHeight: getCanvasTextLineHeight(element.fontSize),
         }}
         onChange={(event) => setValue(event.currentTarget.value)}
@@ -1470,26 +1555,8 @@ function CanvasLayerRail({
 
   return (
     <div className="tm-left-rail">
-      <CanvasSection title="尺寸与元素" description={sourceDescription}>
+      <CanvasSection title="元素" description={sourceDescription}>
         <div className="grid gap-2">
-          {state.routeSource.kind === "scratch" ? (
-            <Select
-              value={state.presetId}
-              disabled={readOnly}
-              onValueChange={(value) => onChange(() => createCanvasState(value))}
-            >
-              <SelectTrigger disabled={readOnly}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CANVAS_PRESETS.map((preset) => (
-                  <SelectItem key={preset.id} value={preset.id}>
-                    {preset.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : null}
           {sourceNote ? <p className="tm-note tm-note--left-rail">{sourceNote}</p> : null}
           <div className="tm-quick-tools">
             {(["text", "rect", "line", "barcode", "qr"] as const).map((kind) => (
@@ -1576,6 +1643,7 @@ function CanvasLayerPanel({
           const index = state.draft.elements.length - reverseIndex
           const selected = state.selectedIds.includes(element.id)
           const issue = getElementIssue(element)
+          const warning = getElementCanvasWarning(state.draft, element)
           const selectLayer = () =>
             onChange((current) => ({
               ...setSelection(current, element.id, false),
@@ -1612,6 +1680,9 @@ function CanvasLayerPanel({
                     {element.meta.locked ? <span>已锁定</span> : null}
                     {!element.meta.visible ? <span>已隐藏</span> : null}
                     {issue ? <span className="tm-choice__meta-error">{issue.title}</span> : null}
+                    {!issue && warning ? (
+                      <span className="tm-choice__meta-error">{warning.title}</span>
+                    ) : null}
                   </div>
                 </button>
                 <div className="tm-choice__control-strip">
@@ -1807,6 +1878,7 @@ function CanvasInspector({
   )
 
   const issue = getElementIssue(element)
+  const warning = getElementCanvasWarning(state.draft, element)
 
   const commitFieldLabel = (rawValue: string) => {
     if (!boundField) {
@@ -2048,7 +2120,10 @@ function CanvasInspector({
                 (value) =>
                   updateElement((item) =>
                     "fontSize" in item
-                      ? ({ ...item, fontSize: Math.max(8, value) } as CanvasDraftElement)
+                      ? ({
+                          ...item,
+                          fontSize: Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, value),
+                        } as CanvasDraftElement)
                       : item
                   ),
                 "text-font-size"
@@ -2083,6 +2158,13 @@ function CanvasInspector({
               <AlertCircle className="mt-0.5 size-4" />
               <AlertTitle>{issue.title}</AlertTitle>
               <AlertDescription>{issue.detail}</AlertDescription>
+            </Alert>
+          ) : null}
+          {!issue && warning ? (
+            <Alert className="col-span-full">
+              <AlertCircle className="mt-0.5 size-4" />
+              <AlertTitle>{warning.title}</AlertTitle>
+              <AlertDescription>{warning.detail}</AlertDescription>
             </Alert>
           ) : null}
         </div>
@@ -2203,6 +2285,8 @@ function CanvasOutput({
   }, [controller.printResult])
 
   const draftIssues = React.useMemo(() => getVisibleDraftIssues(state.draft), [state.draft])
+  const draftWarnings = React.useMemo(() => getVisibleDraftWarnings(state.draft), [state.draft])
+  const capabilityWarning = getCanvasCapabilityWarning(state.draft, controller)
   const selectedPrinterName =
     controller.selectedPrinter?.name ?? controller.browserPrinter?.name ?? "未选择输出设备"
   const canSubmitOutput = draftIssues.length === 0
@@ -2411,6 +2495,22 @@ function CanvasOutput({
         }
       >
         <div className="grid gap-3">
+          {capabilityWarning || draftWarnings.length > 0 ? (
+            <Alert>
+              <AlertCircle className="mt-0.5 size-4" />
+              <AlertTitle>画布需要确认</AlertTitle>
+              <AlertDescription>
+                <div className="grid gap-1">
+                  {capabilityWarning ? <p>{capabilityWarning}</p> : null}
+                  {draftWarnings.length > 0 ? (
+                    <p>
+                      有 {draftWarnings.length} 个元素超出画布。元素会保留在草稿中，可继续预览。
+                    </p>
+                  ) : null}
+                </div>
+              </AlertDescription>
+            </Alert>
+          ) : null}
           {previewUrl ? (
             <div className="tm-preview-shell">
               <img alt="canvas preview" className="tm-preview-image" src={previewUrl} />
@@ -2510,14 +2610,14 @@ function renderElementNode(element: CanvasDraftElement): React.ReactNode {
               cornerRadius={8}
             />
             <KonvaText
-              x={10}
-              y={14}
-              width={element.width - 20}
+              x={canvasDotsToMillimeters(10)}
+              y={canvasDotsToMillimeters(14)}
+              width={element.width - canvasDotsToMillimeters(20)}
               text="条码内容无效"
-              fontSize={12}
+              fontSize={canvasDotsToMillimeters(12)}
               fontStyle="bold"
               fontFamily={CANVAS_TEXT_FONT_FAMILY}
-              lineHeight={getCanvasTextLineHeight(12)}
+              lineHeight={getCanvasTextLineHeight(canvasDotsToMillimeters(12))}
               fill="#9c2f22"
             />
           </>
@@ -2533,20 +2633,23 @@ function renderElementNode(element: CanvasDraftElement): React.ReactNode {
               x={bar.x}
               y={0}
               width={bar.width}
-              height={Math.max(element.height - (element.showValue ? 18 : 0), 12)}
+              height={Math.max(
+                element.height - (element.showValue ? canvasDotsToMillimeters(18) : 0),
+                canvasDotsToMillimeters(12)
+              )}
               fill="#111111"
             />
           ))}
           {element.showValue ? (
             <KonvaText
               x={0}
-              y={element.height - 16}
+              y={element.height - canvasDotsToMillimeters(16)}
               width={element.width}
               text={element.value}
               align="center"
-              fontSize={12}
+              fontSize={canvasDotsToMillimeters(12)}
               fontFamily={CANVAS_TEXT_FONT_FAMILY}
-              lineHeight={getCanvasTextLineHeight(12)}
+              lineHeight={getCanvasTextLineHeight(canvasDotsToMillimeters(12))}
               fill={MONO_INK}
             />
           ) : null}
@@ -2569,15 +2672,15 @@ function renderElementNode(element: CanvasDraftElement): React.ReactNode {
               cornerRadius={10}
             />
             <KonvaText
-              x={8}
-              y={16}
-              width={element.size - 16}
+              x={canvasDotsToMillimeters(8)}
+              y={canvasDotsToMillimeters(16)}
+              width={element.size - canvasDotsToMillimeters(16)}
               text="二维码\n无效"
               align="center"
-              fontSize={12}
+              fontSize={canvasDotsToMillimeters(12)}
               fontStyle="bold"
               fontFamily={CANVAS_TEXT_FONT_FAMILY}
-              lineHeight={getCanvasTextLineHeight(12)}
+              lineHeight={getCanvasTextLineHeight(canvasDotsToMillimeters(12))}
               fill="#9c2f22"
             />
           </>
@@ -2641,8 +2744,8 @@ function CanvasStageView({
   )
   const paperStyle = React.useMemo(
     () => ({
-      width: state.draft.width,
-      height: state.draft.height,
+      width: state.draft.width * CANVAS_DOTS_PER_MILLIMETER,
+      height: state.draft.height * CANVAS_DOTS_PER_MILLIMETER,
       transform: `translate(${state.viewport.x}px, ${state.viewport.y}px) scale(${state.viewport.scale})`,
     }),
     [
@@ -2806,11 +2909,21 @@ function CanvasStageView({
             <div
               className="tm-stage-grid"
               style={{
-                left: state.viewport.x + gridBounds.startX * state.viewport.scale,
-                top: state.viewport.y + gridBounds.startY * state.viewport.scale,
-                width: (gridBounds.endX - gridBounds.startX) * state.viewport.scale,
-                height: (gridBounds.endY - gridBounds.startY) * state.viewport.scale,
-                backgroundSize: `${GRID_SIZE * state.viewport.scale}px ${GRID_SIZE * state.viewport.scale}px`,
+                left:
+                  state.viewport.x +
+                  gridBounds.startX * state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER,
+                top:
+                  state.viewport.y +
+                  gridBounds.startY * state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER,
+                width:
+                  (gridBounds.endX - gridBounds.startX) *
+                  state.viewport.scale *
+                  CANVAS_DOTS_PER_MILLIMETER,
+                height:
+                  (gridBounds.endY - gridBounds.startY) *
+                  state.viewport.scale *
+                  CANVAS_DOTS_PER_MILLIMETER,
+                backgroundSize: `${GRID_SIZE * state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER}px ${GRID_SIZE * state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER}px`,
               }}
             />
           ) : null}
@@ -2849,8 +2962,8 @@ function CanvasStageView({
             }
             const oldScale = state.viewport.scale
             const mousePointTo = {
-              x: (pointer.x - state.viewport.x) / oldScale,
-              y: (pointer.y - state.viewport.y) / oldScale,
+              x: (pointer.x - state.viewport.x) / (oldScale * CANVAS_DOTS_PER_MILLIMETER),
+              y: (pointer.y - state.viewport.y) / (oldScale * CANVAS_DOTS_PER_MILLIMETER),
             }
             const direction = event.evt.deltaY > 0 ? -1 : 1
             const newScale = clamp(
@@ -2862,8 +2975,8 @@ function CanvasStageView({
               ...current,
               viewport: {
                 scale: newScale,
-                x: pointer.x - mousePointTo.x * newScale,
-                y: pointer.y - mousePointTo.y * newScale,
+                x: pointer.x - mousePointTo.x * newScale * CANVAS_DOTS_PER_MILLIMETER,
+                y: pointer.y - mousePointTo.y * newScale * CANVAS_DOTS_PER_MILLIMETER,
               },
             }))
           }}
@@ -2872,8 +2985,8 @@ function CanvasStageView({
             <Group
               x={state.viewport.x}
               y={state.viewport.y}
-              scaleX={state.viewport.scale}
-              scaleY={state.viewport.scale}
+              scaleX={state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER}
+              scaleY={state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER}
             >
               {state.draft.elements.map((element) => {
                 if (!element.meta.visible) {
@@ -2881,7 +2994,6 @@ function CanvasStageView({
                 }
                 const geometry = getElementGeometry(element)
                 const bounds = geometry.bounds
-                const issue = getElementIssue(element)
                 return (
                   <Group
                     key={element.id}
@@ -3247,6 +3359,10 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     width: STAGE_VIEWPORT_WIDTH,
     height: STAGE_VIEWPORT_HEIGHT,
   })
+  const dimensionOptions = React.useMemo(
+    () => buildCanvasDimensionOptions(controller.canvasDimensions, CANVAS_PRESETS),
+    [controller.canvasDimensions]
+  )
   const readOnly = state.readOnlyVersion !== null
   const interactionLocked = readOnly || state.loading
 
@@ -3312,6 +3428,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
           ...createCanvasStateFromDraft(
             {
               version: 1,
+              unit: "mm",
               id:
                 routeSource.kind === "user-template"
                   ? routeSource.templateId
@@ -3322,8 +3439,8 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
                   : routeSource.presetId,
               name: "加载失败",
               source: routeSource,
-              width: 384,
-              height: 224,
+              width: 48,
+              height: 28,
               fields: [],
               elements: [],
               editor: {
@@ -3627,7 +3744,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     await controller.refreshUserTemplates()
 
     const history = await readUserTemplateHistory(snapshot.templateId)
-    setState((current) =>
+    setState(() =>
       createCanvasStateFromDraft(restoredDraft, {
         versionHistory: history ?? snapshot.versionHistory,
         focus: "center-right",
@@ -3677,6 +3794,10 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         await clearWorkingCopy(state.routeSource)
       }
       await clearTemplateAutosaves(result.template.id)
+      controller.recordCanvasDimension({
+        width: result.workingCopy.draft.width,
+        height: result.workingCopy.draft.height,
+      })
       await controller.refreshUserTemplates()
 
       const history = await readUserTemplateHistory(result.template.id)
@@ -3704,6 +3825,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       state.liveDraft,
       state.readOnlyVersion,
       state.routeSource,
+      controller.recordCanvasDimension,
     ]
   )
 
@@ -3755,15 +3877,6 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
           <div className="tm-pane__header">
             <div className="tm-pane__headline">
               <h2>工具栏</h2>
-              <Input
-                aria-label="当前标签尺寸"
-                readOnly
-                tabIndex={-1}
-                value={`${state.draft.width} × ${state.draft.height} dots`}
-                density="compact"
-                size="sm"
-                className="tm-value-field"
-              />
             </div>
           </div>
           <div className="tm-pane__body">
@@ -3786,29 +3899,21 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
               </p>
             </div>
             <div className="tm-pane__meta">
-              <Input
-                aria-label="标签尺寸"
-                readOnly
-                tabIndex={-1}
-                value={`${state.draft.width} × ${state.draft.height}`}
-                density="compact"
-                size="sm"
-                className="tm-value-field tm-chip"
-              />
-              <Input
-                aria-label="当前选择状态"
-                readOnly
-                tabIndex={-1}
-                value={
-                  readOnly
-                    ? (state.readOnlyVersion?.label ?? "只读快照")
-                    : state.selectedIds.length > 0
-                      ? `已选 ${state.selectedIds.length} 项`
-                      : "待选择"
+              <DimensionPicker
+                variant="inline"
+                disabled={interactionLocked}
+                options={dimensionOptions}
+                value={{ width: state.draft.width, height: state.draft.height }}
+                onCommit={(dimension) =>
+                  setState((current) =>
+                    resizeCanvasDraft(
+                      current,
+                      dimension,
+                      stageViewportSize.width,
+                      stageViewportSize.height
+                    )
+                  )
                 }
-                density="compact"
-                size="sm"
-                className="tm-value-field tm-chip"
               />
             </div>
           </div>

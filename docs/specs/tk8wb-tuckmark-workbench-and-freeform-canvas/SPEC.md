@@ -260,6 +260,34 @@ output.
 - Canvas editor contract:
   - system template elements with fixed keys such as `__title` stay static when
     imported into the editor
+  - scratch drafts, system-template working copies, and browser-local
+    user-template working copies all expose editable canvas dimensions unless
+    a historical saved version is open read-only
+  - canvas dimension editing accepts positive integer millimeter width and
+    height values in the UI, persists `CanvasDraftDocument.width` / `height`
+    and browser-local user template summaries in millimeters, participates in
+    undo / redo, and refits the stage viewport
+  - legacy canvas drafts and user templates without `unit: "mm"` are treated as
+    dots-era documents and converted to millimeters on read
+  - system template source definitions remain dots-era device-neutral package
+    data and are converted into millimeter canvas drafts when opened in the
+    editor
+  - preview and print compilation convert millimeter canvas drafts to dots only
+    at the output boundary
+  - changing canvas dimensions changes only the label boundary; existing
+    elements are not scaled, cropped, or rearranged
+  - elements that fall outside the current canvas boundary remain in the draft
+    and surface non-blocking editor warnings
+  - canvas dimension suggestions combine browser-local recent dimensions with
+    built-in presets, dedupe by millimeter `width × height`, and present
+    width/height as a single selectable suggestion
+  - recent dimension history is browser-local only, global across canvas
+    sources, ordered by successful explicit save / save-as / print use, and
+    stays outside same-device sync state
+  - editor and preview do not block on printer width capability; direct print
+    checks the selected target `printWidthDots` and rejects canvas/template
+    sources whose canvas width exceeds that target, with user-facing messages in
+    millimeters
   - the toolbar save-action cluster exposes a `版本历史` entry that opens a
     right-side drawer
   - the version-history drawer lists saved versions and a collapsed autosave
@@ -296,6 +324,21 @@ output.
   source history.
 - Opening a historical version switches the stage into read-only mode and
   restore returns that version into the current working copy.
+- Canvas dimensions can be freely edited on scratch, system-template copy, and
+  user-template working-copy sources; historical read-only versions keep the
+  control disabled.
+- Dimension autocomplete filters by the numeric prefix of any filled dimension:
+  an empty width or height is a wildcard, and choosing a suggestion applies
+  width and height together. The suggestion panel opens from input focus,
+  typing, or hover; it has no separate arrow toggle, and clicking outside the
+  picker closes the panel.
+- Successful explicit save / save-as and successful real or demo print update
+  browser-local recent dimension history; autosave and scratch persistence do
+  not.
+- Shrinking the canvas keeps existing elements unchanged and visible in the
+  draft, with non-blocking out-of-canvas warnings.
+- Preview remains available when the canvas width exceeds the current print
+  target, but direct print is blocked with a width mismatch error.
 - `/templates` displays both `系统模板` and `我的模板`; browser-local templates
   support structured row editing, preview, print, and an edit jump back to
   `/canvas`.
@@ -384,3 +427,20 @@ output.
 
   PR: include
   ![System workspace](./assets/system-1600x1024.png)
+
+- DimensionPicker autocomplete filters millimeter suggestions by width prefix
+  while height is empty, and selecting a row applies width and height together.
+
+  ![Free canvas dimension picker filtering](./assets/free-canvas-dimension-picker-filtering-20260704.png)
+
+- `1440×960` canvas workspace shows the free dimension inputs in the editor
+  header, with millimeter recent-size autocomplete available in the full
+  editor.
+
+  ![Free canvas workspace wide](./assets/free-canvas-workspace-wide-20260704.png)
+
+- `390×900` canvas workspace keeps the same free dimension control available in
+  the narrow responsive editor surface after normal vertical scrolling, with
+  width and height displayed in millimeters.
+
+  ![Free canvas workspace narrow](./assets/free-canvas-workspace-narrow-20260704.png)

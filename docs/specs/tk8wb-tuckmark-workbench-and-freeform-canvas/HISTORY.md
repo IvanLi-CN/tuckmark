@@ -93,3 +93,14 @@ while the workbench was being productized:
   - CLI validates and renders packages through the same canvas artifact seam
   - Web import saves packages as browser-local user templates without changing
     the service sync boundary
+- Free canvas dimensions were later generalized from scratch presets into a
+  shared document editing affordance:
+  - dimensions became explicit positive-integer draft properties on scratch,
+    system-template copies, and browser-local user-template working copies
+  - recent dimensions stayed browser-local because they are an editor
+    convenience, not sync truth
+  - resizing the canvas deliberately changes only the document boundary so
+    existing elements remain user-owned draft content
+  - printer width capability remains an output-time constraint, which keeps
+    editing and preview non-blocking while still preventing invalid direct
+    print submission

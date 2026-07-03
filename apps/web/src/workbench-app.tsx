@@ -69,6 +69,8 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
 import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
+import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
+import { canvasDotsToMillimeters } from "./lib/canvas-units.js"
 import { cn } from "./lib/utils.js"
 import { confirmAndApplyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
 import type {
@@ -248,9 +250,25 @@ function formatRelativeTime(value: string): string {
 
 function _formatTemplateSize(template: Template): string {
   if (template.width && template.height) {
-    return `${template.width} × ${template.height}`
+    return formatCanvasDimension({
+      width: canvasDotsToMillimeters(template.width),
+      height: canvasDotsToMillimeters(template.height),
+    })
   }
   return "尺寸待定"
+}
+
+function formatTemplateCardSize(entry: TemplateCardEntry): string {
+  if (!entry.template.width || !entry.template.height) {
+    return "尺寸待定"
+  }
+  if (entry.kind === "user") {
+    return formatCanvasDimension({ width: entry.template.width, height: entry.template.height })
+  }
+  return formatCanvasDimension({
+    width: canvasDotsToMillimeters(entry.template.width),
+    height: canvasDotsToMillimeters(entry.template.height),
+  })
 }
 
 function buildTemplatePreviewSvg(template: Template): string | null {
@@ -2398,11 +2416,7 @@ function TemplateCard({
         </div>
         <div className="tm-template-card__meta">
           <div className="tm-template-card__name">{template.name}</div>
-          <div className="tm-template-card__size">
-            {template.width && template.height
-              ? `${template.width} × ${template.height}`
-              : "尺寸待定"}
-          </div>
+          <div className="tm-template-card__size">{formatTemplateCardSize(entry)}</div>
         </div>
       </button>
       <div className="tm-template-card__actions">

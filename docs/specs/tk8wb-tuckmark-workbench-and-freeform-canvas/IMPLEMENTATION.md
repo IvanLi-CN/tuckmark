@@ -106,6 +106,32 @@
   - save as creating a new template from the current draft or read-only version
   - read-only historical restore creating a new current working copy instead of
     mutating saved history in place
+- Canvas dimension editing now covers:
+  - scratch drafts, system-template working copies, and browser-local
+    user-template working copies through the shared `DimensionPicker`
+    mounted in the editor header
+  - positive-integer millimeter validation before draft mutation, with canvas
+    documents and browser-local user template summaries persisted in
+    millimeters
+  - `CanvasDraftDocument.unit: "mm"` marks normalized physical-unit documents;
+    missing-unit drafts are migrated from dots to millimeters when loaded
+  - system template package data is converted from dots to millimeters when it
+    becomes an editable canvas draft, and converted back to dots only for
+    preview / print compilation
+  - undo / redo and viewport refit through the existing draft-history update
+    path
+  - non-blocking out-of-canvas warnings when shrinking the label boundary
+  - browser-local recent dimension history capped to the most recent custom
+    dimensions and merged with built-in presets for suggestions
+  - suggestions opening from focus / typing / hover without a separate arrow
+    toggle, and closing on outside click
+  - zoom controls and wheel zoom clamped at 500% maximum scale
+  - explicit save / save-as and successful real or demo print as the only
+    history-recording events
+  - narrow canvas workspaces scrolling vertically so the editor-header
+    dimension control remains reachable on phone-sized viewports
+  - direct-print capability blocking for canvas and template sources whose
+    canvas width exceeds the selected target print width
 - System-template import keeps static template keys such as `__title` as fixed
   elements instead of exposing them as structured replacement fields.
 - System-template canvas working copies now recover safely from earlier
@@ -178,6 +204,8 @@
   - template inline-edit selectable contract
   - default canvas selectable contract
   - text-selected canvas selectable contract
+  - DimensionPicker state gallery and filtering interaction
+  - full canvas workspace header dimension autocomplete state
 
 ## Remaining validation
 
