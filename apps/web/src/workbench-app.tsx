@@ -72,7 +72,7 @@ import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
 import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
 import { canvasDotsToMillimeters } from "./lib/canvas-units.js"
 import { cn } from "./lib/utils.js"
-import { confirmAndApplyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
+import { applyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
 import type {
   AppContext,
   CanvasDocumentPreset,
@@ -1288,7 +1288,7 @@ function WorkbenchLayout({
         </div>
       </footer>
 
-      <PwaUpdateToast snapshot={pwaUpdate} onUpdate={() => confirmAndApplyPwaUpdate(pwaUpdate)} />
+      <PwaUpdateToast snapshot={pwaUpdate} onUpdate={() => applyPwaUpdate(pwaUpdate)} />
 
       <DeviceDrawer controller={controller} open={drawerOpen} onOpenChange={setDrawerOpen} />
     </div>

@@ -70,6 +70,7 @@ import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
 import { Button } from "./components/ui/button.js"
 import { Combobox } from "./components/ui/combobox.js"
+import { PromptDialog } from "./components/ui/dialog.js"
 import { Input } from "./components/ui/input.js"
 import { Label } from "./components/ui/label.js"
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "./components/ui/popover.js"
@@ -141,6 +142,11 @@ type StageViewport = {
 type StageViewportSize = {
   width: number
   height: number
+}
+
+type TemplateNameDialogState = {
+  mode: "save" | "save-as"
+  suggestedName: string
 }
 
 type CanvasPageState = {
@@ -3363,6 +3369,8 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     () => buildCanvasDimensionOptions(controller.canvasDimensions, CANVAS_PRESETS),
     [controller.canvasDimensions]
   )
+  const [templateNameDialog, setTemplateNameDialog] =
+    React.useState<TemplateNameDialogState | null>(null)
   const readOnly = state.readOnlyVersion !== null
   const interactionLocked = readOnly || state.loading
 
@@ -3754,21 +3762,12 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     )
   }, [controller, state.liveDraft.templateId, state.readOnlyVersion, state.versionHistory])
 
-  const persistNamedTemplate = React.useCallback(
-    async (mode: "save" | "save-as") => {
+  const saveNamedTemplate = React.useCallback(
+    async (mode: "save" | "save-as", nextName: string) => {
       const baseDraft =
         readOnly && state.readOnlyVersion ? state.readOnlyVersion.document : state.liveDraft
       const existingTemplateId =
         mode === "save" && !readOnly ? state.liveDraft.templateId : undefined
-      const suggestedName =
-        mode === "save" && existingTemplateId
-          ? state.liveDraft.name
-          : baseDraft.name || "未命名模板"
-      const promptLabel = mode === "save" && existingTemplateId ? suggestedName : "请输入模板名称"
-      const nextName =
-        mode === "save" && existingTemplateId
-          ? suggestedName
-          : window.prompt(promptLabel, suggestedName)?.trim()
 
       if (!nextName) {
         return
@@ -3827,6 +3826,30 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       state.routeSource,
       controller.recordCanvasDimension,
     ]
+  )
+
+  const persistNamedTemplate = React.useCallback(
+    async (mode: "save" | "save-as") => {
+      const baseDraft =
+        readOnly && state.readOnlyVersion ? state.readOnlyVersion.document : state.liveDraft
+      const existingTemplateId =
+        mode === "save" && !readOnly ? state.liveDraft.templateId : undefined
+      const suggestedName =
+        mode === "save" && existingTemplateId
+          ? state.liveDraft.name
+          : baseDraft.name || "未命名模板"
+
+      if (mode === "save" && existingTemplateId) {
+        await saveNamedTemplate(mode, suggestedName)
+        return
+      }
+
+      setTemplateNameDialog({
+        mode,
+        suggestedName,
+      })
+    },
+    [readOnly, saveNamedTemplate, state.liveDraft, state.readOnlyVersion]
   )
 
   const handleResetDraft = React.useCallback(async () => {
@@ -4042,6 +4065,26 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
           </div>
         </SheetContent>
       </Sheet>
+      <PromptDialog
+        open={templateNameDialog !== null}
+        title="保存为用户模板"
+        description="为这个浏览器本地模板命名。保存后会进入版本历史，可以继续编辑。"
+        label="模板名称"
+        defaultValue={templateNameDialog?.suggestedName ?? ""}
+        cancelLabel="取消"
+        confirmLabel="保存"
+        requiredMessage="请输入模板名称。"
+        onOpenChange={(open) => {
+          if (!open) {
+            setTemplateNameDialog(null)
+          }
+        }}
+        onConfirm={(nextName) => {
+          const mode = templateNameDialog?.mode ?? "save-as"
+          setTemplateNameDialog(null)
+          void saveNamedTemplate(mode, nextName)
+        }}
+      />
     </section>
   )
 }

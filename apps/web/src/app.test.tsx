@@ -39,7 +39,7 @@ const browserPayloadMocks = vi.hoisted(() => ({
 }))
 
 const pwaToastMocks = vi.hoisted(() => ({
-  confirmAndApplyPwaUpdate: vi.fn(),
+  applyPwaUpdate: vi.fn(),
   usePwaUpdate: vi.fn(() => ({
     status: "idle",
     registration: null,
@@ -83,7 +83,7 @@ vi.mock("./browser-print-payload.js", () => browserPayloadMocks)
 vi.mock("./pwa-update-toast.js", async () => {
   const React = await import("react")
   return {
-    confirmAndApplyPwaUpdate: pwaToastMocks.confirmAndApplyPwaUpdate,
+    applyPwaUpdate: pwaToastMocks.applyPwaUpdate,
     usePwaUpdate: pwaToastMocks.usePwaUpdate,
     PwaUpdateToast({
       snapshot,
@@ -92,6 +92,7 @@ vi.mock("./pwa-update-toast.js", async () => {
       snapshot: { status: string; error: string | null }
       onUpdate: () => void
     }) {
+      const [confirmOpen, setConfirmOpen] = React.useState(false)
       if (snapshot.status !== "ready") {
         return null
       }
@@ -102,10 +103,34 @@ vi.mock("./pwa-update-toast.js", async () => {
         React.createElement(
           "button",
           {
-            onClick: onUpdate,
+            onClick: () => setConfirmOpen(true),
           },
           "更新"
-        )
+        ),
+        confirmOpen
+          ? React.createElement(
+              "div",
+              { role: "dialog", "aria-label": "确认更新 Tuckmark Web" },
+              React.createElement("p", null, "更新会刷新当前页面。"),
+              React.createElement(
+                "button",
+                {
+                  onClick: () => setConfirmOpen(false),
+                },
+                "稍后"
+              ),
+              React.createElement(
+                "button",
+                {
+                  onClick: () => {
+                    setConfirmOpen(false)
+                    onUpdate()
+                  },
+                },
+                "更新"
+              )
+            )
+          : null
       )
     },
   }
@@ -735,7 +760,7 @@ beforeEach(async () => {
   browserPayloadMocks.materializeBrowserArtifactData.mockImplementation(async (source) =>
     makeBrowserMaterialization(source.kind)
   )
-  pwaToastMocks.confirmAndApplyPwaUpdate.mockReset()
+  pwaToastMocks.applyPwaUpdate.mockReset()
   pwaToastMocks.usePwaUpdate.mockReturnValue({
     status: "idle",
     registration: null,
@@ -793,7 +818,22 @@ describe("web workbench app", () => {
       await flush()
     })
 
-    expect(pwaToastMocks.confirmAndApplyPwaUpdate).toHaveBeenCalledWith(
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("更新会刷新当前页面")
+    expect(pwaToastMocks.applyPwaUpdate).not.toHaveBeenCalled()
+
+    const confirmButton = Array.from(document.querySelectorAll('[role="dialog"] button')).find(
+      (button) => button.textContent?.includes("更新")
+    )
+    if (!confirmButton) {
+      throw new Error("Missing PWA update confirmation button")
+    }
+
+    await act(async () => {
+      confirmButton.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush()
+    })
+
+    expect(pwaToastMocks.applyPwaUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ status: "ready" })
     )
   })
@@ -1391,32 +1431,44 @@ describe("web workbench app", () => {
       sourceVersionId: saved.version.id,
     })
 
-    const originalPrompt = window.prompt
-    window.prompt = () => "Copied Template"
-    try {
-      await renderApp(
-        browserRuntimeContext,
-        undefined,
-        `/canvas?source=user-template&templateId=${saved.template.id}`
-      )
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=user-template&templateId=${saved.template.id}`
+    )
+    await flush(8)
+
+    await act(async () => {
+      queryButton("另存为").dispatchEvent(new MouseEvent("click", { bubbles: true }))
       await flush(8)
+    })
 
-      await act(async () => {
-        queryButton("另存为").dispatchEvent(new MouseEvent("click", { bubbles: true }))
-        await flush(8)
-      })
-
-      const templates = await readUserTemplateHistory(saved.template.id)
-      expect(templates?.autosaves).toHaveLength(1)
-
-      const workingCopy = await loadWorkingCopy({
-        kind: "user-template",
-        templateId: saved.template.id,
-      })
-      expect(workingCopy?.draft.name).toBe("Source Template Draft")
-    } finally {
-      window.prompt = originalPrompt
+    const nameInput = document.querySelector<HTMLInputElement>('[role="dialog"] input')
+    if (!nameInput) {
+      throw new Error("Missing template name input")
     }
+    const saveButton = Array.from(document.querySelectorAll('[role="dialog"] button')).find(
+      (button) => button.textContent?.includes("保存")
+    )
+    if (!saveButton) {
+      throw new Error("Missing template name save button")
+    }
+
+    await act(async () => {
+      nameInput.value = "Copied Template"
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }))
+      saveButton.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    const templates = await readUserTemplateHistory(saved.template.id)
+    expect(templates?.autosaves).toHaveLength(1)
+
+    const workingCopy = await loadWorkingCopy({
+      kind: "user-template",
+      templateId: saved.template.id,
+    })
+    expect(workingCopy?.draft.name).toBe("Source Template Draft")
   })
 
   it("uses imported package sample values for initial template rows", () => {

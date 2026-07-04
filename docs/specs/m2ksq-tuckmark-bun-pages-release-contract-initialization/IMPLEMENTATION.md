@@ -19,6 +19,7 @@
 - `apps/web/src/pwa-lifecycle.ts` owns service worker registration, update
   detection, `SKIP_WAITING`, and reload-on-controller-change behavior.
 - `apps/web/src/pwa-update-toast.tsx` owns the non-blocking update prompt shown
-  from the shared workbench shell.
+  from the shared workbench shell. Its update action uses a project-owned
+  confirmation dialog instead of browser-native `confirm`.
 - `apps/web/tests/pwa.spec.ts` covers service worker registration, offline
   route refresh, and PWA asset inspection.

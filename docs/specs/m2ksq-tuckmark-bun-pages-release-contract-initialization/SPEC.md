@@ -83,6 +83,12 @@ prompt state.
 PR: include
 ![PWA update prompt state gallery](./assets/pwa-update-toast-state-gallery.png)
 
+The ready-to-update action opens a project-owned confirmation dialog before
+refreshing the page. The dialog replaces browser-native `confirm` behavior while
+preserving the user-confirmed refresh contract.
+
+![PWA update confirmation dialog](./assets/dialogs/pwa-update-confirm-dialog.png)
+
 The owner-facing visual evidence is produced from the production browser-static
 Pages build with the service worker lifecycle mocked to the ready-to-activate
 state. It verifies the prompt location against the complete routed workbench
