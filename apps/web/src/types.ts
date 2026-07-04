@@ -174,6 +174,7 @@ export type UserTemplateHistory = {
 
 export type CanvasDraftDocument = {
   version: 1
+  unit?: "mm"
   id: string
   presetId: string
   name: string

@@ -199,6 +199,9 @@ describe("canvas-editor-model monochrome contract", () => {
 
     expect(draft.name).toBe("INA219 Module Bin")
     expect(draft.source.kind).toBe("scratch")
+    expect(draft.unit).toBe("mm")
+    expect(draft.width).toBe(24)
+    expect(draft.height).toBe(12)
     expect(draft.renderOptions).toMatchObject({ paperType: "gap", printWidthDots: 384 })
     expect(draft.fields.map((field) => field.key)).toEqual(["part", "bus"])
     expect(draft.fields[0]).toMatchObject({
@@ -242,6 +245,9 @@ describe("canvas-editor-model monochrome contract", () => {
       kind: "qr",
       value: "https://example.test/device/ina219",
       binding: { fieldKey: "url", kind: "qr" },
+      x: 1,
+      y: 1,
+      size: 9,
     })
   })
 
@@ -284,6 +290,35 @@ describe("canvas-editor-model monochrome contract", () => {
       threshold: 150,
       printWidthDots: 384,
       previewScale: 4,
+    })
+  })
+
+  it("stores canvas draft geometry in millimeters and compiles printable output to dots", () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const rect = draft.elements.find((element) => element.kind === "rect")
+
+    expect(draft.unit).toBe("mm")
+    expect(draft.width).toBe(48)
+    expect(draft.height).toBe(28)
+    expect(rect).toMatchObject({
+      kind: "rect",
+      x: 2.5,
+      y: 2.25,
+      width: 43,
+      height: 23,
+    })
+
+    const compiled = compileDraftToCanvasDefinition(draft)
+    const compiledRect = compiled.elements.find((element) => element.kind === "rect")
+
+    expect(compiled.width).toBe(384)
+    expect(compiled.height).toBe(224)
+    expect(compiledRect).toMatchObject({
+      kind: "rect",
+      x: 20,
+      y: 18,
+      width: 344,
+      height: 184,
     })
   })
 
@@ -394,7 +429,7 @@ describe("canvas-editor-model monochrome contract", () => {
     if (recipient?.kind !== "text") {
       throw new Error("expected recipient element")
     }
-    expect(recipient.width).toBe(180)
+    expect(recipient.width).toBe(22.5)
   })
 
   it("seeds system template bound elements from field labels when defaults are absent", () => {
@@ -425,9 +460,9 @@ describe("canvas-editor-model monochrome contract", () => {
         ["location", ""],
       ])
     )
-    expect(nameText?.kind === "text" ? nameText.width : undefined).toBe(180)
-    expect(portText?.kind === "text" ? portText.width : undefined).toBe(180)
-    expect(locationText?.kind === "text" ? locationText.width : undefined).toBe(160)
+    expect(nameText?.kind === "text" ? nameText.width : undefined).toBe(22.5)
+    expect(portText?.kind === "text" ? portText.width : undefined).toBe(22.5)
+    expect(locationText?.kind === "text" ? locationText.width : undefined).toBe(20)
   })
 
   it("migrates stored preset-template drafts with empty field defaults back to template labels", () => {

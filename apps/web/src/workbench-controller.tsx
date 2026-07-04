@@ -12,6 +12,13 @@ import {
   restoreBrowserPrinter,
 } from "./browser-printer.js"
 import { buildInputFromTemplate, defaultRenderOptions, fallbackTemplates } from "./demo-data.js"
+import {
+  type CanvasDimension,
+  getCanvasDotsCapabilityMessage,
+  loadRecentCanvasDimensions,
+  recordRecentCanvasDimension,
+} from "./lib/canvas-dimensions.js"
+import { canvasDotsToMillimeters, canvasMillimetersToDots } from "./lib/canvas-units.js"
 import { loadRecentActivity, type RecentActivityState } from "./lib/recent-activity.js"
 import { resolveAppContext } from "./runtime.js"
 import type {
@@ -61,6 +68,10 @@ function summarizeSourceTitle(source: BrowserPrintSource): string {
   }
 }
 
+function getPrintTargetWidth(source: BrowserPrintSource, printer: Printer | null): number {
+  return printer?.capabilities.printWidthDots ?? source.renderOptions.printWidthDots
+}
+
 export type WorkbenchController = ReturnType<typeof useWorkbenchController>
 
 export function useWorkbenchController({
@@ -108,6 +119,7 @@ export function useWorkbenchController({
   const [recentActivity, setRecentActivity] = React.useState<RecentActivityState>(() =>
     loadRecentActivity()
   )
+  const [canvasDimensions, setCanvasDimensions] = React.useState(() => loadRecentCanvasDimensions())
   const [userTemplates, setUserTemplates] = React.useState<UserTemplateSummary[]>([])
   const [startupSyncReady, setStartupSyncReady] = React.useState(
     !(context.surface === "server-http" && context.mode === "runtime")
@@ -128,6 +140,60 @@ export function useWorkbenchController({
     () => printers.find((printer) => printer.id === printerId) ?? null,
     [printerId, printers]
   )
+
+  const resolveSourceDimension = React.useCallback(
+    (source: BrowserPrintSource | null): CanvasDimension | null => {
+      if (!source) {
+        return null
+      }
+      if (source.kind === "canvas") {
+        return {
+          width: canvasDotsToMillimeters(source.canvas.width),
+          height: canvasDotsToMillimeters(source.canvas.height),
+        }
+      }
+      if (source.kind === "template") {
+        const userTemplate = userTemplates.find((item) => item.id === source.templateId)
+        if (userTemplate) {
+          return { width: userTemplate.width, height: userTemplate.height }
+        }
+        const template = templates.find((item) => item.id === source.templateId)
+        return template?.width && template.height
+          ? {
+              width: canvasDotsToMillimeters(template.width),
+              height: canvasDotsToMillimeters(template.height),
+            }
+          : null
+      }
+      return null
+    },
+    [templates, userTemplates]
+  )
+
+  const resolveSourceWidthDots = React.useCallback(
+    (source: BrowserPrintSource | null): number | null => {
+      if (!source) {
+        return null
+      }
+      if (source.kind === "canvas") {
+        return source.canvas.width
+      }
+      if (source.kind === "template") {
+        const userTemplate = userTemplates.find((item) => item.id === source.templateId)
+        if (userTemplate) {
+          return canvasMillimetersToDots(userTemplate.width)
+        }
+        const template = templates.find((item) => item.id === source.templateId)
+        return template?.width ?? null
+      }
+      return null
+    },
+    [templates, userTemplates]
+  )
+
+  const recordCanvasDimension = React.useCallback((dimension: CanvasDimension) => {
+    setCanvasDimensions(recordRecentCanvasDimension(dimension))
+  }, [])
 
   const preferredPrinterNameRef = React.useRef(preferredPrinterName)
 
@@ -474,6 +540,10 @@ export function useWorkbenchController({
       if (!source) {
         return
       }
+      const dimension = resolveSourceDimension(source)
+      if (dimension) {
+        recordCanvasDimension(dimension)
+      }
       const nextState = recordRecentPrintLocally({
         id: `${source.kind}:${summarizeSourceTitle(source)}`,
         title: summarizeSourceTitle(source),
@@ -483,7 +553,7 @@ export function useWorkbenchController({
       setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
       scheduleSync()
     },
-    [scheduleSync]
+    [recordCanvasDimension, resolveSourceDimension, scheduleSync]
   )
 
   const recordCanvasDraft = React.useCallback(
@@ -516,6 +586,19 @@ export function useWorkbenchController({
 
     if (context.mode !== "demo" && !hasTarget) {
       setError("先选择 service-api 打印机，或连接浏览器直连打印机，再提交打印。")
+      return
+    }
+
+    const sourceWidthDots = resolveSourceWidthDots(previewPrintSource)
+    const capabilityError =
+      previewPrintSource && sourceWidthDots
+        ? getCanvasDotsCapabilityMessage(
+            sourceWidthDots,
+            getPrintTargetWidth(previewPrintSource, hasServerPrinterFlow ? selectedPrinter : null)
+          )
+        : null
+    if (capabilityError) {
+      setError(capabilityError)
       return
     }
 
@@ -611,6 +694,7 @@ export function useWorkbenchController({
     preview,
     previewPrintSource,
     printerId,
+    resolveSourceWidthDots,
     run,
     runServerTaskWithRecovery,
     selectedPrinter,
@@ -645,6 +729,18 @@ export function useWorkbenchController({
 
       if (context.mode !== "demo" && !hasTarget) {
         setError("先选择 service-api 打印机，或连接浏览器直连打印机，再提交打印。")
+        return
+      }
+
+      const sourceWidthDots = resolveSourceWidthDots(source)
+      const capabilityError = sourceWidthDots
+        ? getCanvasDotsCapabilityMessage(
+            sourceWidthDots,
+            getPrintTargetWidth(source, hasServerPrinterFlow ? selectedPrinter : null)
+          )
+        : null
+      if (capabilityError) {
+        setError(capabilityError)
         return
       }
 
@@ -719,6 +815,7 @@ export function useWorkbenchController({
       finalizePrintSuccess,
       hasServerPrinterFlow,
       printerId,
+      resolveSourceWidthDots,
       run,
       runServerTaskWithRecovery,
       scheduleSync,
@@ -772,11 +869,13 @@ export function useWorkbenchController({
     browserPrintSupported,
     browserPrinter,
     busy,
+    canvasDimensions,
     client,
     deleteCanvasDraft,
     connectPhysicalPrinter,
     context,
     recordCanvasDraft,
+    recordCanvasDimension,
     error,
     hasServerPrinterFlow,
     preview,

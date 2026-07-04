@@ -8,6 +8,13 @@ import {
 } from "../../../packages/core/src/web.js"
 
 import type { BrowserPrintSource } from "./browser-print-payload.js"
+import {
+  CANVAS_DOTS_PER_MILLIMETER,
+  canvasDotsToMillimeters,
+  canvasDraftDocumentToDots,
+  normalizeCanvasDraftDocumentUnits,
+  scaleTemplateElementGeometry,
+} from "./lib/canvas-units.js"
 import type {
   CanvasDocumentPreset,
   CanvasDraftDocument,
@@ -22,22 +29,22 @@ export const CANVAS_PRESETS: CanvasDocumentPreset[] = [
   {
     id: "shipping-wide",
     name: "快递单宽版",
-    width: 384,
-    height: 224,
+    width: 48,
+    height: 28,
     description: "适合完整收件信息与条码。",
   },
   {
     id: "ops-tag",
     name: "机柜标签",
-    width: 384,
-    height: 160,
+    width: 48,
+    height: 20,
     description: "适合短文本、二维码与设备标识。",
   },
   {
     id: "compact-note",
     name: "紧凑便签",
-    width: 320,
-    height: 128,
+    width: 40,
+    height: 16,
     description: "适合短说明和操作提示。",
   },
 ]
@@ -143,7 +150,7 @@ function normalizeMonochromeElement(element: CanvasDraftElement): CanvasDraftEle
     case "text":
       return {
         ...element,
-        width: element.width ?? 180,
+        width: element.width ?? canvasDotsToMillimeters(180),
       }
     case "rect":
       return {
@@ -226,13 +233,14 @@ function syncBindingsIntoElements(
 }
 
 export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDraftDocument {
+  const unitDocument = normalizeCanvasDraftDocumentUnits(document)
   const source =
-    document.source ??
+    unitDocument.source ??
     ({
       kind: "scratch",
-      presetId: document.presetId,
+      presetId: unitDocument.presetId,
     } as const)
-  const fields = Array.isArray(document.fields) ? document.fields : []
+  const fields = Array.isArray(unitDocument.fields) ? unitDocument.fields : []
   const normalizedFields =
     source.kind === "preset-template" &&
     fields.length > 0 &&
@@ -257,16 +265,17 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
         })()
       : fields
   const synced = syncBindingsIntoElements(
-    document.elements.map((element) => normalizeMonochromeElement(element)),
+    unitDocument.elements.map((element) => normalizeMonochromeElement(element)),
     normalizedFields,
     source
   )
   return {
-    ...document,
+    ...unitDocument,
+    unit: "mm",
     source,
-    templateId: document.templateId,
-    baseVersionId: document.baseVersionId,
-    lastSavedAt: document.lastSavedAt,
+    templateId: unitDocument.templateId,
+    baseVersionId: unitDocument.baseVersionId,
+    lastSavedAt: unitDocument.lastSavedAt,
     fields: synced.fields,
     elements: synced.elements,
   }
@@ -277,8 +286,8 @@ export function createCanvasElement(
   index: number,
   overrides?: Partial<CanvasDraftElement>
 ): CanvasDraftElement {
-  const seedX = 28 + (index % 3) * 18
-  const seedY = 24 + (index % 4) * 16
+  const seedX = canvasDotsToMillimeters(28 + (index % 3) * 18)
+  const seedY = canvasDotsToMillimeters(24 + (index % 4) * 16)
 
   const base = (() => {
     switch (kind) {
@@ -287,9 +296,9 @@ export function createCanvasElement(
           id: `text-${crypto.randomUUID()}`,
           kind,
           x: seedX,
-          y: seedY + 26,
-          width: 180,
-          fontSize: 24,
+          y: seedY + canvasDotsToMillimeters(26),
+          width: canvasDotsToMillimeters(180),
+          fontSize: canvasDotsToMillimeters(24),
           fontWeight: "bold" as const,
           align: "left" as const,
           value: "可编辑文本",
@@ -303,12 +312,12 @@ export function createCanvasElement(
           kind,
           x: seedX,
           y: seedY,
-          width: 152,
-          height: 68,
-          strokeWidth: 2,
+          width: canvasDotsToMillimeters(152),
+          height: canvasDotsToMillimeters(68),
+          strokeWidth: canvasDotsToMillimeters(2),
           fill: MONO_FILL,
           stroke: MONO_STROKE,
-          radius: 14,
+          radius: canvasDotsToMillimeters(14),
           rotation: 0,
           meta: createLayerMeta(kind, index),
         }
@@ -317,10 +326,10 @@ export function createCanvasElement(
           id: `line-${crypto.randomUUID()}`,
           kind,
           x: seedX,
-          y: seedY + 12,
-          x2: seedX + 160,
-          y2: seedY + 12,
-          strokeWidth: 3,
+          y: seedY + canvasDotsToMillimeters(12),
+          x2: seedX + canvasDotsToMillimeters(160),
+          y2: seedY + canvasDotsToMillimeters(12),
+          strokeWidth: canvasDotsToMillimeters(3),
           stroke: MONO_STROKE,
           meta: createLayerMeta(kind, index),
         }
@@ -330,8 +339,8 @@ export function createCanvasElement(
           kind,
           x: seedX,
           y: seedY,
-          width: 168,
-          height: 52,
+          width: canvasDotsToMillimeters(168),
+          height: canvasDotsToMillimeters(52),
           value: "TM-0001",
           format: "CODE128" as const,
           showValue: false,
@@ -344,7 +353,7 @@ export function createCanvasElement(
           kind,
           x: seedX,
           y: seedY,
-          size: 76,
+          size: canvasDotsToMillimeters(76),
           value: "https://tuckmark.local/item/TM-0001",
           errorCorrectionLevel: "M" as const,
           rotation: 0,
@@ -364,36 +373,37 @@ export function createCanvasElement(
 }
 
 function buildPresetElements(presetId: string): CanvasDraftElement[] {
+  const d = canvasDotsToMillimeters
   if (presetId === "ops-tag") {
     return [
       createCanvasElement("rect", 0, {
-        width: 340,
-        height: 118,
-        x: 20,
-        y: 20,
+        width: d(340),
+        height: d(118),
+        x: d(20),
+        y: d(20),
         meta: { name: "容器底板", visible: true, locked: false },
       }),
       createCanvasElement("text", 1, {
-        x: 36,
-        y: 52,
-        width: 180,
-        fontSize: 28,
+        x: d(36),
+        y: d(52),
+        width: d(180),
+        fontSize: d(28),
         value: "LAN-01",
         meta: { name: "设备名称", visible: true, locked: false },
       }),
       createCanvasElement("text", 2, {
-        x: 36,
-        y: 92,
-        width: 180,
-        fontSize: 18,
+        x: d(36),
+        y: d(92),
+        width: d(180),
+        fontSize: d(18),
         fontWeight: "normal",
         value: "Rack A / Gi1/0/1",
         meta: { name: "说明", visible: true, locked: false },
       }),
       createCanvasElement("qr", 3, {
-        x: 268,
-        y: 38,
-        size: 66,
+        x: d(268),
+        y: d(38),
+        size: d(66),
         value: "https://tuckmark.local/rack-a/lan-01",
         meta: { name: "资产二维码", visible: true, locked: false },
       }),
@@ -403,25 +413,25 @@ function buildPresetElements(presetId: string): CanvasDraftElement[] {
   if (presetId === "compact-note") {
     return [
       createCanvasElement("text", 0, {
-        x: 20,
-        y: 38,
-        width: 220,
-        fontSize: 24,
+        x: d(20),
+        y: d(38),
+        width: d(220),
+        fontSize: d(24),
         value: "维护窗口",
         meta: { name: "标题", visible: true, locked: false },
       }),
       createCanvasElement("line", 1, {
-        x: 20,
-        y: 56,
-        x2: 300,
-        y2: 56,
+        x: d(20),
+        y: d(56),
+        x2: d(300),
+        y2: d(56),
         meta: { name: "分隔线", visible: true, locked: false },
       }),
       createCanvasElement("text", 2, {
-        x: 20,
-        y: 88,
-        width: 270,
-        fontSize: 17,
+        x: d(20),
+        y: d(88),
+        width: d(270),
+        fontSize: d(17),
         fontWeight: "normal",
         value: "生成预览后，再执行直接打印。",
         maxLines: 3,
@@ -432,43 +442,43 @@ function buildPresetElements(presetId: string): CanvasDraftElement[] {
 
   return [
     createCanvasElement("rect", 0, {
-      x: 20,
-      y: 18,
-      width: 344,
-      height: 184,
-      radius: 18,
+      x: d(20),
+      y: d(18),
+      width: d(344),
+      height: d(184),
+      radius: d(18),
       meta: { name: "版心", visible: true, locked: false },
     }),
     createCanvasElement("text", 1, {
-      x: 34,
-      y: 48,
-      width: 170,
-      fontSize: 28,
+      x: d(34),
+      y: d(48),
+      width: d(170),
+      fontSize: d(28),
       value: "Koha Cat",
       meta: { name: "收件人", visible: true, locked: false },
     }),
     createCanvasElement("text", 2, {
-      x: 34,
-      y: 90,
-      width: 214,
-      fontSize: 16,
+      x: d(34),
+      y: d(90),
+      width: d(214),
+      fontSize: d(16),
       fontWeight: "normal",
       value: "Moon St 42\nBrowser City",
       maxLines: 3,
       meta: { name: "地址", visible: true, locked: false },
     }),
     createCanvasElement("barcode", 3, {
-      x: 32,
-      y: 146,
-      width: 170,
-      height: 34,
+      x: d(32),
+      y: d(146),
+      width: d(170),
+      height: d(34),
       value: "TM-230CF680",
       meta: { name: "运单条码", visible: true, locked: false },
     }),
     createCanvasElement("qr", 4, {
-      x: 270,
-      y: 54,
-      size: 72,
+      x: d(270),
+      y: d(54),
+      size: d(72),
       value: "https://tuckmark.local/order/TM-230CF680",
       meta: { name: "追踪二维码", visible: true, locked: false },
     }),
@@ -478,6 +488,7 @@ function buildPresetElements(presetId: string): CanvasDraftElement[] {
 export function createDraftFromPreset(preset: CanvasDocumentPreset): CanvasDraftDocument {
   return normalizeDraftDocument({
     version: 1,
+    unit: "mm",
     id: preset.id,
     presetId: preset.id,
     name: preset.name,
@@ -544,8 +555,9 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
     field ? (field.defaultValue ?? field.label) : undefined
   const getTextElementWidth = (
     element: Extract<TemplateDefinition["elements"][number], { kind: "text" }>
-  ) => element.width ?? 180
+  ) => element.width ?? canvasDotsToMillimeters(180)
   const elements: CanvasDraftElement[] = template.elements.map((element, index) => {
+    const physicalElement = scaleTemplateElementGeometry(element, 1 / CANVAS_DOTS_PER_MILLIMETER)
     const field = "key" in element ? fieldMap.get(element.key) : undefined
     const meta = {
       name: inferLayerNameFromTemplateElement(element, field),
@@ -553,75 +565,76 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
       locked: false,
     }
 
-    switch (element.kind) {
+    switch (physicalElement.kind) {
       case "rect":
         return createCanvasElement("rect", index, {
-          x: element.x,
-          y: element.y,
-          width: element.width,
-          height: element.height,
-          strokeWidth: element.strokeWidth,
-          fill: element.fill,
-          stroke: element.stroke,
-          radius: element.radius,
-          rotation: element.rotation,
+          x: physicalElement.x,
+          y: physicalElement.y,
+          width: physicalElement.width,
+          height: physicalElement.height,
+          strokeWidth: physicalElement.strokeWidth,
+          fill: physicalElement.fill,
+          stroke: physicalElement.stroke,
+          radius: physicalElement.radius,
+          rotation: physicalElement.rotation,
           meta,
         })
       case "line":
         return createCanvasElement("line", index, {
-          x: element.x1,
-          y: element.y1,
-          x2: element.x2,
-          y2: element.y2,
-          strokeWidth: element.strokeWidth,
-          stroke: element.stroke,
+          x: physicalElement.x1,
+          y: physicalElement.y1,
+          x2: physicalElement.x2,
+          y2: physicalElement.y2,
+          strokeWidth: physicalElement.strokeWidth,
+          stroke: physicalElement.stroke,
           meta,
         })
       case "text":
         return createCanvasElement("text", index, {
-          x: element.x,
-          y: element.y,
-          width: getTextElementWidth(element),
-          fontSize: element.fontSize,
-          fontWeight: element.fontWeight,
-          align: element.align,
-          value: resolveInitialFieldValue(field) ?? element.value ?? "",
-          maxLines: element.maxLines,
-          rotation: element.rotation,
+          x: physicalElement.x,
+          y: physicalElement.y,
+          width: getTextElementWidth(physicalElement),
+          fontSize: physicalElement.fontSize,
+          fontWeight: physicalElement.fontWeight,
+          align: physicalElement.align,
+          value: resolveInitialFieldValue(field) ?? physicalElement.value ?? "",
+          maxLines: physicalElement.maxLines,
+          rotation: physicalElement.rotation,
           binding: field ? { fieldKey: field.key, kind: "text" } : undefined,
           meta,
         })
       case "barcode":
         return createCanvasElement("barcode", index, {
-          x: element.x,
-          y: element.y,
-          width: element.width,
-          height: element.height,
-          value: resolveInitialFieldValue(field) ?? element.value ?? "",
-          format: element.format,
-          showValue: element.showValue,
-          rotation: element.rotation,
+          x: physicalElement.x,
+          y: physicalElement.y,
+          width: physicalElement.width,
+          height: physicalElement.height,
+          value: resolveInitialFieldValue(field) ?? physicalElement.value ?? "",
+          format: physicalElement.format,
+          showValue: physicalElement.showValue,
+          rotation: physicalElement.rotation,
           binding: field ? { fieldKey: field.key, kind: "barcode" } : undefined,
           meta,
         })
       case "qr":
         return createCanvasElement("qr", index, {
-          x: element.x,
-          y: element.y,
-          size: element.size,
-          value: resolveInitialFieldValue(field) ?? element.value ?? "",
-          errorCorrectionLevel: element.errorCorrectionLevel,
-          rotation: element.rotation,
+          x: physicalElement.x,
+          y: physicalElement.y,
+          size: physicalElement.size,
+          value: resolveInitialFieldValue(field) ?? physicalElement.value ?? "",
+          errorCorrectionLevel: physicalElement.errorCorrectionLevel,
+          rotation: physicalElement.rotation,
           binding: field ? { fieldKey: field.key, kind: "qr" } : undefined,
           meta,
         })
       default:
-        return assertNever(element)
+        return assertNever(physicalElement)
     }
   })
 
   return normalizeDraftDocument({
     version: 1,
+    unit: "mm",
     id: template.id,
     presetId: template.id,
     name: template.name,
@@ -629,8 +642,8 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
       kind: "preset-template",
       presetId: template.id,
     },
-    width: template.width,
-    height: template.height,
+    width: canvasDotsToMillimeters(template.width),
+    height: canvasDotsToMillimeters(template.height),
     fields: template.fields.map((field) => ({
       key: field.key,
       label: field.label,
@@ -1305,12 +1318,13 @@ export function compileDraftElement(
 export function compileDraftToCanvasDefinition(
   document: CanvasDraftDocument
 ): DirectCanvasDefinition {
+  const dotsDocument = canvasDraftDocumentToDots(document)
   return {
-    id: document.id,
-    name: document.name,
-    width: document.width,
-    height: document.height,
-    elements: document.elements
+    id: dotsDocument.id,
+    name: dotsDocument.name,
+    width: dotsDocument.width,
+    height: dotsDocument.height,
+    elements: dotsDocument.elements
       .filter((element) => element.meta.visible)
       .map((element) => compileDraftElement(element)),
   }
@@ -1320,16 +1334,17 @@ export function compileDraftToFilledCanvasDefinition(
   document: CanvasDraftDocument,
   input: Record<string, string>
 ): DirectCanvasDefinition {
+  const dotsDocument = canvasDraftDocumentToDots(document)
   const fieldMap = new Map(
-    document.fields.map((field) => [field.key, input[field.key] ?? field.defaultValue ?? ""])
+    dotsDocument.fields.map((field) => [field.key, input[field.key] ?? field.defaultValue ?? ""])
   )
 
   return {
-    id: document.id,
-    name: document.name,
-    width: document.width,
-    height: document.height,
-    elements: document.elements
+    id: dotsDocument.id,
+    name: dotsDocument.name,
+    width: dotsDocument.width,
+    height: dotsDocument.height,
+    elements: dotsDocument.elements
       .filter((element) => element.meta.visible)
       .map((element) => {
         const compiled = compileDraftElement(element)

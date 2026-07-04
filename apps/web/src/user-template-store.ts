@@ -1,4 +1,5 @@
 import { stableStringify } from "../../../packages/core/src/web.js"
+import { normalizeCanvasDraftDocumentUnits } from "./lib/canvas-units.js"
 import type {
   CanvasDraftDocument,
   CanvasDraftSource,
@@ -109,9 +110,27 @@ function buildTemplateSummary(
   workingCopy: CanvasWorkingCopyIndexEntry | null,
   fallbackDocument: CanvasDraftDocument | null
 ): UserTemplateSummary {
+  const workingDraft = workingCopy?.draft
+    ? normalizeCanvasDraftDocumentUnits(workingCopy.draft)
+    : null
+  const fallbackDraft = fallbackDocument
+    ? normalizeCanvasDraftDocumentUnits(fallbackDocument)
+    : null
+  const sourceDraft = workingDraft ?? fallbackDraft
   return {
     ...cloneValue(template),
-    fields: cloneValue(workingCopy?.draft.fields ?? fallbackDocument?.fields ?? []),
+    width: sourceDraft?.width ?? template.width,
+    height: sourceDraft?.height ?? template.height,
+    fields: cloneValue(sourceDraft?.fields ?? []),
+  }
+}
+
+function normalizeVersionSnapshot(
+  version: UserTemplateVersionSnapshot
+): UserTemplateVersionSnapshot {
+  return {
+    ...cloneValue(version),
+    document: normalizeCanvasDraftDocumentUnits(version.document),
   }
 }
 
@@ -159,14 +178,18 @@ class MemoryUserTemplateStore {
 
     return {
       template,
-      saved: history.filter((version) => version.kind === "saved").map(cloneValue),
-      autosaves: history.filter((version) => version.kind === "autosave").map(cloneValue),
+      saved: history
+        .filter((version) => version.kind === "saved")
+        .map((version) => normalizeVersionSnapshot(version)),
+      autosaves: history
+        .filter((version) => version.kind === "autosave")
+        .map((version) => normalizeVersionSnapshot(version)),
     }
   }
 
   async readVersion(versionId: string): Promise<UserTemplateVersionSnapshot | null> {
     const version = this.versions.get(versionId)
-    return version ? cloneValue(version) : null
+    return version ? normalizeVersionSnapshot(version) : null
   }
 
   async saveTemplate(args: {
@@ -181,7 +204,7 @@ class MemoryUserTemplateStore {
     workingCopy: CanvasWorkingCopyIndexEntry
   }> {
     const now = new Date().toISOString()
-    const document = cloneValue(args.document)
+    const document = normalizeCanvasDraftDocumentUnits(cloneValue(args.document))
     const templateId = args.templateId ?? createId("user-template")
     const existing = this.templates.get(templateId)
     const templateVersions = Array.from(this.versions.values()).filter(
@@ -250,7 +273,7 @@ class MemoryUserTemplateStore {
     sourceVersionId?: string
   }): Promise<CanvasWorkingCopyIndexEntry> {
     const now = new Date().toISOString()
-    const draft = cloneValue(args.document)
+    const draft = normalizeCanvasDraftDocumentUnits(cloneValue(args.document))
     const workingCopy: CanvasWorkingCopyIndexEntry = {
       sourceKey: createSourceKey(args.source),
       source: cloneValue(args.source),
@@ -270,7 +293,10 @@ class MemoryUserTemplateStore {
     const currentVersion = currentVersionId
       ? Array.from(this.versions.values()).find((version) => version.id === currentVersionId)
       : null
-    if (currentVersion && sameDocumentContent(currentVersion.document, draft)) {
+    if (
+      currentVersion &&
+      sameDocumentContent(normalizeCanvasDraftDocumentUnits(currentVersion.document), draft)
+    ) {
       return cloneValue(workingCopy)
     }
 
@@ -319,11 +345,12 @@ class MemoryUserTemplateStore {
     sourceVersionId?: string
   }): Promise<CanvasWorkingCopyIndexEntry> {
     const now = new Date().toISOString()
+    const draft = normalizeCanvasDraftDocumentUnits(cloneValue(args.document))
     const workingCopy: CanvasWorkingCopyIndexEntry = {
       sourceKey: createSourceKey(args.source),
       source: cloneValue(args.source),
       templateId: args.templateId,
-      draft: cloneValue(args.document),
+      draft,
       updatedAt: now,
       baseVersionId: args.sourceVersionId,
     }
@@ -333,7 +360,12 @@ class MemoryUserTemplateStore {
 
   async loadWorkingCopy(source: CanvasDraftSource): Promise<CanvasWorkingCopyIndexEntry | null> {
     const entry = this.workingCopies.get(createSourceKey(source))
-    return entry ? cloneValue(entry) : null
+    return entry
+      ? {
+          ...cloneValue(entry),
+          draft: normalizeCanvasDraftDocumentUnits(entry.draft),
+        }
+      : null
   }
 
   async clearWorkingCopy(source: CanvasDraftSource): Promise<void> {
@@ -472,27 +504,26 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
         const currentVersion =
           versions.find((version) => version.id === record.currentVersionId) ?? null
         return {
-          template: {
-            ...record,
-            fields: cloneValue(currentVersion?.document.fields ?? []),
-          },
+          template: buildTemplateSummary(record, null, currentVersion?.document ?? null),
           saved: versions
             .filter((version) => version.kind === "saved")
-            .sort(compareVersionsNewestFirst),
+            .sort(compareVersionsNewestFirst)
+            .map((version) => normalizeVersionSnapshot(version)),
           autosaves: versions
             .filter((version) => version.kind === "autosave")
-            .sort(compareVersionsNewestFirst),
+            .sort(compareVersionsNewestFirst)
+            .map((version) => normalizeVersionSnapshot(version)),
         }
       }
     )
-    return history ? cloneValue(history) : null
+    return history
   }
 
   override async readVersion(versionId: string): Promise<UserTemplateVersionSnapshot | null> {
     const version = await this.transaction([VERSION_STORE], "readonly", async (stores) =>
       readOne<UserTemplateVersionSnapshot>(stores[VERSION_STORE], versionId)
     )
-    return version ? cloneValue(version) : null
+    return version ? normalizeVersionSnapshot(version) : null
   }
 
   override async saveTemplate(args: {
@@ -510,7 +541,7 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
     const current = await this.readHistory(templateId)
     const now = new Date().toISOString()
     const nextVersionNumber = getNextSavedVersionNumber(current?.saved ?? [])
-    const document = cloneValue(args.document)
+    const document = normalizeCanvasDraftDocumentUnits(cloneValue(args.document))
     document.templateId = templateId
     document.source = { kind: "user-template", templateId }
     document.baseVersionId = undefined
@@ -576,11 +607,12 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
     sourceVersionId?: string
   }): Promise<CanvasWorkingCopyIndexEntry> {
     const now = new Date().toISOString()
+    const draft = normalizeCanvasDraftDocumentUnits(cloneValue(args.document))
     const workingCopy: CanvasWorkingCopyIndexEntry = {
       sourceKey: createSourceKey(args.source),
       source: cloneValue(args.source),
       templateId: args.templateId,
-      draft: cloneValue(args.document),
+      draft,
       updatedAt: now,
       baseVersionId: args.sourceVersionId,
     }
@@ -596,7 +628,13 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
     const currentVersion = currentTemplate
       ? await this.readVersion(currentTemplate.currentVersionId)
       : null
-    if (currentVersion && sameDocumentContent(currentVersion.document, workingCopy.draft)) {
+    if (
+      currentVersion &&
+      sameDocumentContent(
+        normalizeCanvasDraftDocumentUnits(currentVersion.document),
+        workingCopy.draft
+      )
+    ) {
       await this.transaction([WORKING_COPY_STORE], "readwrite", async (stores) => {
         await put(stores[WORKING_COPY_STORE], workingCopy)
       })
@@ -638,7 +676,7 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
       createdAt: now,
       label: "未保存草稿",
       sourceVersionId: args.sourceVersionId,
-      document: cloneValue(args.document),
+      document: workingCopy.draft,
     }
 
     await this.transaction([WORKING_COPY_STORE, VERSION_STORE], "readwrite", async (stores) => {
@@ -662,11 +700,12 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
     sourceVersionId?: string
   }): Promise<CanvasWorkingCopyIndexEntry> {
     const now = new Date().toISOString()
+    const draft = normalizeCanvasDraftDocumentUnits(cloneValue(args.document))
     const workingCopy: CanvasWorkingCopyIndexEntry = {
       sourceKey: createSourceKey(args.source),
       source: cloneValue(args.source),
       templateId: args.templateId,
-      draft: cloneValue(args.document),
+      draft,
       updatedAt: now,
       baseVersionId: args.sourceVersionId,
     }
@@ -682,7 +721,12 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
     const entry = await this.transaction([WORKING_COPY_STORE], "readonly", async (stores) =>
       readOne<CanvasWorkingCopyIndexEntry>(stores[WORKING_COPY_STORE], createSourceKey(source))
     )
-    return entry ? cloneValue(entry) : null
+    return entry
+      ? {
+          ...cloneValue(entry),
+          draft: normalizeCanvasDraftDocumentUnits(entry.draft),
+        }
+      : null
   }
 
   override async clearWorkingCopy(source: CanvasDraftSource): Promise<void> {

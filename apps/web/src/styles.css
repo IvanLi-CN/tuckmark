@@ -1559,6 +1559,31 @@
     }
   }
 
+  @media (max-width: 1023px) {
+    .tm-main--canvas {
+      overflow: auto;
+    }
+
+    .tm-main--canvas .tm-workspace {
+      height: auto;
+      min-height: 100%;
+      overflow: visible;
+    }
+
+    .tm-main--canvas .tm-pane-grid {
+      height: auto;
+      overflow: visible;
+    }
+
+    .tm-pane-grid--focus-right .tm-pane--left {
+      display: none;
+    }
+
+    .tm-pane-grid--focus-right .tm-pane--right {
+      display: flex;
+    }
+  }
+
   @media (max-width: 720px) {
     .tm-quick-tools {
       grid-template-columns: minmax(0, 1fr);

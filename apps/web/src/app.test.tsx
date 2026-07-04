@@ -1173,10 +1173,14 @@ describe("web workbench app", () => {
       await flush()
     })
 
-    const selectedStatus = document.querySelector(
+    const removedHeaderStatus = document.querySelector(
       'input[aria-label="当前选择状态"]'
     ) as HTMLInputElement | null
-    expect(selectedStatus?.value).toBe("已选 1 项")
+    expect(removedHeaderStatus).toBeNull()
+    const canvasStatus = document.querySelector(
+      'input[aria-label="当前画布状态"]'
+    ) as HTMLInputElement | null
+    expect(canvasStatus?.value).toBe("已选 1 项")
   })
 
   it("hydrates recent activity from sync state on server-http startup", async () => {

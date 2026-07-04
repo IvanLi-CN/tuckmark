@@ -9,6 +9,10 @@ import {
   toggleElementBinding,
 } from "./canvas-editor-model.js"
 import { fallbackTemplates } from "./demo-data.js"
+import {
+  clearRecentCanvasDimensions,
+  recordRecentCanvasDimension,
+} from "./lib/canvas-dimensions.js"
 import type { AppContext } from "./types.js"
 import {
   resetUserTemplateStoreForTest,
@@ -122,6 +126,12 @@ async function seedUserTemplateFixtures() {
     document: autosaveDraft,
     sourceVersionId: saved.version.id,
   })
+}
+
+function seedDimensionFixtures() {
+  clearRecentCanvasDimensions()
+  recordRecentCanvasDimension({ width: 64, height: 30 })
+  recordRecentCanvasDimension({ width: 48, height: 20 })
 }
 
 export const Home: Story = {
@@ -293,6 +303,37 @@ export const CanvasWorkspaceWide: Story = {
   },
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+}
+
+export const CanvasWorkspaceDimensionPicker: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "wide-default",
+  },
+  loaders: [
+    async () => {
+      seedDimensionFixtures()
+      return {}
+    },
+  ],
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const widthInput = canvas.getByLabelText("标签宽度")
+    const heightInput = canvas.getByLabelText("标签高度")
+    await userEvent.clear(heightInput)
+    await userEvent.clear(widthInput)
+    await userEvent.type(widthInput, "64")
+    await canvas.findByRole("option", { name: "64 × 30 mm" })
   },
 }
 
