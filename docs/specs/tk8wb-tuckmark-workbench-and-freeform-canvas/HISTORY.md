@@ -104,6 +104,23 @@ while the workbench was being productized:
   - printer width capability remains an output-time constraint, which keeps
     editing and preview non-blocking while still preventing invalid direct
     print submission
+- The canvas shape-editing model was then aligned with common vector editor
+  expectations:
+  - rectangles no longer inherit a hidden rounded-corner default when created
+    from the toolbar
+  - rectangle radius became an explicit inspector property
+  - rectangular elements use non-proportional resize handles by default
+  - QR elements remain proportional
+  - single line elements use endpoint handles instead of rectangular scaling
+- The same shape-model pass was extended to first-class circle and triangle
+  elements:
+  - the shared printable schema and SVG renderer now support `circle` and
+    `triangle`
+  - circles use square `size` geometry and proportional resize handles
+  - triangles use width/height geometry and non-proportional resize handles
+  - review convergence tightened rotated triangle selection bounds and synced
+    checked-in core JavaScript renderer artifacts with the expanded shape
+    schema
 - The shared footer also became an operator support surface:
   - repository link and site rights notice are visible without opening
     developer tools

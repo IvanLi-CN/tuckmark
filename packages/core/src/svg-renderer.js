@@ -1,0 +1,177 @@
+import JsBarcode from "jsbarcode";
+import QRCode from "qrcode";
+function formatNumber(value) {
+    return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/\.?0+$/, "");
+}
+function wrapMarkupWithRotation(markup, rotation, originX, originY) {
+    if (!rotation) {
+        return markup;
+    }
+    return `<g transform="rotate(${formatNumber(rotation)} ${formatNumber(originX)} ${formatNumber(originY)})">${markup}</g>`;
+}
+export function escapeXml(value) {
+    return value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&apos;");
+}
+export function wrapText(text, maxCharsPerLine, maxLines) {
+    const normalized = text.replaceAll("\r\n", "\n").split("\n");
+    const lines = [];
+    for (const chunk of normalized) {
+        if (chunk.length === 0) {
+            lines.push("");
+            continue;
+        }
+        let current = "";
+        for (const token of chunk.split(/\s+/)) {
+            const candidate = current ? `${current} ${token}` : token;
+            if (candidate.length > maxCharsPerLine && current) {
+                lines.push(current);
+                current = token;
+            }
+            else {
+                current = candidate;
+            }
+        }
+        if (current) {
+            lines.push(current);
+        }
+    }
+    return maxLines ? lines.slice(0, maxLines) : lines;
+}
+export function estimateCharsPerLine(fontSize, width) {
+    if (!width) {
+        return 100;
+    }
+    return Math.max(4, Math.floor(width / (fontSize * 0.6)));
+}
+function renderTextElement(element, input) {
+    const resolved = element.value ?? input[element.key] ?? "";
+    const escaped = escapeXml(resolved);
+    const lines = wrapText(escaped, estimateCharsPerLine(element.fontSize, element.width), element.maxLines);
+    const renderedLines = lines.length > 0 ? lines : [""];
+    const anchor = element.align === "center" ? "middle" : element.align === "right" ? "end" : "start";
+    const x = element.align === "center" && element.width
+        ? element.x + element.width / 2
+        : element.align === "right" && element.width
+            ? element.x + element.width
+            : element.x;
+    const markup = renderedLines
+        .map((line, index) => {
+        const y = element.y + index * (element.fontSize + 4);
+        return `<text x="${x}" y="${y}" font-size="${element.fontSize}" font-weight="${element.fontWeight}" text-anchor="${anchor}" font-family="ui-sans-serif, system-ui, sans-serif" fill="#111111">${line}</text>`;
+    })
+        .join("");
+    const width = element.width ??
+        Math.max(...renderedLines.map((line) => line.length), 1) * element.fontSize * 0.6;
+    const lineHeight = element.fontSize + 4;
+    const lineCount = renderedLines.length;
+    const originX = element.x + width / 2;
+    const top = element.y - element.fontSize;
+    const height = Math.max(lineHeight, element.fontSize + (lineCount - 1) * lineHeight);
+    const originY = top + height / 2;
+    return wrapMarkupWithRotation(markup, element.rotation, originX, originY);
+}
+function resolveElementValue(element, input) {
+    return (element.value ?? input[element.key] ?? "").trim();
+}
+function buildBarcodeMarkup(element, input) {
+    const value = resolveElementValue(element, input);
+    if (value.length === 0) {
+        throw new Error(`Barcode value is required for key: ${element.key}`);
+    }
+    try {
+        const encoded = {};
+        JsBarcode(encoded, value, {
+            format: element.format,
+            displayValue: element.showValue,
+            margin: 0,
+            background: "#ffffff",
+            lineColor: "#111111",
+            width: 2,
+            height: Math.max(8, Math.round(element.height)),
+            fontSize: Math.max(10, Math.round(element.height * 0.18)),
+            textMargin: Math.max(2, Math.round(element.height * 0.05)),
+        });
+        const barcode = encoded.encodings?.[0];
+        if (!barcode) {
+            throw new Error("JsBarcode returned no encodings");
+        }
+        const bars = [];
+        const marginLeft = barcode.options.marginLeft ?? 0;
+        const marginTop = barcode.options.marginTop ?? 0;
+        let cursor = marginLeft;
+        for (const bit of barcode.data) {
+            if (bit === "1") {
+                bars.push(`<rect x="${cursor}" y="${marginTop}" width="${barcode.options.width}" height="${barcode.options.height}" fill="#111111" />`);
+            }
+            cursor += barcode.options.width;
+        }
+        const viewWidth = cursor + marginLeft;
+        const viewHeight = barcode.options.height + marginTop * 2;
+        const markup = `<svg x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" viewBox="0 0 ${viewWidth} ${viewHeight}" preserveAspectRatio="none"><rect width="${viewWidth}" height="${viewHeight}" fill="#ffffff" />${bars.join("")}</svg>`;
+        return wrapMarkupWithRotation(markup, element.rotation, element.x + element.width / 2, element.y + element.height / 2);
+    }
+    catch (cause) {
+        throw new Error(`Failed to render CODE128 barcode "${element.key}": ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+}
+function buildQrMarkup(element, input) {
+    const value = resolveElementValue(element, input);
+    if (value.length === 0) {
+        throw new Error(`QR value is required for key: ${element.key}`);
+    }
+    try {
+        const qr = QRCode.create(value, {
+            errorCorrectionLevel: element.errorCorrectionLevel,
+        });
+        const moduleSize = qr.modules.size;
+        const modules = qr.modules.data;
+        const cell = element.size / moduleSize;
+        const rects = [];
+        for (let row = 0; row < moduleSize; row += 1) {
+            for (let column = 0; column < moduleSize; column += 1) {
+                if (!modules[row * moduleSize + column]) {
+                    continue;
+                }
+                rects.push(`<rect x="${(column * cell).toFixed(4)}" y="${(row * cell).toFixed(4)}" width="${cell.toFixed(4)}" height="${cell.toFixed(4)}" fill="#111111" />`);
+            }
+        }
+        const markup = `<svg x="${element.x}" y="${element.y}" width="${element.size}" height="${element.size}" viewBox="0 0 ${element.size} ${element.size}" preserveAspectRatio="none"><rect width="${element.size}" height="${element.size}" fill="#ffffff" />${rects.join("")}</svg>`;
+        return wrapMarkupWithRotation(markup, element.rotation, element.x + element.size / 2, element.y + element.size / 2);
+    }
+    catch (cause) {
+        throw new Error(`Failed to render QR "${element.key}": ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+}
+function renderElement(element, input) {
+    switch (element.kind) {
+        case "text":
+            return renderTextElement(element, input);
+        case "rect":
+            return wrapMarkupWithRotation(`<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" rx="${element.radius}" ry="${element.radius}" fill="${element.fill}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`, element.rotation, element.x + element.width / 2, element.y + element.height / 2);
+        case "circle":
+            return `<circle cx="${element.x + element.size / 2}" cy="${element.y + element.size / 2}" r="${element.size / 2}" fill="${element.fill}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`;
+        case "triangle":
+            return wrapMarkupWithRotation(`<polygon points="${element.x + element.width / 2},${element.y} ${element.x + element.width},${element.y + element.height} ${element.x},${element.y + element.height}" fill="${element.fill}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`, element.rotation, element.x + element.width / 2, element.y + element.height / 2);
+        case "line":
+            return `<line x1="${element.x1}" y1="${element.y1}" x2="${element.x2}" y2="${element.y2}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`;
+        case "barcode":
+            return buildBarcodeMarkup(element, input);
+        case "qr":
+            return buildQrMarkup(element, input);
+    }
+}
+export function buildSvg(width, height, elements, input) {
+    return [
+        `<?xml version="1.0" encoding="UTF-8"?>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+        `<rect width="${width}" height="${height}" fill="white" />`,
+        elements.map((element) => renderElement(element, input)).join(""),
+        "</svg>",
+    ].join("");
+}
+//# sourceMappingURL=svg-renderer.js.map

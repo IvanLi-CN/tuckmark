@@ -91,4 +91,38 @@ describe("renderTemplateToPreview continuous safety", () => {
 
     expect(svg).toContain('transform="rotate(90 100 42)"')
   })
+
+  it("renders circle and triangle shape elements into SVG", () => {
+    const svg = buildSvg(
+      120,
+      80,
+      [
+        {
+          kind: "circle",
+          x: 10,
+          y: 12,
+          size: 32,
+          strokeWidth: 2,
+          fill: "none",
+          stroke: "#111111",
+        },
+        {
+          kind: "triangle",
+          x: 52,
+          y: 16,
+          width: 40,
+          height: 34,
+          strokeWidth: 2,
+          fill: "none",
+          stroke: "#111111",
+          rotation: 15,
+        },
+      ],
+      {}
+    )
+
+    expect(svg).toContain('<circle cx="26" cy="28" r="16"')
+    expect(svg).toContain('<polygon points="72,16 92,50 52,50"')
+    expect(svg).toContain('transform="rotate(15 72 33)"')
+  })
 })

@@ -152,6 +152,37 @@ function validateElementBounds(
       )
       return
     }
+    case "circle": {
+      const strokeInset = element.strokeWidth / 2
+      validateRectBounds(
+        {
+          left: element.x - strokeInset,
+          top: element.y - strokeInset,
+          width: element.size + element.strokeWidth,
+          height: element.size + element.strokeWidth,
+        },
+        width,
+        height,
+        fail
+      )
+      return
+    }
+    case "triangle": {
+      const strokeInset = element.strokeWidth / 2
+      validateRectBounds(
+        {
+          left: element.x - strokeInset,
+          top: element.y - strokeInset,
+          width: element.width + element.strokeWidth,
+          height: element.height + element.strokeWidth,
+          rotation: element.rotation,
+        },
+        width,
+        height,
+        fail
+      )
+      return
+    }
     case "line":
       if (
         Math.min(element.x1, element.x2) - element.strokeWidth / 2 < 0 ||

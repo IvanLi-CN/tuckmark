@@ -42,6 +42,23 @@ export function scaleDraftElementGeometry(
         strokeWidth: scaleValue(element.strokeWidth, scale),
         radius: scaleValue(element.radius, scale),
       }
+    case "circle":
+      return {
+        ...element,
+        x: scaleValue(element.x, scale),
+        y: scaleValue(element.y, scale),
+        size: scaleValue(element.size, scale),
+        strokeWidth: scaleValue(element.strokeWidth, scale),
+      }
+    case "triangle":
+      return {
+        ...element,
+        x: scaleValue(element.x, scale),
+        y: scaleValue(element.y, scale),
+        width: scaleValue(element.width, scale),
+        height: scaleValue(element.height, scale),
+        strokeWidth: scaleValue(element.strokeWidth, scale),
+      }
     case "line":
       return {
         ...element,
@@ -91,6 +108,23 @@ export function scaleTemplateElementGeometry(
         height: scaleValue(element.height, scale),
         strokeWidth: scaleValue(element.strokeWidth, scale),
         radius: scaleValue(element.radius, scale),
+      }
+    case "circle":
+      return {
+        ...element,
+        x: scaleValue(element.x, scale),
+        y: scaleValue(element.y, scale),
+        size: scaleValue(element.size, scale),
+        strokeWidth: scaleValue(element.strokeWidth, scale),
+      }
+    case "triangle":
+      return {
+        ...element,
+        x: scaleValue(element.x, scale),
+        y: scaleValue(element.y, scale),
+        width: scaleValue(element.width, scale),
+        height: scaleValue(element.height, scale),
+        strokeWidth: scaleValue(element.strokeWidth, scale),
       }
     case "line":
       return {

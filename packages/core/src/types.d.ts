@@ -123,6 +123,26 @@ export declare const rectElementSchema: z.ZodObject<{
     radius: z.ZodDefault<z.ZodNumber>;
     rotation: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>;
+export declare const circleElementSchema: z.ZodObject<{
+    kind: z.ZodLiteral<"circle">;
+    x: z.ZodNumber;
+    y: z.ZodNumber;
+    size: z.ZodNumber;
+    strokeWidth: z.ZodDefault<z.ZodNumber>;
+    fill: z.ZodDefault<z.ZodString>;
+    stroke: z.ZodDefault<z.ZodString>;
+}, z.core.$strip>;
+export declare const triangleElementSchema: z.ZodObject<{
+    kind: z.ZodLiteral<"triangle">;
+    x: z.ZodNumber;
+    y: z.ZodNumber;
+    width: z.ZodNumber;
+    height: z.ZodNumber;
+    strokeWidth: z.ZodDefault<z.ZodNumber>;
+    fill: z.ZodDefault<z.ZodString>;
+    stroke: z.ZodDefault<z.ZodString>;
+    rotation: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strip>;
 export declare const lineElementSchema: z.ZodObject<{
     kind: z.ZodLiteral<"line">;
     x1: z.ZodNumber;
@@ -188,6 +208,24 @@ export declare const templateElementSchema: z.ZodDiscriminatedUnion<[z.ZodObject
     fill: z.ZodDefault<z.ZodString>;
     stroke: z.ZodDefault<z.ZodString>;
     radius: z.ZodDefault<z.ZodNumber>;
+    rotation: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strip>, z.ZodObject<{
+    kind: z.ZodLiteral<"circle">;
+    x: z.ZodNumber;
+    y: z.ZodNumber;
+    size: z.ZodNumber;
+    strokeWidth: z.ZodDefault<z.ZodNumber>;
+    fill: z.ZodDefault<z.ZodString>;
+    stroke: z.ZodDefault<z.ZodString>;
+}, z.core.$strip>, z.ZodObject<{
+    kind: z.ZodLiteral<"triangle">;
+    x: z.ZodNumber;
+    y: z.ZodNumber;
+    width: z.ZodNumber;
+    height: z.ZodNumber;
+    strokeWidth: z.ZodDefault<z.ZodNumber>;
+    fill: z.ZodDefault<z.ZodString>;
+    stroke: z.ZodDefault<z.ZodString>;
     rotation: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>, z.ZodObject<{
     kind: z.ZodLiteral<"line">;
@@ -269,6 +307,24 @@ export declare const templateSchema: z.ZodObject<{
         radius: z.ZodDefault<z.ZodNumber>;
         rotation: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>, z.ZodObject<{
+        kind: z.ZodLiteral<"circle">;
+        x: z.ZodNumber;
+        y: z.ZodNumber;
+        size: z.ZodNumber;
+        strokeWidth: z.ZodDefault<z.ZodNumber>;
+        fill: z.ZodDefault<z.ZodString>;
+        stroke: z.ZodDefault<z.ZodString>;
+    }, z.core.$strip>, z.ZodObject<{
+        kind: z.ZodLiteral<"triangle">;
+        x: z.ZodNumber;
+        y: z.ZodNumber;
+        width: z.ZodNumber;
+        height: z.ZodNumber;
+        strokeWidth: z.ZodDefault<z.ZodNumber>;
+        fill: z.ZodDefault<z.ZodString>;
+        stroke: z.ZodDefault<z.ZodString>;
+        rotation: z.ZodDefault<z.ZodNumber>;
+    }, z.core.$strip>, z.ZodObject<{
         kind: z.ZodLiteral<"line">;
         x1: z.ZodNumber;
         y1: z.ZodNumber;
@@ -339,6 +395,24 @@ export declare const directCanvasSchema: z.ZodObject<{
         fill: z.ZodDefault<z.ZodString>;
         stroke: z.ZodDefault<z.ZodString>;
         radius: z.ZodDefault<z.ZodNumber>;
+        rotation: z.ZodDefault<z.ZodNumber>;
+    }, z.core.$strip>, z.ZodObject<{
+        kind: z.ZodLiteral<"circle">;
+        x: z.ZodNumber;
+        y: z.ZodNumber;
+        size: z.ZodNumber;
+        strokeWidth: z.ZodDefault<z.ZodNumber>;
+        fill: z.ZodDefault<z.ZodString>;
+        stroke: z.ZodDefault<z.ZodString>;
+    }, z.core.$strip>, z.ZodObject<{
+        kind: z.ZodLiteral<"triangle">;
+        x: z.ZodNumber;
+        y: z.ZodNumber;
+        width: z.ZodNumber;
+        height: z.ZodNumber;
+        strokeWidth: z.ZodDefault<z.ZodNumber>;
+        fill: z.ZodDefault<z.ZodString>;
+        stroke: z.ZodDefault<z.ZodString>;
         rotation: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>, z.ZodObject<{
         kind: z.ZodLiteral<"line">;
@@ -621,6 +695,24 @@ export declare const directCanvasPreviewRequestSchema: z.ZodObject<{
             radius: z.ZodDefault<z.ZodNumber>;
             rotation: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>, z.ZodObject<{
+            kind: z.ZodLiteral<"circle">;
+            x: z.ZodNumber;
+            y: z.ZodNumber;
+            size: z.ZodNumber;
+            strokeWidth: z.ZodDefault<z.ZodNumber>;
+            fill: z.ZodDefault<z.ZodString>;
+            stroke: z.ZodDefault<z.ZodString>;
+        }, z.core.$strip>, z.ZodObject<{
+            kind: z.ZodLiteral<"triangle">;
+            x: z.ZodNumber;
+            y: z.ZodNumber;
+            width: z.ZodNumber;
+            height: z.ZodNumber;
+            strokeWidth: z.ZodDefault<z.ZodNumber>;
+            fill: z.ZodDefault<z.ZodString>;
+            stroke: z.ZodDefault<z.ZodString>;
+            rotation: z.ZodDefault<z.ZodNumber>;
+        }, z.core.$strip>, z.ZodObject<{
             kind: z.ZodLiteral<"line">;
             x1: z.ZodNumber;
             y1: z.ZodNumber;
@@ -733,6 +825,24 @@ export declare const printCanvasRequestSchema: z.ZodObject<{
             fill: z.ZodDefault<z.ZodString>;
             stroke: z.ZodDefault<z.ZodString>;
             radius: z.ZodDefault<z.ZodNumber>;
+            rotation: z.ZodDefault<z.ZodNumber>;
+        }, z.core.$strip>, z.ZodObject<{
+            kind: z.ZodLiteral<"circle">;
+            x: z.ZodNumber;
+            y: z.ZodNumber;
+            size: z.ZodNumber;
+            strokeWidth: z.ZodDefault<z.ZodNumber>;
+            fill: z.ZodDefault<z.ZodString>;
+            stroke: z.ZodDefault<z.ZodString>;
+        }, z.core.$strip>, z.ZodObject<{
+            kind: z.ZodLiteral<"triangle">;
+            x: z.ZodNumber;
+            y: z.ZodNumber;
+            width: z.ZodNumber;
+            height: z.ZodNumber;
+            strokeWidth: z.ZodDefault<z.ZodNumber>;
+            fill: z.ZodDefault<z.ZodString>;
+            stroke: z.ZodDefault<z.ZodString>;
             rotation: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>, z.ZodObject<{
             kind: z.ZodLiteral<"line">;

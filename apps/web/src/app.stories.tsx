@@ -412,6 +412,92 @@ export const CanvasWorkspaceTextSelected: Story = {
   },
 }
 
+export const CanvasWorkspaceRectSelected: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "rect-selected",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("直角矩形")).length).toBeGreaterThan(0)
+    await expect(await canvas.findByLabelText("圆角")).toHaveValue("0")
+  },
+}
+
+export const CanvasWorkspaceCircleSelected: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "circle-selected",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("圆形示例")).length).toBeGreaterThan(0)
+    await canvas.findByLabelText("边长")
+  },
+}
+
+export const CanvasWorkspaceTriangleSelected: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "triangle-selected",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("三角形示例")).length).toBeGreaterThan(0)
+    await canvas.findByLabelText("宽")
+    await canvas.findByLabelText("高")
+  },
+}
+
+export const CanvasWorkspaceLineSelected: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "line-selected",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("端点线段")).length).toBeGreaterThan(0)
+    await canvas.findByLabelText("X2")
+    await canvas.findByLabelText("Y2")
+  },
+}
+
 export const CanvasWorkspaceBarcodeSelected: Story = {
   args: {
     context: runtimeContext,

@@ -25,7 +25,7 @@ export type Template = {
   fields: TemplateField[]
 }
 
-export type CanvasElementKind = "text" | "rect" | "line" | "barcode" | "qr"
+export type CanvasElementKind = "text" | "rect" | "circle" | "triangle" | "line" | "barcode" | "qr"
 
 export type CanvasElement =
   | {
@@ -52,6 +52,28 @@ export type CanvasElement =
       fill: string
       stroke: string
       radius: number
+      rotation?: number
+    }
+  | {
+      id: string
+      kind: "circle"
+      x: number
+      y: number
+      size: number
+      strokeWidth: number
+      fill: string
+      stroke: string
+    }
+  | {
+      id: string
+      kind: "triangle"
+      x: number
+      y: number
+      width: number
+      height: number
+      strokeWidth: number
+      fill: string
+      stroke: string
       rotation?: number
     }
   | {
