@@ -4,6 +4,7 @@ dist/
 .tuckmark/
 coverage/
 .tmp/
+.impeccable/
 work/
 .env.local
 .storybook-static
