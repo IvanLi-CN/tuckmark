@@ -466,6 +466,24 @@ describe("canvas-editor-model monochrome contract", () => {
     expect(selectionBounds.height).toBeCloseTo(bounds.width, 5)
   })
 
+  it("expands selection bounds for rotated triangles", () => {
+    const triangle = createCanvasElement("triangle", 0, {
+      x: 10,
+      y: 12,
+      width: 30,
+      height: 18,
+      rotation: 90,
+    })
+
+    const bounds = getElementBounds(triangle)
+    const selectionBounds = getElementSelectionBounds(triangle)
+
+    expect(selectionBounds.x).toBeGreaterThan(bounds.x)
+    expect(selectionBounds.y).toBeLessThan(bounds.y)
+    expect(selectionBounds.width).toBeCloseTo(bounds.height, 5)
+    expect(selectionBounds.height).toBeCloseTo(bounds.width, 5)
+  })
+
   it("creates bindable fields from system templates while keeping static preset values fixed", () => {
     const template = getSystemTemplateById("shipping-compact")
     const draft = createDraftFromSystemTemplate(template)

@@ -1253,6 +1253,7 @@ export function getElementSelectionBounds(element: CanvasDraftElement): CanvasBo
   const rotation =
     element.kind === "text" ||
     element.kind === "rect" ||
+    element.kind === "triangle" ||
     element.kind === "barcode" ||
     element.kind === "qr"
       ? normalizeRotation(element.rotation)
