@@ -45,6 +45,8 @@ and a reproducible worktree bootstrap path.
 - PR labels are the release-intent source of truth.
 - Mainline release uses a durable snapshot and supports backfill.
 - Pages deployment is separate from GitHub Release publication.
+- Published GitHub Releases trigger a fresh Pages deployment from the release
+  tag so the browser-static footer version matches the published release tag.
 - Repository settings must align with repo-local declarations.
 
 ## Acceptance
@@ -59,6 +61,7 @@ and a reproducible worktree bootstrap path.
 - New-version caching is silent; the update prompt appears only after the
   waiting worker is ready.
 - Release can publish stable and preview bundles from durable snapshots
+- Pages release redeploys display the published release tag in footer metadata
 - GitHub labels, protection, and Pages settings align with repository truth
 
 ## Visual Evidence
