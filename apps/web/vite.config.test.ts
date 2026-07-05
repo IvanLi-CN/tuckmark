@@ -6,7 +6,10 @@ import {
   createServiceWorkerSource,
   hashPwaString,
   resolveApiOrigin,
+  resolveAppVersion,
   resolvePublicBase,
+  resolveRepositoryUrl,
+  resolveRightsUrl,
 } from "./vite.config.js"
 
 describe("resolveApiOrigin", () => {
@@ -109,5 +112,25 @@ describe("PWA build assets", () => {
     })
 
     expect(first).not.toBe(second)
+  })
+})
+
+describe("footer metadata", () => {
+  it("uses package and repository defaults", () => {
+    expect(resolveAppVersion({})).toBe("0.1.0")
+    expect(resolveRepositoryUrl({})).toBe("https://github.com/IvanLi-CN/tuckmark")
+    expect(resolveRightsUrl({})).toBe("https://ivanli.cc/")
+  })
+
+  it("allows builds to override metadata", () => {
+    const env = {
+      TUCKMARK_APP_VERSION: "1.2.3-preview.4",
+      TUCKMARK_REPOSITORY_URL: "https://example.test/repo/",
+      TUCKMARK_RIGHTS_URL: "https://example.test/rights/",
+    }
+
+    expect(resolveAppVersion(env)).toBe("1.2.3-preview.4")
+    expect(resolveRepositoryUrl(env)).toBe("https://example.test/repo/")
+    expect(resolveRightsUrl(env)).toBe("https://example.test/rights/")
   })
 })
