@@ -1183,6 +1183,37 @@ describe("web workbench app", () => {
     expect(canvasStatus?.value).toBe("已选 1 项")
   })
 
+  it("updates canvas inspector text fields without retaining the React event", async () => {
+    await renderApp(browserRuntimeContext, undefined, "/canvas")
+    await flush(4)
+
+    const recipientLayerNameInput = document.querySelector(
+      'input[aria-label="收件人 图层名称"]'
+    ) as HTMLInputElement | null
+    expect(recipientLayerNameInput).not.toBeNull()
+
+    await act(async () => {
+      recipientLayerNameInput?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush()
+    })
+
+    const textValue = document.querySelector("#text-value") as HTMLTextAreaElement | null
+    expect(textValue).not.toBeNull()
+
+    await act(async () => {
+      if (!textValue) {
+        throw new Error("Missing selected text inspector")
+      }
+      textValue.value = "Edited recipient"
+      textValue.dispatchEvent(new Event("input", { bubbles: true }))
+      await flush(4)
+    })
+
+    const updatedTextValue = document.querySelector("#text-value") as HTMLTextAreaElement | null
+    expect(updatedTextValue?.value).toBe("Edited recipient")
+    expect(document.getElementById("root")?.innerHTML).not.toBe("")
+  })
+
   it("hydrates recent activity from sync state on server-http startup", async () => {
     const syncedState = {
       ...emptySyncState(),
