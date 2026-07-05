@@ -28,5 +28,9 @@
 - `apps/web/tests/pwa.spec.ts` covers service worker registration, offline
   route refresh, and PWA asset inspection.
 - `.github/workflows/pages.yml` runs on `main` pushes, manual dispatch, and
-  published GitHub Releases. Release-triggered runs check out the published tag
-  so Pages can redeploy the browser-static bundle with matching footer metadata.
+  published GitHub Releases. Release-triggered runs check out the published tag.
+  Manual dispatch can also receive a `release_tag` input.
+- `.github/workflows/release.yml` dispatches `pages.yml` with the newly published
+  release tag after `gh release create` succeeds. The Pages build injects that
+  tag through `TUCKMARK_APP_VERSION` so the browser-static footer metadata
+  matches the release that triggered the redeploy.

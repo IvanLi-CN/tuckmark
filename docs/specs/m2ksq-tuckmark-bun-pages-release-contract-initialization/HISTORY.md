@@ -12,6 +12,8 @@ route tree and relative Pages asset rules, but now adds app-shell precaching,
 offline refresh after first load, native install metadata, and non-blocking
 new-version activation.
 
-Release-published Pages redeploys were added so the static Web footer no longer
+Release follow-up Pages redeploys were added so the static Web footer no longer
 falls back to the root package version after a release tag is published for the
-same commit.
+same commit. Automated publication dispatches Pages explicitly with the new tag
+because releases created with the repository token do not create a separate
+Pages `release` event run.

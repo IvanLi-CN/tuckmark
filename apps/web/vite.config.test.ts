@@ -158,4 +158,22 @@ describe("Pages workflow metadata", () => {
   it("checks out the published release tag for release-triggered Pages builds", () => {
     expect(pagesWorkflow).toContain("github.event.release.tag_name")
   })
+
+  it("accepts an explicit release tag for release workflow dispatches", () => {
+    expect(pagesWorkflow).toContain("release_tag:")
+    expect(pagesWorkflow).toContain("inputs.release_tag")
+    expect(pagesWorkflow).toContain("TUCKMARK_APP_VERSION=")
+  })
+})
+
+describe("Release workflow Pages redeploy", () => {
+  const releaseWorkflow = readFileSync(
+    new URL("../../.github/workflows/release.yml", import.meta.url),
+    "utf8"
+  )
+
+  it("dispatches Pages after publishing a GitHub Release", () => {
+    expect(releaseWorkflow).toContain("actions: write")
+    expect(releaseWorkflow).toContain("gh workflow run pages.yml --ref main -f release_tag")
+  })
 })

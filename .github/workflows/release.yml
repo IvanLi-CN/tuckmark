@@ -12,7 +12,7 @@ jobs:
     name: Release Publish
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: write
       contents: write
     steps:
       - uses: actions/checkout@v4
@@ -64,5 +64,7 @@ jobs:
             work/release/bundles/tuckmark-cli-bundle.tgz \
             --title "$VERSION" \
             --notes "Tuckmark release $VERSION"
+
+          gh workflow run pages.yml --ref main -f release_tag="$VERSION"
         env:
           GH_TOKEN: ${{ github.token }}
