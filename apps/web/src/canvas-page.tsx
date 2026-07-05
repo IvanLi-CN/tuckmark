@@ -28,6 +28,7 @@ import QRCode from "qrcode"
 import React from "react"
 import {
   Group,
+  Circle as KonvaCircle,
   Line as KonvaLine,
   Rect as KonvaRect,
   Text as KonvaText,
@@ -181,13 +182,28 @@ const ZOOM_MIN = 0.45
 const ZOOM_MAX = 5
 const ZOOM_STEP = 1.08
 const SELECTION_HANDLE_SIZE = 1
+const LINE_ENDPOINT_HANDLE_RADIUS = 0.42
+const LINE_ENDPOINT_HIT_RADIUS = 0.78
 const MONO_INK = "#111111"
 const MONO_SURFACE = "#ffffff"
 const CANVAS_TEXT_FONT_FAMILY = "ui-sans-serif, system-ui, sans-serif"
+const TRANSFORMER_ALL_ANCHORS = [
+  "top-left",
+  "top-center",
+  "top-right",
+  "middle-right",
+  "bottom-right",
+  "bottom-center",
+  "bottom-left",
+  "middle-left",
+]
+const TRANSFORMER_CORNER_ANCHORS = ["top-left", "top-right", "bottom-left", "bottom-right"]
 const PAPER_TYPE_LABELS: Record<"continuous" | "gap", string> = {
   continuous: "连续纸",
   gap: "间隙纸",
 }
+
+type LineEndpoint = "start" | "end"
 
 type CanvasIssue = {
   title: string
@@ -269,8 +285,15 @@ function createViewport(
 }
 
 function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument {
-  if (scenario === "draft-restore") {
-    return buildStoryScenarioDocument("draft-restore")
+  if (
+    scenario === "draft-restore" ||
+    scenario === "barcode-invalid" ||
+    scenario === "rect-selected" ||
+    scenario === "circle-selected" ||
+    scenario === "triangle-selected" ||
+    scenario === "line-selected"
+  ) {
+    return buildStoryScenarioDocument(scenario)
   }
 
   if (scenario === "wide-default" || scenario === "barcode-selected") {
@@ -278,6 +301,17 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
   }
 
   return createDraftFromPreset(getPresetById("ops-tag"))
+}
+
+function shouldUseScenarioDraft(scenario: CanvasStoryScenario): boolean {
+  return (
+    scenario === "draft-restore" ||
+    scenario === "barcode-invalid" ||
+    scenario === "rect-selected" ||
+    scenario === "circle-selected" ||
+    scenario === "triangle-selected" ||
+    scenario === "line-selected"
+  )
 }
 
 function createCanvasStateFromDraft(
@@ -328,6 +362,22 @@ function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryS
     const text = draft.elements.find((element) => element.kind === "text")
     return text ? [text.id] : []
   }
+  if (scenario === "rect-selected") {
+    const rect = draft.elements.find((element) => element.kind === "rect")
+    return rect ? [rect.id] : []
+  }
+  if (scenario === "circle-selected") {
+    const circle = draft.elements.find((element) => element.kind === "circle")
+    return circle ? [circle.id] : []
+  }
+  if (scenario === "triangle-selected") {
+    const triangle = draft.elements.find((element) => element.kind === "triangle")
+    return triangle ? [triangle.id] : []
+  }
+  if (scenario === "line-selected") {
+    const line = draft.elements.find((element) => element.kind === "line")
+    return line ? [line.id] : []
+  }
   return []
 }
 
@@ -337,11 +387,13 @@ function createCanvasState(
 ): CanvasPageState {
   const preset = getPresetById(presetId)
   const seededDraft = createScenarioDraft(scenario)
-  const storedDraft =
-    scenario === "draft-restore" ? seededDraft : loadStoredDraftDocument(preset.id)
+  const shouldRestoreStoredDraft = scenario === "wide-default" || scenario === "narrow-default"
+  const storedDraft = shouldRestoreStoredDraft ? loadStoredDraftDocument(preset.id) : null
   const draft =
     storedDraft ??
-    (seededDraft.presetId === preset.id ? seededDraft : createDraftFromPreset(preset))
+    (shouldUseScenarioDraft(scenario) || seededDraft.presetId === preset.id
+      ? seededDraft
+      : createDraftFromPreset(preset))
   return {
     ...createCanvasStateFromDraft(draft, {
       selectedIds: getScenarioSelection(draft, scenario),
@@ -430,6 +482,46 @@ function snapValue(value: number, enabled: boolean) {
     return value
   }
   return Math.round(value / GRID_SIZE) * GRID_SIZE
+}
+
+function clampRectRadius(radius: number, width: number, height: number) {
+  return clamp(radius, 0, Math.max(0, Math.min(width, height) / 2))
+}
+
+function isSquareResizeElement(element: CanvasDraftElement | null) {
+  return element?.kind === "qr" || element?.kind === "circle"
+}
+
+function updateLineEndpoint(
+  draft: CanvasDraftDocument,
+  lineId: string,
+  endpoint: LineEndpoint,
+  point: { x: number; y: number },
+  snapEnabled: boolean
+): CanvasDraftDocument {
+  const nextPoint = {
+    x: snapValue(point.x, snapEnabled),
+    y: snapValue(point.y, snapEnabled),
+  }
+  return normalizeDraftDocument({
+    ...draft,
+    elements: draft.elements.map((element) => {
+      if (element.id !== lineId || element.kind !== "line") {
+        return element
+      }
+      return endpoint === "start"
+        ? {
+            ...element,
+            x: nextPoint.x,
+            y: nextPoint.y,
+          }
+        : {
+            ...element,
+            x2: nextPoint.x,
+            y2: nextPoint.y,
+          }
+    }),
+  })
 }
 
 function snapElementPosition(element: CanvasDraftElement, x: number, y: number, enabled: boolean) {
@@ -780,6 +872,22 @@ function applyTransformedNodeToElement(
       y: node.y() - nextHeight / 2,
       width: nextWidth,
       height: nextHeight,
+      radius: clampRectRadius(element.radius, nextWidth, nextHeight),
+      rotation: node.rotation(),
+    }
+  }
+
+  if (element.kind === "triangle") {
+    node.scaleX(1)
+    node.scaleY(1)
+    const nextWidth = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
+    const nextHeight = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.height * scaleY)
+    return {
+      ...element,
+      x: node.x() - nextWidth / 2,
+      y: node.y() - nextHeight / 2,
+      width: nextWidth,
+      height: nextHeight,
       rotation: node.rotation(),
     }
   }
@@ -799,19 +907,23 @@ function applyTransformedNodeToElement(
     }
   }
 
-  node.scaleX(1)
-  node.scaleY(1)
-  const nextSize = Math.max(
-    24 / CANVAS_DOTS_PER_MILLIMETER,
-    element.size * Math.max(scaleX, scaleY)
-  )
-  return {
-    ...element,
-    x: node.x() - nextSize / 2,
-    y: node.y() - nextSize / 2,
-    size: nextSize,
-    rotation: node.rotation(),
+  if (element.kind === "qr" || element.kind === "circle") {
+    node.scaleX(1)
+    node.scaleY(1)
+    const nextSize = Math.max(
+      24 / CANVAS_DOTS_PER_MILLIMETER,
+      element.size * Math.max(scaleX, scaleY)
+    )
+    return {
+      ...element,
+      x: node.x() - nextSize / 2,
+      y: node.y() - nextSize / 2,
+      size: nextSize,
+      ...(element.kind === "qr" ? { rotation: node.rotation() } : {}),
+    }
   }
+
+  return element
 }
 
 function buildBarcodeRows(
@@ -1565,30 +1677,32 @@ function CanvasLayerRail({
         <div className="grid gap-2">
           {sourceNote ? <p className="tm-note tm-note--left-rail">{sourceNote}</p> : null}
           <div className="tm-quick-tools">
-            {(["text", "rect", "line", "barcode", "qr"] as const).map((kind) => (
-              <Button
-                key={kind}
-                type="button"
-                size="sm"
-                variant="outline"
-                className="tm-quick-tool"
-                disabled={readOnly}
-                onClick={() =>
-                  onChange((current) =>
-                    applyDraftUpdate(current, (draft) => ({
-                      ...draft,
-                      elements: [
-                        ...draft.elements,
-                        createCanvasElement(kind, draft.elements.length),
-                      ],
-                    }))
-                  )
-                }
-              >
-                <Plus className="size-4" />
-                {CANVAS_TOOL_LABELS[kind]}
-              </Button>
-            ))}
+            {(["text", "rect", "circle", "triangle", "line", "barcode", "qr"] as const).map(
+              (kind) => (
+                <Button
+                  key={kind}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="tm-quick-tool"
+                  disabled={readOnly}
+                  onClick={() =>
+                    onChange((current) =>
+                      applyDraftUpdate(current, (draft) => ({
+                        ...draft,
+                        elements: [
+                          ...draft.elements,
+                          createCanvasElement(kind, draft.elements.length),
+                        ],
+                      }))
+                    )
+                  }
+                >
+                  <Plus className="size-4" />
+                  {CANVAS_TOOL_LABELS[kind]}
+                </Button>
+              )
+            )}
           </div>
         </div>
       </CanvasSection>
@@ -2074,9 +2188,15 @@ function CanvasInspector({
                 element.width,
                 (value) =>
                   updateElement((item) =>
-                    "width" in item
-                      ? ({ ...item, width: Math.max(16, value) } as CanvasDraftElement)
-                      : item
+                    item.kind === "rect"
+                      ? {
+                          ...item,
+                          width: Math.max(16, value),
+                          radius: clampRectRadius(item.radius, Math.max(16, value), item.height),
+                        }
+                      : "width" in item
+                        ? ({ ...item, width: Math.max(16, value) } as CanvasDraftElement)
+                        : item
                   ),
                 "size-width"
               )
@@ -2087,11 +2207,33 @@ function CanvasInspector({
                 element.height,
                 (value) =>
                   updateElement((item) =>
-                    "height" in item
-                      ? ({ ...item, height: Math.max(12, value) } as CanvasDraftElement)
-                      : item
+                    item.kind === "rect"
+                      ? {
+                          ...item,
+                          height: Math.max(12, value),
+                          radius: clampRectRadius(item.radius, item.width, Math.max(12, value)),
+                        }
+                      : "height" in item
+                        ? ({ ...item, height: Math.max(12, value) } as CanvasDraftElement)
+                        : item
                   ),
                 "size-height"
+              )
+            : null}
+          {element.kind === "rect"
+            ? renderNumberField(
+                "圆角",
+                element.radius,
+                (value) =>
+                  updateElement((item) =>
+                    item.kind === "rect"
+                      ? {
+                          ...item,
+                          radius: clampRectRadius(value, item.width, item.height),
+                        }
+                      : item
+                  ),
+                "rect-radius"
               )
             : null}
           {"size" in element
@@ -2599,6 +2741,29 @@ function renderElementNode(element: CanvasDraftElement): React.ReactNode {
           cornerRadius={element.radius}
         />
       )
+    case "circle":
+      return (
+        <KonvaCircle
+          x={element.size / 2}
+          y={element.size / 2}
+          radius={element.size / 2}
+          fill={element.fill === "none" ? undefined : MONO_INK}
+          stroke={MONO_INK}
+          strokeWidth={element.strokeWidth}
+        />
+      )
+    case "triangle":
+      return (
+        <KonvaLine
+          x={0}
+          y={0}
+          points={[element.width / 2, 0, element.width, element.height, 0, element.height]}
+          closed
+          fill={element.fill === "none" ? undefined : MONO_INK}
+          stroke={MONO_INK}
+          strokeWidth={element.strokeWidth}
+        />
+      )
     case "line":
       return (
         <KonvaLine
@@ -2771,6 +2936,21 @@ function CanvasStageView({
       state.viewport.y,
     ]
   )
+  const selectedElements = React.useMemo(
+    () =>
+      state.selectedIds
+        .map((id) => state.draft.elements.find((element) => element.id === id) ?? null)
+        .filter((element): element is CanvasDraftElement => Boolean(element)),
+    [state.draft.elements, state.selectedIds]
+  )
+  const selectedSingleElement = selectedElements.length === 1 ? selectedElements[0] : null
+  const selectedLineElement = selectedSingleElement?.kind === "line" ? selectedSingleElement : null
+  const transformerEnabled = !selectedLineElement
+  const transformerAnchors = isSquareResizeElement(selectedSingleElement)
+    ? TRANSFORMER_CORNER_ANCHORS
+    : TRANSFORMER_ALL_ANCHORS
+  const transformerKeepRatio = isSquareResizeElement(selectedSingleElement)
+  const transformerCanRotate = transformerEnabled && selectedSingleElement?.kind !== "circle"
 
   React.useEffect(() => {
     onViewportSizeChange(stageViewportSize)
@@ -2781,13 +2961,15 @@ function CanvasStageView({
     if (!transformer) {
       return
     }
-    const nodes = state.selectedIds
-      .map((id) => nodeRefs.current[id])
-      .filter((node): node is Konva.Group => Boolean(node))
+    const nodes = transformerEnabled
+      ? state.selectedIds
+          .map((id) => nodeRefs.current[id])
+          .filter((node): node is Konva.Group => Boolean(node))
+      : []
     transformer.nodes(nodes)
     transformer.shouldOverdrawWholeArea(true)
     transformer.getLayer()?.batchDraw()
-  }, [state.selectedIds])
+  }, [state.selectedIds, transformerEnabled])
 
   const handleStageMouseDown = (event: Konva.KonvaEventObject<MouseEvent>) => {
     if (readOnly) {
@@ -3020,7 +3202,7 @@ function CanvasStageView({
                     y={geometry.stagePosition.y}
                     offsetX={geometry.rotationOrigin.x}
                     offsetY={geometry.rotationOrigin.y}
-                    rotation={element.kind === "line" ? 0 : (element.rotation ?? 0)}
+                    rotation={"rotation" in element ? (element.rotation ?? 0) : 0}
                     draggable={!readOnly && !element.meta.locked && !state.spacePressed}
                     onClick={(event) =>
                       onChange((current) => ({
@@ -3087,6 +3269,96 @@ function CanvasStageView({
                 )
               })}
 
+              {selectedLineElement?.meta.visible
+                ? (
+                    [
+                      {
+                        endpoint: "start" as const,
+                        x: selectedLineElement.x,
+                        y: selectedLineElement.y,
+                      },
+                      {
+                        endpoint: "end" as const,
+                        x: selectedLineElement.x2,
+                        y: selectedLineElement.y2,
+                      },
+                    ] as const
+                  ).map((handle) => (
+                    <Group
+                      key={`${selectedLineElement.id}-${handle.endpoint}-handle`}
+                      x={handle.x}
+                      y={handle.y}
+                      draggable={!readOnly && !selectedLineElement.meta.locked}
+                      onMouseDown={(event) => {
+                        event.cancelBubble = true
+                      }}
+                      onTouchStart={(event) => {
+                        event.cancelBubble = true
+                      }}
+                      onDragStart={(event) => {
+                        event.cancelBubble = true
+                        onChange((current) => ({
+                          ...current,
+                          selectedIds: [selectedLineElement.id],
+                          editingId: null,
+                        }))
+                      }}
+                      onDragMove={(event) => {
+                        event.cancelBubble = true
+                        onChange((current) => {
+                          const nextDraft = updateLineEndpoint(
+                            current.draft,
+                            selectedLineElement.id,
+                            handle.endpoint,
+                            { x: event.target.x(), y: event.target.y() },
+                            current.snapEnabled
+                          )
+                          return {
+                            ...current,
+                            liveDraft: nextDraft,
+                            draft: nextDraft,
+                            selectedIds: updateSelectionAfterDraft(current, nextDraft),
+                            storageMode: "persisted",
+                          }
+                        })
+                      }}
+                      onDragEnd={(event) => {
+                        event.cancelBubble = true
+                        if (readOnly) {
+                          return
+                        }
+                        onChange((current) => {
+                          const nextDraft = updateLineEndpoint(
+                            current.draft,
+                            selectedLineElement.id,
+                            handle.endpoint,
+                            { x: event.target.x(), y: event.target.y() },
+                            current.snapEnabled
+                          )
+                          const next = pushHistory(current, nextDraft)
+                          return {
+                            ...next,
+                            selectedIds: updateSelectionAfterDraft(current, nextDraft),
+                            editingId: null,
+                            storageMode: "persisted",
+                          }
+                        })
+                      }}
+                    >
+                      <KonvaCircle
+                        radius={LINE_ENDPOINT_HIT_RADIUS}
+                        fill="rgba(255,255,255,0.001)"
+                      />
+                      <KonvaCircle
+                        radius={LINE_ENDPOINT_HANDLE_RADIUS}
+                        fill={MONO_SURFACE}
+                        stroke="#1d9bf0"
+                        strokeWidth={0.12}
+                      />
+                    </Group>
+                  ))
+                : null}
+
               {state.selectionBox.visible ? (
                 <KonvaRect
                   x={normalizeRect(state.selectionBox).x}
@@ -3102,11 +3374,12 @@ function CanvasStageView({
 
               <Transformer
                 ref={transformerRef}
-                resizeEnabled={!readOnly}
-                rotateEnabled
-                enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right"]}
+                resizeEnabled={!readOnly && transformerEnabled}
+                rotateEnabled={transformerCanRotate}
+                keepRatio={transformerKeepRatio}
+                enabledAnchors={transformerAnchors}
                 flipEnabled={false}
-                listening={!readOnly}
+                listening={!readOnly && transformerEnabled}
                 boundBoxFunc={(oldBox, newBox) => {
                   if (Math.abs(newBox.width) < 16 || Math.abs(newBox.height) < 16) {
                     return oldBox

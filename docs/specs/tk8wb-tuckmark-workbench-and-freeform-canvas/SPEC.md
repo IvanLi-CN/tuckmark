@@ -132,6 +132,8 @@ output.
 - Shared printable canvas schema supports:
   - `text`
   - `rect`
+  - `circle`
+  - `triangle`
   - `line`
   - `barcode`
   - `qr`
@@ -152,8 +154,22 @@ output.
   and white and do not expose color editing.
 - Shared schema extensions:
   - `rotation` is supported on `text`, `rect`, `barcode`, and `qr`
+  - `triangle` also supports `rotation`
+  - `circle` uses top-left `x/y` plus square `size`; rotation is intentionally
+    not user-facing because it has no visible effect
   - `line` keeps endpoint-based geometry and does not add rotation as a first
     class print contract
+- Stage transform semantics match the element geometry model:
+  - new freeform `rect` elements default to square corners; existing templates
+    and stored drafts preserve their explicit `radius`
+  - single `rect`, `triangle`, `text`, and `barcode` selections expose
+    non-proportional resize handles
+  - single `qr` and `circle` selections resize proportionally so square symbols
+    and round geometry remain intact
+  - single `line` selections expose start and end endpoint handles instead of
+    a rectangular scale transformer
+  - multi-selection may still use a group transformer for overall movement and
+    batch transforms
 - Preview and print normalize editor state into `DirectCanvasDefinition` and
   then flow through shared renderer, preview, and print seams.
 - Rotated multiline text in preview and print must rotate around the rendered
@@ -315,7 +331,11 @@ output.
 - Template workspace supports `0`, `1`, and `20` rows without layout breakage.
 - Canvas workspace supports create, select, move, resize, rotate, duplicate,
   reorder, visibility toggle, lock toggle, and delete for `text`, `rect`,
-  `line`, `barcode`, and `qr`.
+  `circle`, `triangle`, `line`, `barcode`, and `qr`.
+- Canvas workspace exposes type-correct geometry editing: rectangles can adjust
+  corner radius, rectangular elements can resize width and height independently,
+  triangles resize width and height independently, QR and circle elements stay
+  square/round, and single line elements edit endpoints directly.
 - Canvas workspace supports marquee selection, Shift multi-select, stage pan,
   wheel zoom, and fit-to-view without horizontal shell breakage.
 - Text supports inline stage editing via double click.
@@ -401,6 +421,26 @@ output.
 
   PR: include
   ![Canvas barcode workspace](./assets/canvas-barcode-selected-1280x800.png)
+
+- `1280×800` canvas workspace with a selected square-corner rectangle, non-proportional resize handles, and the exposed `圆角` inspector field at `0`.
+
+  PR: include
+  ![Canvas selected rectangle editing](./assets/canvas-rect-selected-1280x800.png)
+
+- `1280×800` canvas workspace with a selected circle, proportional corner resize handles, and a `边长` inspector field.
+
+  PR: include
+  ![Canvas selected circle editing](./assets/canvas-circle-selected-1280x800.png)
+
+- `1280×800` canvas workspace with a selected triangle, non-proportional resize handles, and independent width / height inspector fields.
+
+  PR: include
+  ![Canvas selected triangle editing](./assets/canvas-triangle-selected-1280x800.png)
+
+- `1280×800` canvas workspace with a selected line using endpoint handles instead of a rectangular transformer.
+
+  PR: include
+  ![Canvas selected line endpoint editing](./assets/canvas-line-selected-1280x800.png)
 
 - `1280×800` canvas workspace output rail after preview generation, with stage and preview sharing the same monochrome content semantics
 

@@ -28,6 +28,8 @@ import type { CanvasDraftElement } from "./types.js"
 type CompiledCanvasElement = ReturnType<typeof compileDraftToCanvasDefinition>["elements"][number]
 type AnyCanvasElement = CanvasDraftElement | CompiledCanvasElement
 type AnyRectElement = Extract<AnyCanvasElement, { kind: "rect" }>
+type AnyCircleElement = Extract<AnyCanvasElement, { kind: "circle" }>
+type AnyTriangleElement = Extract<AnyCanvasElement, { kind: "triangle" }>
 type AnyLineElement = Extract<AnyCanvasElement, { kind: "line" }>
 
 function getStorage() {
@@ -80,6 +82,18 @@ function assertLineElement(
   expect(element?.kind).toBe("line")
 }
 
+function assertCircleElement(
+  element: AnyCanvasElement | undefined
+): asserts element is AnyCircleElement {
+  expect(element?.kind).toBe("circle")
+}
+
+function assertTriangleElement(
+  element: AnyCanvasElement | undefined
+): asserts element is AnyTriangleElement {
+  expect(element?.kind).toBe("triangle")
+}
+
 function withLegacyRectColors(
   element: CanvasDraftElement,
   fill: string,
@@ -101,13 +115,71 @@ describe("canvas-editor-model monochrome contract", () => {
 
   it("creates monochrome defaults for printable shapes", () => {
     const rect = createCanvasElement("rect", 0)
-    const line = createCanvasElement("line", 1)
+    const circle = createCanvasElement("circle", 1)
+    const triangle = createCanvasElement("triangle", 2)
+    const line = createCanvasElement("line", 3)
 
     assertRectElement(rect)
     expect(rect.fill).toBe("none")
     expect(rect.stroke).toBe("#111111")
+    expect(rect.radius).toBe(0)
+    assertCircleElement(circle)
+    expect(circle.fill).toBe("none")
+    expect(circle.stroke).toBe("#111111")
+    assertTriangleElement(triangle)
+    expect(triangle.fill).toBe("none")
+    expect(triangle.stroke).toBe("#111111")
     assertLineElement(line)
     expect(line.stroke).toBe("#111111")
+  })
+
+  it("compiles circle and triangle geometry to printable dots", () => {
+    const draft = createDraftFromPreset(getPresetById("ops-tag"))
+    draft.elements = [
+      createCanvasElement("circle", 0, {
+        x: 2,
+        y: 3,
+        size: 8,
+        strokeWidth: 0.25,
+      }),
+      createCanvasElement("triangle", 1, {
+        x: 12,
+        y: 4,
+        width: 10,
+        height: 7,
+        strokeWidth: 0.25,
+        rotation: 15,
+      }),
+    ]
+
+    const definition = compileDraftToCanvasDefinition(draft)
+    const circle = definition.elements.find((element) => element.kind === "circle")
+    const triangle = definition.elements.find((element) => element.kind === "triangle")
+
+    assertCircleElement(circle)
+    expect(circle).toMatchObject({
+      x: 16,
+      y: 24,
+      size: 64,
+      strokeWidth: 2,
+    })
+    assertTriangleElement(triangle)
+    expect(triangle).toMatchObject({
+      x: 96,
+      y: 32,
+      width: 80,
+      height: 56,
+      strokeWidth: 2,
+      rotation: 15,
+    })
+  })
+
+  it("keeps preset-owned rounded rectangles explicit instead of using the new rect default", () => {
+    const draft = createDraftFromPreset(getPresetById("ops-tag"))
+    const rect = draft.elements.find((element) => element.kind === "rect")
+
+    assertRectElement(rect)
+    expect(rect.radius).toBeGreaterThan(0)
   })
 
   it("normalizes stored drafts back to monochrome when loading", () => {

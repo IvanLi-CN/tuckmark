@@ -61,16 +61,29 @@
     selection on static chrome while keeping editable and copy-relevant values
     explicitly selectable
 - Canvas stage is implemented with `react-konva` editing for `text`, `rect`,
-  `line`, `barcode`, and `qr`.
+  `circle`, `triangle`, `line`, `barcode`, and `qr`.
 - Stage interaction coverage includes:
   - click selection
   - Shift multi-selection
   - marquee selection
   - drag move
-  - transformer-based resize and rotation
+  - transformer-based resize and rotation for rectangular, triangular, and
+    square elements where rotation is meaningful
+  - non-proportional resize handles for `rect`, `triangle`, `text`, and
+    `barcode`
+  - proportional corner resize handles for `qr` and `circle`
+  - direct start/end endpoint handles for single selected `line` elements
   - wheel zoom relative to pointer
   - `Space + drag` pan
   - keyboard move, duplicate, delete, undo, redo, and clear selection
+- Rectangle authoring now distinguishes element defaults from template design:
+  new freeform rectangles default to `radius: 0`, while presets and imported
+  templates preserve explicit rounded corners. The inspector exposes `圆角` and
+  clamps it to half of the current rectangle's smaller dimension.
+- Circle and triangle authoring now flows through the same shared canvas schema,
+  SVG renderer, Web draft model, and Storybook coverage as existing shapes:
+  circles use `x/y/size` and stay round during resize, while triangles use
+  `x/y/width/height` and can resize width and height independently.
 - Barcode and QR stage rendering now uses real encoded graphics instead of
   dashed placeholders.
 - Invalid barcode / QR content now fails safely inside the editor:
@@ -198,6 +211,8 @@
   - wide editor
   - narrow desktop editor
   - selected text
+  - selected rect with radius editing
+  - selected line with endpoint editing
   - selected barcode
   - output tab
   - draft-restore state

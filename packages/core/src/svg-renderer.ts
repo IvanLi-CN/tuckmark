@@ -232,6 +232,15 @@ function renderElement(element: TemplateElement, input: RenderInput): string {
         element.x + element.width / 2,
         element.y + element.height / 2
       )
+    case "circle":
+      return `<circle cx="${element.x + element.size / 2}" cy="${element.y + element.size / 2}" r="${element.size / 2}" fill="${element.fill}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`
+    case "triangle":
+      return wrapMarkupWithRotation(
+        `<polygon points="${element.x + element.width / 2},${element.y} ${element.x + element.width},${element.y + element.height} ${element.x},${element.y + element.height}" fill="${element.fill}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`,
+        element.rotation,
+        element.x + element.width / 2,
+        element.y + element.height / 2
+      )
     case "line":
       return `<line x1="${element.x1}" y1="${element.y1}" x2="${element.x2}" y2="${element.y2}" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" />`
     case "barcode":

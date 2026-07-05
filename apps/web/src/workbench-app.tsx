@@ -25,7 +25,14 @@ import {
   Wifi,
 } from "lucide-react"
 import React from "react"
-import { Line as KonvaLine, Rect as KonvaRect, Text as KonvaText, Layer, Stage } from "react-konva"
+import {
+  Circle as KonvaCircle,
+  Line as KonvaLine,
+  Rect as KonvaRect,
+  Text as KonvaText,
+  Layer,
+  Stage,
+} from "react-konva"
 import {
   BrowserRouter,
   MemoryRouter,
@@ -182,6 +189,8 @@ const CANVAS_PRESETS: CanvasDocumentPreset[] = [
 const CANVAS_TOOL_LABELS: Record<CanvasElement["kind"], string> = {
   text: "文本",
   rect: "矩形",
+  circle: "圆形",
+  triangle: "三角形",
   line: "线条",
   barcode: "Code128",
   qr: "QR",
@@ -407,6 +416,30 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         stroke: "#111111",
         radius: 14,
       }
+    case "circle":
+      return {
+        id: `circle-${crypto.randomUUID()}`,
+        kind,
+        x: seedX,
+        y: seedY,
+        size: 72,
+        strokeWidth: 2,
+        fill: "none",
+        stroke: "#111111",
+      }
+    case "triangle":
+      return {
+        id: `triangle-${crypto.randomUUID()}`,
+        kind,
+        x: seedX,
+        y: seedY,
+        width: 120,
+        height: 86,
+        strokeWidth: 2,
+        fill: "none",
+        stroke: "#111111",
+        rotation: 0,
+      }
     case "line":
       return {
         id: `line-${crypto.randomUUID()}`,
@@ -604,6 +637,28 @@ function toCanvasPrintSource(
               fill: element.fill,
               stroke: element.stroke,
               radius: element.radius,
+              rotation: element.rotation ?? 0,
+            }
+          case "circle":
+            return {
+              kind: "circle" as const,
+              x: element.x,
+              y: element.y,
+              size: element.size,
+              strokeWidth: element.strokeWidth,
+              fill: element.fill,
+              stroke: element.stroke,
+            }
+          case "triangle":
+            return {
+              kind: "triangle" as const,
+              x: element.x,
+              y: element.y,
+              width: element.width,
+              height: element.height,
+              strokeWidth: element.strokeWidth,
+              fill: element.fill,
+              stroke: element.stroke,
               rotation: element.rotation ?? 0,
             }
           case "line":
@@ -2093,20 +2148,22 @@ function CanvasPageLegacy({
                 </SelectContent>
               </Select>
               <div className="grid gap-2">
-                {(["text", "rect", "line", "barcode", "qr"] as Array<CanvasElement["kind"]>).map(
-                  (kind) => (
-                    <Button
-                      key={kind}
-                      type="button"
-                      variant="outline"
-                      className="justify-start"
-                      onClick={() => state.addCanvasElement(kind)}
-                    >
-                      <Plus className="size-4" />
-                      <span>添加 {CANVAS_TOOL_LABELS[kind]}</span>
-                    </Button>
-                  )
-                )}
+                {(
+                  ["text", "rect", "circle", "triangle", "line", "barcode", "qr"] as Array<
+                    CanvasElement["kind"]
+                  >
+                ).map((kind) => (
+                  <Button
+                    key={kind}
+                    type="button"
+                    variant="outline"
+                    className="justify-start"
+                    onClick={() => state.addCanvasElement(kind)}
+                  >
+                    <Plus className="size-4" />
+                    <span>添加 {CANVAS_TOOL_LABELS[kind]}</span>
+                  </Button>
+                ))}
               </div>
             </div>
 
@@ -2763,6 +2820,57 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
               )
             }
 
+            if (element.kind === "circle") {
+              return (
+                <KonvaCircle
+                  key={element.id}
+                  x={element.x + element.size / 2}
+                  y={element.y + element.size / 2}
+                  radius={element.size / 2}
+                  fill={element.fill === "none" ? undefined : element.fill}
+                  stroke={isSelected ? "#8b4c21" : element.stroke}
+                  strokeWidth={element.strokeWidth}
+                  draggable
+                  onClick={() => state.setSelectedCanvasElementId(element.id)}
+                  onDragEnd={(event) =>
+                    state.updateCanvasElement(element.id, (current) =>
+                      current.kind === "circle"
+                        ? {
+                            ...current,
+                            x: event.target.x() - current.size / 2,
+                            y: event.target.y() - current.size / 2,
+                          }
+                        : current
+                    )
+                  }
+                />
+              )
+            }
+
+            if (element.kind === "triangle") {
+              return (
+                <KonvaLine
+                  key={element.id}
+                  x={element.x}
+                  y={element.y}
+                  points={[element.width / 2, 0, element.width, element.height, 0, element.height]}
+                  closed
+                  fill={element.fill === "none" ? undefined : element.fill}
+                  stroke={isSelected ? "#8b4c21" : element.stroke}
+                  strokeWidth={element.strokeWidth}
+                  draggable
+                  onClick={() => state.setSelectedCanvasElementId(element.id)}
+                  onDragEnd={(event) =>
+                    state.updateCanvasElement(element.id, (current) =>
+                      current.kind === "triangle"
+                        ? { ...current, x: event.target.x(), y: event.target.y() }
+                        : current
+                    )
+                  }
+                />
+              )
+            }
+
             if (element.kind === "line") {
               return (
                 <KonvaLine
@@ -2815,28 +2923,32 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
               )
             }
 
-            return (
-              <KonvaRect
-                key={element.id}
-                x={element.x}
-                y={element.y}
-                width={element.size}
-                height={element.size}
-                fill="#ffffff"
-                stroke={isSelected ? "#8b4c21" : "#2d231b"}
-                strokeWidth={2}
-                cornerRadius={8}
-                draggable
-                onClick={() => state.setSelectedCanvasElementId(element.id)}
-                onDragEnd={(event) =>
-                  state.updateCanvasElement(element.id, (current) =>
-                    current.kind === "qr"
-                      ? { ...current, x: event.target.x(), y: event.target.y() }
-                      : current
-                  )
-                }
-              />
-            )
+            if (element.kind === "qr") {
+              return (
+                <KonvaRect
+                  key={element.id}
+                  x={element.x}
+                  y={element.y}
+                  width={element.size}
+                  height={element.size}
+                  fill="#ffffff"
+                  stroke={isSelected ? "#8b4c21" : "#2d231b"}
+                  strokeWidth={2}
+                  cornerRadius={8}
+                  draggable
+                  onClick={() => state.setSelectedCanvasElementId(element.id)}
+                  onDragEnd={(event) =>
+                    state.updateCanvasElement(element.id, (current) =>
+                      current.kind === "qr"
+                        ? { ...current, x: event.target.x(), y: event.target.y() }
+                        : current
+                    )
+                  }
+                />
+              )
+            }
+
+            return null
           })}
         </Layer>
       </Stage>
@@ -2861,6 +2973,15 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
       if (
         current.kind === "rect" &&
         ["x", "y", "width", "height", "strokeWidth", "radius"].includes(key)
+      ) {
+        return { ...current, [key]: value }
+      }
+      if (current.kind === "circle" && ["x", "y", "size", "strokeWidth"].includes(key)) {
+        return { ...current, [key]: value }
+      }
+      if (
+        current.kind === "triangle" &&
+        ["x", "y", "width", "height", "strokeWidth"].includes(key)
       ) {
         return { ...current, [key]: value }
       }
@@ -2939,7 +3060,7 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
           </>
         ) : null}
 
-        {element.kind === "rect" ? (
+        {element.kind === "rect" || element.kind === "triangle" ? (
           <div className="tm-form-grid tm-form-grid--compact">
             <div className="grid gap-2">
               <Label>宽度</Label>
@@ -2955,6 +3076,19 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
                 type="number"
                 value={String(element.height)}
                 onChange={(event) => setNumeric("height", Number(event.currentTarget.value || 0))}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {element.kind === "circle" ? (
+          <div className="tm-form-grid tm-form-grid--compact">
+            <div className="grid gap-2">
+              <Label>边长</Label>
+              <Input
+                type="number"
+                value={String(element.size)}
+                onChange={(event) => setNumeric("size", Number(event.currentTarget.value || 0))}
               />
             </div>
           </div>

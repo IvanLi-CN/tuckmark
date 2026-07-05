@@ -96,6 +96,28 @@ export const rectElementSchema = z.object({
   rotation: z.number().default(0),
 })
 
+export const circleElementSchema = z.object({
+  kind: z.literal("circle"),
+  x: z.number(),
+  y: z.number(),
+  size: z.number().positive(),
+  strokeWidth: z.number().nonnegative().default(1),
+  fill: z.string().default("none"),
+  stroke: z.string().default("#111111"),
+})
+
+export const triangleElementSchema = z.object({
+  kind: z.literal("triangle"),
+  x: z.number(),
+  y: z.number(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+  strokeWidth: z.number().nonnegative().default(1),
+  fill: z.string().default("none"),
+  stroke: z.string().default("#111111"),
+  rotation: z.number().default(0),
+})
+
 export const lineElementSchema = z.object({
   kind: z.literal("line"),
   x1: z.number(),
@@ -133,6 +155,8 @@ export const qrElementSchema = z.object({
 export const templateElementSchema = z.discriminatedUnion("kind", [
   textElementSchema,
   rectElementSchema,
+  circleElementSchema,
+  triangleElementSchema,
   lineElementSchema,
   barcodeElementSchema,
   qrElementSchema,

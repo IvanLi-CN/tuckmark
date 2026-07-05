@@ -52,6 +52,8 @@ export const CANVAS_PRESETS: CanvasDocumentPreset[] = [
 export const CANVAS_TOOL_LABELS: Record<CanvasElement["kind"], string> = {
   text: "文本",
   rect: "矩形",
+  circle: "圆形",
+  triangle: "三角形",
   line: "线段",
   barcode: "条码",
   qr: "二维码",
@@ -153,6 +155,13 @@ function normalizeMonochromeElement(element: CanvasDraftElement): CanvasDraftEle
         width: element.width ?? canvasDotsToMillimeters(180),
       }
     case "rect":
+      return {
+        ...element,
+        fill: normalizeMonochromeFill(element.fill),
+        stroke: MONO_STROKE,
+      }
+    case "circle":
+    case "triangle":
       return {
         ...element,
         fill: normalizeMonochromeFill(element.fill),
@@ -317,7 +326,33 @@ export function createCanvasElement(
           strokeWidth: canvasDotsToMillimeters(2),
           fill: MONO_FILL,
           stroke: MONO_STROKE,
-          radius: canvasDotsToMillimeters(14),
+          radius: 0,
+          rotation: 0,
+          meta: createLayerMeta(kind, index),
+        }
+      case "circle":
+        return {
+          id: `circle-${crypto.randomUUID()}`,
+          kind,
+          x: seedX,
+          y: seedY,
+          size: canvasDotsToMillimeters(76),
+          strokeWidth: canvasDotsToMillimeters(2),
+          fill: MONO_FILL,
+          stroke: MONO_STROKE,
+          meta: createLayerMeta(kind, index),
+        }
+      case "triangle":
+        return {
+          id: `triangle-${crypto.randomUUID()}`,
+          kind,
+          x: seedX,
+          y: seedY,
+          width: canvasDotsToMillimeters(120),
+          height: canvasDotsToMillimeters(86),
+          strokeWidth: canvasDotsToMillimeters(2),
+          fill: MONO_FILL,
+          stroke: MONO_STROKE,
           rotation: 0,
           meta: createLayerMeta(kind, index),
         }
@@ -381,6 +416,7 @@ function buildPresetElements(presetId: string): CanvasDraftElement[] {
         height: d(118),
         x: d(20),
         y: d(20),
+        radius: d(14),
         meta: { name: "容器底板", visible: true, locked: false },
       }),
       createCanvasElement("text", 1, {
@@ -576,6 +612,28 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
           fill: physicalElement.fill,
           stroke: physicalElement.stroke,
           radius: physicalElement.radius,
+          rotation: physicalElement.rotation,
+          meta,
+        })
+      case "circle":
+        return createCanvasElement("circle", index, {
+          x: physicalElement.x,
+          y: physicalElement.y,
+          size: physicalElement.size,
+          strokeWidth: physicalElement.strokeWidth,
+          fill: physicalElement.fill,
+          stroke: physicalElement.stroke,
+          meta,
+        })
+      case "triangle":
+        return createCanvasElement("triangle", index, {
+          x: physicalElement.x,
+          y: physicalElement.y,
+          width: physicalElement.width,
+          height: physicalElement.height,
+          strokeWidth: physicalElement.strokeWidth,
+          fill: physicalElement.fill,
+          stroke: physicalElement.stroke,
           rotation: physicalElement.rotation,
           meta,
         })
@@ -1021,6 +1079,20 @@ export function getElementBounds(element: CanvasDraftElement): CanvasBounds {
         width: element.width,
         height: element.height,
       }
+    case "circle":
+      return {
+        x: element.x,
+        y: element.y,
+        width: element.size,
+        height: element.size,
+      }
+    case "triangle":
+      return {
+        x: element.x,
+        y: element.y,
+        width: element.width,
+        height: element.height,
+      }
     case "line":
       return {
         x: Math.min(element.x, element.x2),
@@ -1070,7 +1142,8 @@ export function getElementGeometry(element: CanvasDraftElement): CanvasElementGe
         },
       }
     }
-    case "rect": {
+    case "rect":
+    case "triangle": {
       const localBounds = {
         x: 0,
         y: 0,
@@ -1080,6 +1153,27 @@ export function getElementGeometry(element: CanvasDraftElement): CanvasElementGe
       const rotationOrigin = {
         x: element.width / 2,
         y: element.height / 2,
+      }
+      return {
+        bounds,
+        localBounds,
+        rotationOrigin,
+        stagePosition: {
+          x: element.x + rotationOrigin.x,
+          y: element.y + rotationOrigin.y,
+        },
+      }
+    }
+    case "circle": {
+      const localBounds = {
+        x: 0,
+        y: 0,
+        width: element.size,
+        height: element.size,
+      }
+      const rotationOrigin = {
+        x: element.size / 2,
+        y: element.size / 2,
       }
       return {
         bounds,
@@ -1278,6 +1372,28 @@ export function compileDraftElement(
         radius: normalized.radius,
         rotation: normalizeRotation(normalized.rotation),
       }
+    case "circle":
+      return {
+        kind: "circle",
+        x: normalized.x,
+        y: normalized.y,
+        size: normalized.size,
+        strokeWidth: normalized.strokeWidth,
+        fill: normalized.fill,
+        stroke: normalized.stroke,
+      }
+    case "triangle":
+      return {
+        kind: "triangle",
+        x: normalized.x,
+        y: normalized.y,
+        width: normalized.width,
+        height: normalized.height,
+        strokeWidth: normalized.strokeWidth,
+        fill: normalized.fill,
+        stroke: normalized.stroke,
+        rotation: normalizeRotation(normalized.rotation),
+      }
     case "line":
       return {
         kind: "line",
@@ -1458,6 +1574,63 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
     return document
   }
 
+  if (scenario === "rect-selected") {
+    const document = createDraftFromPreset(getPresetById("ops-tag"))
+    document.elements = document.elements.map((element) =>
+      element.kind === "rect"
+        ? {
+            ...element,
+            radius: 0,
+            width: 28,
+            height: 10,
+            meta: { ...element.meta, name: "直角矩形" },
+          }
+        : element
+    )
+    return document
+  }
+
+  if (scenario === "line-selected") {
+    const document = createDraftFromPreset(getPresetById("compact-note"))
+    document.elements = document.elements.map((element) =>
+      element.kind === "line"
+        ? {
+            ...element,
+            x: 4,
+            y: 12,
+            x2: 30,
+            y2: 16,
+            meta: { ...element.meta, name: "端点线段" },
+          }
+        : element
+    )
+    return document
+  }
+
+  if (scenario === "circle-selected" || scenario === "triangle-selected") {
+    const document = createDraftFromPreset(getPresetById("ops-tag"))
+    document.elements = [
+      ...document.elements,
+      createCanvasElement("circle", document.elements.length, {
+        x: 5,
+        y: 4,
+        size: 8,
+        strokeWidth: 0.25,
+        meta: { name: "圆形示例", visible: true, locked: false },
+      }),
+      createCanvasElement("triangle", document.elements.length + 1, {
+        x: 17,
+        y: 4,
+        width: 12,
+        height: 9,
+        strokeWidth: 0.25,
+        rotation: 0,
+        meta: { name: "三角形示例", visible: true, locked: false },
+      }),
+    ]
+    return document
+  }
+
   const preset = getPresetById(scenario === "barcode-selected" ? "shipping-wide" : "ops-tag")
   return createDraftFromPreset(preset)
 }
@@ -1466,6 +1639,10 @@ export type CanvasStoryScenario =
   | "wide-default"
   | "narrow-default"
   | "text-selected"
+  | "rect-selected"
+  | "circle-selected"
+  | "triangle-selected"
+  | "line-selected"
   | "barcode-selected"
   | "barcode-invalid"
   | "output-tab"

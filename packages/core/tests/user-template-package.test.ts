@@ -211,6 +211,46 @@ describe("UserTemplatePackage", () => {
     ).toThrow(/rotated canvas bounds/)
   })
 
+  it("rejects circle strokes that extend beyond the canvas", () => {
+    expect(() =>
+      parseUserTemplatePackage({
+        ...componentPackage,
+        elements: [
+          {
+            kind: "circle",
+            x: 0,
+            y: 0,
+            size: 96,
+            strokeWidth: 4,
+            fill: "none",
+            stroke: "#111111",
+          },
+        ],
+      })
+    ).toThrow(/canvas bounds/)
+  })
+
+  it("rejects rotated triangles that exceed the canvas bounds", () => {
+    expect(() =>
+      parseUserTemplatePackage({
+        ...componentPackage,
+        elements: [
+          {
+            kind: "triangle",
+            x: 0,
+            y: 20,
+            width: 10,
+            height: 80,
+            strokeWidth: 2,
+            fill: "none",
+            stroke: "#111111",
+            rotation: 90,
+          },
+        ],
+      })
+    ).toThrow(/rotated canvas bounds/)
+  })
+
   it("rejects wrapped text that extends beyond the canvas", () => {
     expect(() =>
       parseUserTemplatePackage({
