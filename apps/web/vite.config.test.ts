@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -132,5 +133,29 @@ describe("footer metadata", () => {
     expect(resolveAppVersion(env)).toBe("1.2.3-preview.4")
     expect(resolveRepositoryUrl(env)).toBe("https://example.test/repo/")
     expect(resolveRightsUrl(env)).toBe("https://example.test/rights/")
+  })
+
+  it("uses the GitHub tag name for release-triggered Pages builds", () => {
+    expect(
+      resolveAppVersion({
+        GITHUB_REF_TYPE: "tag",
+        GITHUB_REF_NAME: "v0.2.0-preview.5",
+      })
+    ).toBe("0.2.0-preview.5")
+  })
+})
+
+describe("Pages workflow metadata", () => {
+  const pagesWorkflow = readFileSync(
+    new URL("../../.github/workflows/pages.yml", import.meta.url),
+    "utf8"
+  )
+
+  it("redeploys Pages when a GitHub Release is published", () => {
+    expect(pagesWorkflow).toContain("release:\n    types: [published]")
+  })
+
+  it("checks out the published release tag for release-triggered Pages builds", () => {
+    expect(pagesWorkflow).toContain("github.event.release.tag_name")
   })
 })

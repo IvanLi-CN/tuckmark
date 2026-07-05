@@ -15,6 +15,10 @@
 
 - `apps/web/vite.config.ts` emits `manifest.webmanifest` and `sw.js` only for
   `browser-static` production builds.
+- `apps/web/vite.config.ts` resolves footer metadata from
+  `TUCKMARK_APP_VERSION`, then from GitHub tag build context, then from the root
+  package version. GitHub tag values are normalized without a leading `v`
+  because the UI owns the visible `v` prefix.
 - `apps/web/public/pwa/` stores generated Tuckmark maskable PNG icons.
 - `apps/web/src/pwa-lifecycle.ts` owns service worker registration, update
   detection, `SKIP_WAITING`, and reload-on-controller-change behavior.
@@ -23,3 +27,6 @@
   confirmation dialog instead of browser-native `confirm`.
 - `apps/web/tests/pwa.spec.ts` covers service worker registration, offline
   route refresh, and PWA asset inspection.
+- `.github/workflows/pages.yml` runs on `main` pushes, manual dispatch, and
+  published GitHub Releases. Release-triggered runs check out the published tag
+  so Pages can redeploy the browser-static bundle with matching footer metadata.
