@@ -84,6 +84,13 @@
   SVG renderer, Web draft model, and Storybook coverage as existing shapes:
   circles use `x/y/size` and stay round during resize, while triangles use
   `x/y/width/height` and can resize width and height independently.
+- Rotated triangle selection bounds are computed through the same rotated bounds
+  path as other rotatable stage objects, so marquee and multi-selection remain
+  aligned with visible triangle geometry.
+- Checked-in core JavaScript runtime artifacts are synced with the TypeScript
+  renderer path, including `svg-renderer`, so callers that import
+  `packages/core/src/*.js` render `circle` and `triangle` instead of silently
+  dropping them.
 - Barcode and QR stage rendering now uses real encoded graphics instead of
   dashed placeholders.
 - Invalid barcode / QR content now fails safely inside the editor:

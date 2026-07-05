@@ -118,6 +118,9 @@ while the workbench was being productized:
     `triangle`
   - circles use square `size` geometry and proportional resize handles
   - triangles use width/height geometry and non-proportional resize handles
+  - review convergence tightened rotated triangle selection bounds and synced
+    checked-in core JavaScript renderer artifacts with the expanded shape
+    schema
 - The shared footer also became an operator support surface:
   - repository link and site rights notice are visible without opening
     developer tools

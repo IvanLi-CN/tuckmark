@@ -168,6 +168,8 @@ output.
     and round geometry remain intact
   - single `line` selections expose start and end endpoint handles instead of
     a rectangular scale transformer
+  - rotated `triangle` elements use their rotated geometry for selection and
+    multi-selection bounds
   - multi-selection may still use a group transformer for overall movement and
     batch transforms
 - Preview and print normalize editor state into `DirectCanvasDefinition` and
