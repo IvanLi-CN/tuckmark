@@ -1929,13 +1929,10 @@ function TemplatesPage({
                                         event.currentTarget.blur()
                                       }
                                     }}
-                                    onChange={(event) =>
-                                      state.updateTemplateField(
-                                        row.id,
-                                        field.key,
-                                        event.currentTarget.value
-                                      )
-                                    }
+                                    onChange={(event) => {
+                                      const nextValue = event.currentTarget.value
+                                      state.updateTemplateField(row.id, field.key, nextValue)
+                                    }}
                                   />
                                 ) : (
                                   <button
@@ -2522,12 +2519,13 @@ function RenderOptionsForm({
               value={String(options.printWidthDots)}
               disabled={disabled}
               onFocus={onFocusRight}
-              onChange={(event) =>
+              onChange={(event) => {
+                const rawValue = event.currentTarget.value
                 controller.setRenderOptions((current) => ({
                   ...current,
-                  printWidthDots: Number(event.currentTarget.value || current.printWidthDots),
+                  printWidthDots: Number(rawValue || current.printWidthDots),
                 }))
-              }
+              }}
             />
           </div>
           <div className="grid gap-2">
@@ -2556,12 +2554,13 @@ function RenderOptionsForm({
               value={String(options.threshold)}
               disabled={disabled}
               onFocus={onFocusRight}
-              onChange={(event) =>
+              onChange={(event) => {
+                const rawValue = event.currentTarget.value
                 controller.setRenderOptions((current) => ({
                   ...current,
-                  threshold: Number(event.currentTarget.value || current.threshold),
+                  threshold: Number(rawValue || current.threshold),
                 }))
-              }
+              }}
             />
           </div>
           <div className="grid gap-2">
@@ -2572,12 +2571,13 @@ function RenderOptionsForm({
               value={String(options.xOffsetDots)}
               disabled={disabled}
               onFocus={onFocusRight}
-              onChange={(event) =>
+              onChange={(event) => {
+                const rawValue = event.currentTarget.value
                 controller.setRenderOptions((current) => ({
                   ...current,
-                  xOffsetDots: Number(event.currentTarget.value || current.xOffsetDots),
+                  xOffsetDots: Number(rawValue || current.xOffsetDots),
                 }))
-              }
+              }}
             />
           </div>
         </div>
@@ -2877,13 +2877,12 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
           <>
             <Textarea
               value={element.value}
-              onChange={(event) =>
+              onChange={(event) => {
+                const nextValue = event.currentTarget.value
                 state.updateCanvasElement(element.id, (current) =>
-                  current.kind === "text"
-                    ? { ...current, value: event.currentTarget.value }
-                    : current
+                  current.kind === "text" ? { ...current, value: nextValue } : current
                 )
-              }
+              }}
             />
             <div className="tm-form-grid tm-form-grid--compact">
               <div className="grid gap-2">
@@ -2953,24 +2952,24 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
         {element.kind === "barcode" ? (
           <Textarea
             value={element.value}
-            onChange={(event) =>
+            onChange={(event) => {
+              const nextValue = event.currentTarget.value
               state.updateCanvasElement(element.id, (current) =>
-                current.kind === "barcode"
-                  ? { ...current, value: event.currentTarget.value }
-                  : current
+                current.kind === "barcode" ? { ...current, value: nextValue } : current
               )
-            }
+            }}
           />
         ) : null}
 
         {element.kind === "qr" ? (
           <Textarea
             value={element.value}
-            onChange={(event) =>
+            onChange={(event) => {
+              const nextValue = event.currentTarget.value
               state.updateCanvasElement(element.id, (current) =>
-                current.kind === "qr" ? { ...current, value: event.currentTarget.value } : current
+                current.kind === "qr" ? { ...current, value: nextValue } : current
               )
-            }
+            }}
           />
         ) : null}
       </CardContent>

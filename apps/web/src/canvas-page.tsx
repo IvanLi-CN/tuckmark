@@ -1878,7 +1878,10 @@ function CanvasInspector({
         className="tm-inspector-input"
         disabled={readOnly}
         value={String(value)}
-        onChange={(event) => onValueChange(Number(event.currentTarget.value || 0))}
+        onChange={(event) => {
+          const nextValue = Number(event.currentTarget.value || 0)
+          onValueChange(nextValue)
+        }}
       />
     </div>
   )
@@ -1943,12 +1946,13 @@ function CanvasInspector({
               className="tm-inspector-input"
               disabled={readOnly}
               value={element.meta.name}
-              onChange={(event) =>
+              onChange={(event) => {
+                const nextValue = event.currentTarget.value
                 updateElement((item) => ({
                   ...item,
-                  meta: { ...item.meta, name: event.currentTarget.value },
+                  meta: { ...item.meta, name: nextValue },
                 }))
-              }
+              }}
             />
           </div>
           {element.kind === "text" ? (
@@ -1961,13 +1965,14 @@ function CanvasInspector({
                 className="tm-inspector-textarea"
                 disabled={readOnly}
                 value={element.value}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const nextValue = event.currentTarget.value
                   onChange((current) =>
                     applyDraftUpdate(current, (draft) =>
-                      updateBoundElementValue(draft, element.id, event.currentTarget.value)
+                      updateBoundElementValue(draft, element.id, nextValue)
                     )
                   )
-                }
+                }}
               />
             </div>
           ) : null}
@@ -1983,13 +1988,14 @@ function CanvasInspector({
                 className="tm-inspector-input"
                 disabled={readOnly}
                 value={element.value}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const nextValue = event.currentTarget.value
                   onChange((current) =>
                     applyDraftUpdate(current, (draft) =>
-                      updateBoundElementValue(draft, element.id, event.currentTarget.value)
+                      updateBoundElementValue(draft, element.id, nextValue)
                     )
                   )
-                }
+                }}
               />
             </div>
           ) : null}
@@ -2338,12 +2344,13 @@ function CanvasOutput({
               id="print-width"
               type="number"
               value={String(controller.renderOptions.printWidthDots)}
-              onChange={(event) =>
+              onChange={(event) => {
+                const rawValue = event.currentTarget.value
                 controller.setRenderOptions((current) => ({
                   ...current,
-                  printWidthDots: Number(event.currentTarget.value || current.printWidthDots),
+                  printWidthDots: Number(rawValue || current.printWidthDots),
                 }))
-              }
+              }}
             />
           </div>
           <div className="grid gap-2">
@@ -2370,12 +2377,13 @@ function CanvasOutput({
               id="threshold"
               type="number"
               value={String(controller.renderOptions.threshold)}
-              onChange={(event) =>
+              onChange={(event) => {
+                const rawValue = event.currentTarget.value
                 controller.setRenderOptions((current) => ({
                   ...current,
-                  threshold: Number(event.currentTarget.value || current.threshold),
+                  threshold: Number(rawValue || current.threshold),
                 }))
-              }
+              }}
             />
             <p className="text-xs text-muted-foreground">
               阈值越低，更多灰度会被视为黑色。通常无需频繁调整。
@@ -2387,12 +2395,13 @@ function CanvasOutput({
               id="x-offset"
               type="number"
               value={String(controller.renderOptions.xOffsetDots)}
-              onChange={(event) =>
+              onChange={(event) => {
+                const rawValue = event.currentTarget.value
                 controller.setRenderOptions((current) => ({
                   ...current,
-                  xOffsetDots: Number(event.currentTarget.value || current.xOffsetDots),
+                  xOffsetDots: Number(rawValue || current.xOffsetDots),
                 }))
-              }
+              }}
             />
             <p className="text-xs text-muted-foreground">
               用于修正打印头横向偏移；没有偏移时保持 0 即可。
