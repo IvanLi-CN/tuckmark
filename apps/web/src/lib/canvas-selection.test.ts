@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  type CanvasSelectionBox,
   normalizeSelectionBox,
   projectSelectionBoxToStageRect,
-  type CanvasSelectionBox,
 } from "./canvas-selection.js"
 
 describe("canvas marquee projection", () => {

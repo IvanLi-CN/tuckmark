@@ -98,9 +98,9 @@ import {
   getCanvasDimensionCapabilityMessage,
 } from "./lib/canvas-dimensions.js"
 import {
+  type CanvasSelectionBox,
   normalizeSelectionBox,
   projectSelectionBoxToStageRect,
-  type CanvasSelectionBox,
 } from "./lib/canvas-selection.js"
 import {
   CANVAS_DOTS_PER_MILLIMETER,
