@@ -378,7 +378,7 @@ function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryS
 }
 
 function getScenarioViewport(
-  draft: CanvasDraftDocument,
+  _draft: CanvasDraftDocument,
   scenario: CanvasStoryScenario
 ): StageViewport | undefined {
   if (scenario !== "marquee-selection") {
