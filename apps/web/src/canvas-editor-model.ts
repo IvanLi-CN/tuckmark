@@ -1639,6 +1639,7 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
 export type CanvasStoryScenario =
   | "wide-default"
   | "narrow-default"
+  | "marquee-selection"
   | "text-selected"
   | "rect-selected"
   | "circle-selected"

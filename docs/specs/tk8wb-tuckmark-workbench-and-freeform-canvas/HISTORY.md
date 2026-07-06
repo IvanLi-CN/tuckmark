@@ -128,3 +128,9 @@ while the workbench was being productized:
     overrides
   - Service API and browser-direct readiness stay visible beside the support
     metadata
+- The marquee-selection affordance was later tightened to match screen-space
+  editor chrome expectations:
+  - the drag-selection rectangle is projected into stage space instead of
+    living inside the scaled canvas content group
+  - its border now stays `1 logical px dashed` at any zoom level
+  - selection-box storage and inclusion tests remain in canvas-space geometry

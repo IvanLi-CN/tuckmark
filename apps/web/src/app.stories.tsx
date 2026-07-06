@@ -311,6 +311,33 @@ export const CanvasWorkspaceWide: Story = {
   },
 }
 
+export const CanvasWorkspaceMarqueeSelection: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "marquee-selection",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "Marquee selection chrome stays in stage space so its dashed border remains 1 logical px even at the seeded 344% zoom level.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await canvas.findByText("344%")
+    await canvas.findByText("未选择元素")
+  },
+}
+
 export const CanvasWorkspaceDimensionPicker: Story = {
   args: {
     context: runtimeContext,
