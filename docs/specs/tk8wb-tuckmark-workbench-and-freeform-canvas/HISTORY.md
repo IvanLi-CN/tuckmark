@@ -134,3 +134,5 @@ while the workbench was being productized:
     living inside the scaled canvas content group
   - its border now stays `1 logical px dashed` at any zoom level
   - selection-box storage and inclusion tests remain in canvas-space geometry
+  - follow-on cleanup kept the Storybook scenario and projection tests aligned
+    with the same screen-space rendering contract
