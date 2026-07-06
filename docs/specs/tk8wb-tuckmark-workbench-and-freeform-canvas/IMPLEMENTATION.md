@@ -76,6 +76,10 @@
   - wheel zoom relative to pointer
   - `Space + drag` pan
   - keyboard move, duplicate, delete, undo, redo, and clear selection
+- Marquee selection overlay is now projected into stage space rather than
+  rendered inside the scaled content group, so its dashed border stays `1
+  logical px` across zoom levels while the stored selection box and inclusion
+  checks remain in canvas-space units.
 - Rectangle authoring now distinguishes element defaults from template design:
   new freeform rectangles default to `radius: 0`, while presets and imported
   templates preserve explicit rounded corners. The inspector exposes `圆角` and
@@ -216,6 +220,7 @@
 - `404.html` SPA fallback is present for static Pages deep links.
 - Storybook coverage includes stable canvas scenarios for:
   - wide editor
+  - marquee selection at `344%` zoom
   - narrow desktop editor
   - selected text
   - selected rect with radius editing

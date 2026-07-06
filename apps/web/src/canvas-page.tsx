@@ -98,6 +98,11 @@ import {
   getCanvasDimensionCapabilityMessage,
 } from "./lib/canvas-dimensions.js"
 import {
+  type CanvasSelectionBox,
+  normalizeSelectionBox,
+  projectSelectionBoxToStageRect,
+} from "./lib/canvas-selection.js"
+import {
   CANVAS_DOTS_PER_MILLIMETER,
   canvasDotsToMillimeters,
   canvasMillimetersToDots,
@@ -124,14 +129,6 @@ import type { WorkbenchController } from "./workbench-controller.js"
 type CanvasPageProps = {
   controller: WorkbenchController
   initialScenario?: CanvasStoryScenario
-}
-
-type CanvasSelectionBox = {
-  x1: number
-  y1: number
-  x2: number
-  y2: number
-  visible: boolean
 }
 
 type StageViewport = {
@@ -178,6 +175,7 @@ type CanvasPageState = {
 const GRID_SIZE = 2.5
 const STAGE_VIEWPORT_WIDTH = 760
 const STAGE_VIEWPORT_HEIGHT = 520
+const EMPTY_SELECTION_BOX: CanvasSelectionBox = { x1: 0, y1: 0, x2: 0, y2: 0, visible: false }
 const ZOOM_MIN = 0.45
 const ZOOM_MAX = 5
 const ZOOM_STEP = 1.08
@@ -216,14 +214,6 @@ function clamp(value: number, min: number, max: number) {
 
 function getCanvasTextLineHeight(fontSize: number) {
   return (fontSize + 4) / fontSize
-}
-
-function normalizeRect(box: CanvasSelectionBox) {
-  const x = Math.min(box.x1, box.x2)
-  const y = Math.min(box.y1, box.y2)
-  const width = Math.abs(box.x2 - box.x1)
-  const height = Math.abs(box.y2 - box.y1)
-  return { x, y, width, height }
 }
 
 function cloneDraft(draft: CanvasDraftDocument): CanvasDraftDocument {
@@ -296,7 +286,11 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
     return buildStoryScenarioDocument(scenario)
   }
 
-  if (scenario === "wide-default" || scenario === "barcode-selected") {
+  if (
+    scenario === "wide-default" ||
+    scenario === "barcode-selected" ||
+    scenario === "marquee-selection"
+  ) {
     return createDraftFromPreset(getPresetById("shipping-wide"))
   }
 
@@ -322,6 +316,8 @@ function createCanvasStateFromDraft(
     focus?: CanvasPageState["focus"]
     outputStatus?: string
     loading?: boolean
+    viewport?: StageViewport
+    selectionBox?: CanvasSelectionBox
     versionHistory?: UserTemplateHistory | null
     versionsOpen?: boolean
   }
@@ -340,8 +336,8 @@ function createCanvasStateFromDraft(
     gridEnabled: draft.editor.gridEnabled,
     snapEnabled: draft.editor.snapEnabled,
     spacePressed: false,
-    viewport: createViewport(draft.width, draft.height),
-    selectionBox: { x1: 0, y1: 0, x2: 0, y2: 0, visible: false },
+    viewport: options?.viewport ?? createViewport(draft.width, draft.height),
+    selectionBox: options?.selectionBox ?? EMPTY_SELECTION_BOX,
     history: [cloneDraft(draft)],
     historyIndex: 0,
     editingId: null,
@@ -381,6 +377,33 @@ function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryS
   return []
 }
 
+function getScenarioViewport(
+  _draft: CanvasDraftDocument,
+  scenario: CanvasStoryScenario
+): StageViewport | undefined {
+  if (scenario !== "marquee-selection") {
+    return undefined
+  }
+  return {
+    scale: 3.44,
+    x: -370,
+    y: 36,
+  }
+}
+
+function getScenarioSelectionBox(scenario: CanvasStoryScenario): CanvasSelectionBox | undefined {
+  if (scenario !== "marquee-selection") {
+    return undefined
+  }
+  return {
+    x1: 31.5,
+    y1: 11.5,
+    x2: 40,
+    y2: 16,
+    visible: true,
+  }
+}
+
 function createCanvasState(
   presetId: string,
   scenario: CanvasStoryScenario = "wide-default"
@@ -399,6 +422,8 @@ function createCanvasState(
       selectedIds: getScenarioSelection(draft, scenario),
       activePanel: scenario === "output-tab" ? "output" : "attributes",
       focus: scenario === "output-tab" ? "center-right" : "left-center",
+      viewport: getScenarioViewport(draft, scenario),
+      selectionBox: getScenarioSelectionBox(scenario),
       outputStatus:
         scenario === "draft-restore"
           ? "已恢复上次草稿。"
@@ -3074,7 +3099,7 @@ function CanvasStageView({
     }
     selectionActiveRef.current = false
     onChange((current) => {
-      const box = normalizeRect(current.selectionBox)
+      const box = normalizeSelectionBox(current.selectionBox)
       const selectedIds =
         box.width < SELECTION_HANDLE_SIZE || box.height < SELECTION_HANDLE_SIZE
           ? current.selectedIds
@@ -3092,10 +3117,14 @@ function CanvasStageView({
       return {
         ...current,
         selectedIds,
-        selectionBox: { x1: 0, y1: 0, x2: 0, y2: 0, visible: false },
+        selectionBox: EMPTY_SELECTION_BOX,
       }
     })
   }
+
+  const selectionBoxStageRect = state.selectionBox.visible
+    ? projectSelectionBoxToStageRect(normalizeSelectionBox(state.selectionBox), state.viewport)
+    : null
 
   return (
     <div className="tm-stage-shell">
@@ -3359,19 +3388,6 @@ function CanvasStageView({
                   ))
                 : null}
 
-              {state.selectionBox.visible ? (
-                <KonvaRect
-                  x={normalizeRect(state.selectionBox).x}
-                  y={normalizeRect(state.selectionBox).y}
-                  width={normalizeRect(state.selectionBox).width}
-                  height={normalizeRect(state.selectionBox).height}
-                  fill="rgba(140,92,54,0.08)"
-                  stroke="#8c5c36"
-                  dash={[4, 4]}
-                  listening={false}
-                />
-              ) : null}
-
               <Transformer
                 ref={transformerRef}
                 resizeEnabled={!readOnly && transformerEnabled}
@@ -3415,6 +3431,20 @@ function CanvasStageView({
                 }}
               />
             </Group>
+            {selectionBoxStageRect ? (
+              <KonvaRect
+                x={selectionBoxStageRect.x}
+                y={selectionBoxStageRect.y}
+                width={selectionBoxStageRect.width}
+                height={selectionBoxStageRect.height}
+                fill="rgba(140,92,54,0.08)"
+                stroke="#8c5c36"
+                strokeWidth={1}
+                strokeScaleEnabled={false}
+                dash={[4, 4]}
+                listening={false}
+              />
+            ) : null}
           </Layer>
         </Stage>
 

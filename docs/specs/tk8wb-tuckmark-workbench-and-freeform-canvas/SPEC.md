@@ -340,6 +340,9 @@ output.
   square/round, and single line elements edit endpoints directly.
 - Canvas workspace supports marquee selection, Shift multi-select, stage pan,
   wheel zoom, and fit-to-view without horizontal shell breakage.
+- Marquee selection chrome is editor-only stage-space affordance: its border
+  remains `1 logical px dashed` at any zoom level while selection bounds and
+  hit semantics continue to use canvas-space geometry.
 - Text supports inline stage editing via double click.
 - Shared shell, templates, canvas, and system pages prevent accidental text
   selection on non-editable chrome while preserving selection and copy
@@ -443,6 +446,11 @@ output.
 
   PR: include
   ![Canvas selected line endpoint editing](./assets/canvas-line-selected-1280x800.png)
+
+- `1280×800` canvas workspace with a marquee selection box at `344%` zoom, keeping a screen-space `1 logical px` dashed border instead of scaling with the canvas content.
+
+  PR: include
+  ![Canvas marquee selection at 344 percent zoom](./assets/canvas-marquee-selection-1280x800.png)
 
 - `1280×800` canvas workspace output rail after preview generation, with stage and preview sharing the same monochrome content semantics
 
