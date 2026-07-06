@@ -1,3 +1,9 @@
+import type {
+  TextFontFamily,
+  TextHorizontalAlign,
+  TextVerticalAlign,
+} from "../../../packages/core/src/web.js"
+
 export type PaperType = "continuous" | "gap"
 
 export type RenderOptions = {
@@ -34,9 +40,17 @@ export type CanvasElement =
       x: number
       y: number
       width: number
+      height: number
       fontSize: number
+      fontFamily: TextFontFamily
+      lineHeight: number
       fontWeight: "normal" | "bold"
-      align: "left" | "center" | "right"
+      align: TextHorizontalAlign
+      verticalAlign: TextVerticalAlign
+      stretchX: boolean
+      stretchY: boolean
+      autoWrap: boolean
+      verticalText: boolean
       value: string
       maxLines?: number
       rotation?: number

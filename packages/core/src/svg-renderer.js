@@ -1,5 +1,6 @@
 import JsBarcode from "jsbarcode";
 import QRCode from "qrcode";
+import { DEFAULT_TEXT_FONT_FAMILY, DEFAULT_TEXT_VERTICAL_ALIGN, estimateTextLineWidth, getTextFontFamilyStack, getTextNaturalHeight, resolveTextLayout, wrapTextByWidth, } from "./text-layout.js";
 function formatNumber(value) {
     return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/\.?0+$/, "");
 }
@@ -17,62 +18,72 @@ export function escapeXml(value) {
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&apos;");
 }
-export function wrapText(text, maxCharsPerLine, maxLines) {
-    const normalized = text.replaceAll("\r\n", "\n").split("\n");
-    const lines = [];
-    for (const chunk of normalized) {
-        if (chunk.length === 0) {
-            lines.push("");
-            continue;
-        }
-        let current = "";
-        for (const token of chunk.split(/\s+/)) {
-            const candidate = current ? `${current} ${token}` : token;
-            if (candidate.length > maxCharsPerLine && current) {
-                lines.push(current);
-                current = token;
-            }
-            else {
-                current = candidate;
-            }
-        }
-        if (current) {
-            lines.push(current);
-        }
-    }
-    return maxLines ? lines.slice(0, maxLines) : lines;
-}
-export function estimateCharsPerLine(fontSize, width) {
-    if (!width) {
-        return 100;
-    }
-    return Math.max(4, Math.floor(width / (fontSize * 0.6)));
-}
 function renderTextElement(element, input) {
     const resolved = element.value ?? input[element.key] ?? "";
-    const escaped = escapeXml(resolved);
-    const lines = wrapText(escaped, estimateCharsPerLine(element.fontSize, element.width), element.maxLines);
-    const renderedLines = lines.length > 0 ? lines : [""];
-    const anchor = element.align === "center" ? "middle" : element.align === "right" ? "end" : "start";
-    const x = element.align === "center" && element.width
-        ? element.x + element.width / 2
-        : element.align === "right" && element.width
-            ? element.x + element.width
-            : element.x;
-    const markup = renderedLines
-        .map((line, index) => {
-        const y = element.y + index * (element.fontSize + 4);
-        return `<text x="${x}" y="${y}" font-size="${element.fontSize}" font-weight="${element.fontWeight}" text-anchor="${anchor}" font-family="ui-sans-serif, system-ui, sans-serif" fill="#111111">${line}</text>`;
-    })
-        .join("");
-    const width = element.width ??
-        Math.max(...renderedLines.map((line) => line.length), 1) * element.fontSize * 0.6;
-    const lineHeight = element.fontSize + 4;
-    const lineCount = renderedLines.length;
-    const originX = element.x + width / 2;
-    const top = element.y - element.fontSize;
-    const height = Math.max(lineHeight, element.fontSize + (lineCount - 1) * lineHeight);
-    const originY = top + height / 2;
+    const hasExplicitWidth = element.width !== undefined;
+    const legacyLines = wrapTextByWidth(resolved, element.fontSize, element.width, element.maxLines, element.autoWrap ?? true);
+    const width = element.width ?? Math.max(...legacyLines.map((line) => estimateTextLineWidth(line, element.fontSize)), 0.0001);
+    const legacyLineCount = Math.max(hasExplicitWidth
+        ? wrapTextByWidth(resolved, element.fontSize, width, element.maxLines, element.autoWrap ?? true).length
+        : legacyLines.length, 1);
+    const height = element.height ?? getTextNaturalHeight(element.fontSize, legacyLineCount, element.lineHeight);
+    const containerX = (() => {
+        if (hasExplicitWidth) {
+            return element.x;
+        }
+        switch (element.align) {
+            case "center":
+                return element.x - width / 2;
+            case "right":
+                return element.x - width;
+            default:
+                return element.x;
+        }
+    })();
+    const layout = resolveTextLayout({
+        text: resolved,
+        fontSize: element.fontSize,
+        width,
+        height,
+        lineHeight: element.lineHeight,
+        align: element.align,
+        maxLines: element.maxLines,
+        verticalAlign: element.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN,
+        stretchX: element.stretchX ?? false,
+        stretchY: element.stretchY ?? false,
+        autoWrap: element.autoWrap ?? true,
+        verticalText: element.verticalText ?? false,
+    });
+    const containerY = element.height === undefined && !layout.verticalText
+        ? element.y - layout.baselineOffsetY
+        : element.height === undefined
+            ? element.y - element.fontSize
+            : element.y;
+    const transform = [
+        `translate(${formatNumber(layout.contentX)} ${formatNumber(layout.contentY)})`,
+        layout.scaleX !== 1 || layout.scaleY !== 1
+            ? `scale(${formatNumber(layout.scaleX)} ${formatNumber(layout.scaleY)})`
+            : "",
+    ]
+        .filter(Boolean)
+        .join(" ");
+    const fontFamily = escapeXml(getTextFontFamilyStack(element.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY));
+    const textMarkup = layout.verticalText
+        ? layout.glyphs
+            .map((glyph) => `<text x="${formatNumber(glyph.x)}" y="${formatNumber(glyph.y + layout.baselineOffsetY)}" font-size="${formatNumber(element.fontSize)}" font-weight="${element.fontWeight}" text-anchor="middle" font-family="${fontFamily}" fill="#111111">${escapeXml(glyph.text)}</text>`)
+            .join("")
+        : layout.lineLayouts
+            .map((line) => {
+            const justifyAttrs = line.letterSpacing > 0
+                ? ` textLength="${formatNumber(width)}" lengthAdjust="spacing"`
+                : "";
+            return `<text x="${formatNumber(line.x)}" y="${formatNumber(line.y)}" font-size="${formatNumber(element.fontSize)}" font-weight="${element.fontWeight}" text-anchor="start" font-family="${fontFamily}" fill="#111111"${justifyAttrs}>${escapeXml(line.text)}</text>`;
+        })
+            .join("");
+    const contentMarkup = `<g transform="${transform}">${textMarkup}</g>`;
+    const markup = `<svg x="${formatNumber(containerX)}" y="${formatNumber(containerY)}" width="${formatNumber(width)}" height="${formatNumber(height)}" overflow="hidden">${contentMarkup}</svg>`;
+    const originX = containerX + width / 2;
+    const originY = containerY + height / 2;
     return wrapMarkupWithRotation(markup, element.rotation, originX, originY);
 }
 function resolveElementValue(element, input) {

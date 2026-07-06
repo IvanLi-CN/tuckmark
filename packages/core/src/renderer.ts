@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto"
 import { Resvg } from "@resvg/resvg-js"
 import { PNG } from "pngjs"
 
-import { buildSvg, wrapText } from "./svg-renderer.js"
+import { buildSvg } from "./svg-renderer.js"
+import { wrapText } from "./text-layout.js"
 import type {
   DirectCanvasDefinition,
   PreviewArtifact,

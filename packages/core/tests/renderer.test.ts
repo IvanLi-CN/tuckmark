@@ -89,7 +89,7 @@ describe("renderTemplateToPreview continuous safety", () => {
       {}
     )
 
-    expect(svg).toContain('transform="rotate(90 100 42)"')
+    expect(svg).toContain('transform="rotate(90 100 45.6)"')
   })
 
   it("renders circle and triangle shape elements into SVG", () => {

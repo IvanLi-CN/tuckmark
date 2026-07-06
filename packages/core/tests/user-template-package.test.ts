@@ -325,6 +325,29 @@ describe("UserTemplatePackage", () => {
     ).toThrow(/rotated canvas bounds/)
   })
 
+  it("rejects widthless right-aligned text using renderer-matched glyph estimates", () => {
+    expect(() =>
+      parseUserTemplatePackage({
+        ...componentPackage,
+        canvas: { width: 20, height: 96 },
+        fields: [{ key: "x", label: "Text", defaultValue: "AA" }],
+        elements: [
+          {
+            kind: "text",
+            key: "x",
+            x: 13,
+            y: 40,
+            fontSize: 10,
+            fontWeight: "normal",
+            align: "right",
+            rotation: 0,
+          },
+        ],
+        sampleInput: {},
+      })
+    ).toThrow(/rotated canvas bounds/)
+  })
+
   it("rejects bindable elements that reference unknown fields", () => {
     expect(() =>
       parseUserTemplatePackage({

@@ -1,5 +1,11 @@
 import { z } from "zod"
-import { wrapText } from "./svg-renderer.js"
+import {
+  estimateTextLineWidth,
+  getTextNaturalHeight,
+  resolveTextLayout,
+  TEXT_VISUAL_ASCENT_RATIO,
+  wrapTextByWidth,
+} from "./text-layout.js"
 import {
   type DirectCanvasDefinition,
   directCanvasSchema,
@@ -125,7 +131,7 @@ function validateElementBounds(
       validateRectBounds(
         {
           left: getTextBoundsLeft(element, textWidth),
-          top: element.y - element.fontSize,
+          top: getTextBoundsTop(element),
           width: textWidth,
           height: textHeight,
           rotation: element.rotation,
@@ -233,29 +239,39 @@ function estimateTextWidth(
   fieldDefaults: Map<string, string>
 ): number {
   const text = resolveTemplateElementValue(element, fieldDefaults) || element.key
-  return Math.max(text.length, 1) * element.fontSize * 0.6
+  const lines = wrapTextByWidth(
+    text,
+    element.fontSize,
+    element.width,
+    element.maxLines,
+    element.autoWrap ?? true
+  )
+  return Math.max(...lines.map((line) => estimateTextLineWidth(line, element.fontSize)), 0.0001)
 }
 
 function estimateTextHeight(
   element: Extract<TemplateElement, { kind: "text" }>,
   fieldDefaults: Map<string, string>
 ): number {
-  const text = resolveTemplateElementValue(element, fieldDefaults)
-  const lines = wrapText(
-    text,
-    estimateCharsPerLine(element.fontSize, element.width),
-    element.maxLines
-  )
-  const lineCount = Math.max(lines.length, 1)
-  const lineHeight = element.fontSize + 4
-  return Math.max(lineHeight, element.fontSize + (lineCount - 1) * lineHeight)
-}
-
-function estimateCharsPerLine(fontSize: number, width?: number): number {
-  if (!width) {
-    return 100
+  if (element.height) {
+    return element.height
   }
-  return Math.max(4, Math.floor(width / (fontSize * 0.6)))
+  const text = resolveTemplateElementValue(element, fieldDefaults)
+  const layout = resolveTextLayout({
+    text,
+    fontSize: element.fontSize,
+    width: element.width ?? estimateTextWidth(element, fieldDefaults),
+    height: getTextNaturalHeight(element.fontSize, 1, element.lineHeight),
+    lineHeight: element.lineHeight,
+    align: element.align,
+    maxLines: element.maxLines,
+    verticalAlign: element.verticalAlign,
+    stretchX: element.stretchX,
+    stretchY: element.stretchY,
+    autoWrap: element.autoWrap ?? true,
+    verticalText: element.verticalText ?? false,
+  })
+  return layout.naturalHeight
 }
 
 function getTextBoundsLeft(
@@ -272,6 +288,16 @@ function getTextBoundsLeft(
     return element.x - width
   }
   return element.x
+}
+
+function getTextBoundsTop(element: Extract<TemplateElement, { kind: "text" }>): number {
+  if (element.height !== undefined) {
+    return element.y
+  }
+  if (element.verticalText) {
+    return element.y - element.fontSize
+  }
+  return element.y - element.fontSize * TEXT_VISUAL_ASCENT_RATIO
 }
 
 function resolveTemplateElementValue(

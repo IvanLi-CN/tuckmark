@@ -159,6 +159,9 @@ output.
     not user-facing because it has no visible effect
   - `line` keeps endpoint-based geometry and does not add rotation as a first
     class print contract
+  - `text` uses top-left `x/y` container geometry with persisted `width`,
+    `height`, `fontSize`, `fontFamily`, `lineHeight`, horizontal `align`,
+    `verticalAlign`, `stretchX`, `stretchY`, `autoWrap`, and `verticalText`
 - Stage transform semantics match the element geometry model:
   - new freeform `rect` elements default to square corners; existing templates
     and stored drafts preserve their explicit `radius`
@@ -172,10 +175,39 @@ output.
     multi-selection bounds
   - multi-selection may still use a group transformer for overall movement and
     batch transforms
+- Text transform semantics match a fixed-container text model:
+  - resizing a text element changes only the container `width` and `height`
+  - resizing never writes back a changed `fontSize`
+  - without stretch enabled, text keeps its natural glyph size and is laid out
+    inside the container according to horizontal and vertical alignment
+  - line height is an explicit text property that controls the distance between
+    rendered line baselines without changing `fontSize`
+  - automatic wrapping is an explicit text property; when enabled, text wraps
+    within the container width, including long-token character breaks; when
+    disabled, explicit lines stay unwrapped and are clipped by the container
+  - horizontal `align` supports `justify`; justified text distributes extra
+    spacing between visible characters so the line fills the text container
+    width without changing `fontSize`
+  - vertical text lays out glyphs top-to-bottom in columns and uses the same
+    container clipping, BBOX alignment, wrapping, and stretch contracts as
+    horizontal text
+  - with horizontal or vertical stretch enabled, rendered text content is scaled
+    in that axis to fill the container while the saved `fontSize` remains
+    unchanged
 - Preview and print normalize editor state into `DirectCanvasDefinition` and
   then flow through shared renderer, preview, and print seams.
 - Rotated multiline text in preview and print must rotate around the rendered
   text box center so output stays aligned with the stage editing bounds.
+- Multiline text layout uses the same text box model on the Konva stage, SVG
+  preview, direct print artifacts, and inline stage editor.
+- Text alignment is based on the text's natural visible BBOX rather than the
+  looser browser line box. Without stretch, the BBOX keeps the saved font size
+  and line height, then moves inside the element container according to the
+  selected horizontal and vertical alignment so the BBOX edge can touch the
+  matching container edge. Stretch changes rendered scale only; it does not
+  write scale back into `fontSize`.
+- Text rendering is clipped to the text element container on the stage and in
+  SVG / print output. Text ink must not render outside the element bounds.
 - `browser-static` must support canvas preview and print without `/api` packet
   helpers.
 
@@ -209,6 +241,15 @@ output.
   - transformer-based resize / rotation
   - `Delete`, `Duplicate`, `Undo`, `Redo`, and `Escape`
 - Text elements support double-click inline editing on the stage.
+- Text inspector controls expose:
+  - numeric font size
+  - numeric line height
+  - fixed built-in font family choices: `system-sans`, `system-serif`,
+    `system-mono`, `arial`, and `noto-sans-sc`
+  - a three-by-three alignment control that maps to horizontal `align` and
+    `verticalAlign`
+  - automatic wrapping, two-end text justification, vertical text, and
+    independent horizontal and vertical stretch toggles
 - Layer rail supports:
   - rename
   - reorder
@@ -334,6 +375,20 @@ output.
 - Canvas workspace supports create, select, move, resize, rotate, duplicate,
   reorder, visibility toggle, lock toggle, and delete for `text`, `rect`,
   `circle`, `triangle`, `line`, `barcode`, and `qr`.
+- Selected text exposes font size, font family, three-by-three alignment,
+  automatic wrapping, two-end justification, horizontal stretch, vertical
+  stretch, vertical text, and rotation controls in the property inspector.
+- Text rotation is edited as an integer degree value and exposes adjacent
+  counterclockwise / clockwise 45-degree increment controls.
+- Text resize preserves `fontSize` unless the user explicitly edits the font
+  size field; stretch toggles affect rendering only and do not rewrite
+  `fontSize`.
+- Multiline text first resolves a natural visible BBOX, then aligns that BBOX
+  to the container top, middle, bottom, left, center, or right without baseline
+  anchoring. Vertical stretch scales that BBOX to the container height while
+  keeping the saved `fontSize` unchanged.
+- Text ink is clipped to the text element container. With automatic wrapping
+  disabled, overflow is cut by the container instead of escaping it.
 - Canvas workspace exposes type-correct geometry editing: rectangles can adjust
   corner radius, rectangular elements can resize width and height independently,
   triangles resize width and height independently, QR and circle elements stay
@@ -459,6 +514,9 @@ output.
 
 - `1280×800` template workspace showing grouped `系统模板 / 我的模板` cards with a browser-local user template present
 
+  PR: include
+  ![Template grouped user templates](./assets/templates-user-groups-1280x800.png)
+
 - `1440×900` homepage shell with non-selectable shared chrome and selectable status/value fields preserved where copying matters
 
   PR: include
@@ -479,8 +537,25 @@ output.
   PR: include
   ![Canvas selectable text state](./assets/selectable/canvas-selectable-text-1280x800.png)
 
+- `1280×800` canvas workspace text-container state showing multiline text box
+  alignment, font controls, line-height control, and stretch toggles in the
+  selected element inspector
+
   PR: include
-  ![Template grouped user templates](./assets/templates-user-groups-1280x800.png)
+  ![Canvas text container controls](./assets/canvas-text-container-controls-1280x800.png)
+
+- `1280×800` canvas workspace text flow controls showing two-end
+  justification, vertical text, wrapping, stretch toggles, and rotation split
+  into two inspector columns
+
+  PR: include
+  ![Canvas text flow controls](./assets/canvas-text-flow-justify-vertical.png)
+
+- Canvas text rotation controls showing integer-only rotation input and
+  adjacent 45-degree counterclockwise / clockwise increment buttons
+
+  PR: include
+  ![Canvas text rotation controls](./assets/canvas-text-rotation-integer-buttons.png)
 
 - `1280×800` canvas workspace on a browser-local user template with the version-history drawer open and saved/autosave history visible
 

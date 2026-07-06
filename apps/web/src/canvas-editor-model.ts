@@ -1,10 +1,14 @@
 import {
+  DEFAULT_TEXT_FONT_FAMILY,
+  DEFAULT_TEXT_LINE_HEIGHT,
+  DEFAULT_TEXT_VERTICAL_ALIGN,
   type DirectCanvasDefinition,
-  estimateCharsPerLine,
+  getTextNaturalHeight,
+  normalizeTextLineHeight,
   presetTemplateData,
+  resolveTextLayout,
   type TemplateDefinition,
   type UserTemplatePackage,
-  wrapText,
 } from "../../../packages/core/src/web.js"
 
 import type { BrowserPrintSource } from "./browser-print-payload.js"
@@ -149,11 +153,38 @@ function normalizeMonochromeFill(fill: string | undefined): string {
 
 function normalizeMonochromeElement(element: CanvasDraftElement): CanvasDraftElement {
   switch (element.kind) {
-    case "text":
+    case "text": {
+      const width = element.width ?? canvasDotsToMillimeters(180)
+      const fallbackLayout = resolveTextLayout({
+        text: element.value,
+        fontSize: element.fontSize,
+        width,
+        height: element.height ?? getTextNaturalHeight(element.fontSize, 1, element.lineHeight),
+        lineHeight: element.lineHeight,
+        align: element.align,
+        maxLines: element.maxLines,
+        verticalAlign: element.verticalAlign,
+        stretchX: element.stretchX,
+        stretchY: element.stretchY,
+        autoWrap: element.autoWrap ?? true,
+        verticalText: element.verticalText ?? false,
+      })
+      const hasExplicitHeight = Number.isFinite(element.height)
+      const height = hasExplicitHeight ? element.height : fallbackLayout.naturalHeight
       return {
         ...element,
-        width: element.width ?? canvasDotsToMillimeters(180),
+        y: hasExplicitHeight ? element.y : element.y - element.fontSize,
+        width,
+        height,
+        fontFamily: element.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY,
+        lineHeight: normalizeTextLineHeight(element.lineHeight),
+        verticalAlign: element.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN,
+        stretchX: element.stretchX ?? false,
+        stretchY: element.stretchY ?? false,
+        autoWrap: element.autoWrap ?? true,
+        verticalText: element.verticalText ?? false,
       }
+    }
     case "rect":
       return {
         ...element,
@@ -300,21 +331,31 @@ export function createCanvasElement(
 
   const base = (() => {
     switch (kind) {
-      case "text":
+      case "text": {
+        const fontSize = canvasDotsToMillimeters(24)
         return {
           id: `text-${crypto.randomUUID()}`,
           kind,
           x: seedX,
-          y: seedY + canvasDotsToMillimeters(26),
+          y: seedY,
           width: canvasDotsToMillimeters(180),
-          fontSize: canvasDotsToMillimeters(24),
+          height: getTextNaturalHeight(fontSize, 2),
+          fontSize,
+          fontFamily: DEFAULT_TEXT_FONT_FAMILY,
+          lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
           fontWeight: "bold" as const,
           align: "left" as const,
+          verticalAlign: DEFAULT_TEXT_VERTICAL_ALIGN,
+          stretchX: false,
+          stretchY: false,
+          autoWrap: true,
+          verticalText: false,
           value: "可编辑文本",
           maxLines: 2,
           rotation: 0,
           meta: createLayerMeta(kind, index),
         }
+      }
       case "rect":
         return {
           id: `rect-${crypto.randomUUID()}`,
@@ -592,6 +633,30 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
   const getTextElementWidth = (
     element: Extract<TemplateDefinition["elements"][number], { kind: "text" }>
   ) => element.width ?? canvasDotsToMillimeters(180)
+  const getTextElementHeight = (
+    element: Extract<TemplateDefinition["elements"][number], { kind: "text" }>
+  ) => {
+    if (element.height) {
+      return element.height
+    }
+    const text = element.value ?? resolveInitialFieldValue(fieldMap.get(element.key)) ?? ""
+    const width = getTextElementWidth(element)
+    const layout = resolveTextLayout({
+      text,
+      fontSize: element.fontSize,
+      width,
+      height: getTextNaturalHeight(element.fontSize, 1, element.lineHeight),
+      lineHeight: element.lineHeight,
+      align: element.align,
+      maxLines: element.maxLines,
+      verticalAlign: element.verticalAlign,
+      stretchX: element.stretchX,
+      stretchY: element.stretchY,
+      autoWrap: element.autoWrap ?? true,
+      verticalText: element.verticalText ?? false,
+    })
+    return layout.naturalHeight
+  }
   const elements: CanvasDraftElement[] = template.elements.map((element, index) => {
     const physicalElement = scaleTemplateElementGeometry(element, 1 / CANVAS_DOTS_PER_MILLIMETER)
     const field = "key" in element ? fieldMap.get(element.key) : undefined
@@ -647,20 +712,32 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
           stroke: physicalElement.stroke,
           meta,
         })
-      case "text":
+      case "text": {
+        const textHeight = getTextElementHeight(physicalElement)
         return createCanvasElement("text", index, {
           x: physicalElement.x,
-          y: physicalElement.y,
+          y: physicalElement.height
+            ? physicalElement.y
+            : physicalElement.y - physicalElement.fontSize,
           width: getTextElementWidth(physicalElement),
+          height: textHeight,
           fontSize: physicalElement.fontSize,
+          fontFamily: physicalElement.fontFamily,
+          lineHeight: physicalElement.lineHeight,
           fontWeight: physicalElement.fontWeight,
           align: physicalElement.align,
+          verticalAlign: physicalElement.verticalAlign,
+          stretchX: physicalElement.stretchX,
+          stretchY: physicalElement.stretchY,
+          autoWrap: physicalElement.autoWrap,
+          verticalText: physicalElement.verticalText ?? false,
           value: resolveInitialFieldValue(field) ?? physicalElement.value ?? "",
           maxLines: physicalElement.maxLines,
           rotation: physicalElement.rotation,
           binding: field ? { fieldKey: field.key, kind: "text" } : undefined,
           meta,
         })
+      }
       case "barcode":
         return createCanvasElement("barcode", index, {
           x: physicalElement.x,
@@ -1045,31 +1122,14 @@ export function duplicateDraftElement(
   return clone
 }
 
-function getTextRenderMetrics(element: Extract<CanvasDraftElement, { kind: "text" }>) {
-  const lines = wrapText(
-    element.value,
-    estimateCharsPerLine(element.fontSize, element.width),
-    element.maxLines
-  )
-  const lineCount = Math.max(lines.length, 1)
-  const lineHeight = element.fontSize + 4
-  const height = Math.max(lineHeight, element.fontSize + (lineCount - 1) * lineHeight)
-  return {
-    lineCount,
-    lineHeight,
-    height,
-  }
-}
-
 export function getElementBounds(element: CanvasDraftElement): CanvasBounds {
   switch (element.kind) {
     case "text": {
-      const metrics = getTextRenderMetrics(element)
       return {
         x: element.x,
-        y: element.y - element.fontSize,
+        y: element.y,
         width: element.width,
-        height: metrics.height,
+        height: element.height,
       }
     }
     case "rect":
@@ -1124,13 +1184,13 @@ export function getElementGeometry(element: CanvasDraftElement): CanvasElementGe
     case "text": {
       const localBounds = {
         x: 0,
-        y: -element.fontSize,
+        y: 0,
         width: element.width,
-        height: bounds.height,
+        height: element.height,
       }
       const rotationOrigin = {
         x: localBounds.width / 2,
-        y: localBounds.y + localBounds.height / 2,
+        y: localBounds.height / 2,
       }
       return {
         bounds,
@@ -1353,9 +1413,17 @@ export function compileDraftElement(
         x: normalized.x,
         y: normalized.y,
         width: normalized.width,
+        height: normalized.height,
         fontSize: normalized.fontSize,
+        fontFamily: normalized.fontFamily,
+        lineHeight: normalized.lineHeight,
         fontWeight: normalized.fontWeight,
         align: normalized.align,
+        verticalAlign: normalized.verticalAlign,
+        stretchX: normalized.stretchX,
+        stretchY: normalized.stretchY,
+        autoWrap: normalized.autoWrap,
+        verticalText: normalized.verticalText,
         value: normalized.value,
         maxLines: normalized.maxLines,
         rotation: normalizeRotation(normalized.rotation),
@@ -1572,6 +1640,40 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
         ? { ...element, value: "", meta: { ...element.meta, name: "待修正条码" } }
         : element
     )
+    return document
+  }
+
+  if (scenario === "text-selected") {
+    const document = createDraftFromPreset(getPresetById("ops-tag"))
+    const selectedText = document.elements.find((element) => element.kind === "text")
+    if (!selectedText) {
+      return document
+    }
+    document.elements = document.elements
+      .filter((element) => element.kind !== "text" || element.id === selectedText.id)
+      .map((element) =>
+        element.id === selectedText.id && element.kind === "text"
+          ? {
+              ...element,
+              x: 4,
+              y: 4,
+              value: "20kΩ\n3333",
+              width: 26,
+              height: 14,
+              fontSize: 5,
+              fontFamily: "system-sans",
+              lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
+              align: "left",
+              verticalAlign: "top",
+              stretchX: false,
+              stretchY: false,
+              autoWrap: true,
+              verticalText: false,
+              maxLines: 2,
+              meta: { ...element.meta, name: "文本 2" },
+            }
+          : element
+      )
     return document
   }
 

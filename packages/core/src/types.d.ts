@@ -97,7 +97,16 @@ export declare const textElementSchema: z.ZodObject<{
     x: z.ZodNumber;
     y: z.ZodNumber;
     width: z.ZodOptional<z.ZodNumber>;
+    height: z.ZodOptional<z.ZodNumber>;
     fontSize: z.ZodNumber;
+    fontFamily: z.ZodOptional<z.ZodEnum<{
+        "system-sans": "system-sans";
+        "system-serif": "system-serif";
+        "system-mono": "system-mono";
+        arial: "arial";
+        "noto-sans-sc": "noto-sans-sc";
+    }>>;
+    lineHeight: z.ZodOptional<z.ZodNumber>;
     fontWeight: z.ZodDefault<z.ZodEnum<{
         normal: "normal";
         bold: "bold";
@@ -106,7 +115,17 @@ export declare const textElementSchema: z.ZodObject<{
         left: "left";
         center: "center";
         right: "right";
+        justify: "justify";
     }>>;
+    verticalAlign: z.ZodOptional<z.ZodEnum<{
+        top: "top";
+        middle: "middle";
+        bottom: "bottom";
+    }>>;
+    stretchX: z.ZodOptional<z.ZodBoolean>;
+    stretchY: z.ZodOptional<z.ZodBoolean>;
+    autoWrap: z.ZodOptional<z.ZodBoolean>;
+    verticalText: z.ZodOptional<z.ZodBoolean>;
     value: z.ZodOptional<z.ZodString>;
     maxLines: z.ZodOptional<z.ZodNumber>;
     rotation: z.ZodDefault<z.ZodNumber>;
@@ -185,7 +204,16 @@ export declare const templateElementSchema: z.ZodDiscriminatedUnion<[z.ZodObject
     x: z.ZodNumber;
     y: z.ZodNumber;
     width: z.ZodOptional<z.ZodNumber>;
+    height: z.ZodOptional<z.ZodNumber>;
     fontSize: z.ZodNumber;
+    fontFamily: z.ZodOptional<z.ZodEnum<{
+        "system-sans": "system-sans";
+        "system-serif": "system-serif";
+        "system-mono": "system-mono";
+        arial: "arial";
+        "noto-sans-sc": "noto-sans-sc";
+    }>>;
+    lineHeight: z.ZodOptional<z.ZodNumber>;
     fontWeight: z.ZodDefault<z.ZodEnum<{
         normal: "normal";
         bold: "bold";
@@ -194,7 +222,17 @@ export declare const templateElementSchema: z.ZodDiscriminatedUnion<[z.ZodObject
         left: "left";
         center: "center";
         right: "right";
+        justify: "justify";
     }>>;
+    verticalAlign: z.ZodOptional<z.ZodEnum<{
+        top: "top";
+        middle: "middle";
+        bottom: "bottom";
+    }>>;
+    stretchX: z.ZodOptional<z.ZodBoolean>;
+    stretchY: z.ZodOptional<z.ZodBoolean>;
+    autoWrap: z.ZodOptional<z.ZodBoolean>;
+    verticalText: z.ZodOptional<z.ZodBoolean>;
     value: z.ZodOptional<z.ZodString>;
     maxLines: z.ZodOptional<z.ZodNumber>;
     rotation: z.ZodDefault<z.ZodNumber>;
@@ -282,7 +320,16 @@ export declare const templateSchema: z.ZodObject<{
         x: z.ZodNumber;
         y: z.ZodNumber;
         width: z.ZodOptional<z.ZodNumber>;
+        height: z.ZodOptional<z.ZodNumber>;
         fontSize: z.ZodNumber;
+        fontFamily: z.ZodOptional<z.ZodEnum<{
+            "system-sans": "system-sans";
+            "system-serif": "system-serif";
+            "system-mono": "system-mono";
+            arial: "arial";
+            "noto-sans-sc": "noto-sans-sc";
+        }>>;
+        lineHeight: z.ZodOptional<z.ZodNumber>;
         fontWeight: z.ZodDefault<z.ZodEnum<{
             normal: "normal";
             bold: "bold";
@@ -291,7 +338,17 @@ export declare const templateSchema: z.ZodObject<{
             left: "left";
             center: "center";
             right: "right";
+            justify: "justify";
         }>>;
+        verticalAlign: z.ZodOptional<z.ZodEnum<{
+            top: "top";
+            middle: "middle";
+            bottom: "bottom";
+        }>>;
+        stretchX: z.ZodOptional<z.ZodBoolean>;
+        stretchY: z.ZodOptional<z.ZodBoolean>;
+        autoWrap: z.ZodOptional<z.ZodBoolean>;
+        verticalText: z.ZodOptional<z.ZodBoolean>;
         value: z.ZodOptional<z.ZodString>;
         maxLines: z.ZodOptional<z.ZodNumber>;
         rotation: z.ZodDefault<z.ZodNumber>;
@@ -372,7 +429,16 @@ export declare const directCanvasSchema: z.ZodObject<{
         x: z.ZodNumber;
         y: z.ZodNumber;
         width: z.ZodOptional<z.ZodNumber>;
+        height: z.ZodOptional<z.ZodNumber>;
         fontSize: z.ZodNumber;
+        fontFamily: z.ZodOptional<z.ZodEnum<{
+            "system-sans": "system-sans";
+            "system-serif": "system-serif";
+            "system-mono": "system-mono";
+            arial: "arial";
+            "noto-sans-sc": "noto-sans-sc";
+        }>>;
+        lineHeight: z.ZodOptional<z.ZodNumber>;
         fontWeight: z.ZodDefault<z.ZodEnum<{
             normal: "normal";
             bold: "bold";
@@ -381,7 +447,17 @@ export declare const directCanvasSchema: z.ZodObject<{
             left: "left";
             center: "center";
             right: "right";
+            justify: "justify";
         }>>;
+        verticalAlign: z.ZodOptional<z.ZodEnum<{
+            top: "top";
+            middle: "middle";
+            bottom: "bottom";
+        }>>;
+        stretchX: z.ZodOptional<z.ZodBoolean>;
+        stretchY: z.ZodOptional<z.ZodBoolean>;
+        autoWrap: z.ZodOptional<z.ZodBoolean>;
+        verticalText: z.ZodOptional<z.ZodBoolean>;
         value: z.ZodOptional<z.ZodString>;
         maxLines: z.ZodOptional<z.ZodNumber>;
         rotation: z.ZodDefault<z.ZodNumber>;
@@ -670,7 +746,16 @@ export declare const directCanvasPreviewRequestSchema: z.ZodObject<{
             x: z.ZodNumber;
             y: z.ZodNumber;
             width: z.ZodOptional<z.ZodNumber>;
+            height: z.ZodOptional<z.ZodNumber>;
             fontSize: z.ZodNumber;
+            fontFamily: z.ZodOptional<z.ZodEnum<{
+                "system-sans": "system-sans";
+                "system-serif": "system-serif";
+                "system-mono": "system-mono";
+                arial: "arial";
+                "noto-sans-sc": "noto-sans-sc";
+            }>>;
+            lineHeight: z.ZodOptional<z.ZodNumber>;
             fontWeight: z.ZodDefault<z.ZodEnum<{
                 normal: "normal";
                 bold: "bold";
@@ -679,7 +764,17 @@ export declare const directCanvasPreviewRequestSchema: z.ZodObject<{
                 left: "left";
                 center: "center";
                 right: "right";
+                justify: "justify";
             }>>;
+            verticalAlign: z.ZodOptional<z.ZodEnum<{
+                top: "top";
+                middle: "middle";
+                bottom: "bottom";
+            }>>;
+            stretchX: z.ZodOptional<z.ZodBoolean>;
+            stretchY: z.ZodOptional<z.ZodBoolean>;
+            autoWrap: z.ZodOptional<z.ZodBoolean>;
+            verticalText: z.ZodOptional<z.ZodBoolean>;
             value: z.ZodOptional<z.ZodString>;
             maxLines: z.ZodOptional<z.ZodNumber>;
             rotation: z.ZodDefault<z.ZodNumber>;
@@ -802,7 +897,16 @@ export declare const printCanvasRequestSchema: z.ZodObject<{
             x: z.ZodNumber;
             y: z.ZodNumber;
             width: z.ZodOptional<z.ZodNumber>;
+            height: z.ZodOptional<z.ZodNumber>;
             fontSize: z.ZodNumber;
+            fontFamily: z.ZodOptional<z.ZodEnum<{
+                "system-sans": "system-sans";
+                "system-serif": "system-serif";
+                "system-mono": "system-mono";
+                arial: "arial";
+                "noto-sans-sc": "noto-sans-sc";
+            }>>;
+            lineHeight: z.ZodOptional<z.ZodNumber>;
             fontWeight: z.ZodDefault<z.ZodEnum<{
                 normal: "normal";
                 bold: "bold";
@@ -811,7 +915,17 @@ export declare const printCanvasRequestSchema: z.ZodObject<{
                 left: "left";
                 center: "center";
                 right: "right";
+                justify: "justify";
             }>>;
+            verticalAlign: z.ZodOptional<z.ZodEnum<{
+                top: "top";
+                middle: "middle";
+                bottom: "bottom";
+            }>>;
+            stretchX: z.ZodOptional<z.ZodBoolean>;
+            stretchY: z.ZodOptional<z.ZodBoolean>;
+            autoWrap: z.ZodOptional<z.ZodBoolean>;
+            verticalText: z.ZodOptional<z.ZodBoolean>;
             value: z.ZodOptional<z.ZodString>;
             maxLines: z.ZodOptional<z.ZodNumber>;
             rotation: z.ZodDefault<z.ZodNumber>;
