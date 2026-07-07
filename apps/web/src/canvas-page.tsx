@@ -1591,6 +1591,55 @@ function TextInlineEditor({
   const width = Math.max(element.width * scale, 1)
   const height = Math.max(element.height * scale, 1)
   const rotation = element.rotation ?? 0
+  const layout = resolveTextLayout({
+    text: value,
+    fontSize: element.fontSize,
+    width: element.width,
+    height: element.height,
+    lineHeight: element.lineHeight,
+    align: element.align,
+    maxLines: element.maxLines,
+    verticalAlign: element.verticalAlign,
+    stretchX: element.stretchX,
+    stretchY: element.stretchY,
+    autoWrap: element.autoWrap,
+    verticalText: element.verticalText,
+  })
+  const usesCustomTextLayout = element.align === "justify" || element.verticalText
+  const contentWidth = Math.max(layout.contentWidth, element.fontSize)
+  const contentHeight = Math.max(layout.contentHeight, element.fontSize)
+  const stretchScaleX = element.stretchX ? element.width / Math.max(contentWidth, 0.0001) : 1
+  const stretchScaleY = element.stretchY ? element.height / Math.max(contentHeight, 0.0001) : 1
+  const contentX = usesCustomTextLayout
+    ? layout.contentX
+    : element.stretchX
+      ? 0
+      : alignOffset(
+          element.width,
+          contentWidth,
+          element.align === "center" ? "middle" : element.align === "right" ? "end" : "start"
+        )
+  const contentY = element.verticalText
+    ? layout.contentY
+    : element.stretchY
+      ? 0
+      : alignOffset(
+          element.height,
+          contentHeight,
+          element.verticalAlign === "middle"
+            ? "middle"
+            : element.verticalAlign === "bottom"
+              ? "end"
+              : "start"
+        )
+  const editorX = contentX * scale
+  const editorY = (contentY + layout.textOffsetY) * scale
+  const editorWidth = Math.max(contentWidth * scale, 1)
+  const editorHeight = Math.max((element.height - contentY) * scale, element.fontSize * scale)
+  const editorTransform =
+    stretchScaleX !== 1 || stretchScaleY !== 1
+      ? `scale(${stretchScaleX}, ${stretchScaleY})`
+      : undefined
 
   React.useEffect(() => {
     const textarea = textareaRef.current
@@ -1625,6 +1674,7 @@ function TextInlineEditor({
         top: viewport.y + element.y * scale,
         width,
         height,
+        overflow: "hidden",
         transform: rotation ? `rotate(${rotation}deg)` : undefined,
         transformOrigin: "center center",
       }}
@@ -1634,17 +1684,26 @@ function TextInlineEditor({
         aria-label="画布文本内联编辑"
         value={value}
         wrap={element.autoWrap ? "soft" : "off"}
-        className="tm-selectable-text h-full min-h-0 resize-none overflow-hidden rounded-none border-primary/70 bg-white/96 p-0 shadow-none"
+        className="tm-selectable-text absolute min-h-0 resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 text-black shadow-none outline-none transition-none focus-visible:ring-0"
         style={{
+          left: editorX,
+          top: editorY,
+          width: editorWidth,
+          height: editorHeight,
           fontFamily: getTextFontFamilyStack(element.fontFamily),
           fontSize: `${Math.max(8, element.fontSize * scale)}px`,
+          fontWeight: element.fontWeight,
           lineHeight: getCanvasTextLineHeight(element.lineHeight),
-          height: "100%",
           minHeight: 0,
           boxSizing: "border-box",
-          textAlign: element.align,
+          color: MONO_INK,
+          caretColor: MONO_INK,
+          textAlign: element.align === "justify" ? "left" : element.align,
           whiteSpace: element.autoWrap ? "pre-wrap" : "pre",
           writingMode: element.verticalText ? "vertical-rl" : "horizontal-tb",
+          transform: editorTransform,
+          transformOrigin: "top left",
+          boxShadow: "0 0 0 1px rgba(29, 155, 240, 0.42)",
         }}
         onChange={(event) => setValue(event.currentTarget.value)}
         onBlur={commit}
