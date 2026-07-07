@@ -244,9 +244,13 @@ function estimateTextWidth(
     element.fontSize,
     element.width,
     element.maxLines,
-    element.autoWrap ?? true
+    element.autoWrap ?? true,
+    element.fontFamily
   )
-  return Math.max(...lines.map((line) => estimateTextLineWidth(line, element.fontSize)), 0.0001)
+  return Math.max(
+    ...lines.map((line) => estimateTextLineWidth(line, element.fontSize, element.fontFamily)),
+    0.0001
+  )
 }
 
 function estimateTextHeight(
@@ -263,6 +267,8 @@ function estimateTextHeight(
     width: element.width ?? estimateTextWidth(element, fieldDefaults),
     height: getTextNaturalHeight(element.fontSize, 1, element.lineHeight),
     lineHeight: element.lineHeight,
+    fontFamily: element.fontFamily,
+    fontWeight: element.fontWeight,
     align: element.align,
     maxLines: element.maxLines,
     verticalAlign: element.verticalAlign,

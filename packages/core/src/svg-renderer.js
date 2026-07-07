@@ -21,10 +21,10 @@ export function escapeXml(value) {
 function renderTextElement(element, input) {
     const resolved = element.value ?? input[element.key] ?? "";
     const hasExplicitWidth = element.width !== undefined;
-    const legacyLines = wrapTextByWidth(resolved, element.fontSize, element.width, element.maxLines, element.autoWrap ?? true);
-    const width = element.width ?? Math.max(...legacyLines.map((line) => estimateTextLineWidth(line, element.fontSize)), 0.0001);
+    const legacyLines = wrapTextByWidth(resolved, element.fontSize, element.width, element.maxLines, element.autoWrap ?? true, element.fontFamily);
+    const width = element.width ?? Math.max(...legacyLines.map((line) => estimateTextLineWidth(line, element.fontSize, element.fontFamily)), 0.0001);
     const legacyLineCount = Math.max(hasExplicitWidth
-        ? wrapTextByWidth(resolved, element.fontSize, width, element.maxLines, element.autoWrap ?? true).length
+        ? wrapTextByWidth(resolved, element.fontSize, width, element.maxLines, element.autoWrap ?? true, element.fontFamily).length
         : legacyLines.length, 1);
     const height = element.height ?? getTextNaturalHeight(element.fontSize, legacyLineCount, element.lineHeight);
     const containerX = (() => {
@@ -46,6 +46,8 @@ function renderTextElement(element, input) {
         width,
         height,
         lineHeight: element.lineHeight,
+        fontFamily: element.fontFamily,
+        fontWeight: element.fontWeight,
         align: element.align,
         maxLines: element.maxLines,
         verticalAlign: element.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN,

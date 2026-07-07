@@ -28,6 +28,7 @@ export type {
   TextFontFamily,
   TextHorizontalAlign,
   TextLayout,
+  TextMeasureFunction,
   TextVerticalAlign,
 } from "./text-layout.js"
 export {

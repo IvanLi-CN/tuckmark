@@ -53,6 +53,7 @@ import {
   stableStringify,
   type TextFontFamily,
   type TextHorizontalAlign,
+  type TextMeasureFunction,
   type TextVerticalAlign,
   textFontFamilies,
 } from "../../../packages/core/src/web.js"
@@ -321,6 +322,7 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
   if (
     scenario === "draft-restore" ||
     scenario === "text-selected" ||
+    scenario === "text-font-metrics" ||
     scenario === "barcode-invalid" ||
     scenario === "rect-selected" ||
     scenario === "circle-selected" ||
@@ -345,6 +347,7 @@ function shouldUseScenarioDraft(scenario: CanvasStoryScenario): boolean {
   return (
     scenario === "draft-restore" ||
     scenario === "text-selected" ||
+    scenario === "text-font-metrics" ||
     scenario === "barcode-invalid" ||
     scenario === "rect-selected" ||
     scenario === "circle-selected" ||
@@ -399,7 +402,11 @@ function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryS
     const barcode = draft.elements.find((element) => element.kind === "barcode")
     return barcode ? [barcode.id] : []
   }
-  if (scenario === "text-selected" || scenario === "draft-restore") {
+  if (
+    scenario === "text-selected" ||
+    scenario === "text-font-metrics" ||
+    scenario === "draft-restore"
+  ) {
     const text = draft.elements.find((element) => element.kind === "text")
     return text ? [text.id] : []
   }
@@ -3067,6 +3074,31 @@ function alignOffset(
   }
 }
 
+let textMeasureContext: CanvasRenderingContext2D | null | undefined
+
+const measureCanvasTextLine: TextMeasureFunction = ({ text, fontSize, fontFamily, fontWeight }) => {
+  if (typeof document === "undefined") {
+    return undefined
+  }
+  if (textMeasureContext === undefined) {
+    textMeasureContext = document.createElement("canvas").getContext("2d")
+  }
+  if (!textMeasureContext) {
+    return undefined
+  }
+  textMeasureContext.font = `${fontWeight === "bold" ? "bold" : "normal"} normal ${fontSize}px ${getTextFontFamilyStack(fontFamily)}`
+  const metrics = textMeasureContext.measureText(text)
+  return {
+    width: metrics.width,
+    actualBoundingBoxAscent: metrics.actualBoundingBoxAscent,
+    actualBoundingBoxDescent: metrics.actualBoundingBoxDescent,
+    actualBoundingBoxLeft: metrics.actualBoundingBoxLeft,
+    actualBoundingBoxRight: metrics.actualBoundingBoxRight,
+    fontBoundingBoxAscent: metrics.fontBoundingBoxAscent,
+    fontBoundingBoxDescent: metrics.fontBoundingBoxDescent,
+  }
+}
+
 function CanvasTextElementNode({
   element,
 }: {
@@ -3079,6 +3111,8 @@ function CanvasTextElementNode({
     width: element.width,
     height: element.height,
     lineHeight: element.lineHeight,
+    fontFamily: element.fontFamily,
+    fontWeight: element.fontWeight,
     align: element.align,
     maxLines: element.maxLines,
     verticalAlign: element.verticalAlign,
@@ -3086,8 +3120,8 @@ function CanvasTextElementNode({
     stretchY: element.stretchY,
     autoWrap: element.autoWrap,
     verticalText: element.verticalText,
+    measureText: measureCanvasTextLine,
   })
-  const renderedText = layout.lines.join("\n")
   const usesCustomTextLayout = element.align === "justify" || element.verticalText
   const contentWidth = layout.contentWidth
   const contentHeight = layout.contentHeight
@@ -3115,7 +3149,6 @@ function CanvasTextElementNode({
               ? "end"
               : "start"
         )
-  const textX = 0
   const textY = layout.textOffsetY
   const visibleContentLeft = clamp(contentX, 0, element.width)
   const visibleContentTop = clamp(contentY, 0, element.height)
@@ -3138,55 +3171,39 @@ function CanvasTextElementNode({
         />
       ) : null}
       <Group x={contentX} y={contentY} scaleX={scaleX} scaleY={scaleY}>
-        {element.verticalText ? (
-          layout.glyphs.map((glyph) => (
-            <KonvaText
-              key={`${glyph.x}-${glyph.y}-${glyph.text}`}
-              x={glyph.x - element.fontSize / 2}
-              y={glyph.y + textY}
-              width={element.fontSize}
-              text={glyph.text}
-              fontSize={element.fontSize}
-              fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
-              fontFamily={getTextFontFamilyStack(element.fontFamily)}
-              wrap="none"
-              align="center"
-              fill={MONO_INK}
-            />
-          ))
-        ) : element.align === "justify" ? (
-          layout.lineLayouts.map((line, index) => (
-            <KonvaText
-              key={`${line.x}-${line.y}-${line.text}`}
-              ref={index === 0 ? textRef : undefined}
-              x={line.x}
-              y={index * layout.lineHeight + textY}
-              text={line.text}
-              fontSize={element.fontSize}
-              fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
-              fontFamily={getTextFontFamilyStack(element.fontFamily)}
-              lineHeight={getCanvasTextLineHeight(element.lineHeight)}
-              letterSpacing={line.letterSpacing}
-              wrap="none"
-              align="left"
-              fill={MONO_INK}
-            />
-          ))
-        ) : (
-          <KonvaText
-            ref={textRef}
-            x={textX}
-            y={textY}
-            text={renderedText}
-            fontSize={element.fontSize}
-            fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
-            fontFamily={getTextFontFamilyStack(element.fontFamily)}
-            lineHeight={getCanvasTextLineHeight(element.lineHeight)}
-            wrap="none"
-            align="left"
-            fill={MONO_INK}
-          />
-        )}
+        {element.verticalText
+          ? layout.glyphs.map((glyph) => (
+              <KonvaText
+                key={`${glyph.x}-${glyph.y}-${glyph.text}`}
+                x={glyph.x - element.fontSize / 2}
+                y={glyph.y + textY}
+                width={element.fontSize}
+                text={glyph.text}
+                fontSize={element.fontSize}
+                fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
+                fontFamily={getTextFontFamilyStack(element.fontFamily)}
+                wrap="none"
+                align="center"
+                fill={MONO_INK}
+              />
+            ))
+          : layout.lineLayouts.map((line, index) => (
+              <KonvaText
+                key={`${line.x}-${line.y}-${line.text}`}
+                ref={index === 0 ? textRef : undefined}
+                x={line.x}
+                y={index * layout.lineHeight + textY}
+                text={line.text}
+                fontSize={element.fontSize}
+                fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
+                fontFamily={getTextFontFamilyStack(element.fontFamily)}
+                lineHeight={getCanvasTextLineHeight(element.lineHeight)}
+                letterSpacing={element.align === "justify" ? line.letterSpacing : 0}
+                wrap="none"
+                align="left"
+                fill={MONO_INK}
+              />
+            ))}
       </Group>
     </Group>
   )

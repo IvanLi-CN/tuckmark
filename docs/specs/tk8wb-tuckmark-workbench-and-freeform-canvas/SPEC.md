@@ -557,6 +557,11 @@ output.
   PR: include
   ![Canvas text rotation controls](./assets/canvas-text-rotation-integer-buttons.png)
 
+- `1280×800` canvas workspace text BBOX font metrics state showing identical
+  `20kΩ` text rendered with system sans and system mono font metrics.
+
+  ![Canvas text BBOX font metrics](./assets/canvas-text-bbox-font-metrics-1280x800.png)
+
 - `1280×800` canvas workspace on a browser-local user template with the version-history drawer open and saved/autosave history visible
 
   PR: include

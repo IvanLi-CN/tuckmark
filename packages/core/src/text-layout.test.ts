@@ -72,6 +72,65 @@ describe("text layout", () => {
     expect(layout.lines).toEqual(["Koha ACC"])
   })
 
+  it("measures natural bbox width differently for different font families", () => {
+    const sansLayout = resolveTextLayout({
+      text: "20kΩ",
+      fontSize: 8.9,
+      width: 60,
+      height: 20,
+      lineHeight: 1.2,
+      fontFamily: "system-sans",
+    })
+    const monoLayout = resolveTextLayout({
+      text: "20kΩ",
+      fontSize: 8.9,
+      width: 60,
+      height: 20,
+      lineHeight: 1.2,
+      fontFamily: "system-mono",
+    })
+
+    expect(monoLayout.naturalWidth).toBeGreaterThan(sansLayout.naturalWidth)
+  })
+
+  it("uses measured ink bounds for the visible text bbox", () => {
+    const layout = resolveTextLayout({
+      text: "20kΩ",
+      fontSize: 10,
+      width: 60,
+      height: 20,
+      lineHeight: 1.2,
+      fontFamily: "system-sans",
+      measureText: ({ text }) =>
+        text === "M"
+          ? {
+              width: 8,
+              actualBoundingBoxAscent: 7,
+              actualBoundingBoxDescent: 2,
+              actualBoundingBoxLeft: 0,
+              actualBoundingBoxRight: 8,
+              fontBoundingBoxAscent: 9,
+              fontBoundingBoxDescent: 3,
+            }
+          : {
+              width: 24,
+              actualBoundingBoxAscent: 7,
+              actualBoundingBoxDescent: 2,
+              actualBoundingBoxLeft: 0.5,
+              actualBoundingBoxRight: 23.5,
+              fontBoundingBoxAscent: 9,
+              fontBoundingBoxDescent: 3,
+            },
+    })
+
+    expect(layout.naturalWidth).toBe(24)
+    expect(layout.naturalHeight).toBe(9)
+    expect(layout.textOffsetX).toBe(0.5)
+    expect(layout.textOffsetY).toBe(-2)
+    expect(layout.baselineOffsetY).toBe(7)
+    expect(layout.lineLayouts[0]).toMatchObject({ x: 0.5, y: 7, width: 24 })
+  })
+
   it("wraps latin text by estimated visual width when the container is narrow", () => {
     const layout = resolveTextLayout({
       text: "Koha ACC",

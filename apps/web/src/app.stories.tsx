@@ -477,6 +477,33 @@ export const CanvasWorkspaceTextSelected: Story = {
   },
 }
 
+export const CanvasWorkspaceTextFontMetrics: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-font-metrics",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "Text BBOX comparison for identical 20kΩ labels rendered with system sans and system mono font metrics.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await canvas.findByDisplayValue("系统无衬线 BBOX")
+    await canvas.findByText("字体")
+  },
+}
+
 export const CanvasWorkspaceRectSelected: Story = {
   args: {
     context: runtimeContext,

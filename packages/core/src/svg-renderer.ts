@@ -51,11 +51,17 @@ function renderTextElement(
     element.fontSize,
     element.width,
     element.maxLines,
-    element.autoWrap ?? true
+    element.autoWrap ?? true,
+    element.fontFamily
   )
   const width =
     element.width ??
-    Math.max(...legacyLines.map((line) => estimateTextLineWidth(line, element.fontSize)), 0.0001)
+    Math.max(
+      ...legacyLines.map((line) =>
+        estimateTextLineWidth(line, element.fontSize, element.fontFamily)
+      ),
+      0.0001
+    )
   const legacyLineCount = Math.max(
     hasExplicitWidth
       ? wrapTextByWidth(
@@ -63,7 +69,8 @@ function renderTextElement(
           element.fontSize,
           width,
           element.maxLines,
-          element.autoWrap ?? true
+          element.autoWrap ?? true,
+          element.fontFamily
         ).length
       : legacyLines.length,
     1
@@ -89,6 +96,8 @@ function renderTextElement(
     width,
     height,
     lineHeight: element.lineHeight,
+    fontFamily: element.fontFamily,
+    fontWeight: element.fontWeight,
     align: element.align,
     maxLines: element.maxLines,
     verticalAlign: element.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN,

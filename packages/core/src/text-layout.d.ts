@@ -16,6 +16,8 @@ export declare const TEXT_FONT_FAMILY_STACKS: Record<TextFontFamily, string>;
 export type TextLayoutInput = {
     text: string;
     fontSize: number;
+    fontFamily?: TextFontFamily | undefined;
+    fontWeight?: "normal" | "bold" | undefined;
     width: number;
     height: number;
     lineHeight?: number | undefined;
@@ -26,7 +28,24 @@ export type TextLayoutInput = {
     stretchY?: boolean | undefined;
     autoWrap?: boolean | undefined;
     verticalText?: boolean | undefined;
+    measureText?: TextMeasureFunction | undefined;
 };
+export type TextMeasureInput = {
+    text: string;
+    fontSize: number;
+    fontFamily?: TextFontFamily | undefined;
+    fontWeight?: "normal" | "bold" | undefined;
+};
+export type TextMeasurement = {
+    width: number;
+    actualBoundingBoxAscent?: number | undefined;
+    actualBoundingBoxDescent?: number | undefined;
+    actualBoundingBoxLeft?: number | undefined;
+    actualBoundingBoxRight?: number | undefined;
+    fontBoundingBoxAscent?: number | undefined;
+    fontBoundingBoxDescent?: number | undefined;
+};
+export type TextMeasureFunction = (input: TextMeasureInput) => TextMeasurement | undefined;
 export type TextLayoutLine = {
     text: string;
     x: number;
@@ -52,15 +71,16 @@ export type TextLayout = {
     contentY: number;
     contentWidth: number;
     contentHeight: number;
+    textOffsetX: number;
     textOffsetY: number;
     baselineOffsetY: number;
     scaleX: number;
     scaleY: number;
 };
 export declare function wrapText(text: string, maxCharsPerLine: number, maxLines?: number): string[];
-export declare function wrapTextByWidth(text: string, fontSize: number, width?: number, maxLines?: number, autoWrap?: boolean): string[];
-export declare function estimateCharsPerLine(fontSize: number, width?: number): number;
-export declare function estimateTextLineWidth(line: string, fontSize: number): number;
+export declare function wrapTextByWidth(text: string, fontSize: number, width?: number, maxLines?: number, autoWrap?: boolean, fontFamily?: TextFontFamily, measureText?: TextMeasureFunction, fontWeight?: "normal" | "bold"): string[];
+export declare function estimateCharsPerLine(fontSize: number, width?: number, fontFamily?: TextFontFamily): number;
+export declare function estimateTextLineWidth(line: string, fontSize: number, fontFamily?: TextFontFamily): number;
 export declare function normalizeTextLineHeight(lineHeight?: number): number;
 export declare function getTextNaturalHeight(fontSize: number, lineCount: number, lineHeight?: number): number;
 export declare function getTextFontFamilyStack(fontFamily?: TextFontFamily): string;
