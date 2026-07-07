@@ -1703,7 +1703,6 @@ function TextInlineEditor({
           writingMode: element.verticalText ? "vertical-rl" : "horizontal-tb",
           transform: editorTransform,
           transformOrigin: "top left",
-          boxShadow: "0 0 0 1px rgba(29, 155, 240, 0.42)",
         }}
         onChange={(event) => setValue(event.currentTarget.value)}
         onBlur={commit}
@@ -3663,6 +3662,17 @@ function CanvasStageView({
     : TRANSFORMER_ALL_ANCHORS
   const transformerKeepRatio = isSquareResizeElement(selectedSingleElement)
   const transformerCanRotate = transformerEnabled && selectedSingleElement?.kind !== "circle"
+  const editingTextElement = React.useMemo(
+    () =>
+      state.editingId
+        ? (state.draft.elements.find(
+            (item): item is Extract<CanvasDraftElement, { kind: "text" }> =>
+              item.id === state.editingId && item.kind === "text" && item.meta.visible
+          ) ?? null)
+        : null,
+    [state.draft.elements, state.editingId]
+  )
+  const editingTextGeometry = editingTextElement ? getElementGeometry(editingTextElement) : null
 
   React.useEffect(() => {
     onViewportSizeChange(stageViewportSize)
@@ -4072,6 +4082,23 @@ function CanvasStageView({
                 )
               })}
 
+              {editingTextElement && editingTextGeometry ? (
+                <KonvaRect
+                  x={editingTextGeometry.stagePosition.x}
+                  y={editingTextGeometry.stagePosition.y}
+                  offsetX={editingTextGeometry.rotationOrigin.x}
+                  offsetY={editingTextGeometry.rotationOrigin.y}
+                  rotation={editingTextElement.rotation ?? 0}
+                  width={editingTextGeometry.localBounds.width}
+                  height={editingTextGeometry.localBounds.height}
+                  stroke="#1d9bf0"
+                  strokeWidth={1}
+                  strokeScaleEnabled={false}
+                  dash={[5, 3]}
+                  listening={false}
+                />
+              ) : null}
+
               {selectedLineElement?.meta.visible
                 ? (
                     [
@@ -4200,24 +4227,20 @@ function CanvasStageView({
 
         {state.editingId && hasVisibleTextSelection(state)
           ? (() => {
-              const element = state.draft.elements.find(
-                (item): item is Extract<CanvasDraftElement, { kind: "text" }> =>
-                  item.id === state.editingId && item.kind === "text"
-              )
-              return element ? (
+              return editingTextElement ? (
                 <TextInlineEditor
-                  element={element}
+                  element={editingTextElement}
                   viewport={state.viewport}
                   onCommit={(value) =>
                     onChange((current) => {
-                      if (value === element.value) {
+                      if (value === editingTextElement.value) {
                         return {
                           ...current,
                           editingId: null,
                         }
                       }
                       const next = applyDraftUpdate(current, (draft) =>
-                        updateBoundElementValue(draft, element.id, value)
+                        updateBoundElementValue(draft, editingTextElement.id, value)
                       )
                       return {
                         ...next,
