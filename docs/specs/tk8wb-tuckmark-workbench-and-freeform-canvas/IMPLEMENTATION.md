@@ -76,6 +76,13 @@
   - wheel zoom relative to pointer
   - `Space + drag` pan
   - keyboard move, duplicate, delete, undo, redo, and clear selection
+- Canvas snapping now resolves through the persistent `snapEnabled` editor flag
+  across drag end, transformer commit, line endpoint adjustment, and keyboard
+  movement.
+- Transformer commits snap final geometry to the existing `1mm` grid for
+  text, rectangle, triangle, barcode, QR, circle, and line elements. Rotation
+  remains freeform, and text transforms continue to preserve saved font size
+  while snapping the text box bounds.
 - Marquee selection overlay is now projected into stage space rather than
   rendered inside the scaled content group, so its dashed border stays `1
   logical px` across zoom levels while the stored selection box and inclusion

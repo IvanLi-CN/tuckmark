@@ -38,6 +38,10 @@ while the workbench was being productized:
 - The canvas editor was later tightened again around the actual printer
   capability boundary:
   - printable label content is monochrome-only
+  - snap-to-grid was unified across drag, transformer handles, line endpoints,
+    and keyboard movement so handle-based editing no longer bypasses the grid
+  - snap remains controlled only by the persistent toolbar preference so
+    operating-system modifier shortcuts do not conflict with canvas editing
   - warm brand accents remain editor chrome only and do not bleed into canvas
     content or restored drafts
 - The editor shell was then distilled again to remove demo-like noise:

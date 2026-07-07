@@ -235,11 +235,20 @@ output.
   - Shift multi-selection
   - marquee selection
   - drag move
+  - drag-end snap-to-grid when `snapEnabled` is active
   - wheel zoom relative to pointer
   - `Space + drag` stage pan
   - `fit to view`
-  - transformer-based resize / rotation
+  - transformer-based resize / rotation with final geometry snapped on
+    transform commit when `snapEnabled` is active
   - `Delete`, `Duplicate`, `Undo`, `Redo`, and `Escape`
+- Transformer snapping is commit-time only: handles may move freely while being
+  adjusted, then position and snap-compatible dimensions land on the existing
+  `1mm` grid at release. Rotation is not snapped, and text resizing preserves
+  the saved font-size semantics while snapping the text box position and
+  dimensions.
+- The snap toolbar button controls and reports the persistent `snapEnabled`
+  flag. No keyboard modifier temporarily overrides snapping.
 - Text elements support double-click inline editing on the stage.
 - Text inspector controls expose:
   - numeric font size
@@ -596,3 +605,9 @@ output.
   width and height displayed in millimeters.
 
   ![Free canvas workspace narrow](./assets/free-canvas-workspace-narrow-20260704.png)
+
+- `1280×800` canvas workspace Storybook state with persistent snapping enabled
+  and the snap toolbar button reporting effective snapping as active.
+
+  PR: include
+  ![Canvas snap enabled](./assets/canvas-snap-enabled-1280x800.png)

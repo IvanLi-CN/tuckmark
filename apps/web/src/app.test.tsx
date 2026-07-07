@@ -12,9 +12,10 @@ import {
   getPresetById,
   toggleElementBinding,
 } from "./canvas-editor-model.js"
+import { snapTransformedElementGeometry } from "./canvas-page.js"
 import { buildInputFromTemplate, fallbackTemplates } from "./demo-data.js"
 import { loadRecentActivity } from "./lib/recent-activity.js"
-import type { AppContext, PreviewArtifact } from "./types.js"
+import type { AppContext, CanvasDraftElement, PreviewArtifact } from "./types.js"
 import {
   loadWorkingCopy,
   readUserTemplateHistory,
@@ -286,6 +287,10 @@ function createMatchMediaResult(query: string): MediaQueryList {
 
 function createFakeIndexedDb(): IDBFactory {
   const databases = new Map<string, Map<string, Map<string, unknown>>>()
+  const databaseIndexMaps = new Map<
+    string,
+    Map<string, Map<string, { keyPath: string | string[]; unique: boolean }>>
+  >()
 
   function createDomStringList(values: string[]): DOMStringList {
     return {
@@ -323,6 +328,7 @@ function createFakeIndexedDb(): IDBFactory {
     databases: async () => [],
     deleteDatabase(name: string) {
       databases.delete(name)
+      databaseIndexMaps.delete(name)
       const request = createRequest<undefined>() as unknown as {
         readyState: IDBRequestReadyState
         onsuccess: IDBRequest<undefined>["onsuccess"]
@@ -341,10 +347,9 @@ function createFakeIndexedDb(): IDBFactory {
       queueMicrotask(() => {
         const existing = databases.get(name)
         const stores = existing ?? new Map<string, Map<string, unknown>>()
-        const objectStoreIndexMaps = new Map<
-          string,
-          Map<string, { keyPath: string | string[]; unique: boolean }>
-        >()
+        const objectStoreIndexMaps =
+          databaseIndexMaps.get(name) ??
+          new Map<string, Map<string, { keyPath: string | string[]; unique: boolean }>>()
         const database = {
           close() {},
           createObjectStore(storeName: string) {
@@ -572,6 +577,7 @@ function createFakeIndexedDb(): IDBFactory {
         request.result = database
         if (!existing) {
           databases.set(name, stores)
+          databaseIndexMaps.set(name, objectStoreIndexMaps)
           request.onupgradeneeded?.(new Event("upgradeneeded") as IDBVersionChangeEvent)
         }
         request.readyState = "done"
@@ -1747,6 +1753,64 @@ describe("web workbench app", () => {
     })
     expect(workingCopy?.draft.editor.gridEnabled).toBe(false)
     expect(workingCopy?.draft.editor.snapEnabled).toBe(false)
+  })
+
+  it("snaps transformed element geometry to the canvas grid without changing rotation or text size", () => {
+    const rect: CanvasDraftElement = {
+      id: "rect-1",
+      kind: "rect",
+      x: 3.7,
+      y: 6.2,
+      width: 28.9,
+      height: 10.9,
+      strokeWidth: 0.25,
+      fill: "none",
+      stroke: "#111111",
+      radius: 20,
+      rotation: 17,
+      meta: { name: "Rect", visible: true, locked: false },
+    }
+
+    expect(snapTransformedElementGeometry(rect, true)).toMatchObject({
+      x: 4,
+      y: 6,
+      width: 29,
+      height: 11,
+      radius: 5.5,
+      rotation: 17,
+    })
+
+    const text: CanvasDraftElement = {
+      id: "text-1",
+      kind: "text",
+      x: 1.4,
+      y: 2.6,
+      width: 24.1,
+      height: 11.9,
+      fontSize: 4.4,
+      fontFamily: "system-sans",
+      lineHeight: 1.2,
+      fontWeight: "bold",
+      align: "left",
+      verticalAlign: "top",
+      stretchX: false,
+      stretchY: false,
+      autoWrap: true,
+      verticalText: false,
+      value: "20kΩ",
+      rotation: 13,
+      meta: { name: "Text", visible: true, locked: false },
+    }
+
+    expect(snapTransformedElementGeometry(text, true)).toMatchObject({
+      x: 1,
+      y: 3,
+      width: 24,
+      height: 12,
+      fontSize: 4.4,
+      rotation: 13,
+    })
+    expect(snapTransformedElementGeometry(text, false)).toEqual(text)
   })
 
   it("keeps a restored saved version as the current working copy after reopening", async () => {
