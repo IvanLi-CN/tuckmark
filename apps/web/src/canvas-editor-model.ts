@@ -1647,7 +1647,11 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
     return document
   }
 
-  if (scenario === "text-selected" || scenario === "text-font-metrics") {
+  if (
+    scenario === "text-selected" ||
+    scenario === "text-font-metrics" ||
+    scenario === "text-justify-selected"
+  ) {
     const document = createDraftFromPreset(getPresetById("ops-tag"))
     const selectedText = document.elements.find((element) => element.kind === "text")
     if (!selectedText) {
@@ -1698,21 +1702,21 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
         element.id === selectedText.id && element.kind === "text"
           ? {
               ...element,
-              x: 4,
-              y: 4,
-              value: "20kΩ\n3333",
-              width: 26,
-              height: 14,
-              fontSize: 5,
+              x: scenario === "text-justify-selected" ? 4.5 : 4,
+              y: scenario === "text-justify-selected" ? 6.5 : 4,
+              value: scenario === "text-justify-selected" ? "可编辑文本" : "20kΩ\n3333",
+              width: scenario === "text-justify-selected" ? 22.5 : 26,
+              height: scenario === "text-justify-selected" ? 6.6 : 14,
+              fontSize: scenario === "text-justify-selected" ? 3 : 5,
               fontFamily: "system-sans",
               lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
-              align: "left",
+              align: scenario === "text-justify-selected" ? "justify" : "left",
               verticalAlign: "top",
               stretchX: false,
               stretchY: false,
               autoWrap: true,
               verticalText: false,
-              maxLines: 2,
+              maxLines: scenario === "text-justify-selected" ? 1 : 2,
               meta: { ...element.meta, name: "文本 2" },
             }
           : element
@@ -1787,6 +1791,8 @@ export type CanvasStoryScenario =
   | "marquee-selection"
   | "text-selected"
   | "text-font-metrics"
+  | "text-justify-selected"
+  | "text-ready"
   | "rect-selected"
   | "circle-selected"
   | "triangle-selected"

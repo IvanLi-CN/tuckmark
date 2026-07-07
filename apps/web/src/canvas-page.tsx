@@ -206,6 +206,7 @@ const LINE_ENDPOINT_HANDLE_RADIUS = 0.42
 const LINE_ENDPOINT_HIT_RADIUS = 0.78
 const MONO_INK = "#111111"
 const MONO_SURFACE = "#ffffff"
+const INLINE_TEXT_EDITOR_SELECTOR = "textarea[data-tm-inline-text-editor='true']"
 const CANVAS_DEFAULT_TEXT_FONT_FAMILY = getTextFontFamilyStack(DEFAULT_TEXT_FONT_FAMILY)
 const TEXT_FONT_FAMILY_LABELS: Record<TextFontFamily, string> = {
   "system-sans": "系统无衬线",
@@ -294,6 +295,54 @@ function hasVisibleTextSelection(state: CanvasPageState) {
   )
 }
 
+function rotateCanvasPoint(
+  point: { x: number; y: number },
+  origin: { x: number; y: number },
+  rotation: number
+): { x: number; y: number } {
+  const radians = (rotation * Math.PI) / 180
+  const cos = Math.cos(radians)
+  const sin = Math.sin(radians)
+  const dx = point.x - origin.x
+  const dy = point.y - origin.y
+  return {
+    x: origin.x + dx * cos - dy * sin,
+    y: origin.y + dx * sin + dy * cos,
+  }
+}
+
+function elementContainsDraftPoint(element: CanvasDraftElement, point: { x: number; y: number }) {
+  const geometry = getElementGeometry(element)
+  const rotation = "rotation" in element ? (element.rotation ?? 0) : 0
+  const unrotatedPoint = rotation
+    ? rotateCanvasPoint(point, geometry.stagePosition, -rotation)
+    : point
+  const localX = unrotatedPoint.x - (geometry.stagePosition.x - geometry.rotationOrigin.x)
+  const localY = unrotatedPoint.y - (geometry.stagePosition.y - geometry.rotationOrigin.y)
+  return (
+    localX >= geometry.localBounds.x &&
+    localX <= geometry.localBounds.x + geometry.localBounds.width &&
+    localY >= geometry.localBounds.y &&
+    localY <= geometry.localBounds.y + geometry.localBounds.height
+  )
+}
+
+function findEditableTextElementAtPoint(
+  draft: CanvasDraftDocument,
+  point: { x: number; y: number }
+): Extract<CanvasDraftElement, { kind: "text" }> | null {
+  for (const element of [...draft.elements].reverse()) {
+    if (!element.meta.visible) {
+      continue
+    }
+    if (!elementContainsDraftPoint(element, point)) {
+      continue
+    }
+    return element.kind === "text" && !element.meta.locked ? element : null
+  }
+  return null
+}
+
 function createViewport(
   width: number,
   height: number,
@@ -323,6 +372,8 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
     scenario === "draft-restore" ||
     scenario === "text-selected" ||
     scenario === "text-font-metrics" ||
+    scenario === "text-justify-selected" ||
+    scenario === "text-ready" ||
     scenario === "barcode-invalid" ||
     scenario === "rect-selected" ||
     scenario === "circle-selected" ||
@@ -348,6 +399,8 @@ function shouldUseScenarioDraft(scenario: CanvasStoryScenario): boolean {
     scenario === "draft-restore" ||
     scenario === "text-selected" ||
     scenario === "text-font-metrics" ||
+    scenario === "text-justify-selected" ||
+    scenario === "text-ready" ||
     scenario === "barcode-invalid" ||
     scenario === "rect-selected" ||
     scenario === "circle-selected" ||
@@ -405,6 +458,8 @@ function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryS
   if (
     scenario === "text-selected" ||
     scenario === "text-font-metrics" ||
+    scenario === "text-justify-selected" ||
+    scenario === "text-ready" ||
     scenario === "draft-restore"
   ) {
     const text = draft.elements.find((element) => element.kind === "text")
@@ -484,7 +539,9 @@ function createCanvasState(
             : "",
     }),
     editingId:
-      scenario === "text-selected" ? (getScenarioSelection(draft, scenario)[0] ?? null) : null,
+      scenario === "text-selected" || scenario === "text-justify-selected"
+        ? (getScenarioSelection(draft, scenario)[0] ?? null)
+        : null,
   }
 }
 
@@ -590,6 +647,26 @@ function clampRectRadius(radius: number, width: number, height: number) {
 
 function isSquareResizeElement(element: CanvasDraftElement | null) {
   return element?.kind === "qr" || element?.kind === "circle"
+}
+
+function blurActiveInlineTextEditor() {
+  if (typeof document === "undefined") {
+    return false
+  }
+  const activeElement = document.activeElement
+  if (
+    activeElement instanceof HTMLTextAreaElement &&
+    activeElement.matches(INLINE_TEXT_EDITOR_SELECTOR)
+  ) {
+    activeElement.blur()
+    return true
+  }
+  const inlineEditor = document.querySelector<HTMLTextAreaElement>(INLINE_TEXT_EDITOR_SELECTOR)
+  if (!inlineEditor) {
+    return false
+  }
+  inlineEditor.blur()
+  return true
 }
 
 function updateLineEndpoint(
@@ -1534,48 +1611,138 @@ function TextInlineEditor({
   onCancel: () => void
 }) {
   const [value, setValue] = React.useState(element.value)
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
+  const closingRef = React.useRef(false)
   const scale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
   const width = Math.max(element.width * scale, 1)
   const height = Math.max(element.height * scale, 1)
   const rotation = element.rotation ?? 0
+  const layout = resolveTextLayout({
+    text: value,
+    fontSize: element.fontSize,
+    width: element.width,
+    height: element.height,
+    lineHeight: element.lineHeight,
+    align: element.align,
+    maxLines: element.maxLines,
+    verticalAlign: element.verticalAlign,
+    stretchX: element.stretchX,
+    stretchY: element.stretchY,
+    autoWrap: element.autoWrap,
+    verticalText: element.verticalText,
+  })
+  const usesCustomTextLayout = element.align === "justify" || element.verticalText
+  const contentWidth = Math.max(layout.contentWidth, element.fontSize)
+  const contentHeight = Math.max(layout.contentHeight, element.fontSize)
+  const stretchScaleX = element.stretchX ? element.width / Math.max(contentWidth, 0.0001) : 1
+  const stretchScaleY = element.stretchY ? element.height / Math.max(contentHeight, 0.0001) : 1
+  const contentX = usesCustomTextLayout
+    ? layout.contentX
+    : element.stretchX
+      ? 0
+      : alignOffset(
+          element.width,
+          contentWidth,
+          element.align === "center" ? "middle" : element.align === "right" ? "end" : "start"
+        )
+  const contentY = element.verticalText
+    ? layout.contentY
+    : element.stretchY
+      ? 0
+      : alignOffset(
+          element.height,
+          contentHeight,
+          element.verticalAlign === "middle"
+            ? "middle"
+            : element.verticalAlign === "bottom"
+              ? "end"
+              : "start"
+        )
+  const usesBoxWrapWidth = element.autoWrap && !element.verticalText && !element.stretchX
+  const editorX = (usesBoxWrapWidth ? 0 : contentX) * scale
+  const editorY = (contentY + layout.textOffsetY) * scale
+  const editorWidth = Math.max((usesBoxWrapWidth ? element.width : contentWidth) * scale, 1)
+  const editorHeight = Math.max((element.height - contentY) * scale, element.fontSize * scale)
+  const editorTransform =
+    stretchScaleX !== 1 || stretchScaleY !== 1
+      ? `scale(${stretchScaleX}, ${stretchScaleY})`
+      : undefined
+
+  React.useEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea) {
+      return
+    }
+    textarea.focus()
+    textarea.select()
+  }, [])
+
+  const commit = () => {
+    if (closingRef.current) {
+      return
+    }
+    closingRef.current = true
+    onCommit(value)
+  }
+
+  const cancel = () => {
+    if (closingRef.current) {
+      return
+    }
+    closingRef.current = true
+    onCancel()
+  }
 
   return (
     <div
-      className="pointer-events-auto absolute z-20"
+      className="pointer-events-auto absolute z-30"
       style={{
         left: viewport.x + element.x * scale,
         top: viewport.y + element.y * scale,
         width,
         height,
+        overflow: "hidden",
         transform: rotation ? `rotate(${rotation}deg)` : undefined,
         transformOrigin: "center center",
       }}
     >
       <Textarea
-        autoFocus
+        ref={textareaRef}
+        aria-label="画布文本内联编辑"
+        data-tm-inline-text-editor="true"
         value={value}
         wrap={element.autoWrap ? "soft" : "off"}
-        className="tm-selectable-text h-full min-h-0 resize-none overflow-hidden rounded-none border-primary/70 bg-white/96 p-0 shadow-none"
+        className="tm-selectable-text absolute min-h-0 resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 text-black shadow-none outline-none transition-none focus-visible:ring-0"
         style={{
+          left: editorX,
+          top: editorY,
+          width: editorWidth,
+          height: editorHeight,
           fontFamily: getTextFontFamilyStack(element.fontFamily),
           fontSize: `${Math.max(8, element.fontSize * scale)}px`,
+          fontWeight: element.fontWeight,
           lineHeight: getCanvasTextLineHeight(element.lineHeight),
-          height: "100%",
           minHeight: 0,
           boxSizing: "border-box",
+          color: MONO_INK,
+          caretColor: MONO_INK,
           textAlign: element.align,
+          textAlignLast: element.align === "justify" ? "justify" : "auto",
+          textJustify: element.align === "justify" ? "inter-character" : "auto",
           whiteSpace: element.autoWrap ? "pre-wrap" : "pre",
           writingMode: element.verticalText ? "vertical-rl" : "horizontal-tb",
+          transform: editorTransform,
+          transformOrigin: "top left",
         }}
         onChange={(event) => setValue(event.currentTarget.value)}
-        onBlur={() => onCommit(value)}
+        onBlur={commit}
         onKeyDown={(event) => {
           if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
             event.preventDefault()
-            onCommit(value)
+            commit()
           } else if (event.key === "Escape") {
             event.preventDefault()
-            onCancel()
+            cancel()
           }
         }}
       />
@@ -3519,12 +3686,23 @@ function CanvasStageView({
   )
   const selectedSingleElement = selectedElements.length === 1 ? selectedElements[0] : null
   const selectedLineElement = selectedSingleElement?.kind === "line" ? selectedSingleElement : null
-  const transformerEnabled = !selectedLineElement
+  const transformerEnabled = !state.editingId && !selectedLineElement
   const transformerAnchors = isSquareResizeElement(selectedSingleElement)
     ? TRANSFORMER_CORNER_ANCHORS
     : TRANSFORMER_ALL_ANCHORS
   const transformerKeepRatio = isSquareResizeElement(selectedSingleElement)
   const transformerCanRotate = transformerEnabled && selectedSingleElement?.kind !== "circle"
+  const editingTextElement = React.useMemo(
+    () =>
+      state.editingId
+        ? (state.draft.elements.find(
+            (item): item is Extract<CanvasDraftElement, { kind: "text" }> =>
+              item.id === state.editingId && item.kind === "text" && item.meta.visible
+          ) ?? null)
+        : null,
+    [state.draft.elements, state.editingId]
+  )
+  const editingTextGeometry = editingTextElement ? getElementGeometry(editingTextElement) : null
 
   React.useEffect(() => {
     onViewportSizeChange(stageViewportSize)
@@ -3554,6 +3732,9 @@ function CanvasStageView({
     }
     const stage = event.target.getStage()
     if (!stage) {
+      return
+    }
+    if (state.editingId && blurActiveInlineTextEditor()) {
       return
     }
 
@@ -3671,6 +3852,31 @@ function CanvasStageView({
     })
   }
 
+  const handleStageDoubleClick = (event: Konva.KonvaEventObject<MouseEvent>) => {
+    if (readOnly || state.editingId) {
+      return
+    }
+    const stage = event.target.getStage()
+    if (!stage) {
+      return
+    }
+    const point = getStagePointer(stage, state.viewport)
+    if (!point) {
+      return
+    }
+    const element = findEditableTextElementAtPoint(state.draft, point)
+    if (!element) {
+      return
+    }
+    onChange((current) => ({
+      ...current,
+      editingId: element.id,
+      selectedIds: [element.id],
+      focus: "center-right",
+      activePanel: "attributes",
+    }))
+  }
+
   const selectionBoxStageRect = state.selectionBox.visible
     ? projectSelectionBoxToStageRect(normalizeSelectionBox(state.selectionBox), state.viewport)
     : null
@@ -3737,6 +3943,7 @@ function CanvasStageView({
           onMouseDown={handleStageMouseDown}
           onMouseMove={handleStageMouseMove}
           onMouseUp={handleStageMouseUp}
+          onDblClick={handleStageDoubleClick}
           onWheel={(event) => {
             event.evt.preventDefault()
             const stage = event.target.getStage()
@@ -3838,7 +4045,9 @@ function CanvasStageView({
                     offsetX={geometry.rotationOrigin.x}
                     offsetY={geometry.rotationOrigin.y}
                     rotation={"rotation" in element ? (element.rotation ?? 0) : 0}
-                    draggable={!readOnly && !element.meta.locked && !state.spacePressed}
+                    draggable={
+                      !readOnly && !element.meta.locked && !state.spacePressed && !state.editingId
+                    }
                     onClick={(event) =>
                       onChange((current) => ({
                         ...setSelection(
@@ -3862,7 +4071,7 @@ function CanvasStageView({
                       }))
                     }
                     onDblClick={() =>
-                      readOnly
+                      readOnly || element.meta.locked
                         ? undefined
                         : onChange((current) => ({
                             ...current,
@@ -3899,10 +4108,29 @@ function CanvasStageView({
                       height={Math.max(bounds.height, 1)}
                       fill="rgba(255,255,255,0.001)"
                     />
-                    {renderElementNode(element)}
+                    {state.editingId === element.id && element.kind === "text"
+                      ? null
+                      : renderElementNode(element)}
                   </Group>
                 )
               })}
+
+              {editingTextElement && editingTextGeometry ? (
+                <KonvaRect
+                  x={editingTextGeometry.stagePosition.x}
+                  y={editingTextGeometry.stagePosition.y}
+                  offsetX={editingTextGeometry.rotationOrigin.x}
+                  offsetY={editingTextGeometry.rotationOrigin.y}
+                  rotation={editingTextElement.rotation ?? 0}
+                  width={editingTextGeometry.localBounds.width}
+                  height={editingTextGeometry.localBounds.height}
+                  stroke="#1d9bf0"
+                  strokeWidth={1}
+                  strokeScaleEnabled={false}
+                  dash={[5, 3]}
+                  listening={false}
+                />
+              ) : null}
 
               {selectedLineElement?.meta.visible
                 ? (
@@ -4032,18 +4260,20 @@ function CanvasStageView({
 
         {state.editingId && hasVisibleTextSelection(state)
           ? (() => {
-              const element = state.draft.elements.find(
-                (item): item is Extract<CanvasDraftElement, { kind: "text" }> =>
-                  item.id === state.editingId && item.kind === "text"
-              )
-              return element ? (
+              return editingTextElement ? (
                 <TextInlineEditor
-                  element={element}
+                  element={editingTextElement}
                   viewport={state.viewport}
                   onCommit={(value) =>
                     onChange((current) => {
+                      if (value === editingTextElement.value) {
+                        return {
+                          ...current,
+                          editingId: null,
+                        }
+                      }
                       const next = applyDraftUpdate(current, (draft) =>
-                        updateBoundElementValue(draft, element.id, value)
+                        updateBoundElementValue(draft, editingTextElement.id, value)
                       )
                       return {
                         ...next,
