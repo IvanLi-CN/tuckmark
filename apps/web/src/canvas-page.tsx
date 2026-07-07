@@ -1658,9 +1658,10 @@ function TextInlineEditor({
               ? "end"
               : "start"
         )
-  const editorX = contentX * scale
+  const usesBoxWrapWidth = element.autoWrap && !element.verticalText && !element.stretchX
+  const editorX = (usesBoxWrapWidth ? 0 : contentX) * scale
   const editorY = (contentY + layout.textOffsetY) * scale
-  const editorWidth = Math.max(contentWidth * scale, 1)
+  const editorWidth = Math.max((usesBoxWrapWidth ? element.width : contentWidth) * scale, 1)
   const editorHeight = Math.max((element.height - contentY) * scale, element.fontSize * scale)
   const editorTransform =
     stretchScaleX !== 1 || stretchScaleY !== 1
