@@ -206,6 +206,7 @@ const LINE_ENDPOINT_HANDLE_RADIUS = 0.42
 const LINE_ENDPOINT_HIT_RADIUS = 0.78
 const MONO_INK = "#111111"
 const MONO_SURFACE = "#ffffff"
+const INLINE_TEXT_EDITOR_SELECTOR = "textarea[data-tm-inline-text-editor='true']"
 const CANVAS_DEFAULT_TEXT_FONT_FAMILY = getTextFontFamilyStack(DEFAULT_TEXT_FONT_FAMILY)
 const TEXT_FONT_FAMILY_LABELS: Record<TextFontFamily, string> = {
   "system-sans": "系统无衬线",
@@ -641,6 +642,26 @@ function clampRectRadius(radius: number, width: number, height: number) {
 
 function isSquareResizeElement(element: CanvasDraftElement | null) {
   return element?.kind === "qr" || element?.kind === "circle"
+}
+
+function blurActiveInlineTextEditor() {
+  if (typeof document === "undefined") {
+    return false
+  }
+  const activeElement = document.activeElement
+  if (
+    activeElement instanceof HTMLTextAreaElement &&
+    activeElement.matches(INLINE_TEXT_EDITOR_SELECTOR)
+  ) {
+    activeElement.blur()
+    return true
+  }
+  const inlineEditor = document.querySelector<HTMLTextAreaElement>(INLINE_TEXT_EDITOR_SELECTOR)
+  if (!inlineEditor) {
+    return false
+  }
+  inlineEditor.blur()
+  return true
 }
 
 function updateLineEndpoint(
@@ -1682,6 +1703,7 @@ function TextInlineEditor({
       <Textarea
         ref={textareaRef}
         aria-label="画布文本内联编辑"
+        data-tm-inline-text-editor="true"
         value={value}
         wrap={element.autoWrap ? "soft" : "off"}
         className="tm-selectable-text absolute min-h-0 resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 text-black shadow-none outline-none transition-none focus-visible:ring-0"
@@ -3702,6 +3724,9 @@ function CanvasStageView({
     }
     const stage = event.target.getStage()
     if (!stage) {
+      return
+    }
+    if (state.editingId && blurActiveInlineTextEditor()) {
       return
     }
 

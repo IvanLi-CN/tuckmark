@@ -616,6 +616,47 @@ export const CanvasWorkspaceTextFontMetrics: Story = {
   },
 }
 
+export const CanvasWorkspaceTextInlineEditingClickAwayCommit: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-selected",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const inlineEditor = (await canvas.findByLabelText("画布文本内联编辑")) as HTMLTextAreaElement
+    await userEvent.type(inlineEditor, "{End}点击提交")
+
+    const stageCanvas = canvasElement.querySelector(".tm-stage--overlay canvas")
+    if (!(stageCanvas instanceof HTMLCanvasElement)) {
+      throw new Error("Missing canvas stage surface")
+    }
+    const stageRect = stageCanvas.getBoundingClientRect()
+    for (const type of ["mousedown", "mouseup", "click"]) {
+      stageCanvas.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: stageRect.left + 20,
+          clientY: stageRect.top + 20,
+          button: 0,
+        })
+      )
+    }
+
+    await expect(canvas.queryByLabelText("画布文本内联编辑")).not.toBeInTheDocument()
+    await canvas.findByDisplayValue(/点击提交/)
+  },
+}
+
 export const CanvasWorkspaceTextInlineEditingCancel: Story = {
   args: {
     context: runtimeContext,
