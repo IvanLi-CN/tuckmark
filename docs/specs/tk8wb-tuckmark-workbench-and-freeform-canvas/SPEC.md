@@ -481,6 +481,18 @@ output.
   PR: include
   ![Canvas workspace](./assets/canvas-wide-1280x800.png)
 
+- `1280×800` canvas workspace with a selected text element before inline editing.
+
+  ![Canvas inline text selected before editing](./assets/canvas-inline-text-ready.png)
+
+- `1280×800` canvas workspace after double-clicking the text bounds, showing the focused inline textarea overlay.
+
+  ![Canvas inline text editor overlay](./assets/canvas-inline-text-editing.png)
+
+- `1280×800` canvas workspace after committing inline text changes, with the stage and inspector showing the updated value.
+
+  ![Canvas inline text committed result](./assets/canvas-inline-text-committed.png)
+
 - `1100×820` canvas workspace in narrow desktop single-side mode with stage always visible
 
   PR: include

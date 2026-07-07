@@ -444,6 +444,90 @@ export const CanvasWorkspaceNarrow: Story = {
   },
 }
 
+export const CanvasWorkspaceTextDoubleClickEditing: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-ready",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await canvas.findByText("已选 1 项")
+
+    const paper = canvasElement.querySelector(".tm-stage-paper--base")
+    const stageCanvas = canvasElement.querySelector(".tm-stage--overlay canvas")
+    if (!(paper instanceof HTMLElement) || !(stageCanvas instanceof HTMLCanvasElement)) {
+      throw new Error("Missing canvas stage surface")
+    }
+
+    const readNumber = (label: string) => {
+      const input = canvas.getByLabelText(label) as HTMLInputElement
+      return Number(input.value)
+    }
+    const paperWidth = readNumber("标签宽度")
+    const paperHeight = readNumber("标签高度")
+    const x = readNumber("X")
+    const y = readNumber("Y")
+    const width = readNumber("宽")
+    const height = readNumber("高")
+    const paperRect = paper.getBoundingClientRect()
+    const clientX = paperRect.left + ((x + width / 2) / paperWidth) * paperRect.width
+    const clientY = paperRect.top + ((y + height / 2) / paperHeight) * paperRect.height
+
+    for (const type of [
+      "mousedown",
+      "mouseup",
+      "click",
+      "mousedown",
+      "mouseup",
+      "click",
+      "dblclick",
+    ]) {
+      stageCanvas.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          button: 0,
+        })
+      )
+    }
+
+    const inlineEditor = await canvas.findByLabelText("画布文本内联编辑")
+    await expect(inlineEditor).toHaveFocus()
+  },
+}
+
+export const CanvasWorkspaceTextReady: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-ready",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await canvas.findByText("已选 1 项")
+    await canvas.findByLabelText("字号")
+  },
+}
+
 export const CanvasWorkspaceTextSelected: Story = {
   args: {
     context: runtimeContext,
@@ -460,6 +544,13 @@ export const CanvasWorkspaceTextSelected: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
+    const inlineEditor = (await canvas.findByLabelText("画布文本内联编辑")) as HTMLTextAreaElement
+    await userEvent.type(inlineEditor, "{End}{Enter}内联编辑")
+    await expect(inlineEditor.value).toContain("\n内联编辑")
+    await userEvent.keyboard("{Control>}{Enter}{/Control}")
+    await expect(canvas.queryByLabelText("画布文本内联编辑")).not.toBeInTheDocument()
+    await canvas.findByDisplayValue(/内联编辑/)
+
     await expect((await canvas.findAllByDisplayValue("文本 2")).length).toBeGreaterThan(0)
     await canvas.findByLabelText("字号")
     await canvas.findByLabelText("行高")
@@ -522,6 +613,30 @@ export const CanvasWorkspaceTextFontMetrics: Story = {
     const canvas = within(canvasElement)
     await canvas.findByDisplayValue("系统无衬线 BBOX")
     await canvas.findByText("字体")
+  },
+}
+
+export const CanvasWorkspaceTextInlineEditingCancel: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-selected",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const inlineEditor = (await canvas.findByLabelText("画布文本内联编辑")) as HTMLTextAreaElement
+    await userEvent.type(inlineEditor, "{End}取消内容")
+    await userEvent.keyboard("{Escape}")
+    await expect(canvas.queryByLabelText("画布文本内联编辑")).not.toBeInTheDocument()
+    await expect(canvas.queryByDisplayValue(/取消内容/)).not.toBeInTheDocument()
   },
 }
 

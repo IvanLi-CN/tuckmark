@@ -1787,6 +1787,7 @@ export type CanvasStoryScenario =
   | "marquee-selection"
   | "text-selected"
   | "text-font-metrics"
+  | "text-ready"
   | "rect-selected"
   | "circle-selected"
   | "triangle-selected"
