@@ -161,6 +161,8 @@ function normalizeMonochromeElement(element: CanvasDraftElement): CanvasDraftEle
         width,
         height: element.height ?? getTextNaturalHeight(element.fontSize, 1, element.lineHeight),
         lineHeight: element.lineHeight,
+        fontFamily: element.fontFamily,
+        fontWeight: element.fontWeight,
         align: element.align,
         maxLines: element.maxLines,
         verticalAlign: element.verticalAlign,
@@ -647,6 +649,8 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
       width,
       height: getTextNaturalHeight(element.fontSize, 1, element.lineHeight),
       lineHeight: element.lineHeight,
+      fontFamily: element.fontFamily,
+      fontWeight: element.fontWeight,
       align: element.align,
       maxLines: element.maxLines,
       verticalAlign: element.verticalAlign,
@@ -1643,10 +1647,49 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
     return document
   }
 
-  if (scenario === "text-selected") {
+  if (scenario === "text-selected" || scenario === "text-font-metrics") {
     const document = createDraftFromPreset(getPresetById("ops-tag"))
     const selectedText = document.elements.find((element) => element.kind === "text")
     if (!selectedText) {
+      return document
+    }
+    if (scenario === "text-font-metrics") {
+      const sansText = {
+        ...selectedText,
+        x: 3,
+        y: 3.2,
+        value: "20kΩ\nABC",
+        width: 28,
+        height: 11.2,
+        fontSize: 5.2,
+        fontFamily: "system-sans" as const,
+        lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
+        align: "left" as const,
+        verticalAlign: "top" as const,
+        stretchX: false,
+        stretchY: false,
+        autoWrap: false,
+        verticalText: false,
+        maxLines: undefined,
+        meta: { ...selectedText.meta, name: "系统无衬线 BBOX" },
+      }
+      const monoText = {
+        ...sansText,
+        id: `${selectedText.id}-mono`,
+        x: 18,
+        y: 10.8,
+        value: "20kΩ",
+        width: 14,
+        height: 6.5,
+        fontFamily: "system-mono" as const,
+        maxLines: 1,
+        meta: { ...selectedText.meta, name: "等宽字体 BBOX" },
+      }
+      document.elements = [
+        sansText,
+        monoText,
+        ...document.elements.filter((element) => element.kind !== "text"),
+      ]
       return document
     }
     document.elements = document.elements
@@ -1743,6 +1786,7 @@ export type CanvasStoryScenario =
   | "narrow-default"
   | "marquee-selection"
   | "text-selected"
+  | "text-font-metrics"
   | "rect-selected"
   | "circle-selected"
   | "triangle-selected"
