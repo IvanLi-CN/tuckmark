@@ -372,6 +372,7 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
     scenario === "draft-restore" ||
     scenario === "text-selected" ||
     scenario === "text-font-metrics" ||
+    scenario === "text-justify-selected" ||
     scenario === "text-ready" ||
     scenario === "barcode-invalid" ||
     scenario === "rect-selected" ||
@@ -398,6 +399,7 @@ function shouldUseScenarioDraft(scenario: CanvasStoryScenario): boolean {
     scenario === "draft-restore" ||
     scenario === "text-selected" ||
     scenario === "text-font-metrics" ||
+    scenario === "text-justify-selected" ||
     scenario === "text-ready" ||
     scenario === "barcode-invalid" ||
     scenario === "rect-selected" ||
@@ -456,6 +458,7 @@ function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryS
   if (
     scenario === "text-selected" ||
     scenario === "text-font-metrics" ||
+    scenario === "text-justify-selected" ||
     scenario === "text-ready" ||
     scenario === "draft-restore"
   ) {
@@ -536,7 +539,9 @@ function createCanvasState(
             : "",
     }),
     editingId:
-      scenario === "text-selected" ? (getScenarioSelection(draft, scenario)[0] ?? null) : null,
+      scenario === "text-selected" || scenario === "text-justify-selected"
+        ? (getScenarioSelection(draft, scenario)[0] ?? null)
+        : null,
   }
 }
 
@@ -1720,7 +1725,9 @@ function TextInlineEditor({
           boxSizing: "border-box",
           color: MONO_INK,
           caretColor: MONO_INK,
-          textAlign: element.align === "justify" ? "left" : element.align,
+          textAlign: element.align,
+          textAlignLast: element.align === "justify" ? "justify" : "auto",
+          textJustify: element.align === "justify" ? "inter-character" : "auto",
           whiteSpace: element.autoWrap ? "pre-wrap" : "pre",
           writingMode: element.verticalText ? "vertical-rl" : "horizontal-tb",
           transform: editorTransform,

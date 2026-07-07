@@ -489,6 +489,10 @@ output.
 
   ![Canvas inline text editor overlay](./assets/canvas-inline-text-editing.png)
 
+- `1280×800` canvas workspace with inline text editing preserving two-end justification.
+
+  ![Canvas inline text editor with two-end justification](./assets/canvas-inline-text-justify-editing.png)
+
 - `1280×800` canvas workspace after committing inline text changes, with the stage and inspector showing the updated value.
 
   ![Canvas inline text committed result](./assets/canvas-inline-text-committed.png)

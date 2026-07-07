@@ -657,6 +657,32 @@ export const CanvasWorkspaceTextInlineEditingClickAwayCommit: Story = {
   },
 }
 
+export const CanvasWorkspaceTextInlineEditingJustify: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-justify-selected",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const justifyText = await canvas.findByRole("button", { name: "两端对齐" })
+    await expect(justifyText).toHaveAttribute("aria-pressed", "true")
+
+    const inlineEditor = (await canvas.findByLabelText("画布文本内联编辑")) as HTMLTextAreaElement
+    const editorStyle = getComputedStyle(inlineEditor)
+    await expect(editorStyle.textAlign).toBe("justify")
+    await expect(editorStyle.textAlignLast).toBe("justify")
+  },
+}
+
 export const CanvasWorkspaceTextInlineEditingCancel: Story = {
   args: {
     context: runtimeContext,
