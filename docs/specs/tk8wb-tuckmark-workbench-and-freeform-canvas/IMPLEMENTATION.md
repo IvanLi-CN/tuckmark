@@ -196,6 +196,41 @@
   working copies remain outside the sync contract.
 - Shared schema coverage now includes `rotation` on `text`, `rect`, `barcode`,
   and `qr`, while `line` remains endpoint-based.
+- Text elements now use a fixed container text box model across Web drafts,
+  shared core schema validation, Konva stage rendering, SVG preview, direct
+  print artifacts, selection geometry, and inline editing:
+  - legacy baseline-anchored text is normalized into top-left container
+    geometry when drafts and system templates are read
+  - saved text carries `height`, `fontFamily`, `verticalAlign`, `stretchX`,
+    `stretchY`, `autoWrap`, and `verticalText`
+  - saved text carries `lineHeight`, which controls multiline baseline spacing
+    without changing font size
+  - resizing a text element updates only the container `width` and `height`,
+    leaving `fontSize` unchanged
+  - horizontal and vertical stretch scale the rendered content in the selected
+    axis without writing that scale back into `fontSize`
+  - automatic wrapping breaks text to the container width, including long-token
+    character breaks; disabling it keeps explicit lines intact and relies on
+    container clipping
+  - two-end justification uses the shared text layout to add per-line character
+    spacing and SVG `textLength` / `lengthAdjust="spacing"` output without
+    writing scale back into `fontSize`
+  - vertical text resolves top-to-bottom glyph columns, clips them to the text
+    container, and uses the same stage and SVG renderer paths as horizontal
+    text
+  - the shared text layout resolves a natural visible text BBOX, then aligns
+    that BBOX inside the element container according to the selected
+    horizontal and vertical alignment
+  - justified horizontal text uses the same Konva ink-box measurement path as
+    normal horizontal text for vertical positioning; justification changes
+    character spacing only and must not move the visible text BBOX vertically
+  - Konva and SVG text rendering both clip text ink to the element container;
+    the stage temporarily draws the visible clipped BBOX with a red dashed
+    outline for development review
+  - the inspector exposes font size, line height, fixed font family choices,
+    three-by-three text alignment, automatic wrapping, two-end justification,
+    vertical text, integer rotation, adjacent 45-degree rotation increment
+    controls, and independent stretch toggles for selected text
 - Line rotation remains an editor-side endpoint transform only:
   - transformer rotation rewrites the line endpoints immediately
   - shared draft/core schemas do not persist a separate `line.rotation` field

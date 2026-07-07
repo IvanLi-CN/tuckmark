@@ -437,6 +437,44 @@ export const CanvasWorkspaceTextSelected: Story = {
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("文本 2")).length).toBeGreaterThan(0)
+    await canvas.findByLabelText("字号")
+    await canvas.findByLabelText("行高")
+    await canvas.findByLabelText("字体")
+    await canvas.findByRole("group", { name: "文本九宫格对齐" })
+    await canvas.findByLabelText("文本左上对齐")
+    const horizontalStretch = await canvas.findByRole("button", { name: "水平拉升" })
+    await expect(horizontalStretch).toHaveAttribute("aria-pressed", "false")
+    await userEvent.click(horizontalStretch)
+    await expect(horizontalStretch).toHaveAttribute("aria-pressed", "true")
+    await userEvent.click(horizontalStretch)
+    await expect(horizontalStretch).toHaveAttribute("aria-pressed", "false")
+    const justifyText = await canvas.findByRole("button", { name: "两端对齐" })
+    await expect(justifyText).toHaveAttribute("aria-pressed", "false")
+    await userEvent.click(justifyText)
+    await expect(justifyText).toHaveAttribute("aria-pressed", "true")
+    await userEvent.click(justifyText)
+    await expect(justifyText).toHaveAttribute("aria-pressed", "false")
+    const verticalStretch = await canvas.findByRole("button", { name: "垂直拉升" })
+    await userEvent.click(verticalStretch)
+    await expect(verticalStretch).toHaveAttribute("aria-pressed", "true")
+    await userEvent.click(verticalStretch)
+    await expect(verticalStretch).toHaveAttribute("aria-pressed", "false")
+    const verticalText = await canvas.findByRole("button", { name: "纵向文本" })
+    await expect(verticalText).toHaveAttribute("aria-pressed", "false")
+    await userEvent.click(verticalText)
+    await expect(verticalText).toHaveAttribute("aria-pressed", "true")
+    await userEvent.click(verticalText)
+    await expect(verticalText).toHaveAttribute("aria-pressed", "false")
+    const rotationInput = await canvas.findByLabelText("旋转")
+    await expect(rotationInput).toHaveDisplayValue("0")
+    await canvas.findByRole("button", { name: "逆时针旋转 45 度" })
+    const rotateClockwise = await canvas.findByRole("button", { name: "顺时针旋转 45 度" })
+    await userEvent.click(rotateClockwise)
+    await expect(rotationInput).toHaveDisplayValue("45")
+  },
 }
 
 export const CanvasWorkspaceRectSelected: Story = {

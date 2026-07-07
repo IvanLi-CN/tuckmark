@@ -114,11 +114,23 @@ describe("canvas-editor-model monochrome contract", () => {
   })
 
   it("creates monochrome defaults for printable shapes", () => {
+    const text = createCanvasElement("text", 0)
     const rect = createCanvasElement("rect", 0)
     const circle = createCanvasElement("circle", 1)
     const triangle = createCanvasElement("triangle", 2)
     const line = createCanvasElement("line", 3)
 
+    expect(text).toMatchObject({
+      kind: "text",
+      fontFamily: "system-sans",
+      lineHeight: 1.2,
+      verticalAlign: "top",
+      stretchX: false,
+      stretchY: false,
+      autoWrap: true,
+      verticalText: false,
+    })
+    expect(text.kind === "text" ? text.height : 0).toBeGreaterThan(0)
     assertRectElement(rect)
     expect(rect.fill).toBe("none")
     expect(rect.stroke).toBe("#111111")
@@ -205,6 +217,49 @@ describe("canvas-editor-model monochrome contract", () => {
     expect(rect.stroke).toBe("#111111")
     assertLineElement(line)
     expect(line.stroke).toBe("#111111")
+  })
+
+  it("migrates legacy baseline text into top-left text containers", () => {
+    const preset = getPresetById("shipping-wide")
+    const draft = createDraftFromPreset(preset)
+    const text = draft.elements.find((element) => element.kind === "text")
+    if (text?.kind !== "text") {
+      throw new Error("expected text element")
+    }
+
+    const legacyText = {
+      ...text,
+      y: 18,
+      height: undefined,
+      fontFamily: undefined,
+      verticalAlign: undefined,
+      stretchX: undefined,
+      stretchY: undefined,
+      autoWrap: undefined,
+      verticalText: undefined,
+    }
+    storage.setItem(
+      `tuckmark:canvas-draft:v1:${preset.id}`,
+      JSON.stringify({
+        ...draft,
+        elements: [legacyText],
+      })
+    )
+
+    const restored = loadStoredDraftDocument(preset.id)
+    const restoredText = restored?.elements[0]
+    expect(restoredText?.kind).toBe("text")
+    if (restoredText?.kind === "text") {
+      expect(restoredText.y).toBeCloseTo(18 - text.fontSize, 5)
+      expect(restoredText.height).toBeGreaterThan(0)
+      expect(restoredText.fontFamily).toBe("system-sans")
+      expect(restoredText.lineHeight).toBe(1.2)
+      expect(restoredText.verticalAlign).toBe("top")
+      expect(restoredText.stretchX).toBe(false)
+      expect(restoredText.stretchY).toBe(false)
+      expect(restoredText.autoWrap).toBe(true)
+      expect(restoredText.verticalText).toBe(false)
+    }
   })
 
   it("compiles printable canvas output as monochrome even if draft colors drift", () => {
@@ -391,6 +446,47 @@ describe("canvas-editor-model monochrome contract", () => {
       y: 18,
       width: 344,
       height: 184,
+    })
+  })
+
+  it("compiles text container typography controls into printable canvas output", () => {
+    const draft = createDraftFromPreset(getPresetById("ops-tag"))
+    const text = draft.elements.find((element) => element.kind === "text")
+    if (text?.kind !== "text") {
+      throw new Error("expected text element")
+    }
+    draft.elements = [
+      {
+        ...text,
+        width: 20,
+        height: 8,
+        fontSize: 3,
+        fontFamily: "system-mono",
+        lineHeight: 1.5,
+        align: "right",
+        verticalAlign: "bottom",
+        stretchX: true,
+        stretchY: true,
+        autoWrap: false,
+        verticalText: true,
+      },
+    ]
+
+    const definition = compileDraftToCanvasDefinition(draft)
+    const compiledText = definition.elements[0]
+    expect(compiledText).toMatchObject({
+      kind: "text",
+      width: 160,
+      height: 64,
+      fontSize: 24,
+      fontFamily: "system-mono",
+      lineHeight: 1.5,
+      align: "right",
+      verticalAlign: "bottom",
+      stretchX: true,
+      stretchY: true,
+      autoWrap: false,
+      verticalText: true,
     })
   })
 

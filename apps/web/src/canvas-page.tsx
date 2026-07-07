@@ -5,6 +5,7 @@ import {
   ArrowDownToLine,
   ArrowUpToLine,
   CheckCircle2,
+  Columns3,
   Copy,
   Eye,
   EyeOff,
@@ -17,8 +18,13 @@ import {
   Plus,
   Redo2,
   RotateCcw,
+  RotateCw,
   Save,
   ScanSearch,
+  StretchHorizontal,
+  StretchVertical,
+  TextAlignJustify,
+  TextWrap,
   Trash2,
   Undo2,
   ZoomIn,
@@ -37,7 +43,19 @@ import {
   Transformer,
 } from "react-konva"
 import { useNavigate, useSearchParams } from "react-router-dom"
-import { stableStringify } from "../../../packages/core/src/web.js"
+import {
+  DEFAULT_TEXT_FONT_FAMILY,
+  DEFAULT_TEXT_LINE_HEIGHT,
+  DEFAULT_TEXT_VERTICAL_ALIGN,
+  getTextFontFamilyStack,
+  normalizeTextLineHeight,
+  resolveTextLayout,
+  stableStringify,
+  type TextFontFamily,
+  type TextHorizontalAlign,
+  type TextVerticalAlign,
+  textFontFamilies,
+} from "../../../packages/core/src/web.js"
 import {
   bindElementToExistingField,
   buildStoryScenarioDocument,
@@ -67,6 +85,7 @@ import {
   updateBoundElementValue,
 } from "./canvas-editor-model.js"
 import { DimensionPicker } from "./components/canvas/dimension-picker.js"
+import { InspectorNumberField } from "./components/canvas/inspector-number-field.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
 import { Button } from "./components/ui/button.js"
@@ -131,6 +150,8 @@ type CanvasPageProps = {
   initialScenario?: CanvasStoryScenario
 }
 
+const INSPECTOR_SELECT_TRIGGER_CLASS = "tm-inspector-select h-7 rounded-sm px-2 py-0 text-xs"
+
 type StageViewport = {
   x: number
   y: number
@@ -184,7 +205,29 @@ const LINE_ENDPOINT_HANDLE_RADIUS = 0.42
 const LINE_ENDPOINT_HIT_RADIUS = 0.78
 const MONO_INK = "#111111"
 const MONO_SURFACE = "#ffffff"
-const CANVAS_TEXT_FONT_FAMILY = "ui-sans-serif, system-ui, sans-serif"
+const CANVAS_DEFAULT_TEXT_FONT_FAMILY = getTextFontFamilyStack(DEFAULT_TEXT_FONT_FAMILY)
+const TEXT_FONT_FAMILY_LABELS: Record<TextFontFamily, string> = {
+  "system-sans": "系统无衬线",
+  "system-serif": "系统衬线",
+  "system-mono": "系统等宽",
+  arial: "Arial",
+  "noto-sans-sc": "Noto Sans SC",
+}
+const TEXT_ALIGNMENT_OPTIONS: Array<{
+  align: Exclude<TextHorizontalAlign, "justify">
+  verticalAlign: TextVerticalAlign
+  label: string
+}> = [
+  { align: "left", verticalAlign: "top", label: "左上" },
+  { align: "center", verticalAlign: "top", label: "上中" },
+  { align: "right", verticalAlign: "top", label: "右上" },
+  { align: "left", verticalAlign: "middle", label: "左中" },
+  { align: "center", verticalAlign: "middle", label: "居中" },
+  { align: "right", verticalAlign: "middle", label: "右中" },
+  { align: "left", verticalAlign: "bottom", label: "左下" },
+  { align: "center", verticalAlign: "bottom", label: "下中" },
+  { align: "right", verticalAlign: "bottom", label: "右下" },
+]
 const TRANSFORMER_ALL_ANCHORS = [
   "top-left",
   "top-center",
@@ -212,8 +255,8 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-function getCanvasTextLineHeight(fontSize: number) {
-  return (fontSize + 4) / fontSize
+function getCanvasTextLineHeight(lineHeight?: number) {
+  return normalizeTextLineHeight(lineHeight)
 }
 
 function cloneDraft(draft: CanvasDraftDocument): CanvasDraftDocument {
@@ -277,6 +320,7 @@ function createViewport(
 function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument {
   if (
     scenario === "draft-restore" ||
+    scenario === "text-selected" ||
     scenario === "barcode-invalid" ||
     scenario === "rect-selected" ||
     scenario === "circle-selected" ||
@@ -300,6 +344,7 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
 function shouldUseScenarioDraft(scenario: CanvasStoryScenario): boolean {
   return (
     scenario === "draft-restore" ||
+    scenario === "text-selected" ||
     scenario === "barcode-invalid" ||
     scenario === "rect-selected" ||
     scenario === "circle-selected" ||
@@ -463,6 +508,22 @@ function applyDraftUpdate(
   const next = pushHistory(state, nextDraft)
   return {
     ...next,
+    selectedIds: updateSelectionAfterDraft(state, nextDraft),
+    storageMode: "persisted",
+  }
+}
+
+function applyLiveDraftUpdate(
+  state: CanvasPageState,
+  updater: (draft: CanvasDraftDocument) => CanvasDraftDocument
+): CanvasPageState {
+  const nextDraft = normalizeDraftDocument(updater(cloneDraft(state.liveDraft)))
+  nextDraft.editor.gridEnabled = state.gridEnabled
+  nextDraft.editor.snapEnabled = state.snapEnabled
+  return {
+    ...state,
+    liveDraft: nextDraft,
+    draft: nextDraft,
     selectedIds: updateSelectionAfterDraft(state, nextDraft),
     storageMode: "persisted",
   }
@@ -871,17 +932,13 @@ function applyTransformedNodeToElement(
     node.scaleX(1)
     node.scaleY(1)
     const nextWidth = Math.max(24 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
-    const nextFontSize = Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, element.fontSize * scaleY)
-    const nextHeight = Math.max(
-      nextFontSize + 4,
-      nextFontSize + (Math.max(element.maxLines ?? 1, 1) - 1) * (nextFontSize + 4)
-    )
+    const nextHeight = Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, element.height * scaleY)
     return {
       ...element,
       x: node.x() - nextWidth / 2,
-      y: node.y() - (-nextFontSize + nextHeight / 2),
+      y: node.y() - nextHeight / 2,
       width: nextWidth,
-      fontSize: nextFontSize,
+      height: nextHeight,
       rotation: node.rotation(),
     }
   }
@@ -949,6 +1006,19 @@ function applyTransformedNodeToElement(
   }
 
   return element
+}
+
+function applyTransformedNodesToDraft(
+  draft: CanvasDraftDocument,
+  nodes: Konva.Group[]
+): CanvasDraftDocument {
+  return {
+    ...draft,
+    elements: draft.elements.map((item) => {
+      const node = nodes.find((candidate) => candidate.id() === item.id)
+      return node ? applyTransformedNodeToElement(item, node) : item
+    }),
+  }
 }
 
 function buildBarcodeRows(
@@ -1372,25 +1442,38 @@ function TextInlineEditor({
   onCancel: () => void
 }) {
   const [value, setValue] = React.useState(element.value)
+  const scale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+  const width = Math.max(element.width * scale, 1)
+  const height = Math.max(element.height * scale, 1)
+  const rotation = element.rotation ?? 0
 
   return (
     <div
       className="pointer-events-auto absolute z-20"
       style={{
-        left: viewport.x + element.x * viewport.scale * CANVAS_DOTS_PER_MILLIMETER,
-        top:
-          viewport.y + (element.y - element.fontSize) * viewport.scale * CANVAS_DOTS_PER_MILLIMETER,
-        width: Math.max(element.width * viewport.scale * CANVAS_DOTS_PER_MILLIMETER, 160),
+        left: viewport.x + element.x * scale,
+        top: viewport.y + element.y * scale,
+        width,
+        height,
+        transform: rotation ? `rotate(${rotation}deg)` : undefined,
+        transformOrigin: "center center",
       }}
     >
       <Textarea
         autoFocus
         value={value}
-        className="tm-selectable-text min-h-[92px] resize-none border-primary/35 bg-white/96 shadow-lg"
+        wrap={element.autoWrap ? "soft" : "off"}
+        className="tm-selectable-text h-full min-h-0 resize-none overflow-hidden rounded-none border-primary/70 bg-white/96 p-0 shadow-none"
         style={{
-          fontFamily: CANVAS_TEXT_FONT_FAMILY,
-          fontSize: `${Math.max(12, element.fontSize * viewport.scale * CANVAS_DOTS_PER_MILLIMETER * 0.68)}px`,
-          lineHeight: getCanvasTextLineHeight(element.fontSize),
+          fontFamily: getTextFontFamilyStack(element.fontFamily),
+          fontSize: `${Math.max(8, element.fontSize * scale)}px`,
+          lineHeight: getCanvasTextLineHeight(element.lineHeight),
+          height: "100%",
+          minHeight: 0,
+          boxSizing: "border-box",
+          textAlign: element.align,
+          whiteSpace: element.autoWrap ? "pre-wrap" : "pre",
+          writingMode: element.verticalText ? "vertical-rl" : "horizontal-tb",
         }}
         onChange={(event) => setValue(event.currentTarget.value)}
         onBlur={() => onCommit(value)}
@@ -2003,30 +2086,31 @@ function CanvasInspector({
     label: string,
     value: number,
     onValueChange: (next: number) => void,
-    id: string
+    id: string,
+    step = 0.1,
+    precision = 1
   ) => (
-    <div className="tm-inspector-inline-field">
-      <Label htmlFor={id} className="tm-inspector-inline-label">
-        {label}
-      </Label>
-      <Input
-        id={id}
-        type="number"
-        density="compact"
-        size="md"
-        className="tm-inspector-input"
-        disabled={readOnly}
-        value={String(value)}
-        onChange={(event) => {
-          const nextValue = Number(event.currentTarget.value || 0)
-          onValueChange(nextValue)
-        }}
-      />
-    </div>
+    <InspectorNumberField
+      disabled={readOnly}
+      id={id}
+      label={label}
+      precision={precision}
+      step={step}
+      value={value}
+      onValueChange={onValueChange}
+    />
   )
 
   const issue = getElementIssue(element)
   const warning = getElementCanvasWarning(state.draft, element)
+
+  const rotateSelectedElementBy = (delta: number) => {
+    updateElement((item) =>
+      "rotation" in item
+        ? ({ ...item, rotation: Math.round((item.rotation ?? 0) + delta) } as CanvasDraftElement)
+        : item
+    )
+  }
 
   const commitFieldLabel = (rawValue: string) => {
     if (!boundField) {
@@ -2076,7 +2160,7 @@ function CanvasInspector({
         <div className="tm-inspector-form">
           <div className="tm-inspector-inline-field">
             <Label htmlFor="layer-name" className="tm-inspector-inline-label">
-              名
+              名称
             </Label>
             <Input
               id="layer-name"
@@ -2308,7 +2392,231 @@ function CanvasInspector({
                 "text-font-size"
               )
             : null}
-          {element.kind !== "line" && "rotation" in element
+          {element.kind === "text"
+            ? renderNumberField(
+                "行高",
+                element.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
+                (value) =>
+                  updateElement((item) =>
+                    item.kind === "text"
+                      ? {
+                          ...item,
+                          lineHeight: normalizeTextLineHeight(value),
+                        }
+                      : item
+                  ),
+                "text-line-height",
+                0.1
+              )
+            : null}
+          {element.kind === "text" ? (
+            <div className="tm-inspector-inline-field tm-inspector-field--full">
+              <Label htmlFor="text-font-family" className="tm-inspector-inline-label">
+                字体
+              </Label>
+              <Select
+                disabled={readOnly}
+                value={element.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY}
+                onValueChange={(value) =>
+                  updateElement((item) =>
+                    item.kind === "text" ? { ...item, fontFamily: value as TextFontFamily } : item
+                  )
+                }
+              >
+                <SelectTrigger id="text-font-family" className={INSPECTOR_SELECT_TRIGGER_CLASS}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {textFontFamilies.map((fontFamily) => (
+                    <SelectItem key={fontFamily} value={fontFamily}>
+                      {TEXT_FONT_FAMILY_LABELS[fontFamily]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+          {element.kind === "text" ? (
+            <div className="tm-text-controls-row tm-inspector-field--full">
+              <div className="tm-inspector-field">
+                <Label className="tm-inspector-label">对齐</Label>
+                <fieldset className="tm-text-align-grid" aria-label="文本九宫格对齐">
+                  {TEXT_ALIGNMENT_OPTIONS.map((option) => {
+                    const selected =
+                      element.align === option.align &&
+                      (element.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN) ===
+                        option.verticalAlign
+                    return (
+                      <Button
+                        key={`${option.verticalAlign}-${option.align}`}
+                        type="button"
+                        size="sm"
+                        variant={selected ? "default" : "outline"}
+                        className="tm-text-align-grid__button"
+                        aria-label={`文本${option.label}对齐`}
+                        aria-pressed={selected}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? {
+                                  ...item,
+                                  align: option.align,
+                                  verticalAlign: option.verticalAlign,
+                                }
+                              : item
+                          )
+                        }
+                      >
+                        <span
+                          className="tm-text-align-icon"
+                          data-align={option.align}
+                          data-vertical={option.verticalAlign}
+                          aria-hidden="true"
+                        >
+                          <span />
+                          <span />
+                          <span />
+                        </span>
+                      </Button>
+                    )
+                  })}
+                </fieldset>
+              </div>
+              <div className="tm-inspector-field">
+                <Label className="tm-inspector-label">排版</Label>
+                <div className="tm-inspector-toggle-row tm-inspector-toggle-row--text-flow">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={element.autoWrap ? "default" : "outline"}
+                    className="tm-inspector-toggle"
+                    aria-pressed={element.autoWrap}
+                    disabled={readOnly}
+                    onClick={() =>
+                      updateElement((item) =>
+                        item.kind === "text" ? { ...item, autoWrap: !item.autoWrap } : item
+                      )
+                    }
+                  >
+                    <TextWrap className="size-3.5" />
+                    自动换行
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={element.align === "justify" ? "default" : "outline"}
+                    className="tm-inspector-toggle"
+                    aria-pressed={element.align === "justify"}
+                    disabled={readOnly}
+                    onClick={() =>
+                      updateElement((item) =>
+                        item.kind === "text"
+                          ? { ...item, align: item.align === "justify" ? "left" : "justify" }
+                          : item
+                      )
+                    }
+                  >
+                    <TextAlignJustify className="size-3.5" />
+                    两端对齐
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={element.stretchX ? "default" : "outline"}
+                    className="tm-inspector-toggle"
+                    aria-pressed={element.stretchX}
+                    disabled={readOnly}
+                    onClick={() =>
+                      updateElement((item) =>
+                        item.kind === "text" ? { ...item, stretchX: !item.stretchX } : item
+                      )
+                    }
+                  >
+                    <StretchHorizontal className="size-3.5" />
+                    水平拉升
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={element.stretchY ? "default" : "outline"}
+                    className="tm-inspector-toggle"
+                    aria-pressed={element.stretchY}
+                    disabled={readOnly}
+                    onClick={() =>
+                      updateElement((item) =>
+                        item.kind === "text" ? { ...item, stretchY: !item.stretchY } : item
+                      )
+                    }
+                  >
+                    <StretchVertical className="size-3.5" />
+                    垂直拉升
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={element.verticalText ? "default" : "outline"}
+                    className="tm-inspector-toggle"
+                    aria-pressed={element.verticalText}
+                    disabled={readOnly}
+                    onClick={() =>
+                      updateElement((item) =>
+                        item.kind === "text" ? { ...item, verticalText: !item.verticalText } : item
+                      )
+                    }
+                  >
+                    <Columns3 className="size-3.5" />
+                    纵向文本
+                  </Button>
+                  {"rotation" in element ? (
+                    <InspectorNumberField
+                      actions={
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="tm-inspector-stepper-button h-8 w-8 p-0"
+                            aria-label="逆时针旋转 45 度"
+                            disabled={readOnly}
+                            onClick={() => rotateSelectedElementBy(-45)}
+                          >
+                            <RotateCcw className="size-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="tm-inspector-stepper-button h-8 w-8 p-0"
+                            aria-label="顺时针旋转 45 度"
+                            disabled={readOnly}
+                            onClick={() => rotateSelectedElementBy(45)}
+                          >
+                            <RotateCw className="size-3.5" />
+                          </Button>
+                        </>
+                      }
+                      className="tm-inspector-rotation-field"
+                      disabled={readOnly}
+                      id="element-rotation"
+                      label="旋转"
+                      precision={0}
+                      step={1}
+                      value={element.rotation ?? 0}
+                      onValueChange={(value) =>
+                        updateElement((item) =>
+                          "rotation" in item
+                            ? ({ ...item, rotation: value } as CanvasDraftElement)
+                            : item
+                        )
+                      }
+                    />
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {element.kind !== "text" && element.kind !== "line" && "rotation" in element
             ? renderNumberField(
                 "旋转",
                 element.rotation ?? 0,
@@ -2316,7 +2624,9 @@ function CanvasInspector({
                   updateElement((item) =>
                     "rotation" in item ? ({ ...item, rotation: value } as CanvasDraftElement) : item
                   ),
-                "element-rotation"
+                "element-rotation",
+                1,
+                0
               )
             : null}
           {"strokeWidth" in element
@@ -2360,7 +2670,7 @@ function CanvasInspector({
                 <Select value={element.format} disabled={readOnly} onValueChange={() => undefined}>
                   <SelectTrigger
                     id="barcode-format"
-                    className="tm-inspector-select"
+                    className={INSPECTOR_SELECT_TRIGGER_CLASS}
                     disabled={readOnly}
                   >
                     <SelectValue />
@@ -2402,7 +2712,11 @@ function CanvasInspector({
                     )
                   }
                 >
-                  <SelectTrigger id="qr-level" className="tm-inspector-select" disabled={readOnly}>
+                  <SelectTrigger
+                    id="qr-level"
+                    className={INSPECTOR_SELECT_TRIGGER_CLASS}
+                    disabled={readOnly}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -2734,25 +3048,156 @@ function CanvasOutput({
   )
 }
 
+type CanvasElementGroup = Konva.Group & {
+  __tuckmarkOriginalGetClientRect?: Konva.Group["getClientRect"]
+}
+
+function alignOffset(
+  containerSize: number,
+  contentSize: number,
+  align: "start" | "middle" | "end"
+) {
+  switch (align) {
+    case "middle":
+      return (containerSize - contentSize) / 2
+    case "end":
+      return containerSize - contentSize
+    case "start":
+      return 0
+  }
+}
+
+function CanvasTextElementNode({
+  element,
+}: {
+  element: Extract<CanvasDraftElement, { kind: "text" }>
+}) {
+  const textRef = React.useRef<Konva.Text>(null)
+  const layout = resolveTextLayout({
+    text: element.value,
+    fontSize: element.fontSize,
+    width: element.width,
+    height: element.height,
+    lineHeight: element.lineHeight,
+    align: element.align,
+    maxLines: element.maxLines,
+    verticalAlign: element.verticalAlign,
+    stretchX: element.stretchX,
+    stretchY: element.stretchY,
+    autoWrap: element.autoWrap,
+    verticalText: element.verticalText,
+  })
+  const renderedText = layout.lines.join("\n")
+  const usesCustomTextLayout = element.align === "justify" || element.verticalText
+  const contentWidth = layout.contentWidth
+  const contentHeight = layout.contentHeight
+  const scaleX = element.stretchX ? element.width / Math.max(contentWidth, 0.0001) : 1
+  const scaleY = element.stretchY ? element.height / Math.max(contentHeight, 0.0001) : 1
+  const contentX = usesCustomTextLayout
+    ? layout.contentX
+    : element.stretchX
+      ? 0
+      : alignOffset(
+          element.width,
+          contentWidth,
+          element.align === "center" ? "middle" : element.align === "right" ? "end" : "start"
+        )
+  const contentY = element.verticalText
+    ? layout.contentY
+    : element.stretchY
+      ? 0
+      : alignOffset(
+          element.height,
+          contentHeight,
+          element.verticalAlign === "middle"
+            ? "middle"
+            : element.verticalAlign === "bottom"
+              ? "end"
+              : "start"
+        )
+  const textX = 0
+  const textY = layout.textOffsetY
+  const visibleContentLeft = clamp(contentX, 0, element.width)
+  const visibleContentTop = clamp(contentY, 0, element.height)
+  const visibleContentRight = clamp(contentX + contentWidth * scaleX, 0, element.width)
+  const visibleContentBottom = clamp(contentY + contentHeight * scaleY, 0, element.height)
+  const visibleContentWidth = Math.max(0, visibleContentRight - visibleContentLeft)
+  const visibleContentHeight = Math.max(0, visibleContentBottom - visibleContentTop)
+  return (
+    <Group clipX={0} clipY={0} clipWidth={element.width} clipHeight={element.height}>
+      {visibleContentWidth > 0 && visibleContentHeight > 0 ? (
+        <KonvaRect
+          x={visibleContentLeft}
+          y={visibleContentTop}
+          width={visibleContentWidth}
+          height={visibleContentHeight}
+          stroke="#ff4d5a"
+          strokeWidth={0.35}
+          dash={[1.2, 0.8]}
+          listening={false}
+        />
+      ) : null}
+      <Group x={contentX} y={contentY} scaleX={scaleX} scaleY={scaleY}>
+        {element.verticalText ? (
+          layout.glyphs.map((glyph) => (
+            <KonvaText
+              key={`${glyph.x}-${glyph.y}-${glyph.text}`}
+              x={glyph.x - element.fontSize / 2}
+              y={glyph.y + textY}
+              width={element.fontSize}
+              text={glyph.text}
+              fontSize={element.fontSize}
+              fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
+              fontFamily={getTextFontFamilyStack(element.fontFamily)}
+              wrap="none"
+              align="center"
+              fill={MONO_INK}
+            />
+          ))
+        ) : element.align === "justify" ? (
+          layout.lineLayouts.map((line, index) => (
+            <KonvaText
+              key={`${line.x}-${line.y}-${line.text}`}
+              ref={index === 0 ? textRef : undefined}
+              x={line.x}
+              y={index * layout.lineHeight + textY}
+              text={line.text}
+              fontSize={element.fontSize}
+              fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
+              fontFamily={getTextFontFamilyStack(element.fontFamily)}
+              lineHeight={getCanvasTextLineHeight(element.lineHeight)}
+              letterSpacing={line.letterSpacing}
+              wrap="none"
+              align="left"
+              fill={MONO_INK}
+            />
+          ))
+        ) : (
+          <KonvaText
+            ref={textRef}
+            x={textX}
+            y={textY}
+            text={renderedText}
+            fontSize={element.fontSize}
+            fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
+            fontFamily={getTextFontFamilyStack(element.fontFamily)}
+            lineHeight={getCanvasTextLineHeight(element.lineHeight)}
+            wrap="none"
+            align="left"
+            fill={MONO_INK}
+          />
+        )}
+      </Group>
+    </Group>
+  )
+}
+
 function renderElementNode(element: CanvasDraftElement): React.ReactNode {
   const issue = getElementIssue(element)
 
   switch (element.kind) {
     case "text":
-      return (
-        <KonvaText
-          x={0}
-          y={-element.fontSize}
-          width={element.width}
-          text={element.value}
-          fontSize={element.fontSize}
-          fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
-          fontFamily={CANVAS_TEXT_FONT_FAMILY}
-          lineHeight={getCanvasTextLineHeight(element.fontSize)}
-          align={element.align}
-          fill={MONO_INK}
-        />
-      )
+      return <CanvasTextElementNode element={element} />
     case "rect":
       return (
         <KonvaRect
@@ -2821,8 +3266,8 @@ function renderElementNode(element: CanvasDraftElement): React.ReactNode {
               text="条码内容无效"
               fontSize={canvasDotsToMillimeters(12)}
               fontStyle="bold"
-              fontFamily={CANVAS_TEXT_FONT_FAMILY}
-              lineHeight={getCanvasTextLineHeight(canvasDotsToMillimeters(12))}
+              fontFamily={CANVAS_DEFAULT_TEXT_FONT_FAMILY}
+              lineHeight={getCanvasTextLineHeight()}
               fill="#9c2f22"
             />
           </>
@@ -2853,8 +3298,8 @@ function renderElementNode(element: CanvasDraftElement): React.ReactNode {
               text={element.value}
               align="center"
               fontSize={canvasDotsToMillimeters(12)}
-              fontFamily={CANVAS_TEXT_FONT_FAMILY}
-              lineHeight={getCanvasTextLineHeight(canvasDotsToMillimeters(12))}
+              fontFamily={CANVAS_DEFAULT_TEXT_FONT_FAMILY}
+              lineHeight={getCanvasTextLineHeight()}
               fill={MONO_INK}
             />
           ) : null}
@@ -2884,8 +3329,8 @@ function renderElementNode(element: CanvasDraftElement): React.ReactNode {
               align="center"
               fontSize={canvasDotsToMillimeters(12)}
               fontStyle="bold"
-              fontFamily={CANVAS_TEXT_FONT_FAMILY}
-              lineHeight={getCanvasTextLineHeight(canvasDotsToMillimeters(12))}
+              fontFamily={CANVAS_DEFAULT_TEXT_FONT_FAMILY}
+              lineHeight={getCanvasTextLineHeight()}
               fill="#9c2f22"
             />
           </>
@@ -3126,6 +3571,30 @@ function CanvasStageView({
     ? projectSelectionBoxToStageRect(normalizeSelectionBox(state.selectionBox), state.viewport)
     : null
 
+  const applyTransformerChange = React.useCallback(
+    (commitHistory: boolean) => {
+      if (readOnly) {
+        return
+      }
+      const transformer = transformerRef.current
+      if (!transformer) {
+        return
+      }
+      const nodes = transformer.nodes().filter((node): node is Konva.Group => Boolean(node))
+      if (nodes.length === 0) {
+        return
+      }
+      onChange((current) =>
+        commitHistory
+          ? applyDraftUpdate(current, (draft) => applyTransformedNodesToDraft(draft, nodes))
+          : applyLiveDraftUpdate(current, (draft) => applyTransformedNodesToDraft(draft, nodes))
+      )
+      transformer.forceUpdate()
+      transformer.getLayer()?.batchDraw()
+    },
+    [onChange, readOnly]
+  )
+
   return (
     <div className="tm-stage-shell">
       <div className="tm-stage-wrap tm-stage-wrap--editor">
@@ -3226,6 +3695,37 @@ function CanvasStageView({
                     id={element.id}
                     ref={(node) => {
                       nodeRefs.current[element.id] = node
+                      if (!node) {
+                        return
+                      }
+                      const elementNode = node as CanvasElementGroup
+                      if (typeof elementNode.getClientRect !== "function") {
+                        return
+                      }
+                      elementNode.__tuckmarkOriginalGetClientRect ??=
+                        elementNode.getClientRect.bind(elementNode) as Konva.Group["getClientRect"]
+                      if (element.kind === "text") {
+                        elementNode.getClientRect = (config) => {
+                          if (config?.skipTransform) {
+                            return {
+                              x: geometry.localBounds.x,
+                              y: geometry.localBounds.y,
+                              width: geometry.localBounds.width,
+                              height: geometry.localBounds.height,
+                            }
+                          }
+                          return (
+                            elementNode.__tuckmarkOriginalGetClientRect?.(config) ?? {
+                              x: geometry.localBounds.x,
+                              y: geometry.localBounds.y,
+                              width: geometry.localBounds.width,
+                              height: geometry.localBounds.height,
+                            }
+                          )
+                        }
+                      } else if (elementNode.__tuckmarkOriginalGetClientRect) {
+                        elementNode.getClientRect = elementNode.__tuckmarkOriginalGetClientRect
+                      }
                     }}
                     x={geometry.stagePosition.x}
                     y={geometry.stagePosition.y}
@@ -3395,6 +3895,7 @@ function CanvasStageView({
                 keepRatio={transformerKeepRatio}
                 enabledAnchors={transformerAnchors}
                 flipEnabled={false}
+                ignoreStroke
                 listening={!readOnly && transformerEnabled}
                 boundBoxFunc={(oldBox, newBox) => {
                   if (Math.abs(newBox.width) < 16 || Math.abs(newBox.height) < 16) {
@@ -3402,33 +3903,8 @@ function CanvasStageView({
                   }
                   return newBox
                 }}
-                onTransformEnd={() => {
-                  if (readOnly) {
-                    return
-                  }
-                  const transformer = transformerRef.current
-                  if (!transformer) {
-                    return
-                  }
-                  const nodes = transformer.nodes()
-                  if (nodes.length === 0) {
-                    return
-                  }
-                  onChange((current) =>
-                    applyDraftUpdate(current, (draft) => ({
-                      ...draft,
-                      elements: draft.elements.map((item) => {
-                        const node = nodes.find(
-                          (candidate): candidate is Konva.Group => candidate.id() === item.id
-                        )
-                        if (!node) {
-                          return item
-                        }
-                        return applyTransformedNodeToElement(item, node)
-                      }),
-                    }))
-                  )
-                }}
+                onTransform={() => applyTransformerChange(false)}
+                onTransformEnd={() => applyTransformerChange(true)}
               />
             </Group>
             {selectionBoxStageRect ? (

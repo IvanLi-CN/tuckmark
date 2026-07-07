@@ -121,6 +121,23 @@ while the workbench was being productized:
   - review convergence tightened rotated triangle selection bounds and synced
     checked-in core JavaScript renderer artifacts with the expanded shape
     schema
+- Text editing was then converted from baseline-anchored scalable glyphs into
+  fixed container typography:
+  - drafts and printable schema persist text box height, font family, vertical
+    alignment, and stretch flags
+  - resizing a text element changes the container rather than the saved font
+    size
+  - line height became a saved text property
+  - stage, inline editing, SVG preview, and print artifacts share the same
+    visible-glyph alignment, line-height, and stretch behavior
+  - text alignment now moves the natural visible text BBOX inside the element
+    container, with a temporary red dashed stage-only BBOX shown for review
+  - automatic wrapping became an explicit text property, and stage / SVG
+    rendering now clips text ink to the element container so overflow cannot
+    escape the bounds
+  - text flow controls include two-end justification, which adds spacing
+    between visible characters, and vertical text, which lays glyphs
+    top-to-bottom in columns
 - The shared footer also became an operator support surface:
   - repository link and site rights notice are visible without opening
     developer tools

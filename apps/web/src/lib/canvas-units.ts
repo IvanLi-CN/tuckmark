@@ -30,6 +30,7 @@ export function scaleDraftElementGeometry(
         x: scaleValue(element.x, scale),
         y: scaleValue(element.y, scale),
         width: scaleValue(element.width, scale),
+        height: scaleValue(element.height, scale),
         fontSize: scaleValue(element.fontSize, scale),
       }
     case "rect":
@@ -97,6 +98,7 @@ export function scaleTemplateElementGeometry(
         x: scaleValue(element.x, scale),
         y: scaleValue(element.y, scale),
         width: element.width === undefined ? undefined : scaleValue(element.width, scale),
+        height: element.height === undefined ? undefined : scaleValue(element.height, scale),
         fontSize: scaleValue(element.fontSize, scale),
       }
     case "rect":

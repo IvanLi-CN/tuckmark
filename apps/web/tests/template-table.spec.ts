@@ -149,7 +149,7 @@ test("template table refreshes preview after a debounced edit", async ({ page })
 
   const editor = firstRow.locator("input").first()
   await expect(editor).toBeVisible()
-  await editor.fill("Koha Cat Updated")
+  await editor.fill("Ivy")
 
   await page.waitForTimeout(120)
   await expect(previewImage).toBeVisible()

@@ -1,5 +1,5 @@
 export { presetTemplateData } from "./preset-template-data.js"
-export { buildSvg, escapeXml, estimateCharsPerLine, wrapText } from "./svg-renderer.js"
+export { buildSvg, escapeXml } from "./svg-renderer.js"
 export type {
   CanvasDraftPayload,
   CanvasDraftRecord,
@@ -24,6 +24,30 @@ export {
   stableStringify,
 } from "./sync-state.js"
 export { getTemplateById, presetTemplates } from "./template-library.js"
+export type {
+  TextFontFamily,
+  TextHorizontalAlign,
+  TextLayout,
+  TextVerticalAlign,
+} from "./text-layout.js"
+export {
+  DEFAULT_TEXT_FONT_FAMILY,
+  DEFAULT_TEXT_LINE_HEIGHT,
+  DEFAULT_TEXT_VERTICAL_ALIGN,
+  estimateCharsPerLine,
+  estimateTextLineWidth,
+  getTextFontFamilyStack,
+  getTextNaturalHeight,
+  normalizeTextLineHeight,
+  resolveTextLayout,
+  TEXT_FONT_FAMILY_STACKS,
+  TEXT_LINE_HEIGHT_RATIO,
+  textFontFamilies,
+  textHorizontalAlignments,
+  textVerticalAlignments,
+  wrapText,
+  wrapTextByWidth,
+} from "./text-layout.js"
 export type {
   ArtifactPackets,
   DirectCanvasDefinition,

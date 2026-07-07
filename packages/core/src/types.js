@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { textFontFamilies, textHorizontalAlignments, textVerticalAlignments, } from "./text-layout.js";
 export const paperTypeSchema = z.enum(["continuous", "gap"]);
 export const renderOptionsSchema = z.object({
     printWidthDots: z.number().int().positive().default(384),
@@ -58,9 +59,17 @@ export const textElementSchema = z.object({
     x: z.number(),
     y: z.number(),
     width: z.number().positive().optional(),
+    height: z.number().positive().optional(),
     fontSize: z.number().positive(),
+    fontFamily: z.enum(textFontFamilies).optional(),
+    lineHeight: z.number().positive().optional(),
     fontWeight: z.enum(["normal", "bold"]).default("normal"),
-    align: z.enum(["left", "center", "right"]).default("left"),
+    align: z.enum(textHorizontalAlignments).default("left"),
+    verticalAlign: z.enum(textVerticalAlignments).optional(),
+    stretchX: z.boolean().optional(),
+    stretchY: z.boolean().optional(),
+    autoWrap: z.boolean().optional(),
+    verticalText: z.boolean().optional(),
     value: z.string().optional(),
     maxLines: z.number().int().positive().optional(),
     rotation: z.number().default(0),
