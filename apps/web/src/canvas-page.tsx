@@ -194,7 +194,7 @@ type CanvasPageState = {
   storageMode: "persisted" | "reset-pending"
 }
 
-const GRID_SIZE = 2.5
+const GRID_SIZE = 1
 const STAGE_VIEWPORT_WIDTH = 760
 const STAGE_VIEWPORT_HEIGHT = 520
 const EMPTY_SELECTION_BOX: CanvasSelectionBox = { x1: 0, y1: 0, x2: 0, y2: 0, visible: false }
@@ -577,6 +577,13 @@ function snapValue(value: number, enabled: boolean) {
   return Math.round(value / GRID_SIZE) * GRID_SIZE
 }
 
+function snapDimension(value: number, min: number, enabled: boolean) {
+  if (!enabled) {
+    return Math.max(min, value)
+  }
+  return Math.max(min, snapValue(value, true))
+}
+
 function clampRectRadius(radius: number, width: number, height: number) {
   return clamp(radius, 0, Math.max(0, Math.min(width, height) / 2))
 }
@@ -911,6 +918,81 @@ function moveSelectedByKeyboard(
   }))
 }
 
+export function snapTransformedElementGeometry(
+  element: CanvasDraftElement,
+  snapEnabled: boolean
+): CanvasDraftElement {
+  if (!snapEnabled) {
+    return element
+  }
+
+  switch (element.kind) {
+    case "line":
+      return {
+        ...element,
+        x: snapValue(element.x, true),
+        y: snapValue(element.y, true),
+        x2: snapValue(element.x2, true),
+        y2: snapValue(element.y2, true),
+      }
+    case "text": {
+      const width = snapDimension(element.width, 24 / CANVAS_DOTS_PER_MILLIMETER, true)
+      const height = snapDimension(element.height, 8 / CANVAS_DOTS_PER_MILLIMETER, true)
+      return {
+        ...element,
+        x: snapValue(element.x, true),
+        y: snapValue(element.y, true),
+        width,
+        height,
+      }
+    }
+    case "rect": {
+      const width = snapDimension(element.width, 16 / CANVAS_DOTS_PER_MILLIMETER, true)
+      const height = snapDimension(element.height, 16 / CANVAS_DOTS_PER_MILLIMETER, true)
+      return {
+        ...element,
+        x: snapValue(element.x, true),
+        y: snapValue(element.y, true),
+        width,
+        height,
+        radius: clampRectRadius(element.radius, width, height),
+      }
+    }
+    case "triangle": {
+      const width = snapDimension(element.width, 16 / CANVAS_DOTS_PER_MILLIMETER, true)
+      const height = snapDimension(element.height, 16 / CANVAS_DOTS_PER_MILLIMETER, true)
+      return {
+        ...element,
+        x: snapValue(element.x, true),
+        y: snapValue(element.y, true),
+        width,
+        height,
+      }
+    }
+    case "barcode": {
+      const width = snapDimension(element.width, 36 / CANVAS_DOTS_PER_MILLIMETER, true)
+      const height = snapDimension(element.height, 18 / CANVAS_DOTS_PER_MILLIMETER, true)
+      return {
+        ...element,
+        x: snapValue(element.x, true),
+        y: snapValue(element.y, true),
+        width,
+        height,
+      }
+    }
+    case "qr":
+    case "circle": {
+      const size = snapDimension(element.size, 24 / CANVAS_DOTS_PER_MILLIMETER, true)
+      return {
+        ...element,
+        x: snapValue(element.x, true),
+        y: snapValue(element.y, true),
+        size,
+      }
+    }
+  }
+}
+
 function applyTransformedNodeToElement(
   element: CanvasDraftElement,
   node: Konva.Group
@@ -1017,13 +1099,16 @@ function applyTransformedNodeToElement(
 
 function applyTransformedNodesToDraft(
   draft: CanvasDraftDocument,
-  nodes: Konva.Group[]
+  nodes: Konva.Group[],
+  snapEnabled = false
 ): CanvasDraftDocument {
   return {
     ...draft,
     elements: draft.elements.map((item) => {
       const node = nodes.find((candidate) => candidate.id() === item.id)
-      return node ? applyTransformedNodeToElement(item, node) : item
+      return node
+        ? snapTransformedElementGeometry(applyTransformedNodeToElement(item, node), snapEnabled)
+        : item
     }),
   }
 }
@@ -1685,6 +1770,8 @@ function CanvasToolbar({
               <Button
                 size="sm"
                 variant={state.snapEnabled ? "default" : "outline"}
+                aria-pressed={state.snapEnabled}
+                title="吸附"
                 disabled={interactionLocked}
                 onClick={() =>
                   onChange((current) => {
@@ -3603,7 +3690,9 @@ function CanvasStageView({
       }
       onChange((current) =>
         commitHistory
-          ? applyDraftUpdate(current, (draft) => applyTransformedNodesToDraft(draft, nodes))
+          ? applyDraftUpdate(current, (draft) =>
+              applyTransformedNodesToDraft(draft, nodes, current.snapEnabled)
+            )
           : applyLiveDraftUpdate(current, (draft) => applyTransformedNodesToDraft(draft, nodes))
       )
       transformer.forceUpdate()

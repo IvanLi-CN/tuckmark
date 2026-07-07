@@ -407,6 +407,27 @@ export const CanvasWorkspaceSelectableText: Story = {
   },
 }
 
+export const CanvasWorkspaceSnapEnabled: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "rect-selected",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const snapButton = await canvas.findByRole("button", { name: "吸附" })
+    await expect(snapButton).toHaveAttribute("aria-pressed", "true")
+  },
+}
+
 export const CanvasWorkspaceNarrow: Story = {
   args: {
     context: runtimeContext,
