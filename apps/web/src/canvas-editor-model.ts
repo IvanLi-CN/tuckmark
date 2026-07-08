@@ -1713,80 +1713,80 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
                   ? 4.5
                   : scenario === "text-justify-multiline-selected"
                     ? 6
-                  : scenario === "text-justify-centered-selected"
-                    ? 2.5
-                  : scenario === "text-justify-top-selected"
-                    ? 10
-                  : scenario === "text-centered-selected"
-                    ? 2.5
-                    : 4,
+                    : scenario === "text-justify-centered-selected"
+                      ? 2.5
+                      : scenario === "text-justify-top-selected"
+                        ? 10
+                        : scenario === "text-centered-selected"
+                          ? 2.5
+                          : 4,
               y:
                 scenario === "text-justify-selected"
                   ? 6.5
                   : scenario === "text-justify-multiline-selected"
                     ? 4
-                  : scenario === "text-justify-centered-selected"
-                    ? 2.1
-                  : scenario === "text-justify-top-selected"
-                    ? 3
-                  : scenario === "text-centered-selected"
-                    ? 2.1
-                    : 4,
+                    : scenario === "text-justify-centered-selected"
+                      ? 2.1
+                      : scenario === "text-justify-top-selected"
+                        ? 3
+                        : scenario === "text-centered-selected"
+                          ? 2.1
+                          : 4,
               value:
                 scenario === "text-justify-selected"
                   ? "可编辑文本"
                   : scenario === "text-justify-multiline-selected"
                     ? "Koha Cat"
-                  : scenario === "text-justify-centered-selected"
-                    ? "Koha Cat"
-                  : scenario === "text-justify-top-selected"
-                    ? "Name"
-                  : scenario === "text-centered-selected"
-                    ? "MMM"
-                    : "20kΩ\n3333",
+                    : scenario === "text-justify-centered-selected"
+                      ? "Koha Cat"
+                      : scenario === "text-justify-top-selected"
+                        ? "Name"
+                        : scenario === "text-centered-selected"
+                          ? "MMM"
+                          : "20kΩ\n3333",
               width:
                 scenario === "text-justify-selected"
                   ? 22.5
                   : scenario === "text-justify-multiline-selected"
                     ? 21.3
-                  : scenario === "text-justify-centered-selected"
-                    ? 21.3
-                  : scenario === "text-justify-top-selected"
-                    ? 22.5
-                  : scenario === "text-centered-selected"
-                    ? 32
-                    : 26,
+                    : scenario === "text-justify-centered-selected"
+                      ? 21.3
+                      : scenario === "text-justify-top-selected"
+                        ? 22.5
+                        : scenario === "text-centered-selected"
+                          ? 32
+                          : 26,
               height:
                 scenario === "text-justify-selected"
                   ? 6.6
                   : scenario === "text-justify-multiline-selected"
                     ? 6.6
-                  : scenario === "text-justify-centered-selected"
-                    ? 6.6
-                  : scenario === "text-justify-top-selected"
-                    ? 12
-                  : scenario === "text-centered-selected"
-                    ? 14
-                    : 14,
+                    : scenario === "text-justify-centered-selected"
+                      ? 6.6
+                      : scenario === "text-justify-top-selected"
+                        ? 12
+                        : scenario === "text-centered-selected"
+                          ? 14
+                          : 14,
               fontSize:
                 scenario === "text-justify-selected"
                   ? 3
                   : scenario === "text-justify-multiline-selected"
                     ? 3.5
-                  : scenario === "text-justify-centered-selected"
-                    ? 3.5
-                  : scenario === "text-justify-top-selected"
-                    ? 4.3
-                  : scenario === "text-centered-selected"
-                    ? 8.9
-                    : 5,
+                    : scenario === "text-justify-centered-selected"
+                      ? 3.5
+                      : scenario === "text-justify-top-selected"
+                        ? 4.3
+                        : scenario === "text-centered-selected"
+                          ? 8.9
+                          : 5,
               fontFamily: scenario === "text-centered-selected" ? "arial" : "system-sans",
               lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
               align:
-                scenario === "text-justify-selected"
-                  || scenario === "text-justify-multiline-selected"
-                  || scenario === "text-justify-centered-selected"
-                  || scenario === "text-justify-top-selected"
+                scenario === "text-justify-selected" ||
+                scenario === "text-justify-multiline-selected" ||
+                scenario === "text-justify-centered-selected" ||
+                scenario === "text-justify-top-selected"
                   ? "justify"
                   : scenario === "text-centered-selected"
                     ? "center"
@@ -1802,7 +1802,7 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
                   ? "middle"
                   : scenario === "text-justify-top-selected"
                     ? "top"
-                  : "top",
+                    : "top",
               stretchX: false,
               stretchY: false,
               autoWrap: scenario === "text-centered-selected" ? false : true,
@@ -1815,7 +1815,7 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
                   ? 1
                   : scenario === "text-justify-multiline-selected"
                     ? 2
-                  : 2,
+                    : 2,
               meta: { ...element.meta, name: "文本 2" },
             }
           : element
