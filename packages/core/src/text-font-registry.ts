@@ -1,0 +1,510 @@
+export const TEXT_AVERAGE_GLYPH_WIDTH_RATIO = 0.78
+
+export type TextFontMetricProfile = {
+  space: number
+  cjk: number
+  uppercase: number
+  lowercase: number
+  digit: number
+  punctuation: number
+  symbol: number
+  fallback: number
+}
+
+export const textFontPickerFamilies = [
+  "arial",
+  "archivo",
+  "barlow",
+  "barlow-condensed",
+  "bebas-neue",
+  "courier-new",
+  "dm-sans",
+  "exo-2",
+  "georgia",
+  "ibm-plex-mono",
+  "ibm-plex-sans",
+  "ibm-plex-serif",
+  "inconsolata",
+  "inter",
+  "inter-tight",
+  "jetbrains-mono",
+  "manrope",
+  "noto-sans-sc",
+  "noto-serif-sc",
+  "oswald",
+  "outfit",
+  "overpass",
+  "public-sans",
+  "rajdhani",
+  "roboto",
+  "roboto-condensed",
+  "source-sans-3",
+  "source-serif-4",
+  "space-grotesk",
+  "space-mono",
+  "times-new-roman",
+  "trebuchet-ms",
+  "verdana",
+  "work-sans",
+] as const
+export type TextFontPickerFamily = (typeof textFontPickerFamilies)[number]
+
+export const legacyTextFontFamilyAliases = {
+  "system-sans": "arial",
+  "system-serif": "times-new-roman",
+  "system-mono": "courier-new",
+} as const
+export type LegacyTextFontFamily = keyof typeof legacyTextFontFamilyAliases
+
+export const textFontFamilies = [
+  ...textFontPickerFamilies,
+  "system-sans",
+  "system-serif",
+  "system-mono",
+] as const
+export type TextFontFamily = (typeof textFontFamilies)[number]
+
+export type TextFontDefinition = {
+  id: TextFontPickerFamily
+  label: string
+  attributes: readonly string[]
+  bundled: boolean
+  supportsCjk: boolean
+  stack: string
+  loadSample: string
+  metricProfile: TextFontMetricProfile
+}
+
+export const DEFAULT_TEXT_FONT_FAMILY: TextFontPickerFamily = "noto-sans-sc"
+
+const cjkSansMetricProfile: TextFontMetricProfile = {
+  space: 0.32,
+  cjk: 1,
+  uppercase: 0.73,
+  lowercase: 0.57,
+  digit: 0.56,
+  punctuation: 0.36,
+  symbol: 0.8,
+  fallback: 0.8,
+}
+
+const cjkSerifMetricProfile: TextFontMetricProfile = {
+  space: 0.3,
+  cjk: 1,
+  uppercase: 0.76,
+  lowercase: 0.55,
+  digit: 0.54,
+  punctuation: 0.31,
+  symbol: 0.74,
+  fallback: 0.74,
+}
+
+const sansMetricProfile: TextFontMetricProfile = {
+  space: 0.31,
+  cjk: 1,
+  uppercase: 0.7,
+  lowercase: 0.55,
+  digit: 0.56,
+  punctuation: 0.32,
+  symbol: 0.75,
+  fallback: 0.74,
+}
+
+const condensedSansMetricProfile: TextFontMetricProfile = {
+  space: 0.28,
+  cjk: 1,
+  uppercase: 0.62,
+  lowercase: 0.5,
+  digit: 0.51,
+  punctuation: 0.28,
+  symbol: 0.64,
+  fallback: 0.64,
+}
+
+const geometricSansMetricProfile: TextFontMetricProfile = {
+  space: 0.3,
+  cjk: 1,
+  uppercase: 0.72,
+  lowercase: 0.56,
+  digit: 0.58,
+  punctuation: 0.33,
+  symbol: 0.78,
+  fallback: 0.76,
+}
+
+const serifMetricProfile: TextFontMetricProfile = {
+  space: 0.32,
+  cjk: 1,
+  uppercase: 0.75,
+  lowercase: 0.55,
+  digit: 0.53,
+  punctuation: 0.32,
+  symbol: 0.74,
+  fallback: 0.74,
+}
+
+const monoMetricProfile: TextFontMetricProfile = {
+  space: 0.6,
+  cjk: 1,
+  uppercase: 0.6,
+  lowercase: 0.6,
+  digit: 0.6,
+  punctuation: 0.6,
+  symbol: 0.6,
+  fallback: 0.6,
+}
+
+const textFontDefinitionRecord: Record<
+  TextFontPickerFamily,
+  Omit<TextFontDefinition, "id" | "attributes">
+> = {
+  arial: {
+    label: "Arial",
+    bundled: false,
+    supportsCjk: false,
+    stack: "Arial, 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Arial 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+  archivo: {
+    label: "Archivo",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Archivo', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Archivo 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+  barlow: {
+    label: "Barlow",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Barlow', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Barlow 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+  "barlow-condensed": {
+    label: "Barlow Condensed",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Barlow Condensed', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Barlow Condensed 20kΩ 字",
+    metricProfile: condensedSansMetricProfile,
+  },
+  "bebas-neue": {
+    label: "Bebas Neue",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Bebas Neue', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Bebas Neue 20kΩ 字",
+    metricProfile: condensedSansMetricProfile,
+  },
+  "courier-new": {
+    label: "Courier New",
+    bundled: false,
+    supportsCjk: false,
+    stack: "'Courier New', 'Noto Sans SC Variable', 'Noto Sans SC', monospace",
+    loadSample: "Courier New 20kΩ 字",
+    metricProfile: monoMetricProfile,
+  },
+  "dm-sans": {
+    label: "DM Sans",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'DM Sans', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "DM Sans 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+  "exo-2": {
+    label: "Exo 2",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Exo 2', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Exo 2 20kΩ 字",
+    metricProfile: geometricSansMetricProfile,
+  },
+  georgia: {
+    label: "Georgia",
+    bundled: false,
+    supportsCjk: false,
+    stack: "Georgia, 'Noto Serif SC Variable', 'Noto Serif SC', serif",
+    loadSample: "Georgia 20kΩ 字",
+    metricProfile: serifMetricProfile,
+  },
+  "ibm-plex-mono": {
+    label: "IBM Plex Mono",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'IBM Plex Mono', 'Noto Sans SC Variable', 'Noto Sans SC', monospace",
+    loadSample: "IBM Plex Mono 20kΩ 字",
+    metricProfile: monoMetricProfile,
+  },
+  "ibm-plex-sans": {
+    label: "IBM Plex Sans",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'IBM Plex Sans', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "IBM Plex Sans 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+  "ibm-plex-serif": {
+    label: "IBM Plex Serif",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'IBM Plex Serif', 'Noto Serif SC Variable', 'Noto Serif SC', serif",
+    loadSample: "IBM Plex Serif 20kΩ 字",
+    metricProfile: serifMetricProfile,
+  },
+  inconsolata: {
+    label: "Inconsolata",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Inconsolata', 'Noto Sans SC Variable', 'Noto Sans SC', monospace",
+    loadSample: "Inconsolata 20kΩ 字",
+    metricProfile: monoMetricProfile,
+  },
+  inter: {
+    label: "Inter",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Inter Variable', 'Inter', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Inter 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+  "inter-tight": {
+    label: "Inter Tight",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Inter Tight', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Inter Tight 20kΩ 字",
+    metricProfile: condensedSansMetricProfile,
+  },
+  "jetbrains-mono": {
+    label: "JetBrains Mono",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'JetBrains Mono', 'Noto Sans SC Variable', 'Noto Sans SC', monospace",
+    loadSample: "JetBrains Mono 20kΩ 字",
+    metricProfile: monoMetricProfile,
+  },
+  manrope: {
+    label: "Manrope",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Manrope', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Manrope 20kΩ 字",
+    metricProfile: geometricSansMetricProfile,
+  },
+  "noto-sans-sc": {
+    label: "Noto Sans SC",
+    bundled: true,
+    supportsCjk: true,
+    stack: "'Noto Sans SC Variable', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+    loadSample: "Noto Sans SC 20kΩ 字",
+    metricProfile: cjkSansMetricProfile,
+  },
+  "noto-serif-sc": {
+    label: "Noto Serif SC",
+    bundled: true,
+    supportsCjk: true,
+    stack:
+      "'Noto Serif SC Variable', 'Songti SC', 'Noto Serif CJK SC', 'Source Han Serif SC', serif",
+    loadSample: "Noto Serif SC 20kΩ 字",
+    metricProfile: cjkSerifMetricProfile,
+  },
+  oswald: {
+    label: "Oswald",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Oswald', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Oswald 20kΩ 字",
+    metricProfile: condensedSansMetricProfile,
+  },
+  outfit: {
+    label: "Outfit",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Outfit', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Outfit 20kΩ 字",
+    metricProfile: geometricSansMetricProfile,
+  },
+  overpass: {
+    label: "Overpass",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Overpass', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Overpass 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+  "public-sans": {
+    label: "Public Sans",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Public Sans', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Public Sans 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+  rajdhani: {
+    label: "Rajdhani",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Rajdhani', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Rajdhani 20kΩ 字",
+    metricProfile: condensedSansMetricProfile,
+  },
+  roboto: {
+    label: "Roboto",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Roboto', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Roboto 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+  "roboto-condensed": {
+    label: "Roboto Condensed",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Roboto Condensed', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Roboto Condensed 20kΩ 字",
+    metricProfile: condensedSansMetricProfile,
+  },
+  "source-sans-3": {
+    label: "Source Sans 3",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Source Sans 3', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Source Sans 3 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+  "source-serif-4": {
+    label: "Source Serif 4",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Source Serif 4', 'Noto Serif SC Variable', 'Noto Serif SC', serif",
+    loadSample: "Source Serif 4 20kΩ 字",
+    metricProfile: serifMetricProfile,
+  },
+  "space-grotesk": {
+    label: "Space Grotesk",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Space Grotesk', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Space Grotesk 20kΩ 字",
+    metricProfile: geometricSansMetricProfile,
+  },
+  "space-mono": {
+    label: "Space Mono",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Space Mono', 'Noto Sans SC Variable', 'Noto Sans SC', monospace",
+    loadSample: "Space Mono 20kΩ 字",
+    metricProfile: monoMetricProfile,
+  },
+  "times-new-roman": {
+    label: "Times New Roman",
+    bundled: false,
+    supportsCjk: false,
+    stack: "'Times New Roman', 'Noto Serif SC Variable', 'Noto Serif SC', serif",
+    loadSample: "Times New Roman 20kΩ 字",
+    metricProfile: serifMetricProfile,
+  },
+  "trebuchet-ms": {
+    label: "Trebuchet MS",
+    bundled: false,
+    supportsCjk: false,
+    stack: "'Trebuchet MS', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Trebuchet MS 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+  verdana: {
+    label: "Verdana",
+    bundled: false,
+    supportsCjk: false,
+    stack: "Verdana, 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Verdana 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+  "work-sans": {
+    label: "Work Sans",
+    bundled: true,
+    supportsCjk: false,
+    stack: "'Work Sans', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Work Sans 20kΩ 字",
+    metricProfile: sansMetricProfile,
+  },
+}
+
+const textFontAttributeRecord: Record<TextFontPickerFamily, readonly string[]> = {
+  arial: ["无衬线", "平台预装"],
+  archivo: ["无衬线", "内置"],
+  barlow: ["无衬线", "内置"],
+  "barlow-condensed": ["无衬线", "窄体", "内置"],
+  "bebas-neue": ["无衬线", "窄体", "展示", "内置"],
+  "courier-new": ["等宽", "平台预装"],
+  "dm-sans": ["无衬线", "内置"],
+  "exo-2": ["无衬线", "内置"],
+  georgia: ["衬线", "平台预装"],
+  "ibm-plex-mono": ["等宽", "内置"],
+  "ibm-plex-sans": ["无衬线", "内置"],
+  "ibm-plex-serif": ["衬线", "内置"],
+  inconsolata: ["等宽", "内置"],
+  inter: ["无衬线", "可变", "内置"],
+  "inter-tight": ["无衬线", "窄体", "内置"],
+  "jetbrains-mono": ["等宽", "内置"],
+  manrope: ["无衬线", "内置"],
+  "noto-sans-sc": ["无衬线", "中文支持", "可变", "内置"],
+  "noto-serif-sc": ["衬线", "中文支持", "可变", "内置"],
+  oswald: ["无衬线", "窄体", "内置"],
+  outfit: ["无衬线", "内置"],
+  overpass: ["无衬线", "内置"],
+  "public-sans": ["无衬线", "内置"],
+  rajdhani: ["无衬线", "窄体", "内置"],
+  roboto: ["无衬线", "内置"],
+  "roboto-condensed": ["无衬线", "窄体", "内置"],
+  "source-sans-3": ["无衬线", "内置"],
+  "source-serif-4": ["衬线", "内置"],
+  "space-grotesk": ["无衬线", "内置"],
+  "space-mono": ["等宽", "内置"],
+  "times-new-roman": ["衬线", "平台预装"],
+  "trebuchet-ms": ["无衬线", "平台预装"],
+  verdana: ["无衬线", "平台预装"],
+  "work-sans": ["无衬线", "内置"],
+}
+
+export const textFontRegistry = textFontPickerFamilies.map((fontFamily) => ({
+  id: fontFamily,
+  attributes: textFontAttributeRecord[fontFamily],
+  ...textFontDefinitionRecord[fontFamily],
+})) satisfies readonly TextFontDefinition[]
+
+export function resolveTextFontFamily(fontFamily?: TextFontFamily): TextFontPickerFamily {
+  if (!fontFamily) {
+    return DEFAULT_TEXT_FONT_FAMILY
+  }
+  if (fontFamily in legacyTextFontFamilyAliases) {
+    return legacyTextFontFamilyAliases[fontFamily as LegacyTextFontFamily]
+  }
+  return fontFamily as TextFontPickerFamily
+}
+
+export const TEXT_FONT_FAMILY_STACKS: Record<TextFontFamily, string> = Object.fromEntries(
+  textFontFamilies.map((fontFamily) => [
+    fontFamily,
+    textFontDefinitionRecord[resolveTextFontFamily(fontFamily)].stack,
+  ])
+) as Record<TextFontFamily, string>
+
+export const TEXT_FONT_METRIC_PROFILES: Record<TextFontFamily, TextFontMetricProfile> =
+  Object.fromEntries(
+    textFontFamilies.map((fontFamily) => [
+      fontFamily,
+      textFontDefinitionRecord[resolveTextFontFamily(fontFamily)].metricProfile,
+    ])
+  ) as Record<TextFontFamily, TextFontMetricProfile>
+
+export function getTextFontDefinition(fontFamily?: TextFontFamily): TextFontDefinition {
+  return textFontRegistry.find((definition) => definition.id === resolveTextFontFamily(fontFamily))!
+}
+
+export function getTextFontMetricProfile(fontFamily?: TextFontFamily): TextFontMetricProfile {
+  return TEXT_FONT_METRIC_PROFILES[fontFamily ?? DEFAULT_TEXT_FONT_FAMILY]
+}

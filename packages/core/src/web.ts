@@ -25,7 +25,9 @@ export {
 } from "./sync-state.js"
 export { getTemplateById, presetTemplates } from "./template-library.js"
 export type {
+  TextFontDefinition,
   TextFontFamily,
+  TextFontPickerFamily,
   TextHorizontalAlign,
   TextLayout,
   TextMeasureFunction,
@@ -37,13 +39,17 @@ export {
   DEFAULT_TEXT_VERTICAL_ALIGN,
   estimateCharsPerLine,
   estimateTextLineWidth,
+  getTextFontDefinition,
   getTextFontFamilyStack,
   getTextNaturalHeight,
   normalizeTextLineHeight,
+  resolveTextFontFamily,
   resolveTextLayout,
   TEXT_FONT_FAMILY_STACKS,
   TEXT_LINE_HEIGHT_RATIO,
   textFontFamilies,
+  textFontPickerFamilies,
+  textFontRegistry,
   textHorizontalAlignments,
   textVerticalAlignments,
   wrapText,
