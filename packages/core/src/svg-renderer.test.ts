@@ -16,7 +16,7 @@ describe("svg text rendering", () => {
           width: 100,
           height: 40,
           fontSize: 20,
-          fontFamily: "system-mono",
+          fontFamily: "courier-new",
           lineHeight: 1.5,
           fontWeight: "bold",
           align: "right",
@@ -32,7 +32,7 @@ describe("svg text rendering", () => {
       {}
     )
 
-    expect(svg).toContain('font-family="ui-monospace')
+    expect(svg).toContain('font-family="&apos;Courier New&apos;')
     expect(svg).toContain("scale(")
     expect(svg).toContain('overflow="hidden"')
     expect(svg).toContain('text-anchor="start"')

@@ -1,5 +1,5 @@
-import { DEFAULT_TEXT_FONT_FAMILY, getTextFontDefinition, TEXT_FONT_FAMILY_STACKS, TEXT_FONT_GROUP_LABELS, textFontFamilies, textFontGroupIds, textFontRegistry, type TextFontDefinition, type TextFontFamily, type TextFontGroupId } from "./text-font-registry.js";
-export { DEFAULT_TEXT_FONT_FAMILY, getTextFontDefinition, TEXT_FONT_FAMILY_STACKS, TEXT_FONT_GROUP_LABELS, textFontFamilies, textFontGroupIds, textFontRegistry, type TextFontDefinition, type TextFontFamily, type TextFontGroupId, };
+import { DEFAULT_TEXT_FONT_FAMILY, getTextFontDefinition, resolveTextFontFamily, TEXT_FONT_FAMILY_STACKS, type TextFontDefinition, type TextFontFamily, type TextFontPickerFamily, textFontFamilies, textFontPickerFamilies, textFontRegistry } from "./text-font-registry.js";
+export { DEFAULT_TEXT_FONT_FAMILY, getTextFontDefinition, resolveTextFontFamily, TEXT_FONT_FAMILY_STACKS, type TextFontDefinition, type TextFontFamily, type TextFontPickerFamily, textFontFamilies, textFontPickerFamilies, textFontRegistry, };
 export declare const TEXT_LINE_HEIGHT_RATIO = 1.2;
 export declare const DEFAULT_TEXT_LINE_HEIGHT = 1.2;
 export declare const TEXT_VISUAL_TOP_TRIM_RATIO = 0.18;

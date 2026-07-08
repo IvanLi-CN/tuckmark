@@ -214,14 +214,14 @@ output.
   - canvas text measurement
   - Konva stage rendering
   - SVG preview and output rendering
-  - inspector labels and selector grouping
-- Official built-in fonts are self-hosted and must not depend on remote CDNs or
+  - inspector labels and selector preview
+- Bundled fonts are self-hosted and must not depend on remote CDNs or
   user-installed fonts.
 - Legacy draft/template values `system-sans`, `system-serif`, `system-mono`,
   and `arial` remain valid serialized inputs and continue to render, edit, and
   export without migration.
 - Browser-static, Storybook, Konva stage, and SVG/output preview must wait for
-  official font readiness before final measurement-sensitive text rendering so
+  bundled-font readiness before final measurement-sensitive text rendering so
   late fallback-font replacement does not shift the same sample text across
   surfaces.
 - `browser-static` must support canvas preview and print without `/api` packet
@@ -270,16 +270,22 @@ output.
   - numeric font size
   - numeric line height
   - one shared font registry that owns text schema values, measurement
-    profiles, inspector labels, and font stacks
-  - official built-in font family choices: `noto-sans-sc`, `noto-serif-sc`,
-    `ibm-plex-sans`, `ibm-plex-mono`, `space-grotesk`, and `oswald`
-  - compatibility-only font family choices retained for existing drafts and
-    templates: `system-sans`, `system-serif`, `system-mono`, and `arial`
-  - a grouped font selector with `官方中文`, `官方工业`, and `系统兼容`
-    sections
+    profiles, inspector labels, font stacks, legacy alias resolution, and the
+    flat picker list
+  - bundled named font family choices exceeding `20`, including
+    `archivo`, `barlow`, `barlow-condensed`, `bebas-neue`, `dm-sans`,
+    `exo-2`, `ibm-plex-mono`, `ibm-plex-sans`, `ibm-plex-serif`,
+    `inconsolata`, `inter`, `inter-tight`, `jetbrains-mono`, `manrope`,
+    `noto-sans-sc`, `noto-serif-sc`, `oswald`, `outfit`, `overpass`,
+    `public-sans`, `rajdhani`, `roboto`, `roboto-condensed`,
+    `source-sans-3`, `source-serif-4`, `space-grotesk`, `space-mono`,
+    and `work-sans`
+  - explicit named platform-font choices kept for compatibility workflows:
+    `arial`, `courier-new`, `georgia`, `times-new-roman`,
+    `trebuchet-ms`, and `verdana`
+  - a flat font selector with no user-facing grouping
   - each font option previewing itself directly inside the selector; Latin-first
-    families keep their English names so the preview does not collapse into a
-    Chinese fallback label
+    families keep their English names so the preview stays visually trustworthy
   - a three-by-three alignment control that maps to horizontal `align` and
     `verticalAlign`
   - automatic wrapping, two-end text justification, vertical text, and
@@ -413,8 +419,9 @@ output.
   automatic wrapping, two-end justification, horizontal stretch, vertical
   stretch, vertical text, and rotation controls in the property inspector.
 - New text defaults to `noto-sans-sc` instead of a system fallback family.
-- The font selector groups official built-ins separately from compatibility
-  fonts, and each option previews itself using the selected font stack.
+- The font selector shows a flat list of explicit named fonts, exposes more
+  than `20` bundled choices, and previews each option using the selected font
+  stack.
 - Existing drafts and templates using `system-sans`, `system-serif`,
   `system-mono`, `arial`, or `noto-sans-sc` continue to deserialize, edit,
   preview, and export without data migration.
@@ -429,7 +436,7 @@ output.
   keeping the saved `fontSize` unchanged.
 - Text ink is clipped to the text element container. With automatic wrapping
   disabled, overflow is cut by the container instead of escaping it.
-- Official font rendering stays aligned across Storybook, browser-static, the
+- Named-font rendering stays aligned across Storybook, browser-static, the
   Konva stage, and SVG/output preview for mixed content such as `20kΩ`, mixed
   Chinese/Latin text, digits, symbols, and mono-width labels.
 - Canvas workspace exposes type-correct geometry editing: rectangles can adjust
@@ -611,11 +618,11 @@ output.
   PR: include
   ![Canvas text container controls](./assets/canvas-text-container-controls-1280x800.png)
 
-- Storybook canvas grouped font-selector state showing `官方中文`, `官方工业`,
-  and `系统兼容` sections with each option rendered in its own font stack
+- Storybook canvas flat font-selector state showing a long explicit named-font
+  list with each option rendered in its own font stack
 
   PR: include
-  ![Canvas grouped font selector](./assets/canvas-text-font-family-select-grouped-20260708.png)
+  ![Canvas flat font selector](./assets/canvas-text-font-family-select-flat-20260708.png)
 
 - `1280×800` canvas workspace text flow controls showing two-end
   justification, vertical text, wrapping, stretch toggles, and rotation split
@@ -630,12 +637,12 @@ output.
   PR: include
   ![Canvas text rotation controls](./assets/canvas-text-rotation-integer-buttons.png)
 
-- `1280×800` canvas workspace text BBOX font metrics state showing official
-  `Noto Sans SC` and `IBM Plex Mono` rendering for `20kΩ` plus mixed
+- `1280×800` canvas workspace text BBOX font metrics state showing named-font
+  `Noto Sans SC` rendering for `20kΩ` plus mixed
   Chinese/Latin text inside the same measurement-sensitive canvas flow.
 
   PR: include
-  ![Canvas text BBOX font metrics](./assets/canvas-text-font-metrics-official-20260708.png)
+  ![Canvas text BBOX font metrics](./assets/canvas-text-font-metrics-flat-pool-20260708.png)
 
 - `1280×800` canvas workspace on a browser-local user template with the version-history drawer open and saved/autosave history visible
 

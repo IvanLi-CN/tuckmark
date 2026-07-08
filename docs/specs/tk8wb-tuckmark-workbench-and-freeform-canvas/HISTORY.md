@@ -142,16 +142,20 @@ while the workbench was being productized:
   - text flow controls include two-end justification, which adds spacing
     between visible characters, and vertical text, which lays glyphs
     top-to-bottom in columns
-- The text-font contract was later hardened from a mixed system-font list into
-  a deterministic product-owned registry:
-  - six official built-ins are now self-hosted in Web and grouped separately
-    from four compatibility-only system values
+- The text-font contract was later hardened again from a small mixed list into
+  a deterministic named-font registry:
+  - the Web bundle now self-hosts more than `20` explicit font families
+  - platform-resident choices are limited to explicit shared names such as
+    `Arial`, `Courier New`, `Georgia`, `Times New Roman`, `Trebuchet MS`, and
+    `Verdana`
+  - legacy `system-*` draft values remain readable through alias mapping onto
+    named fonts instead of surviving as user-facing picker choices
   - new text defaults to `Noto Sans SC` instead of a system fallback
-  - the inspector font selector previews each option in its own font and keeps
-    Latin-first industrial families labeled in English
+  - the inspector font selector previews each option in its own font through a
+    flat list with no user-facing grouping
   - Storybook, browser-static, the Konva stage, and SVG export now wait for
-    the same official font readiness path before final measurement-sensitive
-    text rendering
+    the same draft-scoped font readiness path before final
+    measurement-sensitive text rendering
 - The shared footer also became an operator support surface:
   - repository link and site rights notice are visible without opening
     developer tools

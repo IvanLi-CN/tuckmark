@@ -2,26 +2,26 @@ import {
   DEFAULT_TEXT_FONT_FAMILY,
   getTextFontDefinition,
   getTextFontMetricProfile,
+  resolveTextFontFamily,
   TEXT_FONT_FAMILY_STACKS,
-  TEXT_FONT_GROUP_LABELS,
   type TextFontDefinition,
   type TextFontFamily,
-  type TextFontGroupId,
+  type TextFontPickerFamily,
   textFontFamilies,
-  textFontGroupIds,
+  textFontPickerFamilies,
   textFontRegistry,
 } from "./text-font-registry.js"
 
 export {
   DEFAULT_TEXT_FONT_FAMILY,
   getTextFontDefinition,
+  resolveTextFontFamily,
   TEXT_FONT_FAMILY_STACKS,
-  TEXT_FONT_GROUP_LABELS,
   type TextFontDefinition,
   type TextFontFamily,
-  type TextFontGroupId,
+  type TextFontPickerFamily,
   textFontFamilies,
-  textFontGroupIds,
+  textFontPickerFamilies,
   textFontRegistry,
 }
 

@@ -1,5 +1,5 @@
-import { DEFAULT_TEXT_FONT_FAMILY, getTextFontDefinition, getTextFontMetricProfile, TEXT_FONT_FAMILY_STACKS, TEXT_FONT_GROUP_LABELS, textFontFamilies, textFontGroupIds, textFontRegistry, } from "./text-font-registry.js";
-export { DEFAULT_TEXT_FONT_FAMILY, getTextFontDefinition, TEXT_FONT_FAMILY_STACKS, TEXT_FONT_GROUP_LABELS, textFontFamilies, textFontGroupIds, textFontRegistry, };
+import { DEFAULT_TEXT_FONT_FAMILY, getTextFontDefinition, getTextFontMetricProfile, resolveTextFontFamily, TEXT_FONT_FAMILY_STACKS, textFontFamilies, textFontPickerFamilies, textFontRegistry, } from "./text-font-registry.js";
+export { DEFAULT_TEXT_FONT_FAMILY, getTextFontDefinition, resolveTextFontFamily, TEXT_FONT_FAMILY_STACKS, textFontFamilies, textFontPickerFamilies, textFontRegistry, };
 export const TEXT_LINE_HEIGHT_RATIO = 1.2;
 export const DEFAULT_TEXT_LINE_HEIGHT = TEXT_LINE_HEIGHT_RATIO;
 export const TEXT_VISUAL_TOP_TRIM_RATIO = 0.18;
@@ -140,7 +140,8 @@ export function estimateCharsPerLine(fontSize, width, fontFamily) {
     return Math.max(4, Math.floor(width / (fontSize * getAverageGlyphWidthRatio(fontFamily))));
 }
 export function estimateTextLineWidth(line, fontSize, fontFamily) {
-    return Array.from(line).reduce((sum, char) => sum + estimateGlyphWidthRatio(char, fontFamily), 0) * fontSize;
+    return (Array.from(line).reduce((sum, char) => sum + estimateGlyphWidthRatio(char, fontFamily), 0) *
+        fontSize);
 }
 function measureTextAdvanceWidth(line, fontSize, fontFamily, measureText, fontWeight) {
     const measured = measureText?.({ text: line, fontSize, fontFamily, fontWeight });
@@ -256,7 +257,9 @@ export function resolveTextLayout(input) {
     const fontMetrics = resolveMeasuredTextLineMetrics("M", input);
     const hasMeasuredMetrics = !verticalText && fontMetrics.measured && lineMetrics.every((metrics) => metrics.measured);
     const baselineOffset = getKonvaLineBaselineOffset(lineHeight, fontMetrics);
-    const visualLeft = verticalText ? 0 : Math.min(...lineMetrics.map((metrics) => metrics.visualLeft));
+    const visualLeft = verticalText
+        ? 0
+        : Math.min(...lineMetrics.map((metrics) => metrics.visualLeft));
     const visualRight = verticalText
         ? input.fontSize
         : Math.max(...lineMetrics.map((metrics) => metrics.visualRight));

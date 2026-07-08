@@ -127,7 +127,8 @@ import {
   canvasDotsToMillimeters,
   canvasMillimetersToDots,
 } from "./lib/canvas-units.js"
-import { preloadOfficialTextFonts } from "./lib/text-fonts.js"
+import { recordTextFontRecentUse, recordTextFontUsageDuration } from "./lib/text-font-usage.js"
+import { preloadCanvasTextFonts } from "./lib/text-fonts.js"
 import { cn } from "./lib/utils.js"
 import type {
   CanvasDraftDocument,
@@ -3724,10 +3725,41 @@ function CanvasStageView({
     [state.draft.elements, state.editingId]
   )
   const editingTextGeometry = editingTextElement ? getElementGeometry(editingTextElement) : null
+  const trackedTextFontFamily =
+    editingTextElement?.fontFamily ??
+    (selectedSingleElement?.kind === "text"
+      ? (selectedSingleElement.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY)
+      : null)
+  const textFontUsageSessionRef = React.useRef<{
+    fontFamily: TextFontFamily
+    startedAt: number
+  } | null>(null)
 
   React.useEffect(() => {
     onViewportSizeChange(stageViewportSize)
   }, [onViewportSizeChange, stageViewportSize])
+
+  React.useEffect(() => {
+    if (!trackedTextFontFamily) {
+      textFontUsageSessionRef.current = null
+      return
+    }
+
+    recordTextFontRecentUse(trackedTextFontFamily)
+    textFontUsageSessionRef.current = {
+      fontFamily: trackedTextFontFamily,
+      startedAt: Date.now(),
+    }
+
+    return () => {
+      if (!textFontUsageSessionRef.current) {
+        return
+      }
+      const elapsedMs = Date.now() - textFontUsageSessionRef.current.startedAt
+      recordTextFontUsageDuration(textFontUsageSessionRef.current.fontFamily, elapsedMs)
+      textFontUsageSessionRef.current = null
+    }
+  }, [trackedTextFontFamily])
 
   React.useEffect(() => {
     const transformer = transformerRef.current
@@ -4519,10 +4551,17 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
   const readOnly = state.readOnlyVersion !== null
   const interactionLocked = readOnly || state.loading
   const [, setFontLoadGeneration] = React.useState(0)
+  const draftFontFamilies = React.useMemo(
+    () =>
+      state.draft.elements.flatMap((element) =>
+        element.kind === "text" ? [element.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY] : []
+      ),
+    [state.draft.elements]
+  )
 
   React.useEffect(() => {
     let cancelled = false
-    void preloadOfficialTextFonts().then(() => {
+    void preloadCanvasTextFonts(draftFontFamilies).then(() => {
       if (!cancelled) {
         setFontLoadGeneration((current) => current + 1)
       }
@@ -4530,7 +4569,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [draftFontFamilies])
 
   const refreshVersionHistory = React.useCallback(async () => {
     if (!state.liveDraft.templateId) {

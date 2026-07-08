@@ -1968,7 +1968,7 @@ describe("web workbench app", () => {
       width: 24.1,
       height: 11.9,
       fontSize: 4.4,
-      fontFamily: "system-sans",
+      fontFamily: "arial",
       lineHeight: 1.2,
       fontWeight: "bold",
       align: "left",
