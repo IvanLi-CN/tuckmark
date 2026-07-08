@@ -633,6 +633,7 @@ function toCanvasPrintSource(
               lineHeight: element.lineHeight,
               fontWeight: element.fontWeight,
               align: element.align,
+              justifyAlign: element.justifyAlign,
               verticalAlign: element.verticalAlign,
               stretchX: element.stretchX,
               stretchY: element.stretchY,

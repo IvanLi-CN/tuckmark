@@ -46,6 +46,7 @@ export type CanvasElement =
       lineHeight: number
       fontWeight: "normal" | "bold"
       align: TextHorizontalAlign
+      justifyAlign?: Exclude<TextHorizontalAlign, "justify">
       verticalAlign: TextVerticalAlign
       stretchX: boolean
       stretchY: boolean

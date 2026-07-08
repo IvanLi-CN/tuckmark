@@ -86,6 +86,7 @@ export const textElementSchema = z.object({
   lineHeight: z.number().positive().optional(),
   fontWeight: z.enum(["normal", "bold"]).default("normal"),
   align: z.enum(textHorizontalAlignments).default("left"),
+  justifyAlign: z.enum(["left", "center", "right"]).optional(),
   verticalAlign: z.enum(textVerticalAlignments).optional(),
   stretchX: z.boolean().optional(),
   stretchY: z.boolean().optional(),
