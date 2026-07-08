@@ -34,15 +34,26 @@ The published site:
 - supports `?demo=true` and `?demo=false` on the same app surface
 
 Pages is independent from GitHub Release publication.
+The owner-facing Pages site always reflects the current `main` build, not a
+published release tag. Manual Pages dispatches are still guarded to `main`.
 
 ## Release Contract
 
 `ci-main` writes a durable `release-intent.json` snapshot after merge.
 
-`release.yml` consumes that snapshot to publish:
+`release.yml` consumes that snapshot, checks out the snapshot `merge_sha`, and
+publishes:
 
 - `stable`: `vX.Y.Z`
 - `preview`: `vX.Y.Z-preview.<n>`
+
+Preview releases are GitHub prereleases and must not override the owner-facing
+Pages deployment.
+
+The mainline release train is monotonic across preview and stable publication:
+once `main` has moved to a higher preview train, later preview/stable releases
+must continue or finalize that train instead of falling back to a lower patch
+line.
 
 The release workflow uploads:
 

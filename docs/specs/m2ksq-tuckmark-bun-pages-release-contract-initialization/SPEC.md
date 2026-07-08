@@ -50,9 +50,16 @@ and a reproducible worktree bootstrap path.
 - PR labels are the release-intent source of truth.
 - Mainline release uses a durable snapshot and supports backfill.
 - Pages deployment is separate from GitHub Release publication.
-- Published GitHub Releases and automated release publication trigger a fresh
-  Pages deployment with release tag metadata so the browser-static footer version
-  matches the published release tag.
+- The owner-facing Pages deployment always rebuilds from `main` and displays a
+  mainline effective version instead of a release tag.
+- Manual Pages dispatches stay guarded to `main`; non-`main` refs must not
+  become the owner-facing deployment surface.
+- GitHub Releases keep independent channel semantics: `stable` is a normal
+  release, `preview` is a GitHub prerelease, and preview publication must never
+  override the owner-facing Pages deployment.
+- Release train selection is monotonic across published tags: once `main` has
+  moved to a higher preview train, later preview or stable publication must
+  continue or finalize that train instead of falling back to a lower patch line.
 - Repository settings must align with repo-local declarations.
 
 ## Acceptance
@@ -69,9 +76,10 @@ and a reproducible worktree bootstrap path.
 - Long-lived browser-static tabs continue to recheck for new versions at a low
   frequency, while stale tabs catch up when the page becomes active or returns
   online.
-- Release can publish stable and preview bundles from durable snapshots
-- Pages redeploys after release publication display the published release tag in
-  footer metadata
+- Release can publish stable and preview bundles from durable snapshots, with
+  preview publication marked as GitHub prerelease
+- Owner-facing Pages always reflects the latest deployed `main` commit and does
+  not roll back to a published preview or stable release tag
 - GitHub labels, protection, and Pages settings align with repository truth
 
 ## Visual Evidence

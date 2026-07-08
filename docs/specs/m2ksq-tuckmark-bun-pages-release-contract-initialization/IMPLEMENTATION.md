@@ -17,8 +17,9 @@
   `browser-static` production builds.
 - `apps/web/vite.config.ts` resolves footer metadata from
   `TUCKMARK_APP_VERSION`, then from GitHub tag build context, then from the root
-  package version. GitHub tag values are normalized without a leading `v`
-  because the UI owns the visible `v` prefix.
+  package version. The browser-static shell now renders that effective version
+  verbatim so mainline builds can show values like `main+<shortsha>` while tag
+  builds keep the full release tag.
 - `apps/web/public/pwa/` stores generated Tuckmark maskable PNG icons.
 - `apps/web/src/pwa-lifecycle.ts` owns service worker registration, update
   detection, low-frequency background rechecks, stale-tab catch-up triggers,
@@ -31,10 +32,12 @@
 - `apps/web/src/pwa-lifecycle.test.ts` covers the guarded update-check cadence:
   immediate startup checks, 30-minute periodic polling, 10-minute stale-tab
   activation catch-up, offline skips, online retries, and in-flight dedupe.
-- `.github/workflows/pages.yml` runs on `main` pushes, manual dispatch, and
-  published GitHub Releases. Release-triggered runs check out the published tag.
-  Manual dispatch can also receive a `release_tag` input.
-- `.github/workflows/release.yml` dispatches `pages.yml` with the newly published
-  release tag after `gh release create` succeeds. The Pages build injects that
-  tag through `TUCKMARK_APP_VERSION` so the browser-static footer metadata
-  matches the release that triggered the redeploy.
+- `.github/workflows/pages.yml` runs on `main` pushes and manual dispatch, but
+  the deploy job is guarded to `refs/heads/main`. It always checks out `main`,
+  injects `TUCKMARK_APP_VERSION=main+<shortsha>`, and deploys that owner-facing
+  browser-static runtime without consulting GitHub Releases.
+- `.github/workflows/release.yml` serializes release publication, pins new tags
+  to the snapshot `merge_sha`, checks out that exact merge commit before bundle
+  build, and publishes `channel:preview` as GitHub prereleases with
+  `--latest=false` so preview artifacts cannot silently become the owner-facing
+  default surface.
