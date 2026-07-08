@@ -4,12 +4,12 @@ import {
   getTextFontMetricProfile,
   TEXT_FONT_FAMILY_STACKS,
   TEXT_FONT_GROUP_LABELS,
-  textFontFamilies,
-  textFontGroupIds,
-  textFontRegistry,
   type TextFontDefinition,
   type TextFontFamily,
   type TextFontGroupId,
+  textFontFamilies,
+  textFontGroupIds,
+  textFontRegistry,
 } from "./text-font-registry.js"
 
 export {
@@ -17,12 +17,12 @@ export {
   getTextFontDefinition,
   TEXT_FONT_FAMILY_STACKS,
   TEXT_FONT_GROUP_LABELS,
-  textFontFamilies,
-  textFontGroupIds,
-  textFontRegistry,
   type TextFontDefinition,
   type TextFontFamily,
   type TextFontGroupId,
+  textFontFamilies,
+  textFontGroupIds,
+  textFontRegistry,
 }
 
 export const TEXT_LINE_HEIGHT_RATIO = 1.2

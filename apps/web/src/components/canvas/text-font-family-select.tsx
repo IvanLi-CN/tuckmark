@@ -3,8 +3,8 @@ import {
   getTextFontFamilyStack,
   type TextFontFamily,
 } from "../../../../../packages/core/src/web.js"
-import { cn } from "../../lib/utils.js"
 import { textFontGroups } from "../../lib/text-fonts.js"
+import { cn } from "../../lib/utils.js"
 import {
   Select,
   SelectContent,
@@ -33,7 +33,11 @@ export function TextFontFamilySelect({
   const selectedFont = getTextFontDefinition(value)
 
   return (
-    <Select disabled={disabled} value={value} onValueChange={(nextValue) => onValueChange(nextValue as TextFontFamily)}>
+    <Select
+      disabled={disabled}
+      value={value}
+      onValueChange={(nextValue) => onValueChange(nextValue as TextFontFamily)}
+    >
       <SelectTrigger id={id} className={className}>
         <span
           className="truncate text-left"

@@ -18,11 +18,7 @@ export default meta
 
 type Story = StoryObj<typeof meta>
 
-function StatefulTextFontFamilySelect({
-  initialValue,
-}: {
-  initialValue: TextFontFamily
-}) {
+function StatefulTextFontFamilySelect({ initialValue }: { initialValue: TextFontFamily }) {
   const [value, setValue] = React.useState<TextFontFamily>(initialValue)
 
   return (

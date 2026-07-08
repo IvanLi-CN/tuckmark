@@ -17,10 +17,7 @@ async function flush(times = 2): Promise<void> {
   }
 }
 
-async function renderSelect(
-  value: TextFontFamily = "noto-sans-sc",
-  onValueChange = vi.fn()
-) {
+async function renderSelect(value: TextFontFamily = "noto-sans-sc", onValueChange = vi.fn()) {
   HTMLElement.prototype.hasPointerCapture ??= () => false
   HTMLElement.prototype.setPointerCapture ??= () => undefined
   HTMLElement.prototype.releasePointerCapture ??= () => undefined
@@ -35,11 +32,7 @@ async function renderSelect(
     mountedRoot.render(
       <div>
         <label htmlFor="font-family">字体</label>
-        <TextFontFamilySelect
-          id="font-family"
-          value={value}
-          onValueChange={onValueChange}
-        />
+        <TextFontFamilySelect id="font-family" value={value} onValueChange={onValueChange} />
       </div>
     )
     await flush()

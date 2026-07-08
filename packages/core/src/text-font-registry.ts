@@ -11,11 +11,7 @@ export type TextFontMetricProfile = {
   fallback: number
 }
 
-export const textFontGroupIds = [
-  "official-cjk",
-  "official-industrial",
-  "system-compat",
-] as const
+export const textFontGroupIds = ["official-cjk", "official-industrial", "system-compat"] as const
 export type TextFontGroupId = (typeof textFontGroupIds)[number]
 
 export const TEXT_FONT_GROUP_LABELS: Record<TextFontGroupId, string> = {
@@ -57,8 +53,7 @@ const textFontDefinitionRecord: Record<TextFontFamily, Omit<TextFontDefinition, 
     group: "official-cjk",
     compatOnly: false,
     supportsCjk: true,
-    stack:
-      "'Noto Sans SC Variable', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+    stack: "'Noto Sans SC Variable', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
     loadSample: "字体 20kΩ",
     metricProfile: {
       space: 0.32,
@@ -251,7 +246,9 @@ export const TEXT_FONT_METRIC_PROFILES: Record<TextFontFamily, TextFontMetricPro
   ) as Record<TextFontFamily, TextFontMetricProfile>
 
 export function getTextFontDefinition(fontFamily?: TextFontFamily): TextFontDefinition {
-  return textFontRegistry.find((definition) => definition.id === (fontFamily ?? DEFAULT_TEXT_FONT_FAMILY))!
+  return textFontRegistry.find(
+    (definition) => definition.id === (fontFamily ?? DEFAULT_TEXT_FONT_FAMILY)
+  )!
 }
 
 export function getTextFontMetricProfile(fontFamily?: TextFontFamily): TextFontMetricProfile {

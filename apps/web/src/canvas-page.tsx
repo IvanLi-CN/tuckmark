@@ -86,6 +86,7 @@ import {
 } from "./canvas-editor-model.js"
 import { DimensionPicker } from "./components/canvas/dimension-picker.js"
 import { InspectorNumberField } from "./components/canvas/inspector-number-field.js"
+import { TextFontFamilySelect } from "./components/canvas/text-font-family-select.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
 import { Button } from "./components/ui/button.js"
@@ -101,7 +102,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select.js"
-import { TextFontFamilySelect } from "./components/canvas/text-font-family-select.js"
 import {
   Sheet,
   SheetContent,
@@ -127,8 +127,8 @@ import {
   canvasDotsToMillimeters,
   canvasMillimetersToDots,
 } from "./lib/canvas-units.js"
-import { cn } from "./lib/utils.js"
 import { preloadOfficialTextFonts } from "./lib/text-fonts.js"
+import { cn } from "./lib/utils.js"
 import type {
   CanvasDraftDocument,
   CanvasDraftElement,
@@ -2703,7 +2703,9 @@ function CanvasInspector({
                 id="text-font-family"
                 value={element.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY}
                 onValueChange={(value) =>
-                  updateElement((item) => (item.kind === "text" ? { ...item, fontFamily: value } : item))
+                  updateElement((item) =>
+                    item.kind === "text" ? { ...item, fontFamily: value } : item
+                  )
                 }
                 className={INSPECTOR_SELECT_TRIGGER_CLASS}
               />

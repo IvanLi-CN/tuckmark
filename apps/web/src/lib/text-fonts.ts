@@ -2,11 +2,11 @@ import {
   getTextFontDefinition,
   getTextFontFamilyStack,
   TEXT_FONT_GROUP_LABELS,
-  textFontGroupIds,
-  textFontRegistry,
   type TextFontDefinition,
   type TextFontFamily,
   type TextFontGroupId,
+  textFontGroupIds,
+  textFontRegistry,
 } from "../../../../packages/core/src/web.js"
 
 type TextFontGroup = {
@@ -33,7 +33,11 @@ export const textFontGroups: readonly TextFontGroup[] = textFontGroupIds.map((gr
 }))
 
 function supportsFontLoadingApi() {
-  return typeof document !== "undefined" && "fonts" in document && typeof document.fonts.load === "function"
+  return (
+    typeof document !== "undefined" &&
+    "fonts" in document &&
+    typeof document.fonts.load === "function"
+  )
 }
 
 export function preloadTextFontFamily(fontFamily: TextFontFamily): Promise<void> {
@@ -50,7 +54,10 @@ export function preloadTextFontFamily(fontFamily: TextFontFamily): Promise<void>
   const weights = FONT_PRELOAD_WEIGHTS[fontFamily] ?? [400, 700]
   const promise = Promise.all(
     weights.map((weight) =>
-      document.fonts.load(`${weight} 16px ${getTextFontFamilyStack(fontFamily)}`, definition.loadSample)
+      document.fonts.load(
+        `${weight} 16px ${getTextFontFamilyStack(fontFamily)}`,
+        definition.loadSample
+      )
     )
   )
     .then(() => undefined)
