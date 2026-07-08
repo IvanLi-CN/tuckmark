@@ -1,8 +1,32 @@
 import { describe, expect, it } from "vitest"
 
-import { getTextNaturalHeight, resolveTextLayout } from "./text-layout.js"
+import {
+  DEFAULT_TEXT_FONT_FAMILY,
+  getTextFontDefinition,
+  getTextNaturalHeight,
+  resolveTextLayout,
+  textFontRegistry,
+} from "./text-layout.js"
 
 describe("text layout", () => {
+  it("defaults new text to Noto Sans SC", () => {
+    expect(DEFAULT_TEXT_FONT_FAMILY).toBe("noto-sans-sc")
+    expect(getTextFontDefinition().label).toBe("Noto Sans SC")
+  })
+
+  it("exposes a flat registry with more than twenty named picker fonts", () => {
+    expect(textFontRegistry.length).toBeGreaterThan(20)
+    expect(textFontRegistry.some((definition) => definition.id === "noto-sans-sc")).toBe(true)
+    expect(textFontRegistry.some((definition) => definition.id === "ibm-plex-mono")).toBe(true)
+    expect(textFontRegistry.some((definition) => definition.id === "courier-new")).toBe(true)
+  })
+
+  it("maps legacy system font aliases onto explicit named fonts", () => {
+    expect(getTextFontDefinition("system-sans").id).toBe("arial")
+    expect(getTextFontDefinition("system-serif").id).toBe("times-new-roman")
+    expect(getTextFontDefinition("system-mono").id).toBe("courier-new")
+  })
+
   it("uses configurable line height for visible text block height", () => {
     expect(getTextNaturalHeight(10, 2, 1.5)).toBe(25)
   })
@@ -29,6 +53,7 @@ describe("text layout", () => {
     const layout = resolveTextLayout({
       text: "AB\nC",
       fontSize: 10,
+      fontFamily: "arial",
       width: 80,
       height: 40,
       lineHeight: 1.5,
@@ -36,11 +61,11 @@ describe("text layout", () => {
       verticalAlign: "bottom",
     })
 
-    expect(layout.naturalWidth).toBeCloseTo(14.4)
+    expect(layout.naturalWidth).toBeCloseTo(14)
     expect(layout.naturalHeight).toBe(25)
-    expect(layout.contentWidth).toBeCloseTo(14.4)
+    expect(layout.contentWidth).toBeCloseTo(14)
     expect(layout.contentHeight).toBe(25)
-    expect(layout.contentX).toBeCloseTo(65.6)
+    expect(layout.contentX).toBeCloseTo(66)
     expect(layout.contentY).toBe(15)
   })
 
@@ -48,13 +73,14 @@ describe("text layout", () => {
     const layout = resolveTextLayout({
       text: "AB",
       fontSize: 10,
+      fontFamily: "arial",
       width: 80,
       height: 40,
       align: "center",
       verticalAlign: "middle",
     })
 
-    expect(layout.contentX).toBeCloseTo(32.8)
+    expect(layout.contentX).toBeCloseTo(33)
     expect(layout.contentY).toBe(15)
     expect(layout.scaleX).toBe(1)
     expect(layout.scaleY).toBe(1)
@@ -79,18 +105,18 @@ describe("text layout", () => {
       width: 60,
       height: 20,
       lineHeight: 1.2,
-      fontFamily: "system-sans",
+      fontFamily: "arial",
     })
-    const monoLayout = resolveTextLayout({
+    const condensedLayout = resolveTextLayout({
       text: "20kΩ",
       fontSize: 8.9,
       width: 60,
       height: 20,
       lineHeight: 1.2,
-      fontFamily: "system-mono",
+      fontFamily: "oswald",
     })
 
-    expect(monoLayout.naturalWidth).toBeGreaterThan(sansLayout.naturalWidth)
+    expect(condensedLayout.naturalWidth).toBeLessThan(sansLayout.naturalWidth)
   })
 
   it("uses measured ink bounds for the visible text bbox", () => {
@@ -100,7 +126,7 @@ describe("text layout", () => {
       width: 60,
       height: 20,
       lineHeight: 1.2,
-      fontFamily: "system-sans",
+      fontFamily: "arial",
       measureText: ({ text }) =>
         text === "M"
           ? {
@@ -174,6 +200,7 @@ describe("text layout", () => {
     const layout = resolveTextLayout({
       text: "AB",
       fontSize: 10,
+      fontFamily: "arial",
       width: 80,
       height: 20,
       align: "justify",
@@ -181,7 +208,7 @@ describe("text layout", () => {
 
     expect(layout.contentX).toBe(0)
     expect(layout.contentWidth).toBe(80)
-    expect(layout.lineLayouts[0]?.letterSpacing).toBeCloseTo(65.6)
+    expect(layout.lineLayouts[0]?.letterSpacing).toBeCloseTo(66)
   })
 
   it("does not double-scale justified text when horizontal stretch is enabled", () => {

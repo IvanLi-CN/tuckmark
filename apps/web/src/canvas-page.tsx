@@ -55,7 +55,6 @@ import {
   type TextHorizontalAlign,
   type TextMeasureFunction,
   type TextVerticalAlign,
-  textFontFamilies,
 } from "../../../packages/core/src/web.js"
 import {
   bindElementToExistingField,
@@ -87,6 +86,7 @@ import {
 } from "./canvas-editor-model.js"
 import { DimensionPicker } from "./components/canvas/dimension-picker.js"
 import { InspectorNumberField } from "./components/canvas/inspector-number-field.js"
+import { TextFontFamilySelect } from "./components/canvas/text-font-family-select.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
 import { Button } from "./components/ui/button.js"
@@ -127,6 +127,8 @@ import {
   canvasDotsToMillimeters,
   canvasMillimetersToDots,
 } from "./lib/canvas-units.js"
+import { recordTextFontRecentUse, recordTextFontUsageDuration } from "./lib/text-font-usage.js"
+import { preloadCanvasTextFonts } from "./lib/text-fonts.js"
 import { cn } from "./lib/utils.js"
 import type {
   CanvasDraftDocument,
@@ -208,13 +210,6 @@ const MONO_INK = "#111111"
 const MONO_SURFACE = "#ffffff"
 const INLINE_TEXT_EDITOR_SELECTOR = "textarea[data-tm-inline-text-editor='true']"
 const CANVAS_DEFAULT_TEXT_FONT_FAMILY = getTextFontFamilyStack(DEFAULT_TEXT_FONT_FAMILY)
-const TEXT_FONT_FAMILY_LABELS: Record<TextFontFamily, string> = {
-  "system-sans": "系统无衬线",
-  "system-serif": "系统衬线",
-  "system-mono": "系统等宽",
-  arial: "Arial",
-  "noto-sans-sc": "Noto Sans SC",
-}
 const TEXT_ALIGNMENT_OPTIONS: Array<{
   align: Exclude<TextHorizontalAlign, "justify">
   verticalAlign: TextVerticalAlign
@@ -2704,26 +2699,17 @@ function CanvasInspector({
               <Label htmlFor="text-font-family" className="tm-inspector-inline-label">
                 字体
               </Label>
-              <Select
+              <TextFontFamilySelect
                 disabled={readOnly}
+                id="text-font-family"
                 value={element.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY}
                 onValueChange={(value) =>
                   updateElement((item) =>
-                    item.kind === "text" ? { ...item, fontFamily: value as TextFontFamily } : item
+                    item.kind === "text" ? { ...item, fontFamily: value } : item
                   )
                 }
-              >
-                <SelectTrigger id="text-font-family" className={INSPECTOR_SELECT_TRIGGER_CLASS}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {textFontFamilies.map((fontFamily) => (
-                    <SelectItem key={fontFamily} value={fontFamily}>
-                      {TEXT_FONT_FAMILY_LABELS[fontFamily]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                className={INSPECTOR_SELECT_TRIGGER_CLASS}
+              />
             </div>
           ) : null}
           {element.kind === "text" ? (
@@ -3739,10 +3725,41 @@ function CanvasStageView({
     [state.draft.elements, state.editingId]
   )
   const editingTextGeometry = editingTextElement ? getElementGeometry(editingTextElement) : null
+  const trackedTextFontFamily =
+    editingTextElement?.fontFamily ??
+    (selectedSingleElement?.kind === "text"
+      ? (selectedSingleElement.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY)
+      : null)
+  const textFontUsageSessionRef = React.useRef<{
+    fontFamily: TextFontFamily
+    startedAt: number
+  } | null>(null)
 
   React.useEffect(() => {
     onViewportSizeChange(stageViewportSize)
   }, [onViewportSizeChange, stageViewportSize])
+
+  React.useEffect(() => {
+    if (!trackedTextFontFamily) {
+      textFontUsageSessionRef.current = null
+      return
+    }
+
+    recordTextFontRecentUse(trackedTextFontFamily)
+    textFontUsageSessionRef.current = {
+      fontFamily: trackedTextFontFamily,
+      startedAt: Date.now(),
+    }
+
+    return () => {
+      if (!textFontUsageSessionRef.current) {
+        return
+      }
+      const elapsedMs = Date.now() - textFontUsageSessionRef.current.startedAt
+      recordTextFontUsageDuration(textFontUsageSessionRef.current.fontFamily, elapsedMs)
+      textFontUsageSessionRef.current = null
+    }
+  }, [trackedTextFontFamily])
 
   React.useEffect(() => {
     const transformer = transformerRef.current
@@ -4533,6 +4550,26 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     React.useState<TemplateNameDialogState | null>(null)
   const readOnly = state.readOnlyVersion !== null
   const interactionLocked = readOnly || state.loading
+  const [, setFontLoadGeneration] = React.useState(0)
+  const draftFontFamilies = React.useMemo(
+    () =>
+      state.draft.elements.flatMap((element) =>
+        element.kind === "text" ? [element.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY] : []
+      ),
+    [state.draft.elements]
+  )
+
+  React.useEffect(() => {
+    let cancelled = false
+    void preloadCanvasTextFonts(draftFontFamilies).then(() => {
+      if (!cancelled) {
+        setFontLoadGeneration((current) => current + 1)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [draftFontFamilies])
 
   const refreshVersionHistory = React.useCallback(async () => {
     if (!state.liveDraft.templateId) {

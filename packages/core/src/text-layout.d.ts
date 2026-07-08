@@ -1,18 +1,15 @@
+import { DEFAULT_TEXT_FONT_FAMILY, getTextFontDefinition, resolveTextFontFamily, TEXT_FONT_FAMILY_STACKS, type TextFontDefinition, type TextFontFamily, type TextFontPickerFamily, textFontFamilies, textFontPickerFamilies, textFontRegistry } from "./text-font-registry.js";
+export { DEFAULT_TEXT_FONT_FAMILY, getTextFontDefinition, resolveTextFontFamily, TEXT_FONT_FAMILY_STACKS, type TextFontDefinition, type TextFontFamily, type TextFontPickerFamily, textFontFamilies, textFontPickerFamilies, textFontRegistry, };
 export declare const TEXT_LINE_HEIGHT_RATIO = 1.2;
 export declare const DEFAULT_TEXT_LINE_HEIGHT = 1.2;
 export declare const TEXT_VISUAL_TOP_TRIM_RATIO = 0.18;
 export declare const TEXT_VISUAL_ASCENT_RATIO: number;
 export declare const TEXT_VISUAL_DESCENT_RATIO: number;
-export declare const TEXT_AVERAGE_GLYPH_WIDTH_RATIO = 0.78;
 export declare const textVerticalAlignments: readonly ["top", "middle", "bottom"];
 export type TextVerticalAlign = (typeof textVerticalAlignments)[number];
 export declare const textHorizontalAlignments: readonly ["left", "center", "right", "justify"];
 export type TextHorizontalAlign = (typeof textHorizontalAlignments)[number];
-export declare const textFontFamilies: readonly ["system-sans", "system-serif", "system-mono", "arial", "noto-sans-sc"];
-export type TextFontFamily = (typeof textFontFamilies)[number];
-export declare const DEFAULT_TEXT_FONT_FAMILY: TextFontFamily;
 export declare const DEFAULT_TEXT_VERTICAL_ALIGN: TextVerticalAlign;
-export declare const TEXT_FONT_FAMILY_STACKS: Record<TextFontFamily, string>;
 export type TextLayoutInput = {
     text: string;
     fontSize: number;

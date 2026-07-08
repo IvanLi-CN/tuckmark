@@ -1,27 +1,13 @@
+import { DEFAULT_TEXT_FONT_FAMILY, getTextFontDefinition, getTextFontMetricProfile, resolveTextFontFamily, TEXT_FONT_FAMILY_STACKS, textFontFamilies, textFontPickerFamilies, textFontRegistry, } from "./text-font-registry.js";
+export { DEFAULT_TEXT_FONT_FAMILY, getTextFontDefinition, resolveTextFontFamily, TEXT_FONT_FAMILY_STACKS, textFontFamilies, textFontPickerFamilies, textFontRegistry, };
 export const TEXT_LINE_HEIGHT_RATIO = 1.2;
 export const DEFAULT_TEXT_LINE_HEIGHT = TEXT_LINE_HEIGHT_RATIO;
 export const TEXT_VISUAL_TOP_TRIM_RATIO = 0.18;
 export const TEXT_VISUAL_ASCENT_RATIO = 1 - TEXT_VISUAL_TOP_TRIM_RATIO;
 export const TEXT_VISUAL_DESCENT_RATIO = 1 - TEXT_VISUAL_ASCENT_RATIO;
-export const TEXT_AVERAGE_GLYPH_WIDTH_RATIO = 0.78;
 export const textVerticalAlignments = ["top", "middle", "bottom"];
 export const textHorizontalAlignments = ["left", "center", "right", "justify"];
-export const textFontFamilies = [
-    "system-sans",
-    "system-serif",
-    "system-mono",
-    "arial",
-    "noto-sans-sc",
-];
-export const DEFAULT_TEXT_FONT_FAMILY = "system-sans";
 export const DEFAULT_TEXT_VERTICAL_ALIGN = "top";
-export const TEXT_FONT_FAMILY_STACKS = {
-    "system-sans": "ui-sans-serif, system-ui, sans-serif",
-    "system-serif": "ui-serif, Georgia, serif",
-    "system-mono": "ui-monospace, SFMono-Regular, Menlo, monospace",
-    arial: "Arial, Helvetica, sans-serif",
-    "noto-sans-sc": "'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
-};
 export function wrapText(text, maxCharsPerLine, maxLines) {
     const normalized = text.replaceAll("\r\n", "\n").split("\n");
     const lines = [];
@@ -54,61 +40,6 @@ function isCjkOrFullWidth(codePoint) {
         (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
         (codePoint >= 0xff01 && codePoint <= 0xff60) ||
         (codePoint >= 0xffe0 && codePoint <= 0xffe6));
-}
-const TEXT_FONT_METRIC_PROFILES = {
-    "system-sans": {
-        space: 0.33,
-        cjk: 1,
-        uppercase: 0.72,
-        lowercase: 0.56,
-        digit: 0.56,
-        punctuation: 0.34,
-        symbol: 0.78,
-        fallback: TEXT_AVERAGE_GLYPH_WIDTH_RATIO,
-    },
-    "system-serif": {
-        space: 0.32,
-        cjk: 1,
-        uppercase: 0.74,
-        lowercase: 0.54,
-        digit: 0.52,
-        punctuation: 0.32,
-        symbol: 0.74,
-        fallback: 0.74,
-    },
-    "system-mono": {
-        space: 0.62,
-        cjk: 1,
-        uppercase: 0.62,
-        lowercase: 0.62,
-        digit: 0.62,
-        punctuation: 0.62,
-        symbol: 0.62,
-        fallback: 0.62,
-    },
-    arial: {
-        space: 0.28,
-        cjk: 1,
-        uppercase: 0.7,
-        lowercase: 0.54,
-        digit: 0.56,
-        punctuation: 0.3,
-        symbol: 0.72,
-        fallback: 0.72,
-    },
-    "noto-sans-sc": {
-        space: 0.32,
-        cjk: 1,
-        uppercase: 0.73,
-        lowercase: 0.57,
-        digit: 0.56,
-        punctuation: 0.36,
-        symbol: 0.8,
-        fallback: 0.8,
-    },
-};
-function getTextFontMetricProfile(fontFamily) {
-    return TEXT_FONT_METRIC_PROFILES[fontFamily ?? DEFAULT_TEXT_FONT_FAMILY];
 }
 function isFinitePositiveNumber(value) {
     return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -209,7 +140,8 @@ export function estimateCharsPerLine(fontSize, width, fontFamily) {
     return Math.max(4, Math.floor(width / (fontSize * getAverageGlyphWidthRatio(fontFamily))));
 }
 export function estimateTextLineWidth(line, fontSize, fontFamily) {
-    return Array.from(line).reduce((sum, char) => sum + estimateGlyphWidthRatio(char, fontFamily), 0) * fontSize;
+    return (Array.from(line).reduce((sum, char) => sum + estimateGlyphWidthRatio(char, fontFamily), 0) *
+        fontSize);
 }
 function measureTextAdvanceWidth(line, fontSize, fontFamily, measureText, fontWeight) {
     const measured = measureText?.({ text: line, fontSize, fontFamily, fontWeight });
@@ -325,7 +257,9 @@ export function resolveTextLayout(input) {
     const fontMetrics = resolveMeasuredTextLineMetrics("M", input);
     const hasMeasuredMetrics = !verticalText && fontMetrics.measured && lineMetrics.every((metrics) => metrics.measured);
     const baselineOffset = getKonvaLineBaselineOffset(lineHeight, fontMetrics);
-    const visualLeft = verticalText ? 0 : Math.min(...lineMetrics.map((metrics) => metrics.visualLeft));
+    const visualLeft = verticalText
+        ? 0
+        : Math.min(...lineMetrics.map((metrics) => metrics.visualLeft));
     const visualRight = verticalText
         ? input.fontSize
         : Math.max(...lineMetrics.map((metrics) => metrics.visualRight));

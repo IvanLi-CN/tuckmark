@@ -45,6 +45,7 @@ import {
 } from "react-router-dom"
 import {
   buildSvg,
+  DEFAULT_TEXT_FONT_FAMILY,
   getTemplateById,
   parseUserTemplatePackage,
 } from "../../../packages/core/src/web.js"
@@ -399,7 +400,7 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         width: 180,
         height: 52,
         fontSize: 22,
-        fontFamily: "system-sans",
+        fontFamily: DEFAULT_TEXT_FONT_FAMILY,
         lineHeight: 1.2,
         fontWeight: "bold",
         align: "left",

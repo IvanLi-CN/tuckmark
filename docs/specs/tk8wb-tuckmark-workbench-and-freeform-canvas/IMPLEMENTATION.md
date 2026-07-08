@@ -102,6 +102,23 @@
   renderer path, including `svg-renderer`, so callers that import
   `packages/core/src/*.js` render `circle` and `triangle` instead of silently
   dropping them.
+- Shared text-font coverage now resolves through `packages/core/src/text-font-registry.ts`:
+  - one registry owns schema values, selector labels, font stacks, legacy
+    alias resolution, metric profiles, and the default new-text family
+  - the bundled self-hosted pool now exceeds `20` named fonts, including
+    `archivo`, `barlow`, `barlow-condensed`, `bebas-neue`, `dm-sans`,
+    `exo-2`, `ibm-plex-mono`, `ibm-plex-sans`, `ibm-plex-serif`,
+    `inconsolata`, `inter`, `inter-tight`, `jetbrains-mono`, `manrope`,
+    `noto-sans-sc`, `noto-serif-sc`, `oswald`, `outfit`, `overpass`,
+    `public-sans`, `rajdhani`, `roboto`, `roboto-condensed`,
+    `source-sans-3`, `source-serif-4`, `space-grotesk`, `space-mono`,
+    and `work-sans`
+  - explicit named platform-font choices are `arial`, `courier-new`,
+    `georgia`, `times-new-roman`, `trebuchet-ms`, and `verdana`
+  - legacy values `system-sans`, `system-serif`, and `system-mono` remain
+    accepted for existing drafts and templates through alias mapping onto named
+    fonts
+  - new text defaults now resolve to `noto-sans-sc`
 - Barcode and QR stage rendering now uses real encoded graphics instead of
   dashed placeholders.
 - Invalid barcode / QR content now fails safely inside the editor:
@@ -249,6 +266,20 @@
   - the editor grid is rendered above that paper and never enters print output
   - printable content is rendered from the same normalized SVG semantics used
     by preview generation
+- Web now self-hosts the bundled canvas text fonts through local Fontsource
+  packages instead of depending on browser-default availability:
+  - `styles.css` imports the bundled families directly from npm packages
+  - `preloadCanvasTextFonts()` waits for the font set used by the current draft
+    before final rerender so late font replacement does not leave stale text
+    measurement geometry on the stage
+  - the same font stacks are reused by the inspector trigger, flat selector,
+    Konva measurement path, and SVG export path
+- The text inspector font picker is now a dedicated flat selector component:
+  - user-facing grouping was removed
+  - each option previews itself by rendering its own label with its own font
+    stack
+  - Latin-first families keep their English family names so the preview
+    remains visually trustworthy
 - Shared output rendering was tightened again during PR convergence:
   - rotated multiline SVG text now uses the rendered text-box center as its
     rotation origin instead of a looser baseline-derived midpoint
@@ -265,6 +296,8 @@
   - marquee selection at `344%` zoom
   - narrow desktop editor
   - selected text
+  - flat text-font selector preview with the expanded named-font pool
+  - text-font metrics comparison for `Noto Sans SC`
   - selected rect with radius editing
   - selected line with endpoint editing
   - selected barcode
@@ -291,6 +324,8 @@
 - Benchmark viewport evidence must stay aligned with the latest UI SHA whenever
   navigation, list density, or workspace layout changes.
 - Current validation status for this round:
+  - `bun run --filter @tuckmark/core build` passed
+  - `bun run --filter @tuckmark/core test` passed
   - `bun run --filter @tuckmark/web typecheck` passed
   - `bun run --filter @tuckmark/web test` passed
   - `bun run --filter @tuckmark/web build:pages` passed

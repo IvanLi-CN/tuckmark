@@ -1668,11 +1668,11 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
         ...selectedText,
         x: 3,
         y: 3.2,
-        value: "20kΩ\nABC",
+        value: "20kΩ\n标签 ABC",
         width: 28,
         height: 11.2,
         fontSize: 5.2,
-        fontFamily: "system-sans" as const,
+        fontFamily: "noto-sans-sc" as const,
         lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
         align: "left" as const,
         verticalAlign: "top" as const,
@@ -1681,7 +1681,7 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
         autoWrap: false,
         verticalText: false,
         maxLines: undefined,
-        meta: { ...selectedText.meta, name: "系统无衬线 BBOX" },
+        meta: { ...selectedText.meta, name: "Noto Sans SC BBOX" },
       }
       const monoText = {
         ...sansText,
@@ -1691,9 +1691,9 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
         value: "20kΩ",
         width: 14,
         height: 6.5,
-        fontFamily: "system-mono" as const,
+        fontFamily: "ibm-plex-mono" as const,
         maxLines: 1,
-        meta: { ...selectedText.meta, name: "等宽字体 BBOX" },
+        meta: { ...selectedText.meta, name: "IBM Plex Mono BBOX" },
       }
       document.elements = [
         sansText,
@@ -1765,9 +1765,7 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
                       ? 6.6
                       : scenario === "text-justify-top-selected"
                         ? 12
-                        : scenario === "text-centered-selected"
-                          ? 14
-                          : 14,
+                        : 14,
               fontSize:
                 scenario === "text-justify-selected"
                   ? 3
@@ -1780,7 +1778,8 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
                         : scenario === "text-centered-selected"
                           ? 8.9
                           : 5,
-              fontFamily: scenario === "text-centered-selected" ? "arial" : "system-sans",
+              fontFamily:
+                scenario === "text-centered-selected" ? "arial" : DEFAULT_TEXT_FONT_FAMILY,
               lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
               align:
                 scenario === "text-justify-selected" ||

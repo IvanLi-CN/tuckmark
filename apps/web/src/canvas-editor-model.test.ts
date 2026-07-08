@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest"
 
+import { DEFAULT_TEXT_FONT_FAMILY } from "../../../packages/core/src/web.js"
 import {
   bindElementToExistingField,
   buildTemplateFieldsFromDraft,
@@ -122,7 +123,7 @@ describe("canvas-editor-model monochrome contract", () => {
 
     expect(text).toMatchObject({
       kind: "text",
-      fontFamily: "system-sans",
+      fontFamily: DEFAULT_TEXT_FONT_FAMILY,
       lineHeight: 1.2,
       verticalAlign: "top",
       stretchX: false,
@@ -252,7 +253,7 @@ describe("canvas-editor-model monochrome contract", () => {
     if (restoredText?.kind === "text") {
       expect(restoredText.y).toBeCloseTo(18 - text.fontSize, 5)
       expect(restoredText.height).toBeGreaterThan(0)
-      expect(restoredText.fontFamily).toBe("system-sans")
+      expect(restoredText.fontFamily).toBe(DEFAULT_TEXT_FONT_FAMILY)
       expect(restoredText.lineHeight).toBe(1.2)
       expect(restoredText.verticalAlign).toBe("top")
       expect(restoredText.stretchX).toBe(false)
@@ -461,7 +462,7 @@ describe("canvas-editor-model monochrome contract", () => {
         width: 20,
         height: 8,
         fontSize: 3,
-        fontFamily: "system-mono",
+        fontFamily: "courier-new",
         lineHeight: 1.5,
         align: "right",
         verticalAlign: "bottom",
@@ -479,7 +480,7 @@ describe("canvas-editor-model monochrome contract", () => {
       width: 160,
       height: 64,
       fontSize: 24,
-      fontFamily: "system-mono",
+      fontFamily: "courier-new",
       lineHeight: 1.5,
       align: "right",
       verticalAlign: "bottom",
