@@ -208,6 +208,22 @@ output.
   write scale back into `fontSize`.
 - Text rendering is clipped to the text element container on the stage and in
   SVG / print output. Text ink must not render outside the element bounds.
+- New text elements default to `noto-sans-sc`.
+- Text font families resolve through one deterministic contract shared by:
+  - draft/schema validation
+  - canvas text measurement
+  - Konva stage rendering
+  - SVG preview and output rendering
+  - inspector labels and selector grouping
+- Official built-in fonts are self-hosted and must not depend on remote CDNs or
+  user-installed fonts.
+- Legacy draft/template values `system-sans`, `system-serif`, `system-mono`,
+  and `arial` remain valid serialized inputs and continue to render, edit, and
+  export without migration.
+- Browser-static, Storybook, Konva stage, and SVG/output preview must wait for
+  official font readiness before final measurement-sensitive text rendering so
+  late fallback-font replacement does not shift the same sample text across
+  surfaces.
 - `browser-static` must support canvas preview and print without `/api` packet
   helpers.
 
@@ -253,8 +269,17 @@ output.
 - Text inspector controls expose:
   - numeric font size
   - numeric line height
-  - fixed built-in font family choices: `system-sans`, `system-serif`,
-    `system-mono`, `arial`, and `noto-sans-sc`
+  - one shared font registry that owns text schema values, measurement
+    profiles, inspector labels, and font stacks
+  - official built-in font family choices: `noto-sans-sc`, `noto-serif-sc`,
+    `ibm-plex-sans`, `ibm-plex-mono`, `space-grotesk`, and `oswald`
+  - compatibility-only font family choices retained for existing drafts and
+    templates: `system-sans`, `system-serif`, `system-mono`, and `arial`
+  - a grouped font selector with `官方中文`, `官方工业`, and `系统兼容`
+    sections
+  - each font option previewing itself directly inside the selector; Latin-first
+    families keep their English names so the preview does not collapse into a
+    Chinese fallback label
   - a three-by-three alignment control that maps to horizontal `align` and
     `verticalAlign`
   - automatic wrapping, two-end text justification, vertical text, and
@@ -387,6 +412,12 @@ output.
 - Selected text exposes font size, font family, three-by-three alignment,
   automatic wrapping, two-end justification, horizontal stretch, vertical
   stretch, vertical text, and rotation controls in the property inspector.
+- New text defaults to `noto-sans-sc` instead of a system fallback family.
+- The font selector groups official built-ins separately from compatibility
+  fonts, and each option previews itself using the selected font stack.
+- Existing drafts and templates using `system-sans`, `system-serif`,
+  `system-mono`, `arial`, or `noto-sans-sc` continue to deserialize, edit,
+  preview, and export without data migration.
 - Text rotation is edited as an integer degree value and exposes adjacent
   counterclockwise / clockwise 45-degree increment controls.
 - Text resize preserves `fontSize` unless the user explicitly edits the font
@@ -398,6 +429,9 @@ output.
   keeping the saved `fontSize` unchanged.
 - Text ink is clipped to the text element container. With automatic wrapping
   disabled, overflow is cut by the container instead of escaping it.
+- Official font rendering stays aligned across Storybook, browser-static, the
+  Konva stage, and SVG/output preview for mixed content such as `20kΩ`, mixed
+  Chinese/Latin text, digits, symbols, and mono-width labels.
 - Canvas workspace exposes type-correct geometry editing: rectangles can adjust
   corner radius, rectangular elements can resize width and height independently,
   triangles resize width and height independently, QR and circle elements stay
@@ -577,6 +611,12 @@ output.
   PR: include
   ![Canvas text container controls](./assets/canvas-text-container-controls-1280x800.png)
 
+- Storybook canvas grouped font-selector state showing `官方中文`, `官方工业`,
+  and `系统兼容` sections with each option rendered in its own font stack
+
+  PR: include
+  ![Canvas grouped font selector](./assets/canvas-text-font-family-select-grouped-20260708.png)
+
 - `1280×800` canvas workspace text flow controls showing two-end
   justification, vertical text, wrapping, stretch toggles, and rotation split
   into two inspector columns
@@ -590,10 +630,12 @@ output.
   PR: include
   ![Canvas text rotation controls](./assets/canvas-text-rotation-integer-buttons.png)
 
-- `1280×800` canvas workspace text BBOX font metrics state showing identical
-  `20kΩ` text rendered with system sans and system mono font metrics.
+- `1280×800` canvas workspace text BBOX font metrics state showing official
+  `Noto Sans SC` and `IBM Plex Mono` rendering for `20kΩ` plus mixed
+  Chinese/Latin text inside the same measurement-sensitive canvas flow.
 
-  ![Canvas text BBOX font metrics](./assets/canvas-text-bbox-font-metrics-1280x800.png)
+  PR: include
+  ![Canvas text BBOX font metrics](./assets/canvas-text-font-metrics-official-20260708.png)
 
 - `1280×800` canvas workspace on a browser-local user template with the version-history drawer open and saved/autosave history visible
 

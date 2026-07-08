@@ -1,35 +1,42 @@
+import {
+  DEFAULT_TEXT_FONT_FAMILY,
+  getTextFontDefinition,
+  getTextFontMetricProfile,
+  TEXT_FONT_FAMILY_STACKS,
+  TEXT_FONT_GROUP_LABELS,
+  textFontFamilies,
+  textFontGroupIds,
+  textFontRegistry,
+  type TextFontDefinition,
+  type TextFontFamily,
+  type TextFontGroupId,
+} from "./text-font-registry.js"
+
+export {
+  DEFAULT_TEXT_FONT_FAMILY,
+  getTextFontDefinition,
+  TEXT_FONT_FAMILY_STACKS,
+  TEXT_FONT_GROUP_LABELS,
+  textFontFamilies,
+  textFontGroupIds,
+  textFontRegistry,
+  type TextFontDefinition,
+  type TextFontFamily,
+  type TextFontGroupId,
+}
+
 export const TEXT_LINE_HEIGHT_RATIO = 1.2
 export const DEFAULT_TEXT_LINE_HEIGHT = TEXT_LINE_HEIGHT_RATIO
 export const TEXT_VISUAL_TOP_TRIM_RATIO = 0.18
 export const TEXT_VISUAL_ASCENT_RATIO = 1 - TEXT_VISUAL_TOP_TRIM_RATIO
 export const TEXT_VISUAL_DESCENT_RATIO = 1 - TEXT_VISUAL_ASCENT_RATIO
-export const TEXT_AVERAGE_GLYPH_WIDTH_RATIO = 0.78
 
 export const textVerticalAlignments = ["top", "middle", "bottom"] as const
 export type TextVerticalAlign = (typeof textVerticalAlignments)[number]
 
 export const textHorizontalAlignments = ["left", "center", "right", "justify"] as const
 export type TextHorizontalAlign = (typeof textHorizontalAlignments)[number]
-
-export const textFontFamilies = [
-  "system-sans",
-  "system-serif",
-  "system-mono",
-  "arial",
-  "noto-sans-sc",
-] as const
-export type TextFontFamily = (typeof textFontFamilies)[number]
-
-export const DEFAULT_TEXT_FONT_FAMILY: TextFontFamily = "system-sans"
 export const DEFAULT_TEXT_VERTICAL_ALIGN: TextVerticalAlign = "top"
-
-export const TEXT_FONT_FAMILY_STACKS: Record<TextFontFamily, string> = {
-  "system-sans": "ui-sans-serif, system-ui, sans-serif",
-  "system-serif": "ui-serif, Georgia, serif",
-  "system-mono": "ui-monospace, SFMono-Regular, Menlo, monospace",
-  arial: "Arial, Helvetica, sans-serif",
-  "noto-sans-sc": "'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
-}
 
 export type TextLayoutInput = {
   text: string
@@ -136,74 +143,6 @@ function isCjkOrFullWidth(codePoint: number): boolean {
     (codePoint >= 0xff01 && codePoint <= 0xff60) ||
     (codePoint >= 0xffe0 && codePoint <= 0xffe6)
   )
-}
-
-type TextFontMetricProfile = {
-  space: number
-  cjk: number
-  uppercase: number
-  lowercase: number
-  digit: number
-  punctuation: number
-  symbol: number
-  fallback: number
-}
-
-const TEXT_FONT_METRIC_PROFILES: Record<TextFontFamily, TextFontMetricProfile> = {
-  "system-sans": {
-    space: 0.33,
-    cjk: 1,
-    uppercase: 0.72,
-    lowercase: 0.56,
-    digit: 0.56,
-    punctuation: 0.34,
-    symbol: 0.78,
-    fallback: TEXT_AVERAGE_GLYPH_WIDTH_RATIO,
-  },
-  "system-serif": {
-    space: 0.32,
-    cjk: 1,
-    uppercase: 0.74,
-    lowercase: 0.54,
-    digit: 0.52,
-    punctuation: 0.32,
-    symbol: 0.74,
-    fallback: 0.74,
-  },
-  "system-mono": {
-    space: 0.62,
-    cjk: 1,
-    uppercase: 0.62,
-    lowercase: 0.62,
-    digit: 0.62,
-    punctuation: 0.62,
-    symbol: 0.62,
-    fallback: 0.62,
-  },
-  arial: {
-    space: 0.28,
-    cjk: 1,
-    uppercase: 0.7,
-    lowercase: 0.54,
-    digit: 0.56,
-    punctuation: 0.3,
-    symbol: 0.72,
-    fallback: 0.72,
-  },
-  "noto-sans-sc": {
-    space: 0.32,
-    cjk: 1,
-    uppercase: 0.73,
-    lowercase: 0.57,
-    digit: 0.56,
-    punctuation: 0.36,
-    symbol: 0.8,
-    fallback: 0.8,
-  },
-}
-
-function getTextFontMetricProfile(fontFamily?: TextFontFamily): TextFontMetricProfile {
-  return TEXT_FONT_METRIC_PROFILES[fontFamily ?? DEFAULT_TEXT_FONT_FAMILY]
 }
 
 function isFinitePositiveNumber(value: unknown): value is number {

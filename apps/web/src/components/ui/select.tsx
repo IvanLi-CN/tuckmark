@@ -92,6 +92,30 @@ const SelectContent = React.forwardRef<
 
 SelectContent.displayName = SelectPrimitive.Content.displayName
 
+const SelectGroup = SelectPrimitive.Group
+
+const SelectLabel = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Label>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Label
+    ref={ref}
+    className={cn("px-2 py-1 text-[10px] font-semibold tracking-[0.04em] text-muted-foreground", className)}
+    {...props}
+  />
+))
+
+SelectLabel.displayName = SelectPrimitive.Label.displayName
+
+const SelectSeparator = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Separator>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Separator>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Separator ref={ref} className={cn("-mx-1 my-1 h-px bg-border", className)} {...props} />
+))
+
+SelectSeparator.displayName = SelectPrimitive.Separator.displayName
+
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
@@ -115,4 +139,13 @@ const SelectItem = React.forwardRef<
 
 SelectItem.displayName = SelectPrimitive.Item.displayName
 
-export { Select, SelectContent, SelectItem, SelectTrigger, SelectValue }
+export {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+}

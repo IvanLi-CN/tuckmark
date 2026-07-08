@@ -100,11 +100,16 @@ export declare const textElementSchema: z.ZodObject<{
     height: z.ZodOptional<z.ZodNumber>;
     fontSize: z.ZodNumber;
     fontFamily: z.ZodOptional<z.ZodEnum<{
+        "noto-sans-sc": "noto-sans-sc";
+        "noto-serif-sc": "noto-serif-sc";
+        "ibm-plex-sans": "ibm-plex-sans";
+        "ibm-plex-mono": "ibm-plex-mono";
+        "space-grotesk": "space-grotesk";
+        oswald: "oswald";
         "system-sans": "system-sans";
         "system-serif": "system-serif";
         "system-mono": "system-mono";
         arial: "arial";
-        "noto-sans-sc": "noto-sans-sc";
     }>>;
     lineHeight: z.ZodOptional<z.ZodNumber>;
     fontWeight: z.ZodDefault<z.ZodEnum<{
@@ -191,8 +196,8 @@ export declare const qrElementSchema: z.ZodObject<{
     size: z.ZodNumber;
     value: z.ZodOptional<z.ZodString>;
     errorCorrectionLevel: z.ZodDefault<z.ZodEnum<{
-        L: "L";
         M: "M";
+        L: "L";
         Q: "Q";
         H: "H";
     }>>;
@@ -207,11 +212,16 @@ export declare const templateElementSchema: z.ZodDiscriminatedUnion<[z.ZodObject
     height: z.ZodOptional<z.ZodNumber>;
     fontSize: z.ZodNumber;
     fontFamily: z.ZodOptional<z.ZodEnum<{
+        "noto-sans-sc": "noto-sans-sc";
+        "noto-serif-sc": "noto-serif-sc";
+        "ibm-plex-sans": "ibm-plex-sans";
+        "ibm-plex-mono": "ibm-plex-mono";
+        "space-grotesk": "space-grotesk";
+        oswald: "oswald";
         "system-sans": "system-sans";
         "system-serif": "system-serif";
         "system-mono": "system-mono";
         arial: "arial";
-        "noto-sans-sc": "noto-sans-sc";
     }>>;
     lineHeight: z.ZodOptional<z.ZodNumber>;
     fontWeight: z.ZodDefault<z.ZodEnum<{
@@ -292,8 +302,8 @@ export declare const templateElementSchema: z.ZodDiscriminatedUnion<[z.ZodObject
     size: z.ZodNumber;
     value: z.ZodOptional<z.ZodString>;
     errorCorrectionLevel: z.ZodDefault<z.ZodEnum<{
-        L: "L";
         M: "M";
+        L: "L";
         Q: "Q";
         H: "H";
     }>>;
@@ -323,11 +333,16 @@ export declare const templateSchema: z.ZodObject<{
         height: z.ZodOptional<z.ZodNumber>;
         fontSize: z.ZodNumber;
         fontFamily: z.ZodOptional<z.ZodEnum<{
+            "noto-sans-sc": "noto-sans-sc";
+            "noto-serif-sc": "noto-serif-sc";
+            "ibm-plex-sans": "ibm-plex-sans";
+            "ibm-plex-mono": "ibm-plex-mono";
+            "space-grotesk": "space-grotesk";
+            oswald: "oswald";
             "system-sans": "system-sans";
             "system-serif": "system-serif";
             "system-mono": "system-mono";
             arial: "arial";
-            "noto-sans-sc": "noto-sans-sc";
         }>>;
         lineHeight: z.ZodOptional<z.ZodNumber>;
         fontWeight: z.ZodDefault<z.ZodEnum<{
@@ -408,8 +423,8 @@ export declare const templateSchema: z.ZodObject<{
         size: z.ZodNumber;
         value: z.ZodOptional<z.ZodString>;
         errorCorrectionLevel: z.ZodDefault<z.ZodEnum<{
-            L: "L";
             M: "M";
+            L: "L";
             Q: "Q";
             H: "H";
         }>>;
@@ -432,11 +447,16 @@ export declare const directCanvasSchema: z.ZodObject<{
         height: z.ZodOptional<z.ZodNumber>;
         fontSize: z.ZodNumber;
         fontFamily: z.ZodOptional<z.ZodEnum<{
+            "noto-sans-sc": "noto-sans-sc";
+            "noto-serif-sc": "noto-serif-sc";
+            "ibm-plex-sans": "ibm-plex-sans";
+            "ibm-plex-mono": "ibm-plex-mono";
+            "space-grotesk": "space-grotesk";
+            oswald: "oswald";
             "system-sans": "system-sans";
             "system-serif": "system-serif";
             "system-mono": "system-mono";
             arial: "arial";
-            "noto-sans-sc": "noto-sans-sc";
         }>>;
         lineHeight: z.ZodOptional<z.ZodNumber>;
         fontWeight: z.ZodDefault<z.ZodEnum<{
@@ -517,8 +537,8 @@ export declare const directCanvasSchema: z.ZodObject<{
         size: z.ZodNumber;
         value: z.ZodOptional<z.ZodString>;
         errorCorrectionLevel: z.ZodDefault<z.ZodEnum<{
-            L: "L";
             M: "M";
+            L: "L";
             Q: "Q";
             H: "H";
         }>>;
@@ -749,11 +769,16 @@ export declare const directCanvasPreviewRequestSchema: z.ZodObject<{
             height: z.ZodOptional<z.ZodNumber>;
             fontSize: z.ZodNumber;
             fontFamily: z.ZodOptional<z.ZodEnum<{
+                "noto-sans-sc": "noto-sans-sc";
+                "noto-serif-sc": "noto-serif-sc";
+                "ibm-plex-sans": "ibm-plex-sans";
+                "ibm-plex-mono": "ibm-plex-mono";
+                "space-grotesk": "space-grotesk";
+                oswald: "oswald";
                 "system-sans": "system-sans";
                 "system-serif": "system-serif";
                 "system-mono": "system-mono";
                 arial: "arial";
-                "noto-sans-sc": "noto-sans-sc";
             }>>;
             lineHeight: z.ZodOptional<z.ZodNumber>;
             fontWeight: z.ZodDefault<z.ZodEnum<{
@@ -834,8 +859,8 @@ export declare const directCanvasPreviewRequestSchema: z.ZodObject<{
             size: z.ZodNumber;
             value: z.ZodOptional<z.ZodString>;
             errorCorrectionLevel: z.ZodDefault<z.ZodEnum<{
-                L: "L";
                 M: "M";
+                L: "L";
                 Q: "Q";
                 H: "H";
             }>>;
@@ -900,11 +925,16 @@ export declare const printCanvasRequestSchema: z.ZodObject<{
             height: z.ZodOptional<z.ZodNumber>;
             fontSize: z.ZodNumber;
             fontFamily: z.ZodOptional<z.ZodEnum<{
+                "noto-sans-sc": "noto-sans-sc";
+                "noto-serif-sc": "noto-serif-sc";
+                "ibm-plex-sans": "ibm-plex-sans";
+                "ibm-plex-mono": "ibm-plex-mono";
+                "space-grotesk": "space-grotesk";
+                oswald: "oswald";
                 "system-sans": "system-sans";
                 "system-serif": "system-serif";
                 "system-mono": "system-mono";
                 arial: "arial";
-                "noto-sans-sc": "noto-sans-sc";
             }>>;
             lineHeight: z.ZodOptional<z.ZodNumber>;
             fontWeight: z.ZodDefault<z.ZodEnum<{
@@ -985,8 +1015,8 @@ export declare const printCanvasRequestSchema: z.ZodObject<{
             size: z.ZodNumber;
             value: z.ZodOptional<z.ZodString>;
             errorCorrectionLevel: z.ZodDefault<z.ZodEnum<{
-                L: "L";
                 M: "M";
+                L: "L";
                 Q: "Q";
                 H: "H";
             }>>;

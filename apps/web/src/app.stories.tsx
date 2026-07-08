@@ -555,6 +555,11 @@ export const CanvasWorkspaceTextSelected: Story = {
     await canvas.findByLabelText("字号")
     await canvas.findByLabelText("行高")
     await canvas.findByLabelText("字体")
+    await userEvent.click(canvas.getByRole("combobox", { name: "字体" }))
+    await canvas.findByText("官方中文")
+    await canvas.findByRole("option", { name: "IBM Plex Mono" })
+    await canvas.findByRole("option", { name: "系统无衬线" })
+    await userEvent.keyboard("{Escape}")
     await canvas.findByRole("group", { name: "文本九宫格对齐" })
     await canvas.findByLabelText("文本左上对齐")
     const horizontalStretch = await canvas.findByRole("button", { name: "水平拉升" })
@@ -602,7 +607,7 @@ export const CanvasWorkspaceTextFontMetrics: Story = {
     docs: {
       description: {
         story:
-          "Text BBOX comparison for identical 20kΩ labels rendered with system sans and system mono font metrics.",
+          "Text BBOX comparison for identical 20kΩ labels rendered with official Noto Sans SC and IBM Plex Mono font metrics.",
       },
     },
   },
@@ -611,7 +616,7 @@ export const CanvasWorkspaceTextFontMetrics: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await canvas.findByDisplayValue("系统无衬线 BBOX")
+    await canvas.findByDisplayValue("Noto Sans SC BBOX")
     await canvas.findByText("字体")
   },
 }

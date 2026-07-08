@@ -1,0 +1,41 @@
+export declare const TEXT_AVERAGE_GLYPH_WIDTH_RATIO = 0.78;
+export type TextFontMetricProfile = {
+    space: number;
+    cjk: number;
+    uppercase: number;
+    lowercase: number;
+    digit: number;
+    punctuation: number;
+    symbol: number;
+    fallback: number;
+};
+export declare const textFontGroupIds: readonly ["official-cjk", "official-industrial", "system-compat"];
+export type TextFontGroupId = (typeof textFontGroupIds)[number];
+export declare const TEXT_FONT_GROUP_LABELS: Record<TextFontGroupId, string>;
+export declare const textFontFamilies: readonly ["noto-sans-sc", "noto-serif-sc", "ibm-plex-sans", "ibm-plex-mono", "space-grotesk", "oswald", "system-sans", "system-serif", "system-mono", "arial"];
+export type TextFontFamily = (typeof textFontFamilies)[number];
+export type TextFontDefinition = {
+    id: TextFontFamily;
+    label: string;
+    group: TextFontGroupId;
+    compatOnly: boolean;
+    supportsCjk: boolean;
+    stack: string;
+    loadSample: string;
+    metricProfile: TextFontMetricProfile;
+};
+export declare const DEFAULT_TEXT_FONT_FAMILY: TextFontFamily;
+export declare const textFontRegistry: {
+    label: string;
+    group: TextFontGroupId;
+    compatOnly: boolean;
+    supportsCjk: boolean;
+    stack: string;
+    loadSample: string;
+    metricProfile: TextFontMetricProfile;
+    id: "noto-sans-sc" | "noto-serif-sc" | "ibm-plex-sans" | "ibm-plex-mono" | "space-grotesk" | "oswald" | "system-sans" | "system-serif" | "system-mono" | "arial";
+}[];
+export declare const TEXT_FONT_FAMILY_STACKS: Record<TextFontFamily, string>;
+export declare const TEXT_FONT_METRIC_PROFILES: Record<TextFontFamily, TextFontMetricProfile>;
+export declare function getTextFontDefinition(fontFamily?: TextFontFamily): TextFontDefinition;
+export declare function getTextFontMetricProfile(fontFamily?: TextFontFamily): TextFontMetricProfile;

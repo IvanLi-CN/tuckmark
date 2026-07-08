@@ -1,8 +1,27 @@
 import { describe, expect, it } from "vitest"
 
-import { getTextNaturalHeight, resolveTextLayout } from "./text-layout.js"
+import {
+  DEFAULT_TEXT_FONT_FAMILY,
+  getTextFontDefinition,
+  getTextNaturalHeight,
+  resolveTextLayout,
+  textFontRegistry,
+} from "./text-layout.js"
 
 describe("text layout", () => {
+  it("defaults new text to the official Noto Sans SC family", () => {
+    expect(DEFAULT_TEXT_FONT_FAMILY).toBe("noto-sans-sc")
+    expect(getTextFontDefinition().label).toBe("Noto Sans SC")
+  })
+
+  it("keeps official fonts ahead of compatibility fonts in the registry", () => {
+    expect(textFontRegistry.slice(0, 2).map((definition) => definition.id)).toEqual([
+      "noto-sans-sc",
+      "noto-serif-sc",
+    ])
+    expect(textFontRegistry.at(-1)?.id).toBe("arial")
+  })
+
   it("uses configurable line height for visible text block height", () => {
     expect(getTextNaturalHeight(10, 2, 1.5)).toBe(25)
   })
@@ -29,6 +48,7 @@ describe("text layout", () => {
     const layout = resolveTextLayout({
       text: "AB\nC",
       fontSize: 10,
+      fontFamily: "system-sans",
       width: 80,
       height: 40,
       lineHeight: 1.5,
@@ -48,6 +68,7 @@ describe("text layout", () => {
     const layout = resolveTextLayout({
       text: "AB",
       fontSize: 10,
+      fontFamily: "system-sans",
       width: 80,
       height: 40,
       align: "center",
@@ -174,6 +195,7 @@ describe("text layout", () => {
     const layout = resolveTextLayout({
       text: "AB",
       fontSize: 10,
+      fontFamily: "system-sans",
       width: 80,
       height: 20,
       align: "justify",

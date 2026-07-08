@@ -85,8 +85,8 @@ describe("svg text rendering", () => {
       {}
     )
 
-    expect(svg).toContain('<svg x="24.4" y="23.6"')
-    expect(svg).toContain('width="25.6"')
+    expect(svg).toContain('<svg x="24.2" y="23.6"')
+    expect(svg).toContain('width="25.8"')
   })
 
   it("sizes legacy height-less text containers from wrapped lines", () => {

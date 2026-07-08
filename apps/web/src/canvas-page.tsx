@@ -55,7 +55,6 @@ import {
   type TextHorizontalAlign,
   type TextMeasureFunction,
   type TextVerticalAlign,
-  textFontFamilies,
 } from "../../../packages/core/src/web.js"
 import {
   bindElementToExistingField,
@@ -102,6 +101,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select.js"
+import { TextFontFamilySelect } from "./components/canvas/text-font-family-select.js"
 import {
   Sheet,
   SheetContent,
@@ -128,6 +128,7 @@ import {
   canvasMillimetersToDots,
 } from "./lib/canvas-units.js"
 import { cn } from "./lib/utils.js"
+import { preloadOfficialTextFonts } from "./lib/text-fonts.js"
 import type {
   CanvasDraftDocument,
   CanvasDraftElement,
@@ -208,13 +209,6 @@ const MONO_INK = "#111111"
 const MONO_SURFACE = "#ffffff"
 const INLINE_TEXT_EDITOR_SELECTOR = "textarea[data-tm-inline-text-editor='true']"
 const CANVAS_DEFAULT_TEXT_FONT_FAMILY = getTextFontFamilyStack(DEFAULT_TEXT_FONT_FAMILY)
-const TEXT_FONT_FAMILY_LABELS: Record<TextFontFamily, string> = {
-  "system-sans": "系统无衬线",
-  "system-serif": "系统衬线",
-  "system-mono": "系统等宽",
-  arial: "Arial",
-  "noto-sans-sc": "Noto Sans SC",
-}
 const TEXT_ALIGNMENT_OPTIONS: Array<{
   align: Exclude<TextHorizontalAlign, "justify">
   verticalAlign: TextVerticalAlign
@@ -2704,26 +2698,15 @@ function CanvasInspector({
               <Label htmlFor="text-font-family" className="tm-inspector-inline-label">
                 字体
               </Label>
-              <Select
+              <TextFontFamilySelect
                 disabled={readOnly}
+                id="text-font-family"
                 value={element.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY}
                 onValueChange={(value) =>
-                  updateElement((item) =>
-                    item.kind === "text" ? { ...item, fontFamily: value as TextFontFamily } : item
-                  )
+                  updateElement((item) => (item.kind === "text" ? { ...item, fontFamily: value } : item))
                 }
-              >
-                <SelectTrigger id="text-font-family" className={INSPECTOR_SELECT_TRIGGER_CLASS}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {textFontFamilies.map((fontFamily) => (
-                    <SelectItem key={fontFamily} value={fontFamily}>
-                      {TEXT_FONT_FAMILY_LABELS[fontFamily]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                className={INSPECTOR_SELECT_TRIGGER_CLASS}
+              />
             </div>
           ) : null}
           {element.kind === "text" ? (
@@ -4533,6 +4516,19 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     React.useState<TemplateNameDialogState | null>(null)
   const readOnly = state.readOnlyVersion !== null
   const interactionLocked = readOnly || state.loading
+  const [, setFontLoadGeneration] = React.useState(0)
+
+  React.useEffect(() => {
+    let cancelled = false
+    void preloadOfficialTextFonts().then(() => {
+      if (!cancelled) {
+        setFontLoadGeneration((current) => current + 1)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const refreshVersionHistory = React.useCallback(async () => {
     if (!state.liveDraft.templateId) {

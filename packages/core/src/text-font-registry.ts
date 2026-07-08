@@ -1,0 +1,259 @@
+export const TEXT_AVERAGE_GLYPH_WIDTH_RATIO = 0.78
+
+export type TextFontMetricProfile = {
+  space: number
+  cjk: number
+  uppercase: number
+  lowercase: number
+  digit: number
+  punctuation: number
+  symbol: number
+  fallback: number
+}
+
+export const textFontGroupIds = [
+  "official-cjk",
+  "official-industrial",
+  "system-compat",
+] as const
+export type TextFontGroupId = (typeof textFontGroupIds)[number]
+
+export const TEXT_FONT_GROUP_LABELS: Record<TextFontGroupId, string> = {
+  "official-cjk": "官方中文",
+  "official-industrial": "官方工业",
+  "system-compat": "系统兼容",
+}
+
+export const textFontFamilies = [
+  "noto-sans-sc",
+  "noto-serif-sc",
+  "ibm-plex-sans",
+  "ibm-plex-mono",
+  "space-grotesk",
+  "oswald",
+  "system-sans",
+  "system-serif",
+  "system-mono",
+  "arial",
+] as const
+export type TextFontFamily = (typeof textFontFamilies)[number]
+
+export type TextFontDefinition = {
+  id: TextFontFamily
+  label: string
+  group: TextFontGroupId
+  compatOnly: boolean
+  supportsCjk: boolean
+  stack: string
+  loadSample: string
+  metricProfile: TextFontMetricProfile
+}
+
+export const DEFAULT_TEXT_FONT_FAMILY: TextFontFamily = "noto-sans-sc"
+
+const textFontDefinitionRecord: Record<TextFontFamily, Omit<TextFontDefinition, "id">> = {
+  "noto-sans-sc": {
+    label: "Noto Sans SC",
+    group: "official-cjk",
+    compatOnly: false,
+    supportsCjk: true,
+    stack:
+      "'Noto Sans SC Variable', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+    loadSample: "字体 20kΩ",
+    metricProfile: {
+      space: 0.32,
+      cjk: 1,
+      uppercase: 0.73,
+      lowercase: 0.57,
+      digit: 0.56,
+      punctuation: 0.36,
+      symbol: 0.8,
+      fallback: 0.8,
+    },
+  },
+  "noto-serif-sc": {
+    label: "Noto Serif SC",
+    group: "official-cjk",
+    compatOnly: false,
+    supportsCjk: true,
+    stack:
+      "'Noto Serif SC Variable', 'Songti SC', 'Noto Serif CJK SC', 'Source Han Serif SC', serif",
+    loadSample: "字体 20kΩ",
+    metricProfile: {
+      space: 0.3,
+      cjk: 1,
+      uppercase: 0.76,
+      lowercase: 0.55,
+      digit: 0.54,
+      punctuation: 0.31,
+      symbol: 0.74,
+      fallback: 0.74,
+    },
+  },
+  "ibm-plex-sans": {
+    label: "IBM Plex Sans",
+    group: "official-industrial",
+    compatOnly: false,
+    supportsCjk: false,
+    stack: "'IBM Plex Sans', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "IBM 20kΩ",
+    metricProfile: {
+      space: 0.31,
+      cjk: 1,
+      uppercase: 0.68,
+      lowercase: 0.54,
+      digit: 0.55,
+      punctuation: 0.31,
+      symbol: 0.74,
+      fallback: 0.72,
+    },
+  },
+  "ibm-plex-mono": {
+    label: "IBM Plex Mono",
+    group: "official-industrial",
+    compatOnly: false,
+    supportsCjk: false,
+    stack: "'IBM Plex Mono', 'Noto Sans SC Variable', 'Noto Sans SC', monospace",
+    loadSample: "IBM 20kΩ",
+    metricProfile: {
+      space: 0.6,
+      cjk: 1,
+      uppercase: 0.6,
+      lowercase: 0.6,
+      digit: 0.6,
+      punctuation: 0.6,
+      symbol: 0.6,
+      fallback: 0.6,
+    },
+  },
+  "space-grotesk": {
+    label: "Space Grotesk",
+    group: "official-industrial",
+    compatOnly: false,
+    supportsCjk: false,
+    stack: "'Space Grotesk', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "Space 20kΩ",
+    metricProfile: {
+      space: 0.3,
+      cjk: 1,
+      uppercase: 0.7,
+      lowercase: 0.56,
+      digit: 0.58,
+      punctuation: 0.33,
+      symbol: 0.78,
+      fallback: 0.76,
+    },
+  },
+  oswald: {
+    label: "Oswald",
+    group: "official-industrial",
+    compatOnly: false,
+    supportsCjk: false,
+    stack: "'Oswald', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+    loadSample: "OSW 20kΩ",
+    metricProfile: {
+      space: 0.24,
+      cjk: 1,
+      uppercase: 0.58,
+      lowercase: 0.46,
+      digit: 0.48,
+      punctuation: 0.25,
+      symbol: 0.58,
+      fallback: 0.56,
+    },
+  },
+  "system-sans": {
+    label: "系统无衬线",
+    group: "system-compat",
+    compatOnly: true,
+    supportsCjk: true,
+    stack: "ui-sans-serif, system-ui, sans-serif",
+    loadSample: "字体 20kΩ",
+    metricProfile: {
+      space: 0.33,
+      cjk: 1,
+      uppercase: 0.72,
+      lowercase: 0.56,
+      digit: 0.56,
+      punctuation: 0.34,
+      symbol: 0.78,
+      fallback: TEXT_AVERAGE_GLYPH_WIDTH_RATIO,
+    },
+  },
+  "system-serif": {
+    label: "系统衬线",
+    group: "system-compat",
+    compatOnly: true,
+    supportsCjk: true,
+    stack: "ui-serif, Georgia, serif",
+    loadSample: "字体 20kΩ",
+    metricProfile: {
+      space: 0.32,
+      cjk: 1,
+      uppercase: 0.74,
+      lowercase: 0.54,
+      digit: 0.52,
+      punctuation: 0.32,
+      symbol: 0.74,
+      fallback: 0.74,
+    },
+  },
+  "system-mono": {
+    label: "系统等宽",
+    group: "system-compat",
+    compatOnly: true,
+    supportsCjk: true,
+    stack: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    loadSample: "字体 20kΩ",
+    metricProfile: {
+      space: 0.62,
+      cjk: 1,
+      uppercase: 0.62,
+      lowercase: 0.62,
+      digit: 0.62,
+      punctuation: 0.62,
+      symbol: 0.62,
+      fallback: 0.62,
+    },
+  },
+  arial: {
+    label: "Arial",
+    group: "system-compat",
+    compatOnly: true,
+    supportsCjk: false,
+    stack: "Arial, Helvetica, sans-serif",
+    loadSample: "Arial 20kΩ",
+    metricProfile: {
+      space: 0.28,
+      cjk: 1,
+      uppercase: 0.7,
+      lowercase: 0.54,
+      digit: 0.56,
+      punctuation: 0.3,
+      symbol: 0.72,
+      fallback: 0.72,
+    },
+  },
+}
+
+export const textFontRegistry = textFontFamilies.map((fontFamily) => ({
+  id: fontFamily,
+  ...textFontDefinitionRecord[fontFamily],
+})) satisfies readonly TextFontDefinition[]
+
+export const TEXT_FONT_FAMILY_STACKS: Record<TextFontFamily, string> = Object.fromEntries(
+  textFontRegistry.map((definition) => [definition.id, definition.stack])
+) as Record<TextFontFamily, string>
+
+export const TEXT_FONT_METRIC_PROFILES: Record<TextFontFamily, TextFontMetricProfile> =
+  Object.fromEntries(
+    textFontRegistry.map((definition) => [definition.id, definition.metricProfile])
+  ) as Record<TextFontFamily, TextFontMetricProfile>
+
+export function getTextFontDefinition(fontFamily?: TextFontFamily): TextFontDefinition {
+  return textFontRegistry.find((definition) => definition.id === (fontFamily ?? DEFAULT_TEXT_FONT_FAMILY))!
+}
+
+export function getTextFontMetricProfile(fontFamily?: TextFontFamily): TextFontMetricProfile {
+  return TEXT_FONT_METRIC_PROFILES[fontFamily ?? DEFAULT_TEXT_FONT_FAMILY]
+}
