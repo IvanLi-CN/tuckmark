@@ -496,6 +496,10 @@ output.
   PR: include
   ![Canvas inline text editor with two-end justification](./assets/canvas-inline-text-justify-editing.png)
 
+- `1280×800` canvas workspace with inline text editing restoring centered alignment inside the text container.
+
+  ![Canvas inline text editor with centered alignment restored](./assets/canvas-inline-text-centered-editing.png)
+
 - `1280×800` canvas workspace after committing inline text changes, with the stage and inspector showing the updated value.
 
   PR: include

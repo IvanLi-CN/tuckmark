@@ -230,6 +230,13 @@ const TEXT_ALIGNMENT_OPTIONS: Array<{
   { align: "center", verticalAlign: "bottom", label: "下中" },
   { align: "right", verticalAlign: "bottom", label: "右下" },
 ]
+
+function resolveTextGridAlign(element: Extract<CanvasDraftElement, { kind: "text" }>) {
+  if (element.align === "justify") {
+    return element.justifyAlign ?? "left"
+  }
+  return element.align === "center" || element.align === "right" ? element.align : "left"
+}
 const TRANSFORMER_ALL_ANCHORS = [
   "top-left",
   "top-center",
@@ -373,6 +380,10 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
     scenario === "text-selected" ||
     scenario === "text-font-metrics" ||
     scenario === "text-justify-selected" ||
+    scenario === "text-justify-multiline-selected" ||
+    scenario === "text-justify-centered-selected" ||
+    scenario === "text-justify-top-selected" ||
+    scenario === "text-centered-selected" ||
     scenario === "text-ready" ||
     scenario === "barcode-invalid" ||
     scenario === "rect-selected" ||
@@ -400,6 +411,10 @@ function shouldUseScenarioDraft(scenario: CanvasStoryScenario): boolean {
     scenario === "text-selected" ||
     scenario === "text-font-metrics" ||
     scenario === "text-justify-selected" ||
+    scenario === "text-justify-multiline-selected" ||
+    scenario === "text-justify-centered-selected" ||
+    scenario === "text-justify-top-selected" ||
+    scenario === "text-centered-selected" ||
     scenario === "text-ready" ||
     scenario === "barcode-invalid" ||
     scenario === "rect-selected" ||
@@ -459,6 +474,10 @@ function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryS
     scenario === "text-selected" ||
     scenario === "text-font-metrics" ||
     scenario === "text-justify-selected" ||
+    scenario === "text-justify-multiline-selected" ||
+    scenario === "text-justify-centered-selected" ||
+    scenario === "text-justify-top-selected" ||
+    scenario === "text-centered-selected" ||
     scenario === "text-ready" ||
     scenario === "draft-restore"
   ) {
@@ -539,7 +558,12 @@ function createCanvasState(
             : "",
     }),
     editingId:
-      scenario === "text-selected" || scenario === "text-justify-selected"
+      scenario === "text-selected" ||
+      scenario === "text-justify-selected" ||
+      scenario === "text-justify-multiline-selected" ||
+      scenario === "text-justify-centered-selected" ||
+      scenario === "text-justify-top-selected" ||
+      scenario === "text-centered-selected"
         ? (getScenarioSelection(draft, scenario)[0] ?? null)
         : null,
   }
@@ -1620,6 +1644,8 @@ function TextInlineEditor({
   const layout = resolveTextLayout({
     text: value,
     fontSize: element.fontSize,
+    fontFamily: element.fontFamily,
+    fontWeight: element.fontWeight,
     width: element.width,
     height: element.height,
     lineHeight: element.lineHeight,
@@ -1630,6 +1656,7 @@ function TextInlineEditor({
     stretchY: element.stretchY,
     autoWrap: element.autoWrap,
     verticalText: element.verticalText,
+    measureText: measureCanvasTextLine,
   })
   const usesCustomTextLayout = element.align === "justify" || element.verticalText
   const contentWidth = Math.max(layout.contentWidth, element.fontSize)
@@ -1660,7 +1687,9 @@ function TextInlineEditor({
         )
   const usesBoxWrapWidth = element.autoWrap && !element.verticalText && !element.stretchX
   const editorX = (usesBoxWrapWidth ? 0 : contentX) * scale
-  const editorY = (contentY + layout.textOffsetY) * scale
+  const editorTextOffsetY =
+    element.align === "justify" && element.verticalAlign !== "top" ? 0 : layout.textOffsetY
+  const editorY = (contentY + editorTextOffsetY) * scale
   const editorWidth = Math.max((usesBoxWrapWidth ? element.width : contentWidth) * scale, 1)
   const editorHeight = Math.max((element.height - contentY) * scale, element.fontSize * scale)
   const editorTransform =
@@ -2704,7 +2733,7 @@ function CanvasInspector({
                 <fieldset className="tm-text-align-grid" aria-label="文本九宫格对齐">
                   {TEXT_ALIGNMENT_OPTIONS.map((option) => {
                     const selected =
-                      element.align === option.align &&
+                      resolveTextGridAlign(element) === option.align &&
                       (element.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN) ===
                         option.verticalAlign
                     return (
@@ -2722,7 +2751,8 @@ function CanvasInspector({
                             item.kind === "text"
                               ? {
                                   ...item,
-                                  align: option.align,
+                                  align: item.align === "justify" ? "justify" : option.align,
+                                  justifyAlign: option.align,
                                   verticalAlign: option.verticalAlign,
                                 }
                               : item
@@ -2773,7 +2803,13 @@ function CanvasInspector({
                     onClick={() =>
                       updateElement((item) =>
                         item.kind === "text"
-                          ? { ...item, align: item.align === "justify" ? "left" : "justify" }
+                          ? item.align === "justify"
+                            ? { ...item, align: item.justifyAlign ?? "left" }
+                            : {
+                                ...item,
+                                align: "justify",
+                                justifyAlign: resolveTextGridAlign(item),
+                              }
                           : item
                       )
                     }

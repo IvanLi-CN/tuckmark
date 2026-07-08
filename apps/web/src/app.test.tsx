@@ -3,7 +3,7 @@
 import { act } from "react"
 import ReactDOM from "react-dom/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { emptySyncState } from "../../../packages/core/src/web.js"
+import { emptySyncState, resolveTextLayout } from "../../../packages/core/src/web.js"
 import type { ApiClient } from "./api-client.js"
 import { App } from "./app.js"
 import {
@@ -24,6 +24,7 @@ import {
   saveUserTemplate,
   saveUserTemplateAutosave,
 } from "./user-template-store.js"
+import { WorkbenchApp } from "./workbench-app.js"
 
 let heldUserTemplateLoadRelease: (() => void) | null = null
 
@@ -717,6 +718,26 @@ async function renderApp(context: AppContext, client?: ApiClient, path = "/"): P
   })
 }
 
+async function renderWorkbenchApp(
+  context: AppContext,
+  canvasScenario: Parameters<typeof WorkbenchApp>[0]["canvasScenario"],
+  path = "/canvas"
+): Promise<void> {
+  document.body.innerHTML = '<div id="root"></div>'
+  const rootElement = document.getElementById("root")
+  if (!rootElement) {
+    throw new Error("Missing root element")
+  }
+
+  window.history.replaceState({}, "", path)
+
+  await act(async () => {
+    mountedRoot = ReactDOM.createRoot(rootElement)
+    mountedRoot.render(<WorkbenchApp context={context} canvasScenario={canvasScenario} />)
+    await flush()
+  })
+}
+
 function beginHoldingUserTemplateLoad(): Promise<void> {
   return new Promise<void>((resolve) => {
     heldUserTemplateLoadRelease = () => {
@@ -733,6 +754,18 @@ function releaseHeldUserTemplateLoad(): void {
 beforeEach(async () => {
   vi.useFakeTimers()
   fetchMock.mockReset()
+  Object.defineProperty(globalThis, "__TUCKMARK_APP_VERSION__", {
+    value: "0.1.0",
+    configurable: true,
+  })
+  Object.defineProperty(globalThis, "__TUCKMARK_REPOSITORY_URL__", {
+    value: "https://github.com/IvanLi-CN/tuckmark",
+    configurable: true,
+  })
+  Object.defineProperty(globalThis, "__TUCKMARK_RIGHTS_URL__", {
+    value: "https://ivanli.cc/",
+    configurable: true,
+  })
   globalThis.fetch = fetchMock
   globalThis.indexedDB = createFakeIndexedDb()
   viewportWidth = 1440
@@ -789,6 +822,9 @@ afterEach(async () => {
   globalThis.fetch = originalFetch
   globalThis.indexedDB = originalIndexedDb
   window.matchMedia = originalMatchMedia
+  Reflect.deleteProperty(globalThis, "__TUCKMARK_APP_VERSION__")
+  Reflect.deleteProperty(globalThis, "__TUCKMARK_REPOSITORY_URL__")
+  Reflect.deleteProperty(globalThis, "__TUCKMARK_RIGHTS_URL__")
   document.body.innerHTML = ""
   window.history.replaceState({}, "", "/")
   vi.useRealTimers()
@@ -1231,6 +1267,150 @@ describe("web workbench app", () => {
     const updatedTextValue = document.querySelector("#text-value") as HTMLTextAreaElement | null
     expect(updatedTextValue?.value).toBe("Edited recipient")
     expect(document.getElementById("root")?.innerHTML).not.toBe("")
+  })
+
+  it("keeps inline text editing aligned with centered text metrics", async () => {
+    await renderWorkbenchApp(browserRuntimeContext, "text-centered-selected")
+    await flush(4)
+
+    const inlineEditor = document.querySelector(
+      'textarea[aria-label="画布文本内联编辑"]'
+    ) as HTMLTextAreaElement | null
+    expect(inlineEditor).not.toBeNull()
+
+    const editorFrame = inlineEditor?.parentElement as HTMLDivElement | null
+    expect(editorFrame).not.toBeNull()
+
+    const scale = parseFloat(editorFrame?.style.width ?? "0") / 32
+    const layout = resolveTextLayout({
+      text: "MMM",
+      fontSize: 8.9,
+      fontFamily: "arial",
+      fontWeight: "bold",
+      width: 32,
+      height: 14,
+      lineHeight: 1.2,
+      align: "center",
+      verticalAlign: "middle",
+      stretchX: false,
+      stretchY: false,
+      autoWrap: false,
+      verticalText: false,
+      maxLines: 1,
+      measureText: ({ text }) => ({
+        width: Math.max(Array.from(text).length, 1) * 7.25,
+      }),
+    })
+
+    expect(parseFloat(inlineEditor?.style.left ?? "0")).toBeCloseTo(layout.contentX * scale, 3)
+    expect(parseFloat(inlineEditor?.style.width ?? "0")).toBeCloseTo(layout.contentWidth * scale, 3)
+    expect(parseFloat(inlineEditor?.style.top ?? "0")).toBeCloseTo(
+      (layout.contentY + layout.textOffsetY) * scale,
+      3
+    )
+  })
+
+  it("preserves the chosen alignment cell when justify is enabled", async () => {
+    await renderWorkbenchApp(browserRuntimeContext, "text-selected")
+    await flush(4)
+
+    const centeredAlignButton = document.querySelector(
+      'button[aria-label="文本居中对齐"]'
+    ) as HTMLButtonElement | null
+    const justifyButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("两端对齐")
+    ) as HTMLButtonElement | null
+
+    expect(centeredAlignButton).not.toBeNull()
+    expect(justifyButton).not.toBeNull()
+
+    await act(async () => {
+      centeredAlignButton?.click()
+      await flush()
+    })
+
+    await act(async () => {
+      justifyButton?.click()
+      await flush()
+    })
+
+    expect(centeredAlignButton?.getAttribute("aria-pressed")).toBe("true")
+    expect(justifyButton?.getAttribute("aria-pressed")).toBe("true")
+  })
+
+  it("keeps justify inline editing aligned for middle anchored text", async () => {
+    await renderWorkbenchApp(browserRuntimeContext, "text-justify-centered-selected")
+    await flush(4)
+
+    const inlineEditor = document.querySelector(
+      'textarea[aria-label="画布文本内联编辑"]'
+    ) as HTMLTextAreaElement | null
+    expect(inlineEditor).not.toBeNull()
+
+    const editorFrame = inlineEditor?.parentElement as HTMLDivElement | null
+    expect(editorFrame).not.toBeNull()
+
+    const scale = parseFloat(editorFrame?.style.width ?? "0") / 21.3
+    const layout = resolveTextLayout({
+      text: "Koha Cat",
+      fontSize: 3.5,
+      fontFamily: "system-sans",
+      fontWeight: "bold",
+      width: 21.3,
+      height: 6.6,
+      lineHeight: 1.2,
+      align: "justify",
+      verticalAlign: "middle",
+      stretchX: false,
+      stretchY: false,
+      autoWrap: true,
+      verticalText: false,
+      maxLines: 1,
+      measureText: ({ text }) => ({
+        width: Math.max(Array.from(text).length, 1) * 1.9,
+      }),
+    })
+
+    expect(parseFloat(inlineEditor?.style.top ?? "0")).toBeCloseTo(layout.contentY * scale, 3)
+  })
+
+  it("keeps justify inline editing aligned for top anchored text", async () => {
+    await renderWorkbenchApp(browserRuntimeContext, "text-justify-top-selected")
+    await flush(4)
+
+    const inlineEditor = document.querySelector(
+      'textarea[aria-label="画布文本内联编辑"]'
+    ) as HTMLTextAreaElement | null
+    expect(inlineEditor).not.toBeNull()
+
+    const editorFrame = inlineEditor?.parentElement as HTMLDivElement | null
+    expect(editorFrame).not.toBeNull()
+
+    const scale = parseFloat(editorFrame?.style.width ?? "0") / 22.5
+    const layout = resolveTextLayout({
+      text: "Name",
+      fontSize: 4.3,
+      fontFamily: "system-sans",
+      fontWeight: "bold",
+      width: 22.5,
+      height: 12,
+      lineHeight: 1.2,
+      align: "justify",
+      verticalAlign: "top",
+      stretchX: false,
+      stretchY: false,
+      autoWrap: true,
+      verticalText: false,
+      maxLines: 1,
+      measureText: ({ text }) => ({
+        width: Math.max(Array.from(text).length, 1) * 2.32,
+      }),
+    })
+
+    expect(parseFloat(inlineEditor?.style.top ?? "0")).toBeCloseTo(
+      (layout.contentY + layout.textOffsetY) * scale,
+      3
+    )
   })
 
   it("hydrates recent activity from sync state on server-http startup", async () => {

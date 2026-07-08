@@ -730,6 +730,7 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
           lineHeight: physicalElement.lineHeight,
           fontWeight: physicalElement.fontWeight,
           align: physicalElement.align,
+          justifyAlign: physicalElement.justifyAlign,
           verticalAlign: physicalElement.verticalAlign,
           stretchX: physicalElement.stretchX,
           stretchY: physicalElement.stretchY,
@@ -1423,6 +1424,7 @@ export function compileDraftElement(
         lineHeight: normalized.lineHeight,
         fontWeight: normalized.fontWeight,
         align: normalized.align,
+        justifyAlign: normalized.justifyAlign,
         verticalAlign: normalized.verticalAlign,
         stretchX: normalized.stretchX,
         stretchY: normalized.stretchY,
@@ -1650,7 +1652,11 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
   if (
     scenario === "text-selected" ||
     scenario === "text-font-metrics" ||
-    scenario === "text-justify-selected"
+    scenario === "text-justify-selected" ||
+    scenario === "text-justify-multiline-selected" ||
+    scenario === "text-justify-centered-selected" ||
+    scenario === "text-justify-top-selected" ||
+    scenario === "text-centered-selected"
   ) {
     const document = createDraftFromPreset(getPresetById("ops-tag"))
     const selectedText = document.elements.find((element) => element.kind === "text")
@@ -1702,21 +1708,114 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
         element.id === selectedText.id && element.kind === "text"
           ? {
               ...element,
-              x: scenario === "text-justify-selected" ? 4.5 : 4,
-              y: scenario === "text-justify-selected" ? 6.5 : 4,
-              value: scenario === "text-justify-selected" ? "可编辑文本" : "20kΩ\n3333",
-              width: scenario === "text-justify-selected" ? 22.5 : 26,
-              height: scenario === "text-justify-selected" ? 6.6 : 14,
-              fontSize: scenario === "text-justify-selected" ? 3 : 5,
-              fontFamily: "system-sans",
+              x:
+                scenario === "text-justify-selected"
+                  ? 4.5
+                  : scenario === "text-justify-multiline-selected"
+                    ? 6
+                  : scenario === "text-justify-centered-selected"
+                    ? 2.5
+                  : scenario === "text-justify-top-selected"
+                    ? 10
+                  : scenario === "text-centered-selected"
+                    ? 2.5
+                    : 4,
+              y:
+                scenario === "text-justify-selected"
+                  ? 6.5
+                  : scenario === "text-justify-multiline-selected"
+                    ? 4
+                  : scenario === "text-justify-centered-selected"
+                    ? 2.1
+                  : scenario === "text-justify-top-selected"
+                    ? 3
+                  : scenario === "text-centered-selected"
+                    ? 2.1
+                    : 4,
+              value:
+                scenario === "text-justify-selected"
+                  ? "可编辑文本"
+                  : scenario === "text-justify-multiline-selected"
+                    ? "Koha Cat"
+                  : scenario === "text-justify-centered-selected"
+                    ? "Koha Cat"
+                  : scenario === "text-justify-top-selected"
+                    ? "Name"
+                  : scenario === "text-centered-selected"
+                    ? "MMM"
+                    : "20kΩ\n3333",
+              width:
+                scenario === "text-justify-selected"
+                  ? 22.5
+                  : scenario === "text-justify-multiline-selected"
+                    ? 21.3
+                  : scenario === "text-justify-centered-selected"
+                    ? 21.3
+                  : scenario === "text-justify-top-selected"
+                    ? 22.5
+                  : scenario === "text-centered-selected"
+                    ? 32
+                    : 26,
+              height:
+                scenario === "text-justify-selected"
+                  ? 6.6
+                  : scenario === "text-justify-multiline-selected"
+                    ? 6.6
+                  : scenario === "text-justify-centered-selected"
+                    ? 6.6
+                  : scenario === "text-justify-top-selected"
+                    ? 12
+                  : scenario === "text-centered-selected"
+                    ? 14
+                    : 14,
+              fontSize:
+                scenario === "text-justify-selected"
+                  ? 3
+                  : scenario === "text-justify-multiline-selected"
+                    ? 3.5
+                  : scenario === "text-justify-centered-selected"
+                    ? 3.5
+                  : scenario === "text-justify-top-selected"
+                    ? 4.3
+                  : scenario === "text-centered-selected"
+                    ? 8.9
+                    : 5,
+              fontFamily: scenario === "text-centered-selected" ? "arial" : "system-sans",
               lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
-              align: scenario === "text-justify-selected" ? "justify" : "left",
-              verticalAlign: "top",
+              align:
+                scenario === "text-justify-selected"
+                  || scenario === "text-justify-multiline-selected"
+                  || scenario === "text-justify-centered-selected"
+                  || scenario === "text-justify-top-selected"
+                  ? "justify"
+                  : scenario === "text-centered-selected"
+                    ? "center"
+                    : "left",
+              justifyAlign:
+                scenario === "text-justify-centered-selected" ||
+                scenario === "text-justify-top-selected"
+                  ? "center"
+                  : undefined,
+              verticalAlign:
+                scenario === "text-centered-selected" ||
+                scenario === "text-justify-centered-selected"
+                  ? "middle"
+                  : scenario === "text-justify-top-selected"
+                    ? "top"
+                  : "top",
               stretchX: false,
               stretchY: false,
-              autoWrap: true,
+              autoWrap: scenario === "text-centered-selected" ? false : true,
               verticalText: false,
-              maxLines: scenario === "text-justify-selected" ? 1 : 2,
+              maxLines:
+                scenario === "text-justify-selected" ||
+                scenario === "text-justify-centered-selected" ||
+                scenario === "text-justify-top-selected" ||
+                scenario === "text-centered-selected"
+                  ? 1
+                  : scenario === "text-justify-multiline-selected"
+                    ? 2
+                  : 2,
               meta: { ...element.meta, name: "文本 2" },
             }
           : element
@@ -1792,6 +1891,10 @@ export type CanvasStoryScenario =
   | "text-selected"
   | "text-font-metrics"
   | "text-justify-selected"
+  | "text-justify-multiline-selected"
+  | "text-justify-centered-selected"
+  | "text-justify-top-selected"
+  | "text-centered-selected"
   | "text-ready"
   | "rect-selected"
   | "circle-selected"
