@@ -3,14 +3,7 @@ name: pages
 on:
   push:
     branches: [main]
-  release:
-    types: [published]
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: "Published release tag to expose in Pages footer metadata."
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -24,11 +17,12 @@ concurrency:
 jobs:
   build:
     name: Pages Deploy
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.release_tag != '' && inputs.release_tag || github.ref }}
+          ref: refs/heads/main
           fetch-depth: 0
           submodules: recursive
       - uses: oven-sh/setup-bun@v2
@@ -39,17 +33,9 @@ jobs:
       - uses: actions/configure-pages@v5
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Resolve release version
-        if: ${{ github.event_name == 'release' || inputs.release_tag != '' }}
-        env:
-          RELEASE_TAG_NAME: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
+      - name: Resolve mainline app version
         run: |
-          tag_name="$RELEASE_TAG_NAME"
-          if [ -z "$tag_name" ]; then
-            echo "Could not resolve release tag for Pages build." >&2
-            exit 1
-          fi
-          echo "TUCKMARK_APP_VERSION=${tag_name#v}" >> "$GITHUB_ENV"
+          echo "TUCKMARK_APP_VERSION=main+$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
       - name: Build web demo
         env:
           TUCKMARK_WEB_SURFACE: browser-static

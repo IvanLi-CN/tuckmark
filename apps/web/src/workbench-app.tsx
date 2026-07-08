@@ -1312,7 +1312,7 @@ function WorkbenchLayout({
   const surfaceLabel =
     controller.context.surface === "server-http" ? "Server HTTP" : "Browser static"
   const modeLabel = controller.context.mode === "demo" ? "Demo mode" : "Runtime mode"
-  const versionLabel = `v${__TUCKMARK_APP_VERSION__}`
+  const versionLabel = __TUCKMARK_APP_VERSION__
 
   return (
     <div className={cn("tm-shell", "tm-selectable-none", isCanvasRoute && "tm-shell--canvas")}>

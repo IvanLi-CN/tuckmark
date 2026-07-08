@@ -328,9 +328,7 @@ export function resolvePublicBase(
 export function resolveAppVersion(env: Record<string, string | undefined>): string {
   const explicitVersion =
     env.TUCKMARK_APP_VERSION || (env.GITHUB_REF_TYPE === "tag" ? env.GITHUB_REF_NAME : "")
-  return explicitVersion
-    ? explicitVersion.replace(/^v(?=\d+\.\d+\.\d+)/, "")
-    : rootPackageJson.version
+  return explicitVersion || rootPackageJson.version
 }
 
 export function resolveRepositoryUrl(env: Record<string, string | undefined>): string {

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
+import { buildReleasePlan } from "../../.github/scripts/release-plan.mjs"
 import {
   createPwaHtmlTags,
   createPwaManifest,
@@ -125,12 +126,12 @@ describe("footer metadata", () => {
 
   it("allows builds to override metadata", () => {
     const env = {
-      TUCKMARK_APP_VERSION: "1.2.3-preview.4",
+      TUCKMARK_APP_VERSION: "v1.2.3-preview.4",
       TUCKMARK_REPOSITORY_URL: "https://example.test/repo/",
       TUCKMARK_RIGHTS_URL: "https://example.test/rights/",
     }
 
-    expect(resolveAppVersion(env)).toBe("1.2.3-preview.4")
+    expect(resolveAppVersion(env)).toBe("v1.2.3-preview.4")
     expect(resolveRepositoryUrl(env)).toBe("https://example.test/repo/")
     expect(resolveRightsUrl(env)).toBe("https://example.test/rights/")
   })
@@ -141,7 +142,7 @@ describe("footer metadata", () => {
         GITHUB_REF_TYPE: "tag",
         GITHUB_REF_NAME: "v0.2.0-preview.5",
       })
-    ).toBe("0.2.0-preview.5")
+    ).toBe("v0.2.0-preview.5")
   })
 })
 
@@ -151,18 +152,14 @@ describe("Pages workflow metadata", () => {
     "utf8"
   )
 
-  it("redeploys Pages when a GitHub Release is published", () => {
-    expect(pagesWorkflow).toContain("release:\n    types: [published]")
-  })
-
-  it("checks out the published release tag for release-triggered Pages builds", () => {
-    expect(pagesWorkflow).toContain("github.event.release.tag_name")
-  })
-
-  it("accepts an explicit release tag for release workflow dispatches", () => {
-    expect(pagesWorkflow).toContain("release_tag:")
-    expect(pagesWorkflow).toContain("inputs.release_tag")
-    expect(pagesWorkflow).toContain("TUCKMARK_APP_VERSION=")
+  it("keeps owner-facing Pages on mainline builds instead of release tags", () => {
+    expect(pagesWorkflow).toContain("branches: [main]")
+    expect(pagesWorkflow).toContain("if: github.ref == 'refs/heads/main'")
+    expect(pagesWorkflow).toContain("ref: refs/heads/main")
+    expect(pagesWorkflow).not.toContain("types: [published]")
+    expect(pagesWorkflow).not.toContain("release_tag:")
+    expect(pagesWorkflow).not.toContain("github.event.release.tag_name")
+    expect(pagesWorkflow).toContain("main+$(git rev-parse --short HEAD)")
   })
 })
 
@@ -172,8 +169,61 @@ describe("Release workflow Pages redeploy", () => {
     "utf8"
   )
 
-  it("dispatches Pages after publishing a GitHub Release", () => {
-    expect(releaseWorkflow).toContain("actions: write")
-    expect(releaseWorkflow).toContain("gh workflow run pages.yml --ref main -f release_tag")
+  it("publishes preview releases as prereleases without redeploying owner-facing Pages", () => {
+    expect(releaseWorkflow).toContain("concurrency:")
+    expect(releaseWorkflow).toContain("group: release")
+    expect(releaseWorkflow).toContain("CHANNEL_LABEL=")
+    expect(releaseWorkflow).toContain("RELEASE_ARGS=()")
+    expect(releaseWorkflow).toContain("RELEASE_ARGS+=(--prerelease --latest=false)")
+    expect(releaseWorkflow).toContain('"${' + 'RELEASE_ARGS[@]}"')
+    expect(releaseWorkflow).toContain('--target "$MERGE_SHA"')
+    expect(releaseWorkflow).toContain('git checkout --detach "$MERGE_SHA"')
+    expect(releaseWorkflow).not.toContain("$=RELEASE_FLAGS")
+    expect(releaseWorkflow).not.toContain("gh workflow run pages.yml")
+  })
+})
+
+describe("release train planning", () => {
+  it("continues the current higher preview train instead of falling back to a lower patch line", () => {
+    const plan = buildReleasePlan(
+      {
+        type_label: "type:patch",
+        channel_label: "channel:preview",
+      },
+      ["v0.1.1", "v0.1.2-preview.7", "v0.2.0-preview.10"],
+      "0.1.0"
+    )
+
+    expect(plan.requested_version).toBe("v0.1.2")
+    expect(plan.current_train_version).toBe("v0.2.0")
+    expect(plan.stable_version).toBe("v0.2.0")
+    expect(plan.release_version).toBe("v0.2.0-preview.11")
+  })
+
+  it("promotes the active preview train when a stable release is published after preview work moved ahead", () => {
+    const plan = buildReleasePlan(
+      {
+        type_label: "type:patch",
+        channel_label: "channel:stable",
+      },
+      ["v0.1.1", "v0.2.0-preview.10"],
+      "0.1.0"
+    )
+
+    expect(plan.release_version).toBe("v0.2.0")
+  })
+
+  it("starts a new preview train when the requested bump is higher than the current one", () => {
+    const plan = buildReleasePlan(
+      {
+        type_label: "type:major",
+        channel_label: "channel:preview",
+      },
+      ["v0.1.1", "v0.2.0-preview.10"],
+      "0.1.0"
+    )
+
+    expect(plan.stable_version).toBe("v1.0.0")
+    expect(plan.release_version).toBe("v1.0.0-preview.1")
   })
 })

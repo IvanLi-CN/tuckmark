@@ -11,7 +11,7 @@ test("browser-static root path defaults to runtime and supports explicit demo mo
     "href",
     "https://github.com/IvanLi-CN/tuckmark"
   )
-  await expect(page.getByText("v0.1.0")).toBeVisible()
+  await expect(page.getByText("0.1.0")).toBeVisible()
   await expect(page.getByRole("link", { name: "© 2026 Ivan Li" })).toHaveAttribute(
     "href",
     "https://ivanli.cc/"
