@@ -22,6 +22,8 @@ const INITIAL_SNAPSHOT: PwaUpdateSnapshot = {
   waitingWorker: null,
   error: null,
 }
+const PERIODIC_UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000
+const ACTIVATION_STALE_UPDATE_CHECK_MS = 10 * 60 * 1000
 
 function serviceWorkersSupported(): boolean {
   return typeof navigator !== "undefined" && "serviceWorker" in navigator
@@ -58,14 +60,22 @@ export class PwaUpdateController {
         status: "unsupported",
       }
   private listeners = new Set<PwaUpdateListener>()
+  private registration: ServiceWorkerRegistration | null = null
   private registrationPromise: Promise<ServiceWorkerRegistration | null> | null = null
   private reloadOnControllerChange = false
+  private updateCheckPromise: Promise<void> | null = null
+  private lastUpdateCheckAt: number | null = null
+  private periodicCheckTimer: number | null = null
+  private runtimeListenersAttached = false
 
   subscribe(listener: PwaUpdateListener): () => void {
     this.listeners.add(listener)
     listener(this.snapshot)
     return () => {
       this.listeners.delete(listener)
+      if (this.listeners.size === 0) {
+        this.stopRuntimeChecks()
+      }
     }
   }
 
@@ -75,6 +85,9 @@ export class PwaUpdateController {
       return Promise.resolve(null)
     }
     if (this.registrationPromise) {
+      if (this.registration && this.listeners.size > 0) {
+        this.startRuntimeChecks()
+      }
       return this.registrationPromise
     }
 
@@ -91,11 +104,12 @@ export class PwaUpdateController {
         }
       )
       .then((registration) => {
+        this.registration = registration
         this.watchRegistration(registration)
-        return registration
-          .update()
-          .catch(() => undefined)
-          .then(() => registration)
+        if (this.listeners.size > 0) {
+          this.startRuntimeChecks()
+        }
+        return this.checkForUpdates("register").then(() => registration)
       })
       .catch((error: unknown) => {
         this.setSnapshot({
@@ -108,6 +122,17 @@ export class PwaUpdateController {
     return this.registrationPromise
   }
 
+  dispose(): void {
+    if (serviceWorkersSupported()) {
+      navigator.serviceWorker.removeEventListener("controllerchange", this.handleControllerChange)
+    }
+    this.stopRuntimeChecks()
+    this.registration = null
+    this.registrationPromise = null
+    this.updateCheckPromise = null
+    this.lastUpdateCheckAt = null
+  }
+
   applyUpdate(): void {
     const worker = this.snapshot.waitingWorker
     if (!worker) {
@@ -117,6 +142,102 @@ export class PwaUpdateController {
     this.reloadOnControllerChange = true
     this.setSnapshot({ status: "activating" })
     worker.postMessage({ type: "SKIP_WAITING" })
+  }
+
+  private startRuntimeChecks(): void {
+    if (!this.runtimeListenersAttached) {
+      document.addEventListener("visibilitychange", this.handleVisibilityChange)
+      window.addEventListener("focus", this.handleWindowFocus)
+      window.addEventListener("online", this.handleOnline)
+      this.runtimeListenersAttached = true
+    }
+    if (this.periodicCheckTimer === null) {
+      this.periodicCheckTimer = window.setInterval(() => {
+        void this.checkForUpdates("interval")
+      }, PERIODIC_UPDATE_CHECK_INTERVAL_MS)
+    }
+  }
+
+  private stopRuntimeChecks(): void {
+    if (
+      this.runtimeListenersAttached &&
+      typeof document !== "undefined" &&
+      typeof window !== "undefined"
+    ) {
+      document.removeEventListener("visibilitychange", this.handleVisibilityChange)
+      window.removeEventListener("focus", this.handleWindowFocus)
+      window.removeEventListener("online", this.handleOnline)
+      this.runtimeListenersAttached = false
+    }
+    if (this.periodicCheckTimer !== null && typeof window !== "undefined") {
+      window.clearInterval(this.periodicCheckTimer)
+      this.periodicCheckTimer = null
+    }
+  }
+
+  private checkForUpdates(
+    reason: "register" | "interval" | "visibilitychange" | "focus" | "online"
+  ) {
+    const registration = this.registration
+    if (!registration) {
+      return Promise.resolve()
+    }
+    if (!this.shouldCheckForUpdates(reason)) {
+      return Promise.resolve()
+    }
+    if (this.updateCheckPromise) {
+      return this.updateCheckPromise
+    }
+
+    const updateRequest = registration
+      .update()
+      .then(() => {
+        this.lastUpdateCheckAt = Date.now()
+      })
+      .catch(() => undefined)
+    const trackedUpdateRequest = updateRequest.finally(() => {
+      if (this.updateCheckPromise === trackedUpdateRequest) {
+        this.updateCheckPromise = null
+      }
+    })
+    this.updateCheckPromise = trackedUpdateRequest
+    return trackedUpdateRequest
+  }
+
+  private shouldCheckForUpdates(
+    reason: "register" | "interval" | "visibilitychange" | "focus" | "online"
+  ): boolean {
+    if (reason === "register") {
+      return true
+    }
+    if (!this.isBrowserOnline()) {
+      return false
+    }
+    if (
+      (reason === "interval" || reason === "visibilitychange" || reason === "focus") &&
+      !this.isPageVisible()
+    ) {
+      return false
+    }
+    if (reason === "interval") {
+      return this.isUpdateCheckStale(PERIODIC_UPDATE_CHECK_INTERVAL_MS)
+    }
+    return this.isUpdateCheckStale(ACTIVATION_STALE_UPDATE_CHECK_MS)
+  }
+
+  private isUpdateCheckStale(thresholdMs: number): boolean {
+    if (this.lastUpdateCheckAt === null) {
+      return true
+    }
+    return Date.now() - this.lastUpdateCheckAt >= thresholdMs
+  }
+
+  private isPageVisible(): boolean {
+    return typeof document === "undefined" || document.visibilityState !== "hidden"
+  }
+
+  private isBrowserOnline(): boolean {
+    return typeof navigator === "undefined" || navigator.onLine !== false
   }
 
   private watchRegistration(registration: ServiceWorkerRegistration): void {
@@ -184,6 +305,21 @@ export class PwaUpdateController {
     this.reloadOnControllerChange = false
     this.setSnapshot({ status: "updated" })
     window.location.reload()
+  }
+
+  private handleVisibilityChange = (): void => {
+    if (document.visibilityState !== "visible") {
+      return
+    }
+    void this.checkForUpdates("visibilitychange")
+  }
+
+  private handleWindowFocus = (): void => {
+    void this.checkForUpdates("focus")
+  }
+
+  private handleOnline = (): void => {
+    void this.checkForUpdates("online")
   }
 
   private setSnapshot(next: Partial<PwaUpdateSnapshot>): void {

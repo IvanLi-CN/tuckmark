@@ -21,12 +21,16 @@
   because the UI owns the visible `v` prefix.
 - `apps/web/public/pwa/` stores generated Tuckmark maskable PNG icons.
 - `apps/web/src/pwa-lifecycle.ts` owns service worker registration, update
-  detection, `SKIP_WAITING`, and reload-on-controller-change behavior.
+  detection, low-frequency background rechecks, stale-tab catch-up triggers,
+  `SKIP_WAITING`, and reload-on-controller-change behavior.
 - `apps/web/src/pwa-update-toast.tsx` owns the non-blocking update prompt shown
   from the shared workbench shell. Its update action uses a project-owned
   confirmation dialog instead of browser-native `confirm`.
 - `apps/web/tests/pwa.spec.ts` covers service worker registration, offline
   route refresh, and PWA asset inspection.
+- `apps/web/src/pwa-lifecycle.test.ts` covers the guarded update-check cadence:
+  immediate startup checks, 30-minute periodic polling, 10-minute stale-tab
+  activation catch-up, offline skips, online retries, and in-flight dedupe.
 - `.github/workflows/pages.yml` runs on `main` pushes, manual dispatch, and
   published GitHub Releases. Release-triggered runs check out the published tag.
   Manual dispatch can also receive a `release_tag` input.

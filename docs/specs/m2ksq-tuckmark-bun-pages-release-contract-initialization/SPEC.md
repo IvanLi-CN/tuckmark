@@ -37,6 +37,11 @@ and a reproducible worktree bootstrap path.
 - Browser-static updates are non-blocking: a newly detected version caches
   silently in the background, then prompts the user to update only when the
   waiting worker is ready.
+- Browser-static update checks run immediately on runtime startup, then continue
+  at a low-frequency cadence while the page remains open.
+- If the current tab has gone stale since its last update check, returning the
+  page to a visible, focused, or newly online state must trigger a guarded
+  catch-up update check without surfacing any extra loading UI.
 - Runtime deployments use either `server-http` or `browser-static` surface.
 - `demo=true` enters demo mode, `demo=false` and no param stay on runtime mode.
 
@@ -61,6 +66,9 @@ and a reproducible worktree bootstrap path.
   first successful online load.
 - New-version caching is silent; the update prompt appears only after the
   waiting worker is ready.
+- Long-lived browser-static tabs continue to recheck for new versions at a low
+  frequency, while stale tabs catch up when the page becomes active or returns
+  online.
 - Release can publish stable and preview bundles from durable snapshots
 - Pages redeploys after release publication display the published release tag in
   footer metadata
