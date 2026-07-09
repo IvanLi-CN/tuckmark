@@ -76,7 +76,20 @@
   - direct start/end endpoint handles for single selected `line` elements
   - wheel zoom relative to pointer
   - `Space + drag` pan
-  - keyboard move, duplicate, delete, undo, redo, and clear selection
+  - keyboard move, copy, paste, duplicate, delete, undo, redo, and clear
+    selection
+- Canvas clipboard coverage now includes:
+  - window `copy` / `paste` event handling for selected elements when focus is
+    outside editable form controls
+  - async button `拷贝` / `粘贴` entry points backed by `navigator.clipboard`
+    and web custom formats when the browser supports them
+  - structured payload round-trips that preserve copied element order and apply
+    an accumulating `12mm` offset across repeated paste operations from the
+    same clipboard source
+  - plain-text fallback that creates one new `text` element centered in the
+    current viewport
+  - read-only historical snapshots keeping `拷贝` available while leaving
+    paste and all other mutating actions disabled
 - Canvas snapping now resolves through the persistent `snapEnabled` editor flag
   across drag end, transformer commit, line endpoint adjustment, and keyboard
   movement.
@@ -142,6 +155,8 @@
     `user-template`
   - draft field registry and per-element replacement bindings
   - per-layer metadata
+  - runtime-only clipboard paste-session bookkeeping kept outside persisted
+    drafts, sync state, saved versions, and autosaves
   - preset-scoped browser storage persistence for scratch drafts
   - same-device sync state records shared with `TuckmarkService` for scratch
     drafts, recent templates, and recent prints

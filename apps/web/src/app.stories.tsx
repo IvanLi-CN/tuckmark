@@ -428,6 +428,115 @@ export const CanvasWorkspaceSelectableText: Story = {
   },
 }
 
+export const CanvasWorkspaceClipboard: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-ready",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "Clipboard entry points keep duplicate semantics separate from `新副本`, while system copy/paste round-trips selected canvas elements and preserves repeated offset behavior.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const clipboardItems: Array<{
+      data: Record<string, Blob>
+      getType: (type: string) => Promise<Blob>
+      types: string[]
+    }> = []
+    const originalClipboard = navigator.clipboard
+    const originalClipboardItem = window.ClipboardItem
+    const originalSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureContext")
+
+    class StoryClipboardItem {
+      readonly data: Record<string, Blob>
+      readonly types: string[]
+
+      constructor(data: Record<string, Blob>) {
+        this.data = data
+        this.types = Object.keys(data)
+      }
+
+      async getType(type: string) {
+        const blob = this.data[type]
+        if (!blob) {
+          throw new DOMException(`Missing clipboard type: ${type}`, "NotFoundError")
+        }
+        return blob
+      }
+    }
+
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        read: async () => clipboardItems,
+        write: async (items: StoryClipboardItem[]) => {
+          clipboardItems.splice(0, clipboardItems.length, ...items)
+        },
+      },
+      configurable: true,
+    })
+    Object.defineProperty(window, "ClipboardItem", {
+      value: StoryClipboardItem,
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(window, "isSecureContext", {
+      value: true,
+      configurable: true,
+    })
+
+    try {
+      const beforeCount = canvasElement.querySelectorAll(
+        '.tm-layer-list--inspector input[aria-label$="图层名称"]'
+      ).length
+
+      await userEvent.click(canvas.getByRole("button", { name: "拷贝" }))
+      await expect(
+        canvas.findByText("已拷贝所选图层。")
+      ).resolves.toBeVisible()
+
+      await userEvent.click(canvas.getByRole("button", { name: "粘贴" }))
+      await expect(
+        canvas.findByText("已粘贴 1 个图层。")
+      ).resolves.toBeVisible()
+      await expect(
+        canvasElement.querySelectorAll('.tm-layer-list--inspector input[aria-label$="图层名称"]')
+          .length
+      ).toBe(beforeCount + 1)
+    } finally {
+      Object.defineProperty(navigator, "clipboard", {
+        value: originalClipboard,
+        configurable: true,
+      })
+      if (originalClipboardItem) {
+        Object.defineProperty(window, "ClipboardItem", {
+          value: originalClipboardItem,
+          configurable: true,
+          writable: true,
+        })
+      } else {
+        Reflect.deleteProperty(window, "ClipboardItem")
+      }
+      if (originalSecureContext) {
+        Object.defineProperty(window, "isSecureContext", originalSecureContext)
+      } else {
+        Reflect.deleteProperty(window, "isSecureContext")
+      }
+    }
+  },
+}
+
 export const CanvasWorkspaceSnapEnabled: Story = {
   args: {
     context: runtimeContext,

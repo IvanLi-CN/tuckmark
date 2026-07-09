@@ -186,3 +186,12 @@ while the workbench was being productized:
   - Storybook fallback evidence now covers both selected and invalid Data
     Matrix states to keep the new symbol inside the same visual review path as
     other first-class canvas elements
+- A later canvas interaction pass separated clipboard semantics from immediate
+  duplicate semantics:
+  - layer actions and multi-select actions now expose `拷贝`, `粘贴`, and
+    `新副本` as distinct affordances instead of overloading duplicate as copy
+  - selected elements can round-trip through the system clipboard using a
+    structured Tuckmark payload, while plain external text pastes back as one
+    new text layer
+  - historical read-only versions keep copy available but continue to block
+    paste and every other draft mutation path

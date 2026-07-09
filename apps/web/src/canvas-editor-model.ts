@@ -1136,23 +1136,36 @@ export function persistDraftDocumentToStorage(
 
 export function duplicateDraftElement(
   element: CanvasDraftElement,
-  _index: number
+  _index: number,
+  options?: {
+    offsetX?: number
+    offsetY?: number
+  }
 ): CanvasDraftElement {
   const clone = cloneValue(element)
+  const offsetX = options?.offsetX ?? 12
+  const offsetY = options?.offsetY ?? 12
   clone.id = `${element.kind}-${crypto.randomUUID()}`
   clone.meta.name = `${element.meta.name} 副本`
 
   if (clone.kind === "line") {
-    clone.x += 12
-    clone.y += 12
-    clone.x2 += 12
-    clone.y2 += 12
+    clone.x += offsetX
+    clone.y += offsetY
+    clone.x2 += offsetX
+    clone.y2 += offsetY
     return clone
   }
 
-  clone.x += 12
-  clone.y += 12
+  clone.x += offsetX
+  clone.y += offsetY
   return clone
+}
+
+export function getCanvasElementClipboardText(element: CanvasDraftElement): string | null {
+  if (element.kind === "text" || element.kind === "barcode" || element.kind === "qr") {
+    return element.value
+  }
+  return null
 }
 
 export function getElementBounds(element: CanvasDraftElement): CanvasBounds {

@@ -145,6 +145,9 @@ const fetchMock = vi.fn<typeof fetch>()
 const originalFetch = globalThis.fetch
 const originalIndexedDb = globalThis.indexedDB
 const originalMatchMedia = window.matchMedia
+const originalNavigatorClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard")
+const originalClipboardItem = globalThis.ClipboardItem
+const originalSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureContext")
 let mountedRoot: ReturnType<typeof ReactDOM.createRoot> | null = null
 let viewportWidth = 1440
 
@@ -259,6 +262,96 @@ function installCanvasStubs(): void {
 const memoryStorage = installLocalStorage(createMemoryStorage())
 
 installCanvasStubs()
+
+type ClipboardBlobMap = Record<string, Blob>
+
+class FakeClipboardItem {
+  readonly data: ClipboardBlobMap
+  readonly types: string[]
+
+  constructor(data: ClipboardBlobMap) {
+    this.data = data
+    this.types = Object.keys(data)
+  }
+
+  async getType(type: string): Promise<Blob> {
+    const blob = this.data[type]
+    if (!blob) {
+      throw new DOMException(`Missing clipboard type: ${type}`, "NotFoundError")
+    }
+    return blob
+  }
+}
+
+function createClipboardItemFromTextMap(data: Record<string, string>) {
+  return new FakeClipboardItem(
+    Object.fromEntries(
+      Object.entries(data).map(([type, value]) => [
+        type,
+        new Blob([value], {
+          type: type.startsWith("web ") ? type.slice(4) : type,
+        }),
+      ])
+    )
+  )
+}
+
+let clipboardItems: FakeClipboardItem[] = []
+
+const clipboardMocks = vi.hoisted(() => ({
+  read: vi.fn(async () => clipboardItems),
+  write: vi.fn(async (items: FakeClipboardItem[]) => {
+    clipboardItems = items.map((item) => new FakeClipboardItem(item.data))
+  }),
+}))
+
+function createClipboardData(initial?: Record<string, string>): DataTransfer {
+  const store = new Map(Object.entries(initial ?? {}))
+  return {
+    dropEffect: "none",
+    effectAllowed: "all",
+    files: {} as FileList,
+    items: {} as DataTransferItemList,
+    types: Array.from(store.keys()),
+    clearData(format?: string) {
+      if (format) {
+        store.delete(format)
+      } else {
+        store.clear()
+      }
+    },
+    getData(format: string) {
+      return store.get(format) ?? ""
+    },
+    setData(format: string, data: string) {
+      store.set(format, data)
+      return true
+    },
+    setDragImage() {},
+  } as DataTransfer
+}
+
+function dispatchClipboardEvent(
+  type: "copy" | "paste",
+  clipboardData: DataTransfer,
+  target: Window | HTMLElement = window
+) {
+  const event = new Event(type, { bubbles: true, cancelable: true }) as ClipboardEvent
+  Object.defineProperty(event, "clipboardData", {
+    value: clipboardData,
+    configurable: true,
+  })
+  target.dispatchEvent(event)
+  return event
+}
+
+async function readStoredClipboardText(type: string): Promise<string | null> {
+  const item = clipboardItems[0]
+  if (!item || !item.types.includes(type)) {
+    return null
+  }
+  return (await item.getType(type)).text()
+}
 
 function matchesMediaQuery(query: string, width: number) {
   const minMatch = query.match(/\(min-width:\s*(\d+)px\)/)
@@ -698,6 +791,26 @@ function queryButton(label: string): HTMLButtonElement {
   return button
 }
 
+function queryCanvasLayerNameInputs(): HTMLInputElement[] {
+  return Array.from(
+    document.querySelectorAll('.tm-layer-list--inspector input[aria-label$="图层名称"]')
+  ) as HTMLInputElement[]
+}
+
+async function selectFirstCanvasLayer(): Promise<HTMLInputElement> {
+  const [layerNameInput] = queryCanvasLayerNameInputs()
+  if (!layerNameInput) {
+    throw new Error("Missing first canvas layer input")
+  }
+
+  await act(async () => {
+    layerNameInput.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await flush()
+  })
+
+  return layerNameInput
+}
+
 function _clickNav(label: string): Promise<void> {
   return act(async () => {
     queryButton(label).dispatchEvent(new MouseEvent("click", { bubbles: true }))
@@ -757,6 +870,9 @@ function releaseHeldUserTemplateLoad(): void {
 beforeEach(async () => {
   vi.useFakeTimers()
   fetchMock.mockReset()
+  clipboardItems = []
+  clipboardMocks.read.mockClear()
+  clipboardMocks.write.mockClear()
   Object.defineProperty(globalThis, "__TUCKMARK_APP_VERSION__", {
     value: "0.1.0",
     configurable: true,
@@ -777,6 +893,19 @@ beforeEach(async () => {
   globalThis.indexedDB = createFakeIndexedDb()
   viewportWidth = 1440
   window.matchMedia = vi.fn((query: string) => createMatchMediaResult(query))
+  Object.defineProperty(navigator, "clipboard", {
+    value: clipboardMocks,
+    configurable: true,
+  })
+  Object.defineProperty(globalThis, "ClipboardItem", {
+    value: FakeClipboardItem,
+    configurable: true,
+    writable: true,
+  })
+  Object.defineProperty(window, "isSecureContext", {
+    value: true,
+    configurable: true,
+  })
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
   browserPrinterMocks.isBrowserPrintSupported.mockReturnValue(true)
@@ -831,6 +960,25 @@ afterEach(async () => {
   globalThis.fetch = originalFetch
   globalThis.indexedDB = originalIndexedDb
   window.matchMedia = originalMatchMedia
+  if (originalNavigatorClipboard) {
+    Object.defineProperty(navigator, "clipboard", originalNavigatorClipboard)
+  } else {
+    Reflect.deleteProperty(navigator, "clipboard")
+  }
+  if (originalClipboardItem) {
+    Object.defineProperty(globalThis, "ClipboardItem", {
+      value: originalClipboardItem,
+      configurable: true,
+      writable: true,
+    })
+  } else {
+    Reflect.deleteProperty(globalThis, "ClipboardItem")
+  }
+  if (originalSecureContext) {
+    Object.defineProperty(window, "isSecureContext", originalSecureContext)
+  } else {
+    Reflect.deleteProperty(window, "isSecureContext")
+  }
   Reflect.deleteProperty(globalThis, "__TUCKMARK_APP_VERSION__")
   Reflect.deleteProperty(globalThis, "__TUCKMARK_BUILD_REF__")
   Reflect.deleteProperty(globalThis, "__TUCKMARK_REPOSITORY_URL__")
@@ -1317,6 +1465,235 @@ describe("web workbench app", () => {
       'input[aria-label="当前画布状态"]'
     ) as HTMLInputElement | null
     expect(canvasStatus?.value).toBe("已选 1 项")
+  })
+
+  it("round-trips selected canvas elements through clipboard events", async () => {
+    await renderApp(browserRuntimeContext, undefined, "/canvas")
+    await flush(4)
+
+    await selectFirstCanvasLayer()
+    const originalLayerCount = queryCanvasLayerNameInputs().length
+    const originalX = Number(
+      (document.querySelector<HTMLInputElement>("#pos-x")?.value ?? "0").trim()
+    )
+
+    const clipboardData = createClipboardData()
+    const copyEvent = dispatchClipboardEvent("copy", clipboardData)
+    await flush(2)
+
+    expect(copyEvent.defaultPrevented).toBe(true)
+    expect(clipboardData.getData("application/x.tuckmark-canvas-elements+json")).toContain(
+      "tuckmark-canvas-elements"
+    )
+
+    const pasteEvent = dispatchClipboardEvent("paste", clipboardData)
+    await flush(4)
+
+    expect(pasteEvent.defaultPrevented).toBe(true)
+    expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
+    expect(document.body.textContent).toContain("已粘贴 1 个图层。")
+    expect(Number(document.querySelector<HTMLInputElement>("#pos-x")?.value ?? "0")).toBe(
+      originalX + 12
+    )
+  })
+
+  it("accepts async clipboard custom payloads during keyboard paste", async () => {
+    await renderApp(browserRuntimeContext, undefined, "/canvas")
+    await flush(4)
+
+    await selectFirstCanvasLayer()
+    const originalLayerCount = queryCanvasLayerNameInputs().length
+
+    await act(async () => {
+      queryButton("拷贝").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    const clipboardPayload = await readStoredClipboardText(
+      "web application/x.tuckmark-canvas-elements+json"
+    )
+    expect(clipboardPayload).not.toBeNull()
+
+    const clipboardData = createClipboardData({
+      "web application/x.tuckmark-canvas-elements+json": clipboardPayload ?? "",
+    })
+    dispatchClipboardEvent("paste", clipboardData)
+    await flush(4)
+
+    expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
+    expect(document.body.textContent).toContain("已粘贴 1 个图层。")
+  })
+
+  it("uses navigator clipboard buttons and increments offset across repeated paste", async () => {
+    await renderApp(browserRuntimeContext, undefined, "/canvas")
+    await flush(4)
+
+    await selectFirstCanvasLayer()
+    const originalLayerCount = queryCanvasLayerNameInputs().length
+    const originalX = Number(
+      (document.querySelector<HTMLInputElement>("#pos-x")?.value ?? "0").trim()
+    )
+
+    await act(async () => {
+      queryButton("拷贝").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    expect(clipboardMocks.write).toHaveBeenCalledTimes(1)
+    await expect(
+      readStoredClipboardText("web application/x.tuckmark-canvas-elements+json")
+    ).resolves.toContain("tuckmark-canvas-elements")
+
+    await act(async () => {
+      queryButton("粘贴").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    expect(clipboardMocks.read).toHaveBeenCalledTimes(1)
+    expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
+    expect(Number(document.querySelector<HTMLInputElement>("#pos-x")?.value ?? "0")).toBe(
+      originalX + 12
+    )
+
+    await act(async () => {
+      queryButton("粘贴").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    expect(clipboardMocks.read).toHaveBeenCalledTimes(2)
+    expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 2)
+    expect(Number(document.querySelector<HTMLInputElement>("#pos-x")?.value ?? "0")).toBe(
+      originalX + 24
+    )
+  })
+
+  it("accepts keyboard clipboard payloads during async button paste", async () => {
+    await renderApp(browserRuntimeContext, undefined, "/canvas")
+    await flush(4)
+
+    await selectFirstCanvasLayer()
+    const originalLayerCount = queryCanvasLayerNameInputs().length
+    const clipboardData = createClipboardData()
+    dispatchClipboardEvent("copy", clipboardData)
+    await flush(2)
+
+    clipboardItems = [
+      createClipboardItemFromTextMap({
+        "application/x.tuckmark-canvas-elements+json": clipboardData.getData(
+          "application/x.tuckmark-canvas-elements+json"
+        ),
+      }),
+    ]
+
+    await act(async () => {
+      queryButton("粘贴").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
+    expect(document.body.textContent).toContain("已粘贴 1 个图层。")
+  })
+
+  it("converts plain-text paste into a new text layer", async () => {
+    await renderApp(browserRuntimeContext, undefined, "/canvas")
+    await flush(4)
+
+    const clipboardData = createClipboardData({
+      "text/plain": "Line 1\nLine 2",
+    })
+
+    dispatchClipboardEvent("paste", clipboardData)
+    await flush(4)
+
+    expect(document.body.textContent).toContain("已将剪贴板文本粘贴为新文本图层。")
+    expect(document.querySelector<HTMLTextAreaElement>("#text-value")?.value).toBe("Line 1\nLine 2")
+  })
+
+  it("rejects malformed structured clipboard payloads without crashing paste", async () => {
+    await renderApp(browserRuntimeContext, undefined, "/canvas")
+    await flush(4)
+
+    const originalLayerCount = queryCanvasLayerNameInputs().length
+    const clipboardData = createClipboardData({
+      "application/x.tuckmark-canvas-elements+json": JSON.stringify({
+        version: 1,
+        kind: "tuckmark-canvas-elements",
+        elements: [
+          {
+            id: "rect-bad",
+            kind: "rect",
+            x: 2,
+            y: 2,
+            width: 10,
+            height: 4,
+            strokeWidth: 1,
+            fill: "#111111",
+            stroke: "#111111",
+            radius: 0,
+          },
+        ],
+      }),
+    })
+
+    dispatchClipboardEvent("paste", clipboardData)
+    await flush(4)
+
+    expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount)
+    expect(document.body.textContent).toContain("剪贴板中的画布内容不可用。")
+  })
+
+  it("keeps copy enabled and paste disabled in read-only history mode", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Readonly Clipboard",
+      document: {
+        ...baseDraft,
+        name: "Readonly Clipboard",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas?source=user-template&templateId=${saved.template.id}&panel=versions`
+    )
+    await flush(8)
+
+    const versionButton = document.querySelector(".tm-version-list__item") as HTMLButtonElement | null
+    expect(versionButton).not.toBeNull()
+
+    await act(async () => {
+      versionButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    await selectFirstCanvasLayer()
+
+    expect(queryButton("拷贝").disabled).toBe(false)
+    expect(queryButton("粘贴").disabled).toBe(true)
+
+    await act(async () => {
+      queryButton("拷贝").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    expect(clipboardMocks.write).toHaveBeenCalledTimes(1)
+  })
+
+  it("disables clipboard buttons when async clipboard support is unavailable", async () => {
+    Object.defineProperty(window, "isSecureContext", {
+      value: false,
+      configurable: true,
+    })
+
+    await renderApp(browserRuntimeContext, undefined, "/canvas")
+    await flush(4)
+
+    await selectFirstCanvasLayer()
+
+    expect(queryButton("拷贝").disabled).toBe(true)
+    expect(queryButton("粘贴").disabled).toBe(true)
   })
 
   it("updates canvas inspector text fields without retaining the React event", async () => {

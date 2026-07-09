@@ -267,7 +267,18 @@ output.
   - `fit to view`
   - transformer-based resize / rotation with final geometry snapped on
     transform commit when `snapEnabled` is active
+  - system clipboard `Copy` / `Paste` for selected elements through keyboard
+    clipboard events when focus is not inside editable form controls
   - `Delete`, `Duplicate`, `Undo`, `Redo`, and `Escape`
+- Clipboard paste behavior:
+  - structured Tuckmark clipboard payload restores the copied element set as
+    new layers, preserves the copied relative layer order and geometry, and
+    increments paste offset across repeated pastes from the same clipboard
+    source
+  - plain `text/plain` clipboard content falls back to one new `text` element
+    centered in the current viewport
+  - historical read-only canvas versions may copy selected elements but must
+    not paste or otherwise mutate the draft
 - Transformer snapping is commit-time only: handles may move freely while being
   adjusted, then position and snap-compatible dimensions land on the existing
   `1mm` grid at release. Rotation is not snapped, and text resizing preserves
@@ -301,11 +312,13 @@ output.
   - automatic wrapping, two-end text justification, vertical text, and
     independent horizontal and vertical stretch toggles
 - Layer rail supports:
+  - copy
+  - paste
   - rename
   - reorder
   - lock / unlock
   - show / hide
-  - duplicate
+  - duplicate as `新副本`
   - delete
 - Multi-select inspector behavior:
   - zero selection shows a focused onboarding hint
@@ -426,6 +439,10 @@ output.
 - Canvas workspace supports create, select, move, resize, rotate, duplicate,
   reorder, visibility toggle, lock toggle, and delete for `text`, `rect`,
   `circle`, `triangle`, `line`, `barcode`, and `qr`.
+- Canvas workspace round-trips selected elements through the system clipboard:
+  structured Tuckmark payloads paste back as new layers with repeated offset
+  progression, while plain-text clipboard content pastes as one new `text`
+  element.
 - Selected text exposes font size, font family, three-by-three alignment,
   automatic wrapping, two-end justification, horizontal stretch, vertical
   stretch, vertical text, and rotation controls in the property inspector.
@@ -475,6 +492,8 @@ output.
   including cancel and empty-name validation paths.
 - Opening a historical version switches the stage into read-only mode and
   restore returns that version into the current working copy.
+- Historical read-only versions keep `拷贝` available for selected elements and
+  keep `粘贴` disabled.
 - Canvas dimensions can be freely edited on scratch, system-template copy, and
   user-template working-copy sources; historical read-only versions keep the
   control disabled.
@@ -532,6 +551,10 @@ output.
 
   PR: include
   ![Canvas workspace](./assets/canvas-wide-1280x800.png)
+
+- `1600×1200` canvas clipboard workflow after Storybook `拷贝` + `粘贴`, showing the pasted duplicate, status feedback, and the distinct `拷贝` / `粘贴` / `新副本` actions together.
+
+  ![Canvas clipboard workflow](./assets/canvas-clipboard-story-1600x1200.png)
 
 - `1280×800` canvas workspace with a selected text element before inline editing.
 

@@ -71,6 +71,7 @@ import {
   createDraftFromSystemTemplate,
   duplicateDraftAsTemplate,
   duplicateDraftElement,
+  getCanvasElementClipboardText,
   getElementGeometry,
   getElementSelectionBounds,
   getPresetById,
@@ -190,6 +191,7 @@ type CanvasPageState = {
   history: CanvasDraftDocument[]
   historyIndex: number
   editingId: string | null
+  pasteSession: CanvasPasteSession | null
   outputStatus: string
   autosavesExpanded: boolean
   versionsOpen: boolean
@@ -256,8 +258,169 @@ type CanvasIssue = {
   detail: string
 }
 
+type CanvasClipboardPayload = {
+  version: 1
+  kind: "tuckmark-canvas-elements"
+  elements: CanvasDraftElement[]
+}
+
+type CanvasPasteSession = {
+  signature: string
+  offsetStep: number
+}
+
+type CanvasClipboardReadResult =
+  | {
+      kind: "canvas"
+      payload: CanvasClipboardPayload
+      signature: string
+    }
+  | {
+      kind: "invalid"
+    }
+  | {
+      kind: "text"
+      text: string
+      signature: string
+    }
+  | {
+      kind: "empty"
+    }
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
+}
+
+const CANVAS_CLIPBOARD_FORMAT = "application/x.tuckmark-canvas-elements+json"
+const CANVAS_WEB_CUSTOM_CLIPBOARD_FORMAT = `web ${CANVAS_CLIPBOARD_FORMAT}`
+const CLIPBOARD_OFFSET_STEP = 12
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function isCanvasLayerMeta(value: unknown): value is CanvasDraftElement["meta"] {
+  return (
+    isRecord(value) &&
+    typeof value.name === "string" &&
+    typeof value.visible === "boolean" &&
+    typeof value.locked === "boolean"
+  )
+}
+
+function isCanvasElementBinding(value: unknown): value is NonNullable<CanvasDraftElement["binding"]> {
+  return (
+    isRecord(value) &&
+    typeof value.fieldKey === "string" &&
+    (value.kind === "text" || value.kind === "barcode" || value.kind === "qr")
+  )
+}
+
+function hasOptionalRotation(value: unknown) {
+  return value === undefined || isFiniteNumber(value)
+}
+
+function isClipboardCanvasElement(value: unknown): value is CanvasDraftElement {
+  if (!isRecord(value) || typeof value.id !== "string" || !isCanvasLayerMeta(value.meta)) {
+    return false
+  }
+  if (value.binding !== undefined && !isCanvasElementBinding(value.binding)) {
+    return false
+  }
+
+  switch (value.kind) {
+    case "text":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.width) &&
+        isFiniteNumber(value.height) &&
+        isFiniteNumber(value.fontSize) &&
+        typeof value.fontFamily === "string" &&
+        isFiniteNumber(value.lineHeight) &&
+        (value.fontWeight === "normal" || value.fontWeight === "bold") &&
+        typeof value.align === "string" &&
+        (value.justifyAlign === undefined || typeof value.justifyAlign === "string") &&
+        typeof value.verticalAlign === "string" &&
+        typeof value.stretchX === "boolean" &&
+        typeof value.stretchY === "boolean" &&
+        typeof value.autoWrap === "boolean" &&
+        typeof value.verticalText === "boolean" &&
+        typeof value.value === "string" &&
+        (value.maxLines === undefined || isFiniteNumber(value.maxLines)) &&
+        hasOptionalRotation(value.rotation)
+      )
+    case "rect":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.width) &&
+        isFiniteNumber(value.height) &&
+        isFiniteNumber(value.strokeWidth) &&
+        typeof value.fill === "string" &&
+        typeof value.stroke === "string" &&
+        isFiniteNumber(value.radius) &&
+        hasOptionalRotation(value.rotation)
+      )
+    case "circle":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.size) &&
+        isFiniteNumber(value.strokeWidth) &&
+        typeof value.fill === "string" &&
+        typeof value.stroke === "string"
+      )
+    case "triangle":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.width) &&
+        isFiniteNumber(value.height) &&
+        isFiniteNumber(value.strokeWidth) &&
+        typeof value.fill === "string" &&
+        typeof value.stroke === "string" &&
+        hasOptionalRotation(value.rotation)
+      )
+    case "line":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.x2) &&
+        isFiniteNumber(value.y2) &&
+        isFiniteNumber(value.strokeWidth) &&
+        typeof value.stroke === "string"
+      )
+    case "barcode":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.width) &&
+        isFiniteNumber(value.height) &&
+        typeof value.value === "string" &&
+        value.format === "CODE128" &&
+        typeof value.showValue === "boolean" &&
+        hasOptionalRotation(value.rotation)
+      )
+    case "qr":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.size) &&
+        typeof value.value === "string" &&
+        (value.errorCorrectionLevel === "L" ||
+          value.errorCorrectionLevel === "M" ||
+          value.errorCorrectionLevel === "Q" ||
+          value.errorCorrectionLevel === "H") &&
+        hasOptionalRotation(value.rotation)
+      )
+    default:
+      return false
+  }
 }
 
 function getCanvasTextLineHeight(lineHeight?: number) {
@@ -286,6 +449,358 @@ function toComparableDraft(draft: CanvasDraftDocument) {
 
 function sameDraftContent(left: CanvasDraftDocument, right: CanvasDraftDocument): boolean {
   return stableStringify(toComparableDraft(left)) === stableStringify(toComparableDraft(right))
+}
+
+function supportsAsyncClipboard() {
+  return (
+    typeof window !== "undefined" &&
+    window.isSecureContext !== false &&
+    typeof navigator !== "undefined" &&
+    typeof navigator.clipboard?.read === "function" &&
+    typeof navigator.clipboard?.write === "function" &&
+    typeof globalThis.ClipboardItem !== "undefined"
+  )
+}
+
+function isCanvasClipboardBypassTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  )
+}
+
+function getSelectedCanvasElements(state: CanvasPageState): CanvasDraftElement[] {
+  if (state.selectedIds.length === 0) {
+    return []
+  }
+  return state.draft.elements.filter((element) => state.selectedIds.includes(element.id))
+}
+
+function createCanvasClipboardPayload(elements: CanvasDraftElement[]): CanvasClipboardPayload {
+  return {
+    version: 1,
+    kind: "tuckmark-canvas-elements",
+    elements: structuredClone(elements),
+  }
+}
+
+function serializeCanvasClipboardPayload(payload: CanvasClipboardPayload) {
+  return stableStringify(payload)
+}
+
+function parseCanvasClipboardPayload(value: string): CanvasClipboardPayload | null {
+  if (!value) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<CanvasClipboardPayload>
+    if (
+      parsed.version !== 1 ||
+      parsed.kind !== "tuckmark-canvas-elements" ||
+      !Array.isArray(parsed.elements) ||
+      !parsed.elements.every((element) => isClipboardCanvasElement(element))
+    ) {
+      return null
+    }
+    return {
+      version: 1,
+      kind: "tuckmark-canvas-elements",
+      elements: parsed.elements as CanvasDraftElement[],
+    }
+  } catch {
+    return null
+  }
+}
+
+function normalizeClipboardElements(
+  state: CanvasPageState,
+  elements: CanvasDraftElement[]
+): CanvasDraftElement[] {
+  return normalizeDraftDocument({
+    version: 1,
+    unit: "mm",
+    id: "clipboard-paste",
+    presetId: state.presetId,
+    name: "clipboard-paste",
+    source: state.routeSource,
+    width: state.liveDraft.width,
+    height: state.liveDraft.height,
+    fields: structuredClone(state.liveDraft.fields),
+    elements: structuredClone(elements),
+    editor: {
+      gridEnabled: state.gridEnabled,
+      snapEnabled: state.snapEnabled,
+    },
+  }).elements
+}
+
+function buildCanvasClipboardPlainText(elements: CanvasDraftElement[]): string | null {
+  const values = elements
+    .map((element) => getCanvasElementClipboardText(element))
+    .filter((value): value is string => value !== null)
+
+  if (values.length === 0) {
+    return null
+  }
+
+  return values.join("\n")
+}
+
+function writeCanvasClipboardToDataTransfer(
+  dataTransfer: DataTransfer,
+  elements: CanvasDraftElement[]
+): string {
+  const payload = createCanvasClipboardPayload(elements)
+  const serialized = serializeCanvasClipboardPayload(payload)
+  const plainText = buildCanvasClipboardPlainText(elements)
+  dataTransfer.setData(CANVAS_CLIPBOARD_FORMAT, serialized)
+  if (plainText !== null) {
+    dataTransfer.setData("text/plain", plainText)
+  }
+  return serialized
+}
+
+async function writeCanvasClipboardToNavigator(elements: CanvasDraftElement[]): Promise<string> {
+  const payload = createCanvasClipboardPayload(elements)
+  const serialized = serializeCanvasClipboardPayload(payload)
+  const clipboardItemData: Record<string, Blob> = {
+    [CANVAS_WEB_CUSTOM_CLIPBOARD_FORMAT]: new Blob([serialized], {
+      type: CANVAS_CLIPBOARD_FORMAT,
+    }),
+  }
+  const plainText = buildCanvasClipboardPlainText(elements)
+  if (plainText !== null) {
+    clipboardItemData["text/plain"] = new Blob([plainText], {
+      type: "text/plain",
+    })
+  }
+
+  await navigator.clipboard.write([new ClipboardItem(clipboardItemData)])
+  return serialized
+}
+
+function readCanvasClipboardFromDataTransfer(dataTransfer: DataTransfer): CanvasClipboardReadResult {
+  let sawStructuredPayload = false
+  for (const format of [CANVAS_CLIPBOARD_FORMAT, CANVAS_WEB_CUSTOM_CLIPBOARD_FORMAT]) {
+    const payloadText = dataTransfer.getData(format)
+    if (!payloadText) {
+      continue
+    }
+    sawStructuredPayload = true
+    const payload = parseCanvasClipboardPayload(payloadText)
+    if (payload) {
+      return {
+        kind: "canvas",
+        payload,
+        signature: serializeCanvasClipboardPayload(payload),
+      }
+    }
+  }
+  if (sawStructuredPayload) {
+    return { kind: "invalid" }
+  }
+
+  const plainText = dataTransfer.getData("text/plain")
+  if (plainText) {
+    return {
+      kind: "text",
+      text: plainText,
+      signature: `text:${plainText}`,
+    }
+  }
+
+  return { kind: "empty" }
+}
+
+async function readCanvasClipboardFromNavigator(): Promise<CanvasClipboardReadResult> {
+  const items = await navigator.clipboard.read()
+  let sawStructuredPayload = false
+
+  for (const item of items) {
+    for (const format of [CANVAS_WEB_CUSTOM_CLIPBOARD_FORMAT, CANVAS_CLIPBOARD_FORMAT]) {
+      if (item.types.includes(format)) {
+        sawStructuredPayload = true
+        const blob = await item.getType(format)
+        const payload = parseCanvasClipboardPayload(await blob.text())
+        if (payload) {
+          return {
+            kind: "canvas",
+            payload,
+            signature: serializeCanvasClipboardPayload(payload),
+          }
+        }
+      }
+    }
+  }
+  if (sawStructuredPayload) {
+    return { kind: "invalid" }
+  }
+
+  for (const item of items) {
+    if (item.types.includes("text/plain")) {
+      const blob = await item.getType("text/plain")
+      const text = await blob.text()
+      if (text) {
+        return {
+          kind: "text",
+          text,
+          signature: `text:${text}`,
+        }
+      }
+    }
+  }
+
+  return { kind: "empty" }
+}
+
+function getViewportCenterInCanvasSpace(
+  viewport: StageViewport,
+  viewportSize: StageViewportSize
+): { x: number; y: number } {
+  const displayScale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+  const left = -viewport.x / displayScale
+  const top = -viewport.y / displayScale
+
+  return {
+    x: left + viewportSize.width / displayScale / 2,
+    y: top + viewportSize.height / displayScale / 2,
+  }
+}
+
+function createClipboardTextElement(
+  state: CanvasPageState,
+  text: string,
+  viewportSize: StageViewportSize
+): Extract<CanvasDraftElement, { kind: "text" }> {
+  const seeded = createCanvasElement("text", state.liveDraft.elements.length, {
+    value: text,
+    height: undefined,
+    maxLines: undefined,
+  })
+
+  if (seeded.kind !== "text") {
+    throw new Error("unexpected clipboard text seed")
+  }
+
+  const layout = resolveTextLayout({
+    text,
+    fontSize: seeded.fontSize,
+    width: seeded.width,
+    height: seeded.height,
+    lineHeight: seeded.lineHeight,
+    fontFamily: seeded.fontFamily,
+    fontWeight: seeded.fontWeight,
+    align: seeded.align,
+    maxLines: seeded.maxLines,
+    verticalAlign: seeded.verticalAlign,
+    stretchX: seeded.stretchX,
+    stretchY: seeded.stretchY,
+    autoWrap: seeded.autoWrap,
+    verticalText: seeded.verticalText,
+    measureText: measureCanvasTextLine,
+  })
+  const center = getViewportCenterInCanvasSpace(state.viewport, viewportSize)
+  const width = seeded.width
+  const height = layout.naturalHeight
+
+  return {
+    ...seeded,
+    value: text,
+    height,
+    maxLines: undefined,
+    x: clamp(center.x - width / 2, 0, Math.max(0, state.liveDraft.width - width)),
+    y: clamp(center.y - height / 2, 0, Math.max(0, state.liveDraft.height - height)),
+  }
+}
+
+function applyClipboardPaste(
+  state: CanvasPageState,
+  clipboard: CanvasClipboardReadResult,
+  viewportSize: StageViewportSize
+): CanvasPageState {
+  if (clipboard.kind === "invalid") {
+    return {
+      ...state,
+      outputStatus: "剪贴板中的画布内容不可用。",
+    }
+  }
+
+  if (clipboard.kind === "empty") {
+    return {
+      ...state,
+      outputStatus: "剪贴板中没有可粘贴的画布内容。",
+    }
+  }
+
+  if (clipboard.kind === "canvas") {
+    let sourceElements: CanvasDraftElement[]
+    try {
+      sourceElements = normalizeClipboardElements(state, clipboard.payload.elements)
+    } catch {
+      return {
+        ...state,
+        outputStatus: "剪贴板中的画布内容不可用。",
+      }
+    }
+    if (sourceElements.length === 0) {
+      return {
+        ...state,
+        outputStatus: "剪贴板中的画布内容不可用。",
+      }
+    }
+
+    const offsetStep =
+      state.pasteSession?.signature === clipboard.signature ? state.pasteSession.offsetStep + 1 : 1
+    const offset = CLIPBOARD_OFFSET_STEP * offsetStep
+    const nextSelectedIds: string[] = []
+    const nextState = applyDraftUpdate(state, (draft) => ({
+      ...draft,
+      elements: [
+        ...draft.elements,
+        ...sourceElements.map((element, index) => {
+          const clone = duplicateDraftElement(element, draft.elements.length + index, {
+            offsetX: offset,
+            offsetY: offset,
+          })
+          nextSelectedIds.push(clone.id)
+          return clone
+        }),
+      ],
+    }))
+
+    return {
+      ...nextState,
+      selectedIds: nextSelectedIds,
+      editingId: null,
+      pasteSession: {
+        signature: clipboard.signature,
+        offsetStep,
+      },
+      outputStatus:
+        nextSelectedIds.length === 1
+          ? "已粘贴 1 个图层。"
+          : `已粘贴 ${nextSelectedIds.length} 个图层。`,
+    }
+  }
+
+  const nextTextElement = createClipboardTextElement(state, clipboard.text, viewportSize)
+  const nextState = applyDraftUpdate(state, (draft) => ({
+    ...draft,
+    elements: [...draft.elements, nextTextElement],
+  }))
+
+  return {
+    ...nextState,
+    selectedIds: [nextTextElement.id],
+    editingId: null,
+    pasteSession: {
+      signature: clipboard.signature,
+      offsetStep: 1,
+    },
+    outputStatus: "已将剪贴板文本粘贴为新文本图层。",
+  }
 }
 
 function hasVisibleTextSelection(state: CanvasPageState) {
@@ -457,6 +972,7 @@ function createCanvasStateFromDraft(
     history: [cloneDraft(draft)],
     historyIndex: 0,
     editingId: null,
+    pasteSession: null,
     outputStatus: options?.outputStatus ?? "",
     autosavesExpanded: false,
     versionsOpen: options?.versionsOpen ?? false,
@@ -929,7 +1445,7 @@ function duplicateSelected(state: CanvasPageState): CanvasPageState {
   return {
     ...nextState,
     selectedIds: nextSelectedIds,
-    outputStatus: nextSelectedIds.length > 0 ? "已复制所选图层。" : nextState.outputStatus,
+    outputStatus: nextSelectedIds.length > 0 ? "已创建所选图层的新副本。" : nextState.outputStatus,
   }
 }
 
@@ -2153,13 +2669,22 @@ function CanvasLayerRail({
 function CanvasLayerPanel({
   state,
   readOnly,
+  clipboardSupported,
+  onCopy,
+  onPaste,
   onChange,
 }: {
   state: CanvasPageState
   readOnly: boolean
+  clipboardSupported: boolean
+  onCopy: () => Promise<void>
+  onPaste: () => Promise<void>
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   const selectedCount = state.selectedIds.length
+  const clipboardUnsupportedTitle = clipboardSupported
+    ? undefined
+    : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
 
   if (state.loading) {
     return (
@@ -2180,11 +2705,31 @@ function CanvasLayerPanel({
           <Button
             size="sm"
             variant="outline"
+            title={clipboardUnsupportedTitle}
+            disabled={selectedCount === 0 || !clipboardSupported}
+            onClick={() => void onCopy()}
+          >
+            <Copy className="size-4" />
+            拷贝
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            title={clipboardUnsupportedTitle}
+            disabled={readOnly || !clipboardSupported}
+            onClick={() => void onPaste()}
+          >
+            <ArrowDownToLine className="size-4" />
+            粘贴
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             disabled={selectedCount === 0 || readOnly}
             onClick={() => onChange((current) => duplicateSelected(current))}
           >
-            <Copy className="size-4" />
-            复制
+            <Plus className="size-4" />
+            新副本
           </Button>
           <Button
             size="sm"
@@ -2339,10 +2884,16 @@ function CanvasLayerPanel({
 function CanvasInspector({
   state,
   readOnly,
+  clipboardSupported,
+  onCopy,
+  onPaste,
   onChange,
 }: {
   state: CanvasPageState
   readOnly: boolean
+  clipboardSupported: boolean
+  onCopy: () => Promise<void>
+  onPaste: () => Promise<void>
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   const selectedItems = state.draft.elements.filter((item) => state.selectedIds.includes(item.id))
@@ -2387,11 +2938,39 @@ function CanvasInspector({
             <Button
               type="button"
               variant="outline"
+              title={
+                clipboardSupported
+                  ? undefined
+                  : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
+              }
+              disabled={!clipboardSupported}
+              onClick={() => void onCopy()}
+            >
+              <Copy className="size-4" />
+              拷贝
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              title={
+                clipboardSupported
+                  ? undefined
+                  : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
+              }
+              disabled={readOnly || !clipboardSupported}
+              onClick={() => void onPaste()}
+            >
+              <ArrowDownToLine className="size-4" />
+              粘贴
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
               disabled={readOnly}
               onClick={() => onChange((current) => duplicateSelected(current))}
             >
-              <Copy className="size-4" />
-              复制所选
+              <Plus className="size-4" />
+              新副本
             </Button>
             <Button
               type="button"
@@ -4655,7 +5234,11 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     React.useState<TemplateNameDialogState | null>(null)
   const readOnly = state.readOnlyVersion !== null
   const interactionLocked = readOnly || state.loading
+  const asyncClipboardSupported = supportsAsyncClipboard()
   const [, setFontLoadGeneration] = React.useState(0)
+  const stateRef = React.useRef(state)
+  const interactionLockedRef = React.useRef(interactionLocked)
+  const stageViewportSizeRef = React.useRef(stageViewportSize)
   const draftFontFamilies = React.useMemo(
     () =>
       state.draft.elements.flatMap((element) =>
@@ -4663,6 +5246,18 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       ),
     [state.draft.elements]
   )
+
+  React.useEffect(() => {
+    stateRef.current = state
+  }, [state])
+
+  React.useEffect(() => {
+    interactionLockedRef.current = interactionLocked
+  }, [interactionLocked])
+
+  React.useEffect(() => {
+    stageViewportSizeRef.current = stageViewportSize
+  }, [stageViewportSize])
 
   React.useEffect(() => {
     let cancelled = false
@@ -5002,6 +5597,55 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     }
   }, [interactionLocked])
 
+  React.useEffect(() => {
+    const handleCopy = (event: ClipboardEvent) => {
+      if (isCanvasClipboardBypassTarget(event.target) || !event.clipboardData) {
+        return
+      }
+
+      const selectedElements = getSelectedCanvasElements(stateRef.current)
+      if (selectedElements.length === 0) {
+        return
+      }
+
+      event.preventDefault()
+      writeCanvasClipboardToDataTransfer(event.clipboardData, selectedElements)
+      setState((current) => ({
+        ...current,
+        pasteSession: null,
+        outputStatus: "已拷贝所选图层。",
+      }))
+    }
+
+    const handlePaste = (event: ClipboardEvent) => {
+      if (isCanvasClipboardBypassTarget(event.target) || !event.clipboardData) {
+        return
+      }
+
+      if (interactionLockedRef.current) {
+        event.preventDefault()
+        if (stateRef.current.readOnlyVersion) {
+          setState((current) => ({
+            ...current,
+            outputStatus: "当前快照只读，无法粘贴。",
+          }))
+        }
+        return
+      }
+
+      event.preventDefault()
+      const clipboard = readCanvasClipboardFromDataTransfer(event.clipboardData)
+      setState((current) => applyClipboardPaste(current, clipboard, stageViewportSizeRef.current))
+    }
+
+    window.addEventListener("copy", handleCopy)
+    window.addEventListener("paste", handlePaste)
+    return () => {
+      window.removeEventListener("copy", handleCopy)
+      window.removeEventListener("paste", handlePaste)
+    }
+  }, [])
+
   const openVersion = React.useCallback((version: UserTemplateVersionSnapshot) => {
     setState((current) => ({
       ...current,
@@ -5162,6 +5806,59 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     setState(nextState)
   }, [controller, state])
 
+  const handleCopyToClipboard = React.useCallback(async () => {
+    if (!asyncClipboardSupported) {
+      setState((current) => ({
+        ...current,
+        outputStatus: "当前环境不支持按钮拷贝，请使用键盘快捷键。",
+      }))
+      return
+    }
+
+    const selectedElements = getSelectedCanvasElements(stateRef.current)
+    if (selectedElements.length === 0) {
+      return
+    }
+
+    try {
+      await writeCanvasClipboardToNavigator(selectedElements)
+      setState((current) => ({
+        ...current,
+        pasteSession: null,
+        outputStatus: "已拷贝所选图层。",
+      }))
+    } catch {
+      setState((current) => ({
+        ...current,
+        outputStatus: "拷贝失败，请检查浏览器剪贴板权限。",
+      }))
+    }
+  }, [asyncClipboardSupported])
+
+  const handlePasteFromClipboard = React.useCallback(async () => {
+    if (!asyncClipboardSupported) {
+      setState((current) => ({
+        ...current,
+        outputStatus: "当前环境不支持按钮粘贴，请使用键盘快捷键。",
+      }))
+      return
+    }
+
+    if (interactionLockedRef.current) {
+      return
+    }
+
+    try {
+      const clipboard = await readCanvasClipboardFromNavigator()
+      setState((current) => applyClipboardPaste(current, clipboard, stageViewportSizeRef.current))
+    } catch {
+      setState((current) => ({
+        ...current,
+        outputStatus: "粘贴失败，请检查浏览器剪贴板权限。",
+      }))
+    }
+  }, [asyncClipboardSupported])
+
   const canUndo = state.historyIndex > 0
   const canRedo = state.historyIndex < state.history.length - 1
 
@@ -5318,7 +6015,14 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
           <div className="tm-pane__body">
             <div className="tm-pane__stack">
               {state.activePanel === "attributes" ? (
-                <CanvasInspector state={state} readOnly={interactionLocked} onChange={setState} />
+                <CanvasInspector
+                  state={state}
+                  readOnly={interactionLocked}
+                  clipboardSupported={asyncClipboardSupported}
+                  onCopy={handleCopyToClipboard}
+                  onPaste={handlePasteFromClipboard}
+                  onChange={setState}
+                />
               ) : (
                 <CanvasOutput
                   controller={controller}
@@ -5327,7 +6031,14 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
                   onChange={setState}
                 />
               )}
-              <CanvasLayerPanel state={state} readOnly={interactionLocked} onChange={setState} />
+              <CanvasLayerPanel
+                state={state}
+                readOnly={interactionLocked}
+                clipboardSupported={asyncClipboardSupported}
+                onCopy={handleCopyToClipboard}
+                onPaste={handlePasteFromClipboard}
+                onChange={setState}
+              />
             </div>
           </div>
         </aside>
