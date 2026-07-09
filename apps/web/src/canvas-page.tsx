@@ -320,7 +320,10 @@ function isCanvasElementBinding(
   return (
     isRecord(value) &&
     typeof value.fieldKey === "string" &&
-    (value.kind === "text" || value.kind === "barcode" || value.kind === "qr")
+    (value.kind === "text" ||
+      value.kind === "barcode" ||
+      value.kind === "qr" ||
+      value.kind === "datamatrix")
   )
 }
 
@@ -420,6 +423,14 @@ function isClipboardCanvasElement(value: unknown): value is CanvasDraftElement {
           value.errorCorrectionLevel === "M" ||
           value.errorCorrectionLevel === "Q" ||
           value.errorCorrectionLevel === "H") &&
+        hasOptionalRotation(value.rotation)
+      )
+    case "datamatrix":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.size) &&
+        typeof value.value === "string" &&
         hasOptionalRotation(value.rotation)
       )
     default:

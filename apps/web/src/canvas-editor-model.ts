@@ -1162,7 +1162,12 @@ export function duplicateDraftElement(
 }
 
 export function getCanvasElementClipboardText(element: CanvasDraftElement): string | null {
-  if (element.kind === "text" || element.kind === "barcode" || element.kind === "qr") {
+  if (
+    element.kind === "text" ||
+    element.kind === "barcode" ||
+    element.kind === "qr" ||
+    element.kind === "datamatrix"
+  ) {
     return element.value
   }
   return null

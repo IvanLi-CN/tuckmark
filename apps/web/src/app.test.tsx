@@ -1545,6 +1545,36 @@ describe("web workbench app", () => {
     expect(document.body.textContent).toContain("移动鼠标以放置，单击确认，按 Esc 取消。")
   })
 
+  it("round-trips Data Matrix layers through clipboard payloads", async () => {
+    await renderWorkbenchApp(browserRuntimeContext, "datamatrix-selected")
+    await flush(4)
+
+    const originalLayerCount = queryCanvasLayerNameInputs().length
+    const clipboardData = createClipboardData()
+    const copyEvent = dispatchClipboardEvent("copy", clipboardData)
+    await flush(2)
+
+    expect(copyEvent.defaultPrevented).toBe(true)
+    expect(clipboardData.getData("application/x.tuckmark-canvas-elements+json")).toContain(
+      "\"kind\":\"datamatrix\""
+    )
+    expect(clipboardData.getData("text/plain")).toContain("rack-a.lan-01|TM-0001|https://tuckmark.local")
+
+    const pasteEvent = dispatchClipboardEvent("paste", clipboardData)
+    await flush(4)
+
+    expect(pasteEvent.defaultPrevented).toBe(true)
+    expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
+    expect(document.body.textContent).toContain("移动鼠标以放置，单击确认，按 Esc 取消。")
+
+    await act(async () => {
+      dispatchWindowKey("Enter")
+      await flush(4)
+    })
+
+    expect(document.body.textContent).toContain("已粘贴 1 个图层。")
+  })
+
   it("uses navigator clipboard buttons and waits for placement confirmation", async () => {
     await renderApp(browserRuntimeContext, undefined, "/canvas")
     await flush(4)
