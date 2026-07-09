@@ -273,10 +273,12 @@ output.
 - Clipboard paste behavior:
   - structured Tuckmark clipboard payload restores the copied element set as
     new layers, preserves the copied relative layer order and geometry, and
-    increments paste offset across repeated pastes from the same clipboard
-    source
+    enters a pending placement preview that follows the current pointer until
+    the user confirms with click or `Enter`
   - plain `text/plain` clipboard content falls back to one new `text` element
-    centered in the current viewport
+    in the same pending placement preview flow
+  - pending clipboard placement may be cancelled with `Escape` or `Cmd/Ctrl+Z`
+    before it writes a new history entry
   - historical read-only canvas versions may copy selected elements but must
     not paste or otherwise mutate the draft
 - Transformer snapping is commit-time only: handles may move freely while being
@@ -440,9 +442,9 @@ output.
   reorder, visibility toggle, lock toggle, and delete for `text`, `rect`,
   `circle`, `triangle`, `line`, `barcode`, and `qr`.
 - Canvas workspace round-trips selected elements through the system clipboard:
-  structured Tuckmark payloads paste back as new layers with repeated offset
-  progression, while plain-text clipboard content pastes as one new `text`
-  element.
+  structured Tuckmark payloads and plain-text clipboard fallbacks both enter a
+  pointer-following placement preview, then confirm into new layers only after
+  the user clicks or presses `Enter`.
 - Selected text exposes font size, font family, three-by-three alignment,
   automatic wrapping, two-end justification, horizontal stretch, vertical
   stretch, vertical text, and rotation controls in the property inspector.
@@ -552,7 +554,7 @@ output.
   PR: include
   ![Canvas workspace](./assets/canvas-wide-1280x800.png)
 
-- `1600×1200` canvas clipboard workflow after Storybook `拷贝` + `粘贴`, showing the pasted duplicate, status feedback, and the distinct `拷贝` / `粘贴` / `新副本` actions together.
+- `1600×1200` canvas clipboard workflow after Storybook `拷贝` + `粘贴`, showing the pending placement preview, status feedback, and the distinct `拷贝` / `粘贴` / `新副本` actions together.
 
   ![Canvas clipboard workflow](./assets/canvas-clipboard-story-1600x1200.png)
 

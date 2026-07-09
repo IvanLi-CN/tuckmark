@@ -9,10 +9,18 @@ import { App } from "./app.js"
 import {
   createDraftFromPreset,
   getDraftStorageKey,
+  getElementSelectionBounds,
   getPresetById,
   toggleElementBinding,
 } from "./canvas-editor-model.js"
-import { snapTransformedElementGeometry } from "./canvas-page.js"
+import {
+  cancelPendingPastePlacement,
+  confirmPendingPastePlacement,
+  createCanvasStateFromDraft,
+  movePendingPasteToPoint,
+  snapTransformedElementGeometry,
+  startClipboardPastePlacement,
+} from "./canvas-page.js"
 import { buildInputFromTemplate, fallbackTemplates } from "./demo-data.js"
 import { loadRecentActivity } from "./lib/recent-activity.js"
 import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
@@ -811,6 +819,12 @@ async function selectFirstCanvasLayer(): Promise<HTMLInputElement> {
   return layerNameInput
 }
 
+function dispatchWindowKey(key: string, options?: KeyboardEventInit) {
+  const event = new KeyboardEvent("keydown", { key, bubbles: true, ...options })
+  window.dispatchEvent(event)
+  return event
+}
+
 function _clickNav(label: string): Promise<void> {
   return act(async () => {
     queryButton(label).dispatchEvent(new MouseEvent("click", { bubbles: true }))
@@ -1467,15 +1481,12 @@ describe("web workbench app", () => {
     expect(canvasStatus?.value).toBe("已选 1 项")
   })
 
-  it("round-trips selected canvas elements through clipboard events", async () => {
+  it("starts keyboard clipboard pastes in placement mode and confirms on Enter", async () => {
     await renderApp(browserRuntimeContext, undefined, "/canvas")
     await flush(4)
 
     await selectFirstCanvasLayer()
     const originalLayerCount = queryCanvasLayerNameInputs().length
-    const originalX = Number(
-      (document.querySelector<HTMLInputElement>("#pos-x")?.value ?? "0").trim()
-    )
 
     const clipboardData = createClipboardData()
     const copyEvent = dispatchClipboardEvent("copy", clipboardData)
@@ -1491,13 +1502,17 @@ describe("web workbench app", () => {
 
     expect(pasteEvent.defaultPrevented).toBe(true)
     expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
+    expect(document.body.textContent).toContain("移动鼠标以放置，单击确认，按 Esc 取消。")
+
+    await act(async () => {
+      dispatchWindowKey("Enter")
+      await flush(4)
+    })
+
     expect(document.body.textContent).toContain("已粘贴 1 个图层。")
-    expect(Number(document.querySelector<HTMLInputElement>("#pos-x")?.value ?? "0")).toBe(
-      originalX + 12
-    )
   })
 
-  it("accepts async clipboard custom payloads during keyboard paste", async () => {
+  it("accepts async clipboard custom payloads during keyboard placement paste", async () => {
     await renderApp(browserRuntimeContext, undefined, "/canvas")
     await flush(4)
 
@@ -1521,18 +1536,15 @@ describe("web workbench app", () => {
     await flush(4)
 
     expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
-    expect(document.body.textContent).toContain("已粘贴 1 个图层。")
+    expect(document.body.textContent).toContain("移动鼠标以放置，单击确认，按 Esc 取消。")
   })
 
-  it("uses navigator clipboard buttons and increments offset across repeated paste", async () => {
+  it("uses navigator clipboard buttons and waits for placement confirmation", async () => {
     await renderApp(browserRuntimeContext, undefined, "/canvas")
     await flush(4)
 
     await selectFirstCanvasLayer()
     const originalLayerCount = queryCanvasLayerNameInputs().length
-    const originalX = Number(
-      (document.querySelector<HTMLInputElement>("#pos-x")?.value ?? "0").trim()
-    )
 
     await act(async () => {
       queryButton("拷贝").dispatchEvent(new MouseEvent("click", { bubbles: true }))
@@ -1551,23 +1563,21 @@ describe("web workbench app", () => {
 
     expect(clipboardMocks.read).toHaveBeenCalledTimes(1)
     expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
-    expect(Number(document.querySelector<HTMLInputElement>("#pos-x")?.value ?? "0")).toBe(
-      originalX + 12
-    )
+    expect(document.body.textContent).toContain("移动鼠标以放置，单击确认，按 Esc 取消。")
+    expect(queryButton("粘贴").disabled).toBe(true)
+    expect(queryButton("新副本").disabled).toBe(true)
+    expect(queryButton("删除").disabled).toBe(true)
 
     await act(async () => {
-      queryButton("粘贴").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      dispatchWindowKey("Enter")
       await flush(4)
     })
 
-    expect(clipboardMocks.read).toHaveBeenCalledTimes(2)
-    expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 2)
-    expect(Number(document.querySelector<HTMLInputElement>("#pos-x")?.value ?? "0")).toBe(
-      originalX + 24
-    )
+    expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
+    expect(document.body.textContent).toContain("已粘贴 1 个图层。")
   })
 
-  it("accepts keyboard clipboard payloads during async button paste", async () => {
+  it("accepts keyboard clipboard payloads during async button placement paste", async () => {
     await renderApp(browserRuntimeContext, undefined, "/canvas")
     await flush(4)
 
@@ -1591,10 +1601,10 @@ describe("web workbench app", () => {
     })
 
     expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
-    expect(document.body.textContent).toContain("已粘贴 1 个图层。")
+    expect(document.body.textContent).toContain("移动鼠标以放置，单击确认，按 Esc 取消。")
   })
 
-  it("converts plain-text paste into a new text layer", async () => {
+  it("converts plain-text paste into a pending text layer and confirms on Enter", async () => {
     await renderApp(browserRuntimeContext, undefined, "/canvas")
     await flush(4)
 
@@ -1605,8 +1615,116 @@ describe("web workbench app", () => {
     dispatchClipboardEvent("paste", clipboardData)
     await flush(4)
 
+    expect(document.body.textContent).toContain("移动鼠标以放置，单击确认，按 Esc 取消。")
+
+    await act(async () => {
+      dispatchWindowKey("Enter")
+      await flush(4)
+    })
+
     expect(document.body.textContent).toContain("已将剪贴板文本粘贴为新文本图层。")
     expect(document.querySelector<HTMLTextAreaElement>("#text-value")?.value).toBe("Line 1\nLine 2")
+  })
+
+  it("cancels pending placement paste on Escape", async () => {
+    await renderApp(browserRuntimeContext, undefined, "/canvas")
+    await flush(4)
+
+    const originalLayerCount = queryCanvasLayerNameInputs().length
+    const clipboardData = createClipboardData({
+      "text/plain": "Cancelled",
+    })
+
+    dispatchClipboardEvent("paste", clipboardData)
+    await flush(4)
+
+    expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
+    expect(document.body.textContent).toContain("移动鼠标以放置，单击确认，按 Esc 取消。")
+
+    await act(async () => {
+      dispatchWindowKey("Escape")
+      await flush(4)
+    })
+
+    expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount)
+    expect(document.body.textContent).toContain("已取消粘贴放置。")
+  })
+
+  it("tracks pending placement outside liveDraft until confirmation", () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const sourceElement = draft.elements.find((element) => element.kind === "text")
+    if (!sourceElement) {
+      throw new Error("expected a text element in shipping-wide")
+    }
+
+    const initialState = createCanvasStateFromDraft(draft, {
+      selectedIds: [sourceElement.id],
+    })
+    const previewState = startClipboardPastePlacement(
+      initialState,
+      {
+        kind: "canvas",
+        payload: {
+          version: 1,
+          kind: "tuckmark-canvas-elements",
+          elements: [sourceElement],
+        },
+        signature: "text-source",
+      },
+      { width: 760, height: 520 },
+      { x: 32, y: 18 }
+    )
+
+    expect(previewState.liveDraft.elements).toHaveLength(draft.elements.length)
+    expect(previewState.draft.elements).toHaveLength(draft.elements.length + 1)
+    expect(previewState.pendingPaste).not.toBeNull()
+
+    const movedState = movePendingPasteToPoint(previewState, { x: 40, y: 22 })
+    const pendingElement = movedState.draft.elements.find((element) =>
+      movedState.pendingPaste?.ids.includes(element.id)
+    )
+    if (!pendingElement) {
+      throw new Error("expected pending preview element")
+    }
+
+    const pendingBounds = getElementSelectionBounds(pendingElement)
+    expect(pendingBounds.x + pendingBounds.width / 2).toBeCloseTo(40, 3)
+    expect(pendingBounds.y + pendingBounds.height / 2).toBeCloseTo(22, 3)
+
+    const confirmedState = confirmPendingPastePlacement(movedState)
+    expect(confirmedState.pendingPaste).toBeNull()
+    expect(confirmedState.liveDraft.elements).toHaveLength(draft.elements.length + 1)
+    expect(confirmedState.historyIndex).toBe(1)
+    expect(confirmedState.outputStatus).toContain("已粘贴 1 个图层。")
+  })
+
+  it("restores the previous selection when pending placement is cancelled", () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const sourceElement = draft.elements.find((element) => element.kind === "text")
+    if (!sourceElement) {
+      throw new Error("expected a text element in shipping-wide")
+    }
+
+    const initialState = createCanvasStateFromDraft(draft, {
+      selectedIds: [sourceElement.id],
+    })
+    const previewState = startClipboardPastePlacement(
+      initialState,
+      {
+        kind: "text",
+        text: "Preview",
+        signature: "text:Preview",
+      },
+      { width: 760, height: 520 },
+      { x: 28, y: 16 }
+    )
+
+    const cancelledState = cancelPendingPastePlacement(previewState)
+    expect(cancelledState.pendingPaste).toBeNull()
+    expect(cancelledState.draft.elements).toHaveLength(draft.elements.length)
+    expect(cancelledState.liveDraft.elements).toHaveLength(draft.elements.length)
+    expect(cancelledState.selectedIds).toEqual([sourceElement.id])
+    expect(cancelledState.outputStatus).toContain("已取消粘贴放置。")
   })
 
   it("rejects malformed structured clipboard payloads without crashing paste", async () => {

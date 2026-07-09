@@ -195,3 +195,11 @@ while the workbench was being productized:
     new text layer
   - historical read-only versions keep copy available but continue to block
     paste and every other draft mutation path
+- The clipboard placement flow was then refined to better match common editor
+  expectations:
+  - clipboard paste now enters a pending placement preview instead of applying
+    an immediate repeated offset
+  - the preview follows the mouse position, confirms on click or `Enter`, and
+    cancels on `Escape` or `Cmd/Ctrl+Z`
+  - confirmation writes one history entry, while cancellation restores the
+    previous selection without mutating persisted draft state

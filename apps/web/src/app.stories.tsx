@@ -441,7 +441,7 @@ export const CanvasWorkspaceClipboard: Story = {
     docs: {
       description: {
         story:
-          "Clipboard entry points keep duplicate semantics separate from `新副本`, while system copy/paste round-trips selected canvas elements and preserves repeated offset behavior.",
+          "Clipboard entry points keep duplicate semantics separate from `新副本`, while paste enters a placement mode that follows the cursor until the user confirms the drop position.",
       },
     },
   },
@@ -505,7 +505,9 @@ export const CanvasWorkspaceClipboard: Story = {
       await expect(canvas.findByText("已拷贝所选图层。")).resolves.toBeVisible()
 
       await userEvent.click(canvas.getByRole("button", { name: "粘贴" }))
-      await expect(canvas.findByText("已粘贴 1 个图层。")).resolves.toBeVisible()
+      await expect(
+        canvas.findByText("移动鼠标以放置，单击确认，按 Esc 取消。")
+      ).resolves.toBeVisible()
       await expect(
         canvasElement.querySelectorAll('.tm-layer-list--inspector input[aria-label$="图层名称"]')
           .length

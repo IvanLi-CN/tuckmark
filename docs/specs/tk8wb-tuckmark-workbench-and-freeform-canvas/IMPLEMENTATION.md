@@ -83,11 +83,13 @@
     outside editable form controls
   - async button `拷贝` / `粘贴` entry points backed by `navigator.clipboard`
     and web custom formats when the browser supports them
-  - structured payload round-trips that preserve copied element order and apply
-    an accumulating `12mm` offset across repeated paste operations from the
-    same clipboard source
-  - plain-text fallback that creates one new `text` element centered in the
-    current viewport
+  - structured payload round-trips that preserve copied element order and open
+    a pending placement preview that follows the latest stage pointer until
+    click or `Enter` confirmation
+  - plain-text fallback that creates one new `text` element through the same
+    pending placement preview flow
+  - `Escape` and `Cmd/Ctrl+Z` cancelling pending placement without writing a
+    history entry, while confirmation writes exactly one new history snapshot
   - read-only historical snapshots keeping `拷贝` available while leaving
     paste and all other mutating actions disabled
 - Canvas snapping now resolves through the persistent `snapEnabled` editor flag
@@ -155,8 +157,8 @@
     `user-template`
   - draft field registry and per-element replacement bindings
   - per-layer metadata
-  - runtime-only clipboard paste-session bookkeeping kept outside persisted
-    drafts, sync state, saved versions, and autosaves
+  - runtime-only pending clipboard placement bookkeeping kept outside
+    persisted drafts, sync state, saved versions, and autosaves
   - preset-scoped browser storage persistence for scratch drafts
   - same-device sync state records shared with `TuckmarkService` for scratch
     drafts, recent templates, and recent prints

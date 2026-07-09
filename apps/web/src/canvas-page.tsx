@@ -191,7 +191,7 @@ type CanvasPageState = {
   history: CanvasDraftDocument[]
   historyIndex: number
   editingId: string | null
-  pasteSession: CanvasPasteSession | null
+  pendingPaste: CanvasPendingPaste | null
   outputStatus: string
   autosavesExpanded: boolean
   versionsOpen: boolean
@@ -264,9 +264,11 @@ type CanvasClipboardPayload = {
   elements: CanvasDraftElement[]
 }
 
-type CanvasPasteSession = {
-  signature: string
-  offsetStep: number
+type CanvasPendingPaste = {
+  ids: string[]
+  previousSelectedIds: string[]
+  previousEditingId: string | null
+  confirmStatus: string
 }
 
 type CanvasClipboardReadResult =
@@ -293,8 +295,6 @@ function clamp(value: number, min: number, max: number) {
 
 const CANVAS_CLIPBOARD_FORMAT = "application/x.tuckmark-canvas-elements+json"
 const CANVAS_WEB_CUSTOM_CLIPBOARD_FORMAT = `web ${CANVAS_CLIPBOARD_FORMAT}`
-const CLIPBOARD_OFFSET_STEP = 12
-
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value)
 }
@@ -451,6 +451,52 @@ function toComparableDraft(draft: CanvasDraftDocument) {
 
 function sameDraftContent(left: CanvasDraftDocument, right: CanvasDraftDocument): boolean {
   return stableStringify(toComparableDraft(left)) === stableStringify(toComparableDraft(right))
+}
+
+function getElementSelectionBoundsForIds(elements: CanvasDraftElement[]) {
+  const [firstElement, ...rest] = elements
+  if (!firstElement) {
+    return null
+  }
+
+  const firstBounds = getElementSelectionBounds(firstElement)
+  return rest.reduce(
+    (bounds, element) => {
+      const next = getElementSelectionBounds(element)
+      const left = Math.min(bounds.x, next.x)
+      const top = Math.min(bounds.y, next.y)
+      const right = Math.max(bounds.x + bounds.width, next.x + next.width)
+      const bottom = Math.max(bounds.y + bounds.height, next.y + next.height)
+
+      return {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+      }
+    },
+    {
+      x: firstBounds.x,
+      y: firstBounds.y,
+      width: firstBounds.width,
+      height: firstBounds.height,
+    }
+  )
+}
+
+function translateElementsByIds(
+  elements: CanvasDraftElement[],
+  ids: Set<string>,
+  deltaX: number,
+  deltaY: number
+) {
+  if (deltaX === 0 && deltaY === 0) {
+    return elements
+  }
+
+  return elements.map((element) =>
+    ids.has(element.id) ? translateElement(element, deltaX, deltaY) : element
+  )
 }
 
 function supportsAsyncClipboard() {
@@ -676,7 +722,8 @@ function getViewportCenterInCanvasSpace(
 function createClipboardTextElement(
   state: CanvasPageState,
   text: string,
-  viewportSize: StageViewportSize
+  viewportSize: StageViewportSize,
+  point?: { x: number; y: number }
 ): Extract<CanvasDraftElement, { kind: "text" }> {
   const seeded = createCanvasElement("text", state.liveDraft.elements.length, {
     value: text,
@@ -705,7 +752,7 @@ function createClipboardTextElement(
     verticalText: seeded.verticalText,
     measureText: measureCanvasTextLine,
   })
-  const center = getViewportCenterInCanvasSpace(state.viewport, viewportSize)
+  const center = point ?? getViewportCenterInCanvasSpace(state.viewport, viewportSize)
   const width = seeded.width
   const height = layout.naturalHeight
 
@@ -714,96 +761,232 @@ function createClipboardTextElement(
     value: text,
     height,
     maxLines: undefined,
-    x: clamp(center.x - width / 2, 0, Math.max(0, state.liveDraft.width - width)),
-    y: clamp(center.y - height / 2, 0, Math.max(0, state.liveDraft.height - height)),
+    x: center.x - width / 2,
+    y: center.y - height / 2,
   }
 }
 
-function applyClipboardPaste(
+function applyDraftPreviewUpdate(
   state: CanvasPageState,
-  clipboard: CanvasClipboardReadResult,
-  viewportSize: StageViewportSize
+  updater: (draft: CanvasDraftDocument) => CanvasDraftDocument
 ): CanvasPageState {
-  if (clipboard.kind === "invalid") {
+  const nextDraft = normalizeDraftDocument(updater(cloneDraft(state.draft)))
+  nextDraft.editor.gridEnabled = state.gridEnabled
+  nextDraft.editor.snapEnabled = state.snapEnabled
+  return {
+    ...state,
+    draft: nextDraft,
+    selectedIds: updateSelectionAfterDraft(state, nextDraft),
+    storageMode: "persisted",
+  }
+}
+
+function clearPendingPastePreview(
+  state: CanvasPageState,
+  options?: {
+    outputStatus?: string
+    restoreSelection?: boolean
+  }
+): CanvasPageState {
+  if (!state.pendingPaste) {
     return {
       ...state,
+      outputStatus: options?.outputStatus ?? state.outputStatus,
+    }
+  }
+
+  const previousSelectedIds = options?.restoreSelection
+    ? state.pendingPaste.previousSelectedIds.filter((id) =>
+        state.liveDraft.elements.some((element) => element.id === id)
+      )
+    : state.selectedIds.filter((id) =>
+        state.liveDraft.elements.some((element) => element.id === id)
+      )
+
+  return {
+    ...state,
+    draft: cloneDraft(state.liveDraft),
+    selectedIds: previousSelectedIds,
+    editingId: options?.restoreSelection ? state.pendingPaste.previousEditingId : state.editingId,
+    pendingPaste: null,
+    outputStatus: options?.outputStatus ?? state.outputStatus,
+  }
+}
+
+export function cancelPendingPastePlacement(state: CanvasPageState): CanvasPageState {
+  return clearPendingPastePreview(state, {
+    outputStatus: "已取消粘贴放置。",
+    restoreSelection: true,
+  })
+}
+
+export function confirmPendingPastePlacement(state: CanvasPageState): CanvasPageState {
+  if (!state.pendingPaste) {
+    return state
+  }
+
+  const nextDraft = normalizeDraftDocument(cloneDraft(state.draft))
+  nextDraft.editor.gridEnabled = state.gridEnabled
+  nextDraft.editor.snapEnabled = state.snapEnabled
+  const next = pushHistory(state, nextDraft)
+
+  return {
+    ...next,
+    selectedIds: state.pendingPaste.ids.filter((id) =>
+      nextDraft.elements.some((element) => element.id === id)
+    ),
+    editingId: null,
+    pendingPaste: null,
+    outputStatus: state.pendingPaste.confirmStatus,
+    storageMode: "persisted",
+  }
+}
+
+export function movePendingPasteToPoint(
+  state: CanvasPageState,
+  point: { x: number; y: number }
+): CanvasPageState {
+  if (!state.pendingPaste) {
+    return state
+  }
+
+  const pendingElements = state.draft.elements.filter((element) =>
+    state.pendingPaste?.ids.includes(element.id)
+  )
+  const bounds = getElementSelectionBoundsForIds(pendingElements)
+  if (!bounds) {
+    return clearPendingPastePreview(state)
+  }
+
+  const deltaX = point.x - (bounds.x + bounds.width / 2)
+  const deltaY = point.y - (bounds.y + bounds.height / 2)
+  if (Math.abs(deltaX) < 0.001 && Math.abs(deltaY) < 0.001) {
+    return state
+  }
+
+  const pendingIds = new Set(state.pendingPaste.ids)
+  return applyDraftPreviewUpdate(state, (draft) => ({
+    ...draft,
+    elements: translateElementsByIds(draft.elements, pendingIds, deltaX, deltaY),
+  }))
+}
+
+export function startClipboardPastePlacement(
+  state: CanvasPageState,
+  clipboard: CanvasClipboardReadResult,
+  viewportSize: StageViewportSize,
+  point?: { x: number; y: number }
+): CanvasPageState {
+  const baseState = state.pendingPaste
+    ? clearPendingPastePreview(state, { restoreSelection: true })
+    : state
+
+  if (clipboard.kind === "invalid") {
+    return {
+      ...baseState,
       outputStatus: "剪贴板中的画布内容不可用。",
     }
   }
 
   if (clipboard.kind === "empty") {
     return {
-      ...state,
+      ...baseState,
       outputStatus: "剪贴板中没有可粘贴的画布内容。",
     }
   }
 
+  const placementPoint = point ?? getViewportCenterInCanvasSpace(baseState.viewport, viewportSize)
+  const placementHint = "移动鼠标以放置，单击确认，按 Esc 取消。"
+
   if (clipboard.kind === "canvas") {
     let sourceElements: CanvasDraftElement[]
     try {
-      sourceElements = normalizeClipboardElements(state, clipboard.payload.elements)
+      sourceElements = normalizeClipboardElements(baseState, clipboard.payload.elements)
     } catch {
       return {
-        ...state,
+        ...baseState,
         outputStatus: "剪贴板中的画布内容不可用。",
       }
     }
     if (sourceElements.length === 0) {
       return {
-        ...state,
+        ...baseState,
         outputStatus: "剪贴板中的画布内容不可用。",
       }
     }
 
-    const offsetStep =
-      state.pasteSession?.signature === clipboard.signature ? state.pasteSession.offsetStep + 1 : 1
-    const offset = CLIPBOARD_OFFSET_STEP * offsetStep
     const nextSelectedIds: string[] = []
-    const nextState = applyDraftUpdate(state, (draft) => ({
-      ...draft,
-      elements: [
-        ...draft.elements,
-        ...sourceElements.map((element, index) => {
-          const clone = duplicateDraftElement(element, draft.elements.length + index, {
-            offsetX: offset,
-            offsetY: offset,
-          })
-          nextSelectedIds.push(clone.id)
-          return clone
-        }),
-      ],
-    }))
+    const previewElements = sourceElements.map((element, index) => {
+      const clone = duplicateDraftElement(element, baseState.liveDraft.elements.length + index, {
+        offsetX: 0,
+        offsetY: 0,
+      })
+      nextSelectedIds.push(clone.id)
+      return clone
+    })
+    const previewBounds = getElementSelectionBoundsForIds(previewElements)
+    if (!previewBounds) {
+      return {
+        ...baseState,
+        outputStatus: "剪贴板中的画布内容不可用。",
+      }
+    }
+
+    const deltaX = placementPoint.x - (previewBounds.x + previewBounds.width / 2)
+    const deltaY = placementPoint.y - (previewBounds.y + previewBounds.height / 2)
+    const positionedPreviewElements = previewElements.map((element) =>
+      translateElement(element, deltaX, deltaY)
+    )
+    const nextDraft = normalizeDraftDocument({
+      ...cloneDraft(baseState.liveDraft),
+      elements: [...baseState.liveDraft.elements, ...positionedPreviewElements],
+    })
+    nextDraft.editor.gridEnabled = baseState.gridEnabled
+    nextDraft.editor.snapEnabled = baseState.snapEnabled
 
     return {
-      ...nextState,
+      ...baseState,
+      draft: nextDraft,
       selectedIds: nextSelectedIds,
       editingId: null,
-      pasteSession: {
-        signature: clipboard.signature,
-        offsetStep,
+      pendingPaste: {
+        ids: nextSelectedIds,
+        previousSelectedIds: baseState.selectedIds,
+        previousEditingId: baseState.editingId,
+        confirmStatus:
+          nextSelectedIds.length === 1
+            ? "已粘贴 1 个图层。"
+            : `已粘贴 ${nextSelectedIds.length} 个图层。`,
       },
-      outputStatus:
-        nextSelectedIds.length === 1
-          ? "已粘贴 1 个图层。"
-          : `已粘贴 ${nextSelectedIds.length} 个图层。`,
+      outputStatus: placementHint,
     }
   }
 
-  const nextTextElement = createClipboardTextElement(state, clipboard.text, viewportSize)
-  const nextState = applyDraftUpdate(state, (draft) => ({
-    ...draft,
-    elements: [...draft.elements, nextTextElement],
-  }))
+  const nextTextElement = createClipboardTextElement(
+    baseState,
+    clipboard.text,
+    viewportSize,
+    placementPoint
+  )
+  const nextDraft = normalizeDraftDocument({
+    ...cloneDraft(baseState.liveDraft),
+    elements: [...baseState.liveDraft.elements, nextTextElement],
+  })
+  nextDraft.editor.gridEnabled = baseState.gridEnabled
+  nextDraft.editor.snapEnabled = baseState.snapEnabled
 
   return {
-    ...nextState,
+    ...baseState,
+    draft: nextDraft,
     selectedIds: [nextTextElement.id],
     editingId: null,
-    pasteSession: {
-      signature: clipboard.signature,
-      offsetStep: 1,
+    pendingPaste: {
+      ids: [nextTextElement.id],
+      previousSelectedIds: baseState.selectedIds,
+      previousEditingId: baseState.editingId,
+      confirmStatus: "已将剪贴板文本粘贴为新文本图层。",
     },
-    outputStatus: "已将剪贴板文本粘贴为新文本图层。",
+    outputStatus: placementHint,
   }
 }
 
@@ -943,7 +1126,7 @@ function shouldUseScenarioDraft(scenario: CanvasStoryScenario): boolean {
   )
 }
 
-function createCanvasStateFromDraft(
+export function createCanvasStateFromDraft(
   rawDraft: CanvasDraftDocument,
   options?: {
     selectedIds?: string[]
@@ -976,7 +1159,7 @@ function createCanvasStateFromDraft(
     history: [cloneDraft(draft)],
     historyIndex: 0,
     editingId: null,
-    pasteSession: null,
+    pendingPaste: null,
     outputStatus: options?.outputStatus ?? "",
     autosavesExpanded: false,
     versionsOpen: options?.versionsOpen ?? false,
@@ -2370,7 +2553,7 @@ function CanvasToolbar({
   onOpenVersions: () => void
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
-  const interactionLocked = readOnly || state.loading
+  const interactionLocked = readOnly || state.loading || state.pendingPaste !== null
 
   return (
     <div className="tm-canvas-toolbar">
@@ -2558,11 +2741,13 @@ function CanvasToolbar({
             value={
               readOnly
                 ? "历史快照只读"
-                : state.loading
-                  ? "正在读取草稿"
-                  : state.selectedIds.length > 0
-                    ? `已选 ${state.selectedIds.length} 项`
-                    : "未选择元素"
+                : state.pendingPaste
+                  ? "待放置预览"
+                  : state.loading
+                    ? "正在读取草稿"
+                    : state.selectedIds.length > 0
+                      ? `已选 ${state.selectedIds.length} 项`
+                      : "未选择元素"
             }
             density="compact"
             size="sm"
@@ -4338,11 +4523,13 @@ function CanvasStageView({
   readOnly,
   onChange,
   onViewportSizeChange,
+  onPointerChange,
 }: {
   state: CanvasPageState
   readOnly: boolean
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
   onViewportSizeChange: (size: StageViewportSize) => void
+  onPointerChange: (point: { x: number; y: number } | null) => void
 }) {
   const stageRef = React.useRef<Konva.Stage | null>(null)
   const transformerRef = React.useRef<Konva.Transformer | null>(null)
@@ -4391,8 +4578,9 @@ function CanvasStageView({
     [state.draft.elements, state.selectedIds]
   )
   const selectedSingleElement = selectedElements.length === 1 ? selectedElements[0] : null
-  const selectedLineElement = selectedSingleElement?.kind === "line" ? selectedSingleElement : null
-  const transformerEnabled = !state.editingId && !selectedLineElement
+  const selectedLineElement =
+    !state.pendingPaste && selectedSingleElement?.kind === "line" ? selectedSingleElement : null
+  const transformerEnabled = !state.editingId && !selectedLineElement && !state.pendingPaste
   const transformerAnchors = isSquareResizeElement(selectedSingleElement)
     ? TRANSFORMER_CORNER_ANCHORS
     : TRANSFORMER_ALL_ANCHORS
@@ -4467,11 +4655,36 @@ function CanvasStageView({
     if (event.target.getParent()?.className === "Transformer") {
       return
     }
-    const stage = event.target.getStage()
+    const stage = event.target.getStage?.() ?? stageRef.current
     if (!stage) {
       return
     }
     if (state.editingId && blurActiveInlineTextEditor()) {
+      return
+    }
+
+    const point = getStagePointer(stage, state.viewport)
+    onPointerChange(point)
+
+    if (state.pendingPaste) {
+      if (event.evt.button === 1 || event.evt.button === 2 || state.spacePressed) {
+        const pointer = stage.getPointerPosition()
+        if (!pointer) {
+          return
+        }
+        isPanningRef.current = true
+        panOriginRef.current = {
+          pointerX: pointer.x,
+          pointerY: pointer.y,
+          viewportX: state.viewport.x,
+          viewportY: state.viewport.y,
+        }
+        return
+      }
+
+      if (event.evt.button === 0 && point) {
+        onChange((current) => confirmPendingPastePlacement(movePendingPasteToPoint(current, point)))
+      }
       return
     }
 
@@ -4490,7 +4703,6 @@ function CanvasStageView({
         }
         return
       }
-      const point = getStagePointer(stage, state.viewport)
       if (!point) {
         return
       }
@@ -4536,12 +4748,17 @@ function CanvasStageView({
       return
     }
 
-    if (!selectionActiveRef.current) {
+    const point = getStagePointer(stage, state.viewport)
+    onPointerChange(point)
+
+    if (state.pendingPaste) {
+      if (point) {
+        onChange((current) => movePendingPasteToPoint(current, point))
+      }
       return
     }
 
-    const point = getStagePointer(stage, state.viewport)
-    if (!point) {
+    if (!selectionActiveRef.current || !point) {
       return
     }
     onChange((current) => ({
@@ -4783,9 +5000,16 @@ function CanvasStageView({
                     offsetY={geometry.rotationOrigin.y}
                     rotation={"rotation" in element ? (element.rotation ?? 0) : 0}
                     draggable={
-                      !readOnly && !element.meta.locked && !state.spacePressed && !state.editingId
+                      !readOnly &&
+                      !state.pendingPaste &&
+                      !element.meta.locked &&
+                      !state.spacePressed &&
+                      !state.editingId
                     }
-                    onClick={(event) =>
+                    onClick={(event) => {
+                      if (state.pendingPaste) {
+                        return
+                      }
                       onChange((current) => ({
                         ...setSelection(
                           current,
@@ -4795,8 +5019,11 @@ function CanvasStageView({
                         focus: "center-right",
                         activePanel: "attributes",
                       }))
-                    }
-                    onTap={(event) =>
+                    }}
+                    onTap={(event) => {
+                      if (state.pendingPaste) {
+                        return
+                      }
                       onChange((current) => ({
                         ...setSelection(
                           current,
@@ -4806,9 +5033,9 @@ function CanvasStageView({
                         focus: "center-right",
                         activePanel: "attributes",
                       }))
-                    }
+                    }}
                     onDblClick={() =>
-                      readOnly || element.meta.locked
+                      readOnly || state.pendingPaste || element.meta.locked
                         ? undefined
                         : onChange((current) => ({
                             ...current,
@@ -4817,7 +5044,7 @@ function CanvasStageView({
                           }))
                     }
                     onDragEnd={(event) => {
-                      if (readOnly) {
+                      if (readOnly || state.pendingPaste) {
                         return
                       }
                       const position = snapElementPosition(
@@ -5239,6 +5466,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
   const stateRef = React.useRef(state)
   const interactionLockedRef = React.useRef(interactionLocked)
   const stageViewportSizeRef = React.useRef(stageViewportSize)
+  const stagePointerRef = React.useRef<{ x: number; y: number } | null>(null)
   const draftFontFamilies = React.useMemo(
     () =>
       state.draft.elements.flatMap((element) =>
@@ -5531,6 +5759,24 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         }
         return
       }
+      if (stateRef.current.pendingPaste) {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+          event.preventDefault()
+          setState((current) => cancelPendingPastePlacement(current))
+          return
+        }
+        if (event.key === "Escape") {
+          event.preventDefault()
+          setState((current) => cancelPendingPastePlacement(current))
+          return
+        }
+        if (event.key === "Enter") {
+          event.preventDefault()
+          setState((current) => confirmPendingPastePlacement(current))
+          return
+        }
+        return
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
         event.preventDefault()
         setState((current) => (event.shiftKey ? redoDraft(current) : undoDraft(current)))
@@ -5612,7 +5858,6 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       writeCanvasClipboardToDataTransfer(event.clipboardData, selectedElements)
       setState((current) => ({
         ...current,
-        pasteSession: null,
         outputStatus: "已拷贝所选图层。",
       }))
     }
@@ -5635,7 +5880,14 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
 
       event.preventDefault()
       const clipboard = readCanvasClipboardFromDataTransfer(event.clipboardData)
-      setState((current) => applyClipboardPaste(current, clipboard, stageViewportSizeRef.current))
+      setState((current) =>
+        startClipboardPastePlacement(
+          current,
+          clipboard,
+          stageViewportSizeRef.current,
+          stagePointerRef.current ?? undefined
+        )
+      )
     }
 
     window.addEventListener("copy", handleCopy)
@@ -5824,7 +6076,6 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       await writeCanvasClipboardToNavigator(selectedElements)
       setState((current) => ({
         ...current,
-        pasteSession: null,
         outputStatus: "已拷贝所选图层。",
       }))
     } catch {
@@ -5850,7 +6101,14 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
 
     try {
       const clipboard = await readCanvasClipboardFromNavigator()
-      setState((current) => applyClipboardPaste(current, clipboard, stageViewportSizeRef.current))
+      setState((current) =>
+        startClipboardPastePlacement(
+          current,
+          clipboard,
+          stageViewportSizeRef.current,
+          stagePointerRef.current ?? undefined
+        )
+      )
     } catch {
       setState((current) => ({
         ...current,
@@ -5861,6 +6119,10 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
 
   const canUndo = state.historyIndex > 0
   const canRedo = state.historyIndex < state.history.length - 1
+  const inspectorReadOnly = interactionLocked || state.pendingPaste !== null
+  const handleStagePointerChange = (point: { x: number; y: number } | null) => {
+    stagePointerRef.current = point
+  }
 
   return (
     <section className="tm-workspace">
@@ -5902,7 +6164,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
             </div>
           </div>
           <div className="tm-pane__body">
-            <CanvasLayerRail state={state} readOnly={interactionLocked} onChange={setState} />
+            <CanvasLayerRail state={state} readOnly={inspectorReadOnly} onChange={setState} />
           </div>
         </aside>
 
@@ -5913,11 +6175,13 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
               <p>
                 {readOnly
                   ? "历史快照只读查看。"
-                  : startupSyncPending
-                    ? "正在恢复同设备草稿。"
-                    : state.loading
-                      ? "正在读取当前画布草稿。"
-                      : "单色编辑，所见即所得。"}
+                  : state.pendingPaste
+                    ? "粘贴预览会跟随鼠标，单击确认落位。"
+                    : startupSyncPending
+                      ? "正在恢复同设备草稿。"
+                      : state.loading
+                        ? "正在读取当前画布草稿。"
+                        : "单色编辑，所见即所得。"}
               </p>
             </div>
             <div className="tm-pane__meta">
@@ -5960,6 +6224,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
                 readOnly={interactionLocked}
                 onChange={setState}
                 onViewportSizeChange={setStageViewportSize}
+                onPointerChange={handleStagePointerChange}
               />
             )}
           </div>
@@ -6017,7 +6282,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
               {state.activePanel === "attributes" ? (
                 <CanvasInspector
                   state={state}
-                  readOnly={interactionLocked}
+                  readOnly={inspectorReadOnly}
                   clipboardSupported={asyncClipboardSupported}
                   onCopy={handleCopyToClipboard}
                   onPaste={handlePasteFromClipboard}
@@ -6027,13 +6292,13 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
                 <CanvasOutput
                   controller={controller}
                   state={state}
-                  readOnly={interactionLocked}
+                  readOnly={inspectorReadOnly}
                   onChange={setState}
                 />
               )}
               <CanvasLayerPanel
                 state={state}
-                readOnly={interactionLocked}
+                readOnly={inspectorReadOnly}
                 clipboardSupported={asyncClipboardSupported}
                 onCopy={handleCopyToClipboard}
                 onPaste={handlePasteFromClipboard}
