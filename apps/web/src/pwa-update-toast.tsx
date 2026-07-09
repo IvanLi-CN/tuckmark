@@ -74,8 +74,10 @@ export function PwaUpdateToast({ snapshot, onUpdate, placement = "fixed" }: PwaU
 export function usePwaUpdate(context: AppContext): PwaUpdateSnapshot {
   const [snapshot, setSnapshot] = React.useState<PwaUpdateSnapshot>({
     status: "idle",
+    source: "none",
     registration: null,
     waitingWorker: null,
+    detectedBuildMetadata: null,
     error: null,
   })
 

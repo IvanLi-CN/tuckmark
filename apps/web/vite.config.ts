@@ -6,22 +6,26 @@ import react from "@vitejs/plugin-react"
 import type { HtmlTagDescriptor, Plugin } from "vite"
 import { defineConfig, loadEnv } from "vite"
 import {
-  resolveAppVersion,
-  resolveBuildRef,
+  createRuntimeBuildMetadataSource,
   resolveRepositoryUrl,
   resolveRightsUrl,
+  resolveRuntimeBuildMetadata,
 } from "./build-metadata.js"
+import type { RuntimeBuildMetadata } from "./src/version-metadata.js"
 
 export {
+  createRuntimeBuildMetadataSource,
   resolveAppVersion,
   resolveBuildRef,
   resolveRepositoryUrl,
   resolveRightsUrl,
+  resolveRuntimeBuildMetadata,
 } from "./build-metadata.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PWA_MANIFEST_FILE = "manifest.webmanifest"
 const SERVICE_WORKER_FILE = "sw.js"
+const VERSION_METADATA_FILE = "version.json"
 
 type PwaManifestIcon = {
   src: string
@@ -141,15 +145,18 @@ export function createPwaHtmlTags(): HtmlTagDescriptor[] {
 export function createServiceWorkerSource({
   assets,
   version,
+  versionMetadataFile,
 }: {
   assets: PwaAsset[]
   version: string
+  versionMetadataFile: string
 }): string {
   return `const CACHE_VERSION = ${JSON.stringify(version)}
 const APP_CACHE = \`tuckmark-app-\${CACHE_VERSION}\`
 const PRECACHE_ASSETS = ${JSON.stringify(assets, null, 2)}
 const PRECACHE_URLS = PRECACHE_ASSETS.map((asset) => asset.url)
 const NAVIGATION_FALLBACK = "./index.html"
+const VERSION_METADATA_URL = ${JSON.stringify(`./${versionMetadataFile}`)}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -205,6 +212,11 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") {
     return
   }
+  const requestUrl = new URL(request.url)
+  if (requestUrl.pathname.endsWith(VERSION_METADATA_URL.slice(1))) {
+    event.respondWith(fetch(request))
+    return
+  }
   if (request.mode === "navigate") {
     event.respondWith(respondToNavigation(request))
     return
@@ -214,7 +226,10 @@ self.addEventListener("fetch", (event) => {
 `
 }
 
-function tuckmarkPwaPlugin(surface: "server-http" | "browser-static"): Plugin {
+function tuckmarkPwaPlugin(
+  surface: "server-http" | "browser-static",
+  runtimeBuildMetadata: RuntimeBuildMetadata
+): Plugin {
   return {
     name: "tuckmark-pwa",
     apply: "build",
@@ -230,6 +245,7 @@ function tuckmarkPwaPlugin(surface: "server-http" | "browser-static"): Plugin {
       }
 
       const manifestSource = JSON.stringify(createPwaManifest(), null, 2)
+      const versionMetadataSource = createRuntimeBuildMetadataSource(runtimeBuildMetadata)
       const assets: PwaAsset[] = [
         {
           url: "./",
@@ -292,10 +308,16 @@ function tuckmarkPwaPlugin(surface: "server-http" | "browser-static"): Plugin {
       })
       this.emitFile({
         type: "asset",
+        fileName: VERSION_METADATA_FILE,
+        source: versionMetadataSource,
+      })
+      this.emitFile({
+        type: "asset",
         fileName: SERVICE_WORKER_FILE,
         source: createServiceWorkerSource({
           assets: uniqueAssets,
           version,
+          versionMetadataFile: VERSION_METADATA_FILE,
         }),
       })
     },
@@ -337,8 +359,9 @@ export function resolvePublicBase(
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "")
   const surface = resolveBuildSurface(env)
-  const appVersion = resolveAppVersion(env)
-  const buildRef = resolveBuildRef(env)
+  const runtimeBuildMetadata = resolveRuntimeBuildMetadata(env)
+  const appVersion = runtimeBuildMetadata.appVersion
+  const buildRef = runtimeBuildMetadata.buildRef
   const repositoryUrl = resolveRepositoryUrl(env)
   const rightsUrl = resolveRightsUrl(env)
 
@@ -361,7 +384,7 @@ export default defineConfig(({ command, mode }) => {
         env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT ?? ""
       ),
     },
-    plugins: [react(), tailwindcss(), tuckmarkPwaPlugin(surface)],
+    plugins: [react(), tailwindcss(), tuckmarkPwaPlugin(surface, runtimeBuildMetadata)],
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),

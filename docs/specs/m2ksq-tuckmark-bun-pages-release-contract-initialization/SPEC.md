@@ -36,12 +36,17 @@ and a reproducible worktree bootstrap path.
   from cached app-shell resources while offline.
 - Browser-static updates are non-blocking: a newly detected version caches
   silently in the background, then prompts the user to update only when the
-  waiting worker is ready.
+  runtime has confirmed a newer build through either a ready waiting worker or
+  a same-origin version probe mismatch.
 - Browser-static update checks run immediately on runtime startup, then continue
   at a low-frequency cadence while the page remains open.
 - If the current tab has gone stale since its last update check, returning the
   page to a visible, focused, or newly online state must trigger a guarded
   catch-up update check without surfacing any extra loading UI.
+- Browser-static builds must publish a same-origin `version.json` metadata probe
+  that reflects the current `appVersion` and `buildRef`, bypasses app-shell
+  precache, and is fetched with cache-busting semantics so stranded clients can
+  detect newer deployments.
 - Runtime deployments use either `server-http` or `browser-static` surface.
 - `demo=true` enters demo mode, `demo=false` and no param stay on runtime mode.
 
@@ -68,10 +73,13 @@ and a reproducible worktree bootstrap path.
 - Offline refresh works for `/`, `/templates`, `/canvas`, and `/system` after a
   first successful online load.
 - New-version caching is silent; the update prompt appears only after the
-  waiting worker is ready.
+  runtime confirms a newer build through a waiting worker or version-probe
+  mismatch.
 - Long-lived browser-static tabs continue to recheck for new versions at a low
-  frequency, while stale tabs catch up when the page becomes active or returns
-  online.
+  frequency, while stale or stranded tabs catch up when the page becomes
+  active, focused, or returns online.
+- `version.json` stays aligned with the active Pages build metadata and is not
+  precached by the service worker.
 - Release can publish stable and preview bundles from durable snapshots
 - Pages redeploys after release publication display the published release tag
   in footer metadata and expose `build <shortsha>` via tooltip
@@ -94,9 +102,9 @@ Non-deterministic screenshots from a live browser window do not count as proof f
 this spec.
 
 The prompt state gallery is captured from Storybook canvas using mock state only.
-It covers all owner-facing prompt states: ready to update and activation in
-progress. Background caching remains intentionally silent and has no visible
-prompt state.
+It covers all owner-facing prompt states: waiting-worker ready, stranded-client
+version-probe mismatch ready, and activation in progress. Background caching
+remains intentionally silent and has no visible prompt state.
 
 PR: include
 ![PWA update prompt state gallery](./assets/pwa-update-toast-state-gallery.png)
@@ -107,10 +115,11 @@ preserving the user-confirmed refresh contract.
 
 ![PWA update confirmation dialog](./assets/dialogs/pwa-update-confirm-dialog.png)
 
-The owner-facing visual evidence is produced from the production browser-static
-Pages build with the service worker lifecycle mocked to the ready-to-activate
-state. It verifies the prompt location against the complete routed workbench
-shell.
+The owner-facing placement evidence is produced from a repo-owned Storybook
+workbench-shell fallback with the update lifecycle mocked to the stranded-client
+version-probe mismatch state. It verifies the prompt location against the
+complete routed workbench shell without depending on a live deployment or an
+already-installed browser shell.
 
 PR: include
 ![PWA update prompt in workbench viewport](./assets/pwa-workbench-update-toast-viewport.png)

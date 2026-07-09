@@ -5,6 +5,7 @@ import { buildReleasePlan } from "../../.github/scripts/release-plan.mjs"
 import {
   createPwaHtmlTags,
   createPwaManifest,
+  createRuntimeBuildMetadataSource,
   createServiceWorkerSource,
   hashPwaString,
   resolveApiOrigin,
@@ -89,6 +90,7 @@ describe("PWA build assets", () => {
   it("generates a service worker with app-shell caching and update activation", () => {
     const source = createServiceWorkerSource({
       version: "test-version",
+      versionMetadataFile: "version.json",
       assets: [
         { url: "./index.html", revision: "index" },
         { url: "./assets/app.js", revision: "app" },
@@ -101,20 +103,33 @@ describe("PWA build assets", () => {
     expect(source).toContain('"./assets/app.js"')
     expect(source).toContain('"./pwa/tuckmark-icon-192.png"')
     expect(source).toContain('event.data?.type === "SKIP_WAITING"')
+    expect(source).toContain('const VERSION_METADATA_URL = "./version.json"')
+    expect(source).toContain("requestUrl.pathname.endsWith(VERSION_METADATA_URL.slice(1))")
     expect(source).toContain('request.mode === "navigate"')
   })
 
   it("changes service worker output when same-url bundle content changes", () => {
     const first = createServiceWorkerSource({
       version: hashPwaString("./assets/app.js:first-content"),
+      versionMetadataFile: "version.json",
       assets: [{ url: "./assets/app.js", revision: hashPwaString("first-content") }],
     })
     const second = createServiceWorkerSource({
       version: hashPwaString("./assets/app.js:second-content"),
+      versionMetadataFile: "version.json",
       assets: [{ url: "./assets/app.js", revision: hashPwaString("second-content") }],
     })
 
     expect(first).not.toBe(second)
+  })
+
+  it("serializes a standalone runtime version probe payload", () => {
+    expect(
+      createRuntimeBuildMetadataSource({
+        appVersion: "0.2.0-preview.11",
+        buildRef: "e499426",
+      })
+    ).toBe('{\n  "appVersion": "0.2.0-preview.11",\n  "buildRef": "e499426"\n}\n')
   })
 })
 

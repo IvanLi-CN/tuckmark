@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const PLAYWRIGHT_BUILD_METADATA = {
+  appVersion: "",
+  buildRef: "e499426",
+} as const
 
 test("browser-static build registers a service worker and works offline after first load", async ({
   context,
@@ -30,9 +34,25 @@ test("browser-static build registers a service worker and works offline after fi
   await context.setOffline(false)
 })
 
+test("browser-static build does not prompt for an update when version metadata matches", async ({
+  page,
+}) => {
+  await page.goto("/")
+  await expect(page.getByRole("heading", { name: "打印工作台" })).toBeVisible()
+
+  await page.waitForTimeout(1000)
+  await expect(page.getByLabel("Tuckmark Web update status")).toHaveCount(0)
+})
+
 test("browser-static build ships complete PWA assets without remote font dependency", async () => {
   const distRoot = path.resolve(__dirname, "../dist")
   const indexHtml = await fs.readFile(path.join(distRoot, "index.html"), "utf8")
+  const versionMetadata = JSON.parse(
+    await fs.readFile(path.join(distRoot, "version.json"), "utf8")
+  ) as {
+    appVersion: string
+    buildRef: string
+  }
   const manifest = JSON.parse(
     await fs.readFile(path.join(distRoot, "manifest.webmanifest"), "utf8")
   ) as {
@@ -45,6 +65,7 @@ test("browser-static build ships complete PWA assets without remote font depende
   expect(indexHtml).toContain('rel="manifest"')
   expect(indexHtml).not.toContain("fonts.googleapis.com")
   expect(indexHtml).not.toContain("fonts.gstatic.com")
+  expect(versionMetadata).toEqual(PLAYWRIGHT_BUILD_METADATA)
   expect(manifest.start_url).toBe("./")
   expect(manifest.scope).toBe("./")
   expect(manifest.icons.some((icon) => icon.src === "./pwa/tuckmark-icon-192.png")).toBe(true)
@@ -54,4 +75,7 @@ test("browser-static build ships complete PWA assets without remote font depende
   expect(serviceWorker).toContain('"./pwa/tuckmark-icon-192.png"')
   expect(serviceWorker).toContain('"./pwa/tuckmark-icon-512.png"')
   expect(serviceWorker).toContain("SKIP_WAITING")
+  expect(serviceWorker).toContain('const VERSION_METADATA_URL = "./version.json"')
+  expect(serviceWorker).toContain("requestUrl.pathname.endsWith(VERSION_METADATA_URL.slice(1))")
+  expect(serviceWorker).not.toContain('"url": "./version.json"')
 })

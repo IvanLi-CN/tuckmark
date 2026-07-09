@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  hasBuildMetadataMismatch,
   normalizeBuildRef,
+  normalizeRuntimeBuildMetadata,
   normalizeVersionTag,
   resolveFooterVersionMetadata,
 } from "./version-metadata.js"
@@ -15,6 +17,39 @@ describe("version metadata helpers", () => {
   it("shortens git hashes while keeping custom build references intact", () => {
     expect(normalizeBuildRef("E4994267326EB940DCA6878193B0C514E69A7F0E")).toBe("e499426")
     expect(normalizeBuildRef("build-local")).toBe("build-local")
+  })
+
+  it("normalizes runtime build metadata as a reusable comparison shape", () => {
+    expect(
+      normalizeRuntimeBuildMetadata({
+        appVersion: "v0.2.0-preview.11",
+        buildRef: "E4994267326EB940DCA6878193B0C514E69A7F0E",
+      })
+    ).toEqual({
+      appVersion: "0.2.0-preview.11",
+      buildRef: "e499426",
+    })
+  })
+
+  it("treats either build or version divergence as a deploy mismatch", () => {
+    expect(
+      hasBuildMetadataMismatch(
+        { appVersion: "0.2.0-preview.11", buildRef: "e499426" },
+        { appVersion: "0.2.0-preview.11", buildRef: "f7a7393" }
+      )
+    ).toBe(true)
+    expect(
+      hasBuildMetadataMismatch(
+        { appVersion: "", buildRef: "e499426" },
+        { appVersion: "0.2.0-preview.11", buildRef: "e499426" }
+      )
+    ).toBe(true)
+    expect(
+      hasBuildMetadataMismatch(
+        { appVersion: "v0.2.0-preview.11", buildRef: "E4994267326EB940DCA6878193B0C514E69A7F0E" },
+        { appVersion: "0.2.0-preview.11", buildRef: "e499426" }
+      )
+    ).toBe(false)
   })
 
   it("renders tagged builds as a visible version with build reference tooltip metadata", () => {

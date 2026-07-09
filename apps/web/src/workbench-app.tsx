@@ -81,6 +81,7 @@ import { FooterBuildMeta } from "./footer-build-meta.js"
 import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
 import { canvasDotsToMillimeters } from "./lib/canvas-units.js"
 import { cn } from "./lib/utils.js"
+import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import { applyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
 import type {
   AppContext,
@@ -103,6 +104,7 @@ type AppProps = {
   client?: ApiClient
   context?: AppContext
   canvasScenario?: CanvasStoryScenario
+  pwaUpdateSnapshot?: PwaUpdateSnapshot
 }
 
 type TemplateRow = {
@@ -1322,12 +1324,15 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
 
 function WorkbenchLayout({
   controller,
+  pwaUpdateSnapshot,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
+  pwaUpdateSnapshot?: PwaUpdateSnapshot
 }) {
   const location = useLocation()
   const [drawerOpen, setDrawerOpen] = React.useState(false)
-  const pwaUpdate = usePwaUpdate(controller.context)
+  const runtimePwaUpdate = usePwaUpdate(controller.context)
+  const pwaUpdate = pwaUpdateSnapshot ?? runtimePwaUpdate
   const isCanvasRoute = location.pathname === "/canvas"
 
   const surfaceLabel =
@@ -1413,7 +1418,15 @@ function WorkbenchLayout({
         </div>
       </footer>
 
-      <PwaUpdateToast snapshot={pwaUpdate} onUpdate={() => applyPwaUpdate(pwaUpdate)} />
+      <PwaUpdateToast
+        snapshot={pwaUpdate}
+        onUpdate={() => {
+          if (pwaUpdateSnapshot) {
+            return
+          }
+          applyPwaUpdate(pwaUpdate)
+        }}
+      />
 
       <DeviceDrawer controller={controller} open={drawerOpen} onOpenChange={setDrawerOpen} />
     </div>
@@ -3231,15 +3244,19 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
 function WorkbenchRouter({
   controller,
   canvasScenario,
+  pwaUpdateSnapshot,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
   canvasScenario?: CanvasStoryScenario
+  pwaUpdateSnapshot?: PwaUpdateSnapshot
 }) {
   const pageState = useWorkbenchPages(controller)
 
   return (
     <Routes>
-      <Route element={<WorkbenchLayout controller={controller} />}>
+      <Route
+        element={<WorkbenchLayout controller={controller} pwaUpdateSnapshot={pwaUpdateSnapshot} />}
+      >
         <Route path="/" element={<DashboardPage controller={controller} />} />
         <Route
           path="/templates"
@@ -3255,15 +3272,23 @@ function WorkbenchRouter({
   )
 }
 
-export function WorkbenchApp({ client, context, canvasScenario }: AppProps) {
+export function WorkbenchApp({ client, context, canvasScenario, pwaUpdateSnapshot }: AppProps) {
   const controller = useWorkbenchController({ client, context })
   const router = controller.context.basePath ? (
     <BrowserRouter basename={controller.context.basePath}>
-      <WorkbenchRouter controller={controller} canvasScenario={canvasScenario} />
+      <WorkbenchRouter
+        controller={controller}
+        canvasScenario={canvasScenario}
+        pwaUpdateSnapshot={pwaUpdateSnapshot}
+      />
     </BrowserRouter>
   ) : (
     <BrowserRouter>
-      <WorkbenchRouter controller={controller} canvasScenario={canvasScenario} />
+      <WorkbenchRouter
+        controller={controller}
+        canvasScenario={canvasScenario}
+        pwaUpdateSnapshot={pwaUpdateSnapshot}
+      />
     </BrowserRouter>
   )
 
@@ -3274,6 +3299,7 @@ export function WorkbenchAppStory({
   client,
   context,
   canvasScenario,
+  pwaUpdateSnapshot,
   initialEntries = ["/"],
 }: AppProps & {
   initialEntries?: string[]
@@ -3281,7 +3307,11 @@ export function WorkbenchAppStory({
   const controller = useWorkbenchController({ client, context })
   return (
     <MemoryRouter initialEntries={initialEntries}>
-      <WorkbenchRouter controller={controller} canvasScenario={canvasScenario} />
+      <WorkbenchRouter
+        controller={controller}
+        canvasScenario={canvasScenario}
+        pwaUpdateSnapshot={pwaUpdateSnapshot}
+      />
     </MemoryRouter>
   )
 }

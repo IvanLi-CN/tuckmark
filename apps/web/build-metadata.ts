@@ -1,6 +1,11 @@
 import rootPackageJson from "../../package.json" with { type: "json" }
 
-import { normalizeBuildRef, normalizeVersionTag } from "./src/version-metadata.js"
+import {
+  normalizeBuildRef,
+  normalizeRuntimeBuildMetadata,
+  normalizeVersionTag,
+  type RuntimeBuildMetadata,
+} from "./src/version-metadata.js"
 
 const DEFAULT_REPOSITORY_URL = "https://github.com/IvanLi-CN/tuckmark"
 const DEFAULT_RIGHTS_URL = "https://ivanli.cc/"
@@ -17,6 +22,19 @@ export function resolveAppVersion(env: Record<string, string | undefined>): stri
     return explicitVersion
   }
   return resolveBuildRef(env) ? "" : rootPackageJson.version
+}
+
+export function resolveRuntimeBuildMetadata(
+  env: Record<string, string | undefined>
+): RuntimeBuildMetadata {
+  return normalizeRuntimeBuildMetadata({
+    appVersion: resolveAppVersion(env),
+    buildRef: resolveBuildRef(env),
+  })
+}
+
+export function createRuntimeBuildMetadataSource(metadata: RuntimeBuildMetadata): string {
+  return `${JSON.stringify(metadata, null, 2)}\n`
 }
 
 export function resolveRepositoryUrl(env: Record<string, string | undefined>): string {

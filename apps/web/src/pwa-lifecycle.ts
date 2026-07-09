@@ -1,3 +1,9 @@
+import {
+  hasBuildMetadataMismatch,
+  normalizeRuntimeBuildMetadata,
+  type RuntimeBuildMetadata,
+} from "./version-metadata.js"
+
 export type PwaUpdateStatus =
   | "unsupported"
   | "idle"
@@ -7,23 +13,38 @@ export type PwaUpdateStatus =
   | "updated"
   | "error"
 
+export type PwaUpdateSource = "none" | "service-worker" | "version-probe"
+
 export type PwaUpdateSnapshot = {
   status: PwaUpdateStatus
+  source: PwaUpdateSource
   registration: ServiceWorkerRegistration | null
   waitingWorker: ServiceWorker | null
+  detectedBuildMetadata: RuntimeBuildMetadata | null
   error: string | null
 }
 
 export type PwaUpdateListener = (snapshot: PwaUpdateSnapshot) => void
 
+type PwaUpdateCheckReason = "register" | "interval" | "visibilitychange" | "focus" | "online"
+type VersionProbeResult = "failed" | "current" | "stale"
+
+type PwaUpdateControllerOptions = {
+  fetchImpl?: typeof fetch
+  reloadWindow?: () => void
+}
+
 const INITIAL_SNAPSHOT: PwaUpdateSnapshot = {
   status: "idle",
+  source: "none",
   registration: null,
   waitingWorker: null,
+  detectedBuildMetadata: null,
   error: null,
 }
 const PERIODIC_UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000
 const ACTIVATION_STALE_UPDATE_CHECK_MS = 10 * 60 * 1000
+const APP_CACHE_PREFIX = "tuckmark-app-"
 
 function serviceWorkersSupported(): boolean {
   return typeof navigator !== "undefined" && "serviceWorker" in navigator
@@ -34,6 +55,43 @@ function resolveDeploymentBase(baseUrl: string, locationHref: string, moduleHref
     return new URL("../", moduleHref)
   }
   return new URL(baseUrl, locationHref)
+}
+
+function resolveCurrentRuntimeBuildMetadata(): RuntimeBuildMetadata {
+  const runtimeGlobals = globalThis as typeof globalThis & {
+    __TUCKMARK_APP_VERSION__?: string
+    __TUCKMARK_BUILD_REF__?: string
+  }
+  const appVersion =
+    typeof __TUCKMARK_APP_VERSION__ === "string"
+      ? __TUCKMARK_APP_VERSION__
+      : runtimeGlobals.__TUCKMARK_APP_VERSION__
+  const buildRef =
+    typeof __TUCKMARK_BUILD_REF__ === "string"
+      ? __TUCKMARK_BUILD_REF__
+      : runtimeGlobals.__TUCKMARK_BUILD_REF__
+
+  return normalizeRuntimeBuildMetadata({
+    appVersion,
+    buildRef,
+  })
+}
+
+function parseRuntimeBuildMetadata(value: unknown): RuntimeBuildMetadata | null {
+  if (!value || typeof value !== "object") {
+    return null
+  }
+
+  const candidate = value as {
+    appVersion?: unknown
+    buildRef?: unknown
+  }
+  const metadata = normalizeRuntimeBuildMetadata({
+    appVersion: typeof candidate.appVersion === "string" ? candidate.appVersion : "",
+    buildRef: typeof candidate.buildRef === "string" ? candidate.buildRef : "",
+  })
+
+  return metadata.appVersion || metadata.buildRef ? metadata : null
 }
 
 export function resolveServiceWorkerUrl(
@@ -52,13 +110,22 @@ export function resolveServiceWorkerScope(
   return resolveDeploymentBase(baseUrl, locationHref, moduleHref).pathname
 }
 
+export function resolveVersionMetadataUrl(
+  baseUrl: string,
+  locationHref: string,
+  moduleHref: string
+): URL {
+  return new URL("version.json", resolveDeploymentBase(baseUrl, locationHref, moduleHref))
+}
+
 export class PwaUpdateController {
-  private snapshot: PwaUpdateSnapshot = serviceWorkersSupported()
-    ? INITIAL_SNAPSHOT
-    : {
-        ...INITIAL_SNAPSHOT,
-        status: "unsupported",
-      }
+  private snapshot: PwaUpdateSnapshot =
+    serviceWorkersSupported() || typeof fetch === "function"
+      ? INITIAL_SNAPSHOT
+      : {
+          ...INITIAL_SNAPSHOT,
+          status: "unsupported",
+        }
   private listeners = new Set<PwaUpdateListener>()
   private registration: ServiceWorkerRegistration | null = null
   private registrationPromise: Promise<ServiceWorkerRegistration | null> | null = null
@@ -67,6 +134,8 @@ export class PwaUpdateController {
   private lastUpdateCheckAt: number | null = null
   private periodicCheckTimer: number | null = null
   private runtimeListenersAttached = false
+
+  constructor(private readonly options: PwaUpdateControllerOptions = {}) {}
 
   subscribe(listener: PwaUpdateListener): () => void {
     this.listeners.add(listener)
@@ -80,14 +149,30 @@ export class PwaUpdateController {
   }
 
   register(): Promise<ServiceWorkerRegistration | null> {
-    if (!serviceWorkersSupported()) {
-      this.setSnapshot({ status: "unsupported" })
-      return Promise.resolve(null)
-    }
     if (this.registrationPromise) {
-      if (this.registration && this.listeners.size > 0) {
+      if (this.listeners.size > 0) {
         this.startRuntimeChecks()
       }
+      return this.registrationPromise
+    }
+
+    if (!serviceWorkersSupported()) {
+      if (!this.canProbeVersionMetadata()) {
+        this.setSnapshot({ status: "unsupported", source: "none" })
+        return Promise.resolve(null)
+      }
+      this.setSnapshot({
+        status: "idle",
+        source: "none",
+        registration: null,
+        waitingWorker: null,
+        detectedBuildMetadata: null,
+        error: null,
+      })
+      if (this.listeners.size > 0) {
+        this.startRuntimeChecks()
+      }
+      this.registrationPromise = this.checkForUpdates("register").then(() => null)
       return this.registrationPromise
     }
 
@@ -111,11 +196,19 @@ export class PwaUpdateController {
         }
         return this.checkForUpdates("register").then(() => registration)
       })
-      .catch((error: unknown) => {
-        this.setSnapshot({
-          status: "error",
-          error: error instanceof Error ? error.message : String(error),
-        })
+      .catch(async (error: unknown) => {
+        this.registration = null
+        if (this.listeners.size > 0) {
+          this.startRuntimeChecks()
+        }
+        const probeResult = await this.checkVersionProbe()
+        if (probeResult !== "stale" && this.snapshot.source !== "version-probe") {
+          this.setSnapshot({
+            status: "error",
+            source: "none",
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
         return null
       })
 
@@ -135,13 +228,22 @@ export class PwaUpdateController {
 
   applyUpdate(): void {
     const worker = this.snapshot.waitingWorker
-    if (!worker) {
-      this.setSnapshot({ status: "installing" })
+    if (worker) {
+      this.reloadOnControllerChange = true
+      this.setSnapshot({ status: "activating", source: "service-worker" })
+      worker.postMessage({ type: "SKIP_WAITING" })
       return
     }
-    this.reloadOnControllerChange = true
-    this.setSnapshot({ status: "activating" })
-    worker.postMessage({ type: "SKIP_WAITING" })
+
+    if (this.snapshot.source === "version-probe") {
+      this.setSnapshot({ status: "activating" })
+      void this.resetCachedShellForProbeUpdate().finally(() => {
+        this.reloadWindow()
+      })
+      return
+    }
+
+    this.setSnapshot({ status: "installing" })
   }
 
   private startRuntimeChecks(): void {
@@ -175,11 +277,36 @@ export class PwaUpdateController {
     }
   }
 
-  private checkForUpdates(
-    reason: "register" | "interval" | "visibilitychange" | "focus" | "online"
-  ) {
-    const registration = this.registration
-    if (!registration) {
+  private async resetCachedShellForProbeUpdate(): Promise<void> {
+    const cacheStorage = typeof caches === "undefined" ? null : caches
+    const cleanupTasks: Array<Promise<unknown>> = []
+
+    if (this.registration && typeof this.registration.unregister === "function") {
+      cleanupTasks.push(this.registration.unregister().catch(() => false))
+    }
+
+    if (cacheStorage) {
+      cleanupTasks.push(
+        cacheStorage
+          .keys()
+          .then((keys) =>
+            Promise.all(
+              keys
+                .filter((key) => key.startsWith(APP_CACHE_PREFIX))
+                .map((key) => cacheStorage.delete(key))
+            )
+          )
+          .catch(() => undefined)
+      )
+    }
+
+    if (cleanupTasks.length > 0) {
+      await Promise.all(cleanupTasks)
+    }
+  }
+
+  private checkForUpdates(reason: PwaUpdateCheckReason) {
+    if (!this.registration && !this.canProbeVersionMetadata()) {
       return Promise.resolve()
     }
     if (!this.shouldCheckForUpdates(reason)) {
@@ -189,12 +316,36 @@ export class PwaUpdateController {
       return this.updateCheckPromise
     }
 
-    const updateRequest = registration
-      .update()
-      .then(() => {
+    let successful = false
+    const tasks: Array<Promise<void>> = []
+
+    if (this.registration) {
+      tasks.push(
+        this.registration
+          .update()
+          .then(() => {
+            successful = true
+          })
+          .catch(() => undefined)
+      )
+    }
+    if (this.canProbeVersionMetadata()) {
+      tasks.push(
+        this.checkVersionProbe()
+          .then((probeResult) => {
+            if (probeResult !== "failed") {
+              successful = true
+            }
+          })
+          .catch(() => undefined)
+      )
+    }
+
+    const updateRequest = Promise.all(tasks).then(() => {
+      if (successful) {
         this.lastUpdateCheckAt = Date.now()
-      })
-      .catch(() => undefined)
+      }
+    })
     const trackedUpdateRequest = updateRequest.finally(() => {
       if (this.updateCheckPromise === trackedUpdateRequest) {
         this.updateCheckPromise = null
@@ -204,9 +355,7 @@ export class PwaUpdateController {
     return trackedUpdateRequest
   }
 
-  private shouldCheckForUpdates(
-    reason: "register" | "interval" | "visibilitychange" | "focus" | "online"
-  ): boolean {
+  private shouldCheckForUpdates(reason: PwaUpdateCheckReason): boolean {
     if (reason === "register") {
       return true
     }
@@ -240,21 +389,104 @@ export class PwaUpdateController {
     return typeof navigator === "undefined" || navigator.onLine !== false
   }
 
+  private canProbeVersionMetadata(): boolean {
+    return this.getFetchImpl() !== null && typeof window !== "undefined"
+  }
+
+  private getFetchImpl(): typeof fetch | null {
+    if (this.options.fetchImpl) {
+      return this.options.fetchImpl
+    }
+    return typeof fetch === "function" ? fetch.bind(globalThis) : null
+  }
+
+  private reloadWindow(): void {
+    if (this.options.reloadWindow) {
+      this.options.reloadWindow()
+      return
+    }
+    window.location.reload()
+  }
+
+  private async checkVersionProbe(): Promise<VersionProbeResult> {
+    const fetchImpl = this.getFetchImpl()
+    if (!fetchImpl) {
+      return "failed"
+    }
+
+    try {
+      const response = await fetchImpl(
+        resolveVersionMetadataUrl(import.meta.env.BASE_URL, window.location.href, import.meta.url),
+        {
+          cache: "no-store",
+          headers: {
+            accept: "application/json",
+          },
+        }
+      )
+      if (!response.ok) {
+        return "failed"
+      }
+
+      const remoteMetadata = parseRuntimeBuildMetadata(await response.json())
+      if (!remoteMetadata) {
+        return "failed"
+      }
+
+      if (hasBuildMetadataMismatch(resolveCurrentRuntimeBuildMetadata(), remoteMetadata)) {
+        this.setVersionProbeReady(remoteMetadata)
+        return "stale"
+      } else {
+        this.clearVersionProbeReady()
+        return "current"
+      }
+    } catch {
+      return "failed"
+    }
+  }
+
+  private setVersionProbeReady(remoteMetadata: RuntimeBuildMetadata): void {
+    if (this.snapshot.waitingWorker || this.snapshot.source === "service-worker") {
+      return
+    }
+
+    this.setSnapshot({
+      status: this.snapshot.status === "activating" ? "activating" : "ready",
+      source: "version-probe",
+      registration: this.registration,
+      waitingWorker: null,
+      detectedBuildMetadata: remoteMetadata,
+      error: null,
+    })
+  }
+
+  private clearVersionProbeReady(): void {
+    if (this.snapshot.source !== "version-probe" || this.snapshot.status === "activating") {
+      return
+    }
+
+    this.setSnapshot({
+      status: "idle",
+      source: "none",
+      registration: this.registration,
+      waitingWorker: null,
+      detectedBuildMetadata: null,
+      error: null,
+    })
+  }
+
   private watchRegistration(registration: ServiceWorkerRegistration): void {
     if (registration.waiting) {
       this.setSnapshot({
         registration,
         waitingWorker: registration.waiting,
         status: "ready",
+        source: "service-worker",
+        detectedBuildMetadata: null,
         error: null,
       })
     } else {
-      this.setSnapshot({
-        registration,
-        waitingWorker: null,
-        status: "idle",
-        error: null,
-      })
+      this.syncIdleState(registration)
     }
 
     registration.addEventListener("updatefound", () => {
@@ -262,12 +494,23 @@ export class PwaUpdateController {
       if (!installing) {
         return
       }
-      this.setSnapshot({
-        registration,
-        waitingWorker: null,
-        status: "installing",
-        error: null,
-      })
+      if (this.snapshot.source === "version-probe" && this.snapshot.status === "ready") {
+        this.setSnapshot({
+          registration,
+          waitingWorker: null,
+          error: null,
+        })
+      } else {
+        this.setSnapshot({
+          registration,
+          waitingWorker: null,
+          status: "installing",
+          source: "service-worker",
+          detectedBuildMetadata:
+            this.snapshot.source === "version-probe" ? this.snapshot.detectedBuildMetadata : null,
+          error: null,
+        })
+      }
       installing.addEventListener("statechange", () => {
         if (installing.state === "installed") {
           if (navigator.serviceWorker.controller) {
@@ -275,15 +518,12 @@ export class PwaUpdateController {
               registration,
               waitingWorker: registration.waiting ?? installing,
               status: "ready",
+              source: "service-worker",
+              detectedBuildMetadata: null,
               error: null,
             })
           } else {
-            this.setSnapshot({
-              registration,
-              waitingWorker: null,
-              status: "idle",
-              error: null,
-            })
+            this.syncIdleState(registration)
           }
         }
         if (installing.state === "redundant") {
@@ -291,10 +531,31 @@ export class PwaUpdateController {
             registration,
             waitingWorker: null,
             status: "error",
+            source: "service-worker",
+            detectedBuildMetadata: null,
             error: "更新暂不可用，请稍后重试。",
           })
         }
       })
+    })
+  }
+
+  private syncIdleState(registration: ServiceWorkerRegistration | null): void {
+    if (this.snapshot.source === "version-probe") {
+      this.setSnapshot({
+        registration,
+        waitingWorker: null,
+      })
+      return
+    }
+
+    this.setSnapshot({
+      registration,
+      waitingWorker: null,
+      status: "idle",
+      source: "none",
+      detectedBuildMetadata: null,
+      error: null,
     })
   }
 
@@ -304,7 +565,7 @@ export class PwaUpdateController {
     }
     this.reloadOnControllerChange = false
     this.setSnapshot({ status: "updated" })
-    window.location.reload()
+    this.reloadWindow()
   }
 
   private handleVisibilityChange = (): void => {
