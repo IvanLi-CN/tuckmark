@@ -181,7 +181,7 @@ describe("Pages workflow metadata", () => {
     expect(pagesWorkflow).toContain("release_tag:")
     expect(pagesWorkflow).toContain("Validate and check out manual release tag")
     expect(pagesWorkflow).toContain('gh release view "$tag_name" --json tagName')
-    expect(pagesWorkflow).toContain('refs/tags/$tag_name:refs/tags/$tag_name')
+    expect(pagesWorkflow).toContain("refs/tags/$tag_name:refs/tags/$tag_name")
     expect(pagesWorkflow).toContain("TUCKMARK_APP_VERSION=")
     expect(pagesWorkflow).toContain("TUCKMARK_BUILD_REF=")
     expect(pagesWorkflow).toContain("git rev-parse --short HEAD")
@@ -189,7 +189,7 @@ describe("Pages workflow metadata", () => {
 
   it("keeps manual Pages dispatches pinned to main when no release tag is provided", () => {
     expect(pagesWorkflow).toContain(
-      "ref: ${{ github.event_name == 'release' && github.event.release.tag_name || 'refs/heads/main' }}"
+      `ref: \${{ github.event_name == 'release' && github.event.release.tag_name || 'refs/heads/main' }}`
     )
     expect(pagesWorkflow).not.toContain("&& inputs.release_tag != '' && inputs.release_tag")
   })
