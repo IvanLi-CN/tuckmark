@@ -1,5 +1,6 @@
 import JsBarcode from "jsbarcode";
 import QRCode from "qrcode";
+import { encodeDataMatrix } from "./data-matrix.js";
 import { DEFAULT_TEXT_FONT_FAMILY, DEFAULT_TEXT_VERTICAL_ALIGN, estimateTextLineWidth, getTextFontFamilyStack, getTextNaturalHeight, resolveTextLayout, wrapTextByWidth, } from "./text-layout.js";
 function formatNumber(value) {
     return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/\.?0+$/, "");
@@ -160,6 +161,30 @@ function buildQrMarkup(element, input) {
         throw new Error(`Failed to render QR "${element.key}": ${cause instanceof Error ? cause.message : String(cause)}`);
     }
 }
+function buildDataMatrixMarkup(element, input) {
+    const value = element.value ?? input[element.key] ?? "";
+    if (value.trim().length === 0) {
+        throw new Error(`Data Matrix value is required for key: ${element.key}`);
+    }
+    try {
+        const encoding = encodeDataMatrix(value);
+        const cell = element.size / encoding.moduleCount;
+        const rects = [];
+        for (let row = 0; row < encoding.moduleCount; row += 1) {
+            for (let column = 0; column < encoding.moduleCount; column += 1) {
+                if (!encoding.modules[row * encoding.moduleCount + column]) {
+                    continue;
+                }
+                rects.push(`<rect x="${(column * cell).toFixed(4)}" y="${(row * cell).toFixed(4)}" width="${cell.toFixed(4)}" height="${cell.toFixed(4)}" fill="#111111" />`);
+            }
+        }
+        const markup = `<svg x="${element.x}" y="${element.y}" width="${element.size}" height="${element.size}" viewBox="0 0 ${element.size} ${element.size}" preserveAspectRatio="none"><rect width="${element.size}" height="${element.size}" fill="#ffffff" />${rects.join("")}</svg>`;
+        return wrapMarkupWithRotation(markup, element.rotation, element.x + element.size / 2, element.y + element.size / 2);
+    }
+    catch (cause) {
+        throw new Error(`Failed to render Data Matrix "${element.key}": ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+}
 function renderElement(element, input) {
     switch (element.kind) {
         case "text":
@@ -176,6 +201,8 @@ function renderElement(element, input) {
             return buildBarcodeMarkup(element, input);
         case "qr":
             return buildQrMarkup(element, input);
+        case "datamatrix":
+            return buildDataMatrixMarkup(element, input);
     }
 }
 export function buildSvg(width, height, elements, input) {

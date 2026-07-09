@@ -1,5 +1,6 @@
 export * from "./artifact-store.js"
 export * from "./csv.js"
+export * from "./data-matrix.js"
 export * from "./detonger-adapter.js"
 export * from "./detonger-preview-encoder.js"
 export * from "./lpapi-compact-encoder.js"

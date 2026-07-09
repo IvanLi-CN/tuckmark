@@ -97,12 +97,19 @@ function validateUserTemplatePackageSemantics(templatePackage: UserTemplatePacka
   }
 
   for (const [index, element] of templatePackage.elements.entries()) {
-    if (element.kind === "text" || element.kind === "barcode" || element.kind === "qr") {
+    if (
+      element.kind === "text" ||
+      element.kind === "barcode" ||
+      element.kind === "qr" ||
+      element.kind === "datamatrix"
+    ) {
       if (!element.value && !fieldKeys.has(element.key)) {
         throw new Error(`Element ${index + 1} references unknown field: ${element.key}`)
       }
       if (
-        (element.kind === "barcode" || element.kind === "qr") &&
+        (element.kind === "barcode" ||
+          element.kind === "qr" ||
+          element.kind === "datamatrix") &&
         resolveTemplateElementValue(element, fieldDefaults).trim().length === 0
       ) {
         throw new Error(`Element ${index + 1} requires default ${element.kind} content`)
@@ -231,6 +238,20 @@ function validateElementBounds(
         fail
       )
       return
+    case "datamatrix":
+      validateRectBounds(
+        {
+          left: element.x,
+          top: element.y,
+          width: element.size,
+          height: element.size,
+          rotation: element.rotation,
+        },
+        width,
+        height,
+        fail
+      )
+      return
   }
 }
 
@@ -307,7 +328,7 @@ function getTextBoundsTop(element: Extract<TemplateElement, { kind: "text" }>): 
 }
 
 function resolveTemplateElementValue(
-  element: Extract<TemplateElement, { kind: "text" | "barcode" | "qr" }>,
+  element: Extract<TemplateElement, { kind: "text" | "barcode" | "qr" | "datamatrix" }>,
   fieldDefaults: Map<string, string>
 ): string {
   const fieldValue = fieldDefaults.get(element.key)
@@ -379,7 +400,12 @@ function materializeTemplateElement(
   element: TemplateElement,
   fieldDefaults: Map<string, string>
 ): TemplateElement {
-  if (element.kind === "text" || element.kind === "barcode" || element.kind === "qr") {
+  if (
+    element.kind === "text" ||
+    element.kind === "barcode" ||
+    element.kind === "qr" ||
+    element.kind === "datamatrix"
+  ) {
     const fieldValue = fieldDefaults.get(element.key)
     return {
       ...element,

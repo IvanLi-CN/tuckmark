@@ -61,6 +61,7 @@ export const CANVAS_TOOL_LABELS: Record<CanvasElement["kind"], string> = {
   line: "线段",
   barcode: "条码",
   qr: "二维码",
+  datamatrix: "数据矩阵码",
 }
 
 export const CANVAS_HISTORY_LIMIT = 50
@@ -212,8 +213,13 @@ function normalizeMonochromeElement(element: CanvasDraftElement): CanvasDraftEle
 
 function isBindableKind(
   element: CanvasDraftElement
-): element is Extract<CanvasDraftElement, { kind: "text" | "barcode" | "qr" }> {
-  return element.kind === "text" || element.kind === "barcode" || element.kind === "qr"
+): element is Extract<CanvasDraftElement, { kind: "text" | "barcode" | "qr" | "datamatrix" }> {
+  return (
+    element.kind === "text" ||
+    element.kind === "barcode" ||
+    element.kind === "qr" ||
+    element.kind === "datamatrix"
+  )
 }
 
 function inferFieldMultiline(element: CanvasDraftElement): boolean {
@@ -434,6 +440,17 @@ export function createCanvasElement(
           size: canvasDotsToMillimeters(76),
           value: "https://tuckmark.local/item/TM-0001",
           errorCorrectionLevel: "M" as const,
+          rotation: 0,
+          meta: createLayerMeta(kind, index),
+        }
+      case "datamatrix":
+        return {
+          id: `datamatrix-${crypto.randomUUID()}`,
+          kind,
+          x: seedX,
+          y: seedY,
+          size: canvasDotsToMillimeters(76),
+          value: "TM-0001",
           rotation: 0,
           meta: createLayerMeta(kind, index),
         }
@@ -767,6 +784,16 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
           binding: field ? { fieldKey: field.key, kind: "qr" } : undefined,
           meta,
         })
+      case "datamatrix":
+        return createCanvasElement("datamatrix", index, {
+          x: physicalElement.x,
+          y: physicalElement.y,
+          size: physicalElement.size,
+          value: resolveInitialFieldValue(field) ?? physicalElement.value ?? "",
+          rotation: physicalElement.rotation,
+          binding: field ? { fieldKey: field.key, kind: "datamatrix" } : undefined,
+          meta,
+        })
       default:
         return assertNever(physicalElement)
     }
@@ -845,7 +872,8 @@ export function createDraftFromUserTemplatePackage(
       const literalValue =
         sourceElement?.kind === "text" ||
         sourceElement?.kind === "barcode" ||
-        sourceElement?.kind === "qr"
+        sourceElement?.kind === "qr" ||
+        sourceElement?.kind === "datamatrix"
           ? sourceElement.value
           : undefined
       const sampleValue = sampleInput[element.binding.fieldKey]
@@ -1173,6 +1201,7 @@ export function getElementBounds(element: CanvasDraftElement): CanvasBounds {
         height: element.height,
       }
     case "qr":
+    case "datamatrix":
       return {
         x: element.x,
         y: element.y,
@@ -1285,7 +1314,8 @@ export function getElementGeometry(element: CanvasDraftElement): CanvasElementGe
         },
       }
     }
-    case "qr": {
+    case "qr":
+    case "datamatrix": {
       const localBounds = {
         x: 0,
         y: 0,
@@ -1320,7 +1350,8 @@ export function getElementSelectionBounds(element: CanvasDraftElement): CanvasBo
     element.kind === "rect" ||
     element.kind === "triangle" ||
     element.kind === "barcode" ||
-    element.kind === "qr"
+    element.kind === "qr" ||
+    element.kind === "datamatrix"
       ? normalizeRotation(element.rotation)
       : 0
 
@@ -1503,6 +1534,16 @@ export function compileDraftElement(
         errorCorrectionLevel: normalized.errorCorrectionLevel,
         rotation: normalizeRotation(normalized.rotation),
       }
+    case "datamatrix":
+      return {
+        kind: "datamatrix",
+        key: resolvedKey,
+        x: normalized.x,
+        y: normalized.y,
+        size: normalized.size,
+        value: normalized.value,
+        rotation: normalizeRotation(normalized.rotation),
+      }
   }
 }
 
@@ -1540,7 +1581,10 @@ export function compileDraftToFilledCanvasDefinition(
       .map((element) => {
         const compiled = compileDraftElement(element)
         if (
-          (compiled.kind === "text" || compiled.kind === "barcode" || compiled.kind === "qr") &&
+          (compiled.kind === "text" ||
+            compiled.kind === "barcode" ||
+            compiled.kind === "qr" ||
+            compiled.kind === "datamatrix") &&
           isBindableKind(element) &&
           element.binding
         ) {
@@ -1646,6 +1690,27 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
         ? { ...element, value: "", meta: { ...element.meta, name: "待修正条码" } }
         : element
     )
+    return document
+  }
+
+  if (scenario === "datamatrix-selected" || scenario === "datamatrix-invalid") {
+    const document = createDraftFromPreset(getPresetById("ops-tag"))
+    document.elements = [
+      ...document.elements.filter((element) => element.kind !== "qr"),
+      createCanvasElement("datamatrix", document.elements.length, {
+        x: 33.25,
+        y: 4.75,
+        size: 10,
+        value:
+          scenario === "datamatrix-invalid" ? "" : "rack-a.lan-01|TM-0001|https://tuckmark.local",
+        rotation: 0,
+        meta: {
+          name: scenario === "datamatrix-invalid" ? "待修正数据矩阵码" : "资产矩阵码",
+          visible: true,
+          locked: false,
+        },
+      }),
+    ]
     return document
   }
 
@@ -1879,7 +1944,9 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
     return document
   }
 
-  const preset = getPresetById(scenario === "barcode-selected" ? "shipping-wide" : "ops-tag")
+  const preset = getPresetById(
+    scenario === "barcode-selected" ? "shipping-wide" : "ops-tag"
+  )
   return createDraftFromPreset(preset)
 }
 
@@ -1901,5 +1968,7 @@ export type CanvasStoryScenario =
   | "line-selected"
   | "barcode-selected"
   | "barcode-invalid"
+  | "datamatrix-selected"
+  | "datamatrix-invalid"
   | "output-tab"
   | "draft-restore"

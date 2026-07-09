@@ -47,6 +47,7 @@ import {
   DEFAULT_TEXT_FONT_FAMILY,
   DEFAULT_TEXT_LINE_HEIGHT,
   DEFAULT_TEXT_VERTICAL_ALIGN,
+  encodeDataMatrix,
   getTextFontFamilyStack,
   normalizeTextLineHeight,
   resolveTextLayout,
@@ -381,6 +382,8 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
     scenario === "text-centered-selected" ||
     scenario === "text-ready" ||
     scenario === "barcode-invalid" ||
+    scenario === "datamatrix-selected" ||
+    scenario === "datamatrix-invalid" ||
     scenario === "rect-selected" ||
     scenario === "circle-selected" ||
     scenario === "triangle-selected" ||
@@ -412,6 +415,8 @@ function shouldUseScenarioDraft(scenario: CanvasStoryScenario): boolean {
     scenario === "text-centered-selected" ||
     scenario === "text-ready" ||
     scenario === "barcode-invalid" ||
+    scenario === "datamatrix-selected" ||
+    scenario === "datamatrix-invalid" ||
     scenario === "rect-selected" ||
     scenario === "circle-selected" ||
     scenario === "triangle-selected" ||
@@ -464,6 +469,10 @@ function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryS
   if (scenario === "barcode-selected" || scenario === "barcode-invalid") {
     const barcode = draft.elements.find((element) => element.kind === "barcode")
     return barcode ? [barcode.id] : []
+  }
+  if (scenario === "datamatrix-selected" || scenario === "datamatrix-invalid") {
+    const dataMatrix = draft.elements.find((element) => element.kind === "datamatrix")
+    return dataMatrix ? [dataMatrix.id] : []
   }
   if (
     scenario === "text-selected" ||
@@ -665,7 +674,7 @@ function clampRectRadius(radius: number, width: number, height: number) {
 }
 
 function isSquareResizeElement(element: CanvasDraftElement | null) {
-  return element?.kind === "qr" || element?.kind === "circle"
+  return element?.kind === "qr" || element?.kind === "datamatrix" || element?.kind === "circle"
 }
 
 function blurActiveInlineTextEditor() {
@@ -1077,6 +1086,7 @@ export function snapTransformedElementGeometry(
       }
     }
     case "qr":
+    case "datamatrix":
     case "circle": {
       const size = snapDimension(element.size, 24 / CANVAS_DOTS_PER_MILLIMETER, true)
       return {
@@ -1174,7 +1184,11 @@ function applyTransformedNodeToElement(
     }
   }
 
-  if (element.kind === "qr" || element.kind === "circle") {
+  if (
+    element.kind === "qr" ||
+    element.kind === "datamatrix" ||
+    element.kind === "circle"
+  ) {
     node.scaleX(1)
     node.scaleY(1)
     const nextSize = Math.max(
@@ -1186,7 +1200,9 @@ function applyTransformedNodeToElement(
       x: node.x() - nextSize / 2,
       y: node.y() - nextSize / 2,
       size: nextSize,
-      ...(element.kind === "qr" ? { rotation: node.rotation() } : {}),
+      ...(element.kind === "qr" || element.kind === "datamatrix"
+        ? { rotation: node.rotation() }
+        : {}),
     }
   }
 
@@ -1280,6 +1296,21 @@ function buildQrCells(element: Extract<CanvasDraftElement, { kind: "qr" }>) {
   return cells
 }
 
+function buildDataMatrixCells(element: Extract<CanvasDraftElement, { kind: "datamatrix" }>) {
+  const encoding = encodeDataMatrix(element.value)
+  const cell = element.size / encoding.moduleCount
+  const cells: Array<{ x: number; y: number; size: number }> = []
+  for (let row = 0; row < encoding.moduleCount; row += 1) {
+    for (let column = 0; column < encoding.moduleCount; column += 1) {
+      if (!encoding.modules[row * encoding.moduleCount + column]) {
+        continue
+      }
+      cells.push({ x: column * cell, y: row * cell, size: cell })
+    }
+  }
+  return cells
+}
+
 function createCanvasIssue(title: string, detail: string): CanvasIssue {
   return { title, detail }
 }
@@ -1318,12 +1349,32 @@ function getQrIssue(element: Extract<CanvasDraftElement, { kind: "qr" }>): Canva
   }
 }
 
+function getDataMatrixIssue(
+  element: Extract<CanvasDraftElement, { kind: "datamatrix" }>
+): CanvasIssue | null {
+  if (!element.value.trim()) {
+    return createCanvasIssue("数据矩阵码内容为空", "请输入要编码的文本后再继续。")
+  }
+
+  try {
+    buildDataMatrixCells(element)
+    return null
+  } catch (cause) {
+    return createCanvasIssue(
+      "数据矩阵码内容无效",
+      cause instanceof Error ? cause.message : "当前内容无法生成 Data Matrix。"
+    )
+  }
+}
+
 function getElementIssue(element: CanvasDraftElement): CanvasIssue | null {
   switch (element.kind) {
     case "barcode":
       return getBarcodeIssue(element)
     case "qr":
       return getQrIssue(element)
+    case "datamatrix":
+      return getDataMatrixIssue(element)
     default:
       return null
   }
@@ -2070,32 +2121,32 @@ function CanvasLayerRail({
         <div className="grid gap-2">
           {sourceNote ? <p className="tm-note tm-note--left-rail">{sourceNote}</p> : null}
           <div className="tm-quick-tools">
-            {(["text", "rect", "circle", "triangle", "line", "barcode", "qr"] as const).map(
-              (kind) => (
-                <Button
-                  key={kind}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="tm-quick-tool"
-                  disabled={readOnly}
-                  onClick={() =>
-                    onChange((current) =>
-                      applyDraftUpdate(current, (draft) => ({
-                        ...draft,
-                        elements: [
-                          ...draft.elements,
-                          createCanvasElement(kind, draft.elements.length),
-                        ],
-                      }))
-                    )
-                  }
-                >
-                  <Plus className="size-4" />
-                  {CANVAS_TOOL_LABELS[kind]}
-                </Button>
-              )
-            )}
+            {(
+              ["text", "rect", "circle", "triangle", "line", "barcode", "qr", "datamatrix"] as const
+            ).map((kind) => (
+              <Button
+                key={kind}
+                type="button"
+                size="sm"
+                variant="outline"
+                className="tm-quick-tool"
+                disabled={readOnly}
+                onClick={() =>
+                  onChange((current) =>
+                    applyDraftUpdate(current, (draft) => ({
+                      ...draft,
+                      elements: [
+                        ...draft.elements,
+                        createCanvasElement(kind, draft.elements.length),
+                      ],
+                    }))
+                  )
+                }
+              >
+                <Plus className="size-4" />
+                {CANVAS_TOOL_LABELS[kind]}
+              </Button>
+            ))}
           </div>
         </div>
       </CanvasSection>
@@ -2301,7 +2352,10 @@ function CanvasInspector({
   const selectedItems = state.draft.elements.filter((item) => state.selectedIds.includes(item.id))
   const element = selectedItems[0]
   const supportsReplaceable =
-    element?.kind === "text" || element?.kind === "barcode" || element?.kind === "qr"
+    element?.kind === "text" ||
+    element?.kind === "barcode" ||
+    element?.kind === "qr" ||
+    element?.kind === "datamatrix"
   const boundField =
     supportsReplaceable && element?.binding
       ? (state.draft.fields.find((field) => field.key === element.binding?.fieldKey) ?? null)
@@ -2484,7 +2538,9 @@ function CanvasInspector({
               />
             </div>
           ) : null}
-          {element.kind === "barcode" || element.kind === "qr" ? (
+          {element.kind === "barcode" ||
+          element.kind === "qr" ||
+          element.kind === "datamatrix" ? (
             <div className="tm-inspector-inline-field">
               <Label htmlFor="encoded-value" className="tm-inspector-inline-label">
                 编码
@@ -2942,7 +2998,9 @@ function CanvasInspector({
         </div>
       </CanvasSection>
 
-      {element.kind === "barcode" || element.kind === "qr" ? (
+      {element.kind === "barcode" ||
+      element.kind === "qr" ||
+      element.kind === "datamatrix" ? (
         <CanvasSection title="编码设置" className="tm-inspector-section">
           <div className="tm-inspector-form">
             {element.kind === "barcode" ? (
@@ -3010,6 +3068,11 @@ function CanvasInspector({
                   </SelectContent>
                 </Select>
                 <p className="tm-inspector-help">容错越高，尺寸越大。</p>
+              </div>
+            ) : null}
+            {element.kind === "datamatrix" ? (
+              <div className="rounded-xl border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">
+                固定使用通用 ECC200 方形符号，不提供额外格式开关。
               </div>
             ) : null}
           </div>
@@ -3631,6 +3694,53 @@ function renderElementNode(element: CanvasDraftElement): React.ReactNode {
       }
 
       const cells = buildQrCells(element)
+      return (
+        <>
+          {cells.map((cell) => (
+            <KonvaRect
+              key={`${element.id}-cell-${cell.x}-${cell.y}-${cell.size}`}
+              x={cell.x}
+              y={cell.y}
+              width={cell.size}
+              height={cell.size}
+              fill="#111111"
+            />
+          ))}
+        </>
+      )
+    }
+    case "datamatrix": {
+      if (issue) {
+        return (
+          <>
+            <KonvaRect
+              x={0}
+              y={0}
+              width={element.size}
+              height={element.size}
+              fill={MONO_SURFACE}
+              stroke="#9c2f22"
+              strokeWidth={1.5}
+              dash={[6, 4]}
+              cornerRadius={10}
+            />
+            <KonvaText
+              x={canvasDotsToMillimeters(8)}
+              y={canvasDotsToMillimeters(14)}
+              width={element.size - canvasDotsToMillimeters(16)}
+              text="数据矩阵码\n无效"
+              align="center"
+              fontSize={canvasDotsToMillimeters(12)}
+              fontStyle="bold"
+              fontFamily={CANVAS_DEFAULT_TEXT_FONT_FAMILY}
+              lineHeight={getCanvasTextLineHeight()}
+              fill="#9c2f22"
+            />
+          </>
+        )
+      }
+
+      const cells = buildDataMatrixCells(element)
       return (
         <>
           {cells.map((cell) => (

@@ -41,6 +41,7 @@
     "@commitlint/cli": "^21.0.2",
     "@commitlint/config-conventional": "^21.0.2",
     "@types/node": "^26.0.0",
+    "bwip-js": "^4.11.2",
     "lefthook": "^2.1.9",
     "playwright": "^1.61.0",
     "tsx": "^4.22.4",

@@ -62,7 +62,7 @@
     selection on static chrome while keeping editable and copy-relevant values
     explicitly selectable
 - Canvas stage is implemented with `react-konva` editing for `text`, `rect`,
-  `circle`, `triangle`, `line`, `barcode`, and `qr`.
+  `circle`, `triangle`, `line`, `barcode`, `qr`, and `datamatrix`.
 - Stage interaction coverage includes:
   - click selection
   - Shift multi-selection
@@ -72,7 +72,7 @@
     square elements where rotation is meaningful
   - non-proportional resize handles for `rect`, `triangle`, `text`, and
     `barcode`
-  - proportional corner resize handles for `qr` and `circle`
+  - proportional corner resize handles for `qr`, `datamatrix`, and `circle`
   - direct start/end endpoint handles for single selected `line` elements
   - wheel zoom relative to pointer
   - `Space + drag` pan
@@ -120,9 +120,15 @@
     accepted for existing drafts and templates through alias mapping onto named
     fonts
   - new text defaults now resolve to `noto-sans-sc`
-- Barcode and QR stage rendering now uses real encoded graphics instead of
-  dashed placeholders.
-- Invalid barcode / QR content now fails safely inside the editor:
+- Barcode, QR, and Data Matrix stage rendering now uses real encoded graphics
+  instead of dashed placeholders.
+- Data Matrix encoding is normalized through `packages/core/src/data-matrix.ts`:
+  - `bwip-js` generates one shared square `ECC200` module matrix used by SVG
+    preview, print output, and the Konva stage
+  - empty values and rectangular-symbol outputs fail as recoverable validation
+    errors instead of silently degrading
+- Invalid barcode / QR / Data Matrix content now fails safely inside the
+  editor:
   - the stage swaps to an explicit invalid placeholder
   - inspector and output panels surface plain-language recovery guidance
   - preview / direct print are blocked until the invalid content is fixed
@@ -194,8 +200,8 @@
     normalized back into the same visible-placeholder state on reload
   - template-workspace batch rows still keep empty input defaults instead of
     inheriting those canvas-only placeholders
-- Structured replacement bindings are limited to `text`, `barcode`, and `qr`;
-  `rect` and `line` remain static editor-only structure.
+- Structured replacement bindings are limited to `text`, `barcode`, `qr`, and
+  `datamatrix`; `rect` and `line` remain static editor-only structure.
 - Replaceable-element editing is simplified to:
   - one `名` layer-name field
   - one field-name autocomplete input that can reuse or create a field label
@@ -220,7 +226,7 @@
 - Browser-local user templates, saved versions, autosaves, and user-template
   working copies remain outside the sync contract.
 - Shared schema coverage now includes `rotation` on `text`, `rect`, `barcode`,
-  and `qr`, while `line` remains endpoint-based.
+  `qr`, and `datamatrix`, while `line` remains endpoint-based.
 - Text elements now use a fixed container text box model across Web drafts,
   shared core schema validation, Konva stage rendering, SVG preview, direct
   print artifacts, selection geometry, and inline editing:

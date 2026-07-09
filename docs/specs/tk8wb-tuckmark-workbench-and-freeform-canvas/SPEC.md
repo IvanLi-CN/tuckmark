@@ -140,15 +140,21 @@ output.
   - `line`
   - `barcode`
   - `qr`
+  - `datamatrix`
 - Barcode scope in v1:
   - only `Code128`
   - generated through `JsBarcode`
 - QR scope in v1:
   - generated through `qrcode`
-- Stage rendering uses the same barcode / QR semantic inputs as preview and
-  print. Barcode and QR elements must render as real encoded graphics inside
-  the editor instead of placeholder boxes.
-- Invalid barcode / QR content must degrade safely inside the editor:
+- Data Matrix scope in v1:
+  - only generic `ECC200`
+  - square symbols only; rectangular extensions are out of scope
+  - generated through a shared `bwip-js`-backed module-matrix helper
+- Stage rendering uses the same barcode / QR / Data Matrix semantic inputs as
+  preview and print. Barcode, QR, and Data Matrix elements must render as real
+  encoded graphics inside the editor instead of placeholder boxes.
+- Invalid barcode / QR / Data Matrix content must degrade safely inside the
+  editor:
   - the stage shows a clear invalid-state placeholder instead of crashing
   - the inspector explains the issue in plain language
   - preview / direct print actions stay blocked until the issue is resolved
@@ -156,7 +162,8 @@ output.
   accent colors, but printable label elements themselves render only in black
   and white and do not expose color editing.
 - Shared schema extensions:
-  - `rotation` is supported on `text`, `rect`, `barcode`, and `qr`
+  - `rotation` is supported on `text`, `rect`, `barcode`, `qr`, and
+    `datamatrix`
   - `triangle` also supports `rotation`
   - `circle` uses top-left `x/y` plus square `size`; rotation is intentionally
     not user-facing because it has no visible effect
@@ -170,8 +177,8 @@ output.
     and stored drafts preserve their explicit `radius`
   - single `rect`, `triangle`, `text`, and `barcode` selections expose
     non-proportional resize handles
-  - single `qr` and `circle` selections resize proportionally so square symbols
-    and round geometry remain intact
+  - single `qr`, `datamatrix`, and `circle` selections resize proportionally
+    so square symbols and round geometry remain intact
   - single `line` selections expose start and end endpoint handles instead of
     a rectangular scale transformer
   - rotated `triangle` elements use their rotated geometry for selection and
@@ -337,7 +344,8 @@ output.
   - autosaved unsaved versions retain the most recent `10`
   - autosave rolls every `5` minutes for named browser-local templates
 - Browser-local user template field contract:
-  - only `text`, `barcode`, and `qr` can bind to structured replacement fields
+  - only `text`, `barcode`, `qr`, and `datamatrix` can bind to structured
+    replacement fields
   - field identity is a stable `key`; layer names remain editor-facing labels
   - multiple elements may share one field binding
   - rebinding to an existing field immediately syncs the element value to that
@@ -485,7 +493,7 @@ output.
 - `/templates` displays both `系统模板` and `我的模板`; browser-local templates
   support structured row editing, preview, print, and an edit jump back to
   `/canvas`.
-- Invalid barcode or QR payloads surface as user-visible errors.
+- Invalid barcode, QR, or Data Matrix payloads surface as user-visible errors.
 - `server-http` startup restores recent activity from the merged sync snapshot.
 - Scratch canvas drafts can be restored from the merged same-device sync
   snapshot after reload.
@@ -687,3 +695,17 @@ output.
 
   PR: include
   ![Canvas snap enabled](./assets/canvas-snap-enabled-1280x800.png)
+
+- `1280×800` canvas workspace Storybook `storybook_canvas` selected-state
+  fallback showing a real square `ECC200` Data Matrix element, proportional
+  resize handles, and the minimal inspector contract.
+
+  PR: include
+  ![Canvas Data Matrix selected](./assets/canvas-datamatrix-selected-1280x800.png)
+
+- `1280×800` canvas workspace Storybook `storybook_canvas` invalid-state
+  fallback showing the recoverable Data Matrix placeholder and inspector error
+  message.
+
+  PR: include
+  ![Canvas Data Matrix invalid](./assets/canvas-datamatrix-invalid-1280x800.png)

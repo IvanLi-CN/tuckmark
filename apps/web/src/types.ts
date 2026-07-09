@@ -31,7 +31,15 @@ export type Template = {
   fields: TemplateField[]
 }
 
-export type CanvasElementKind = "text" | "rect" | "circle" | "triangle" | "line" | "barcode" | "qr"
+export type CanvasElementKind =
+  | "text"
+  | "rect"
+  | "circle"
+  | "triangle"
+  | "line"
+  | "barcode"
+  | "qr"
+  | "datamatrix"
 
 export type CanvasElement =
   | {
@@ -123,6 +131,15 @@ export type CanvasElement =
       errorCorrectionLevel: "L" | "M" | "Q" | "H"
       rotation?: number
     }
+  | {
+      id: string
+      kind: "datamatrix"
+      x: number
+      y: number
+      size: number
+      value: string
+      rotation?: number
+    }
 
 export type CanvasLayerMeta = {
   name: string
@@ -130,7 +147,7 @@ export type CanvasLayerMeta = {
   locked: boolean
 }
 
-export type CanvasFieldBindingKind = "text" | "barcode" | "qr"
+export type CanvasFieldBindingKind = "text" | "barcode" | "qr" | "datamatrix"
 
 export type CanvasElementBinding = {
   fieldKey: string

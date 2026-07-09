@@ -78,6 +78,7 @@ export function scaleDraftElementGeometry(
         height: scaleValue(element.height, scale),
       }
     case "qr":
+    case "datamatrix":
       return {
         ...element,
         x: scaleValue(element.x, scale),
@@ -146,6 +147,7 @@ export function scaleTemplateElementGeometry(
         height: scaleValue(element.height, scale),
       }
     case "qr":
+    case "datamatrix":
       return {
         ...element,
         x: scaleValue(element.x, scale),

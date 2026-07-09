@@ -203,4 +203,47 @@ describe("svg text rendering", () => {
     expect(svg).toContain('text-anchor="middle"')
     expect(svg.match(/<text/g)?.length).toBe(4)
   })
+
+  it("renders Data Matrix elements as square module grids", () => {
+    const svg = buildSvg(
+      80,
+      80,
+      [
+        {
+          kind: "datamatrix",
+          key: "asset",
+          x: 8,
+          y: 8,
+          size: 48,
+          value: "TM-0001",
+          rotation: 0,
+        },
+      ],
+      {}
+    )
+
+    expect(svg).toContain('<svg x="8" y="8" width="48" height="48"')
+    expect(svg.match(/<rect x="/g)?.length).toBeGreaterThan(10)
+  })
+
+  it("throws a stable error when Data Matrix value is empty", () => {
+    expect(() =>
+      buildSvg(
+        80,
+        80,
+        [
+          {
+            kind: "datamatrix",
+            key: "asset",
+            x: 8,
+            y: 8,
+            size: 48,
+            value: "",
+            rotation: 0,
+          },
+        ],
+        {}
+      )
+    ).toThrow(/Data Matrix value is required/)
+  })
 })

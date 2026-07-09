@@ -379,6 +379,75 @@ describe("canvas-editor-model monochrome contract", () => {
     })
   })
 
+  it("imports Data Matrix packages into bindable square canvas drafts", () => {
+    const draft = createDraftFromUserTemplatePackage({
+      schema: "tuckmark.user-template-package.v1",
+      id: "rack-tag-dm",
+      name: "Rack Tag DM",
+      description: "Data Matrix tag",
+      canvas: { width: 192, height: 96 },
+      fields: [{ key: "asset", label: "Asset", defaultValue: "TM-0001", multiline: false }],
+      elements: [
+        {
+          kind: "datamatrix",
+          key: "asset",
+          value: "TM-0001",
+          x: 8,
+          y: 8,
+          size: 72,
+          rotation: 0,
+        },
+      ],
+      sampleInput: { asset: "TM-0002" },
+      renderOptions: { paperType: "gap", printWidthDots: 384 },
+      tags: ["ops"],
+    })
+
+    expect(draft.elements[0]).toMatchObject({
+      kind: "datamatrix",
+      value: "TM-0002",
+      binding: { fieldKey: "asset", kind: "datamatrix" },
+      x: 1,
+      y: 1,
+      size: 9,
+    })
+  })
+
+  it("fills bound Data Matrix elements from structured canvas input", () => {
+    const draft = createDraftFromUserTemplatePackage({
+      schema: "tuckmark.user-template-package.v1",
+      id: "rack-tag-dm",
+      name: "Rack Tag DM",
+      description: "Data Matrix tag",
+      canvas: { width: 192, height: 96 },
+      fields: [{ key: "asset", label: "Asset", defaultValue: "TM-0001", multiline: false }],
+      elements: [
+        {
+          kind: "datamatrix",
+          key: "asset",
+          value: "TM-0001",
+          x: 8,
+          y: 8,
+          size: 72,
+          rotation: 0,
+        },
+      ],
+      sampleInput: { asset: "TM-0001" },
+      renderOptions: { paperType: "gap", printWidthDots: 384 },
+      tags: ["ops"],
+    })
+
+    const compiled = compileDraftToFilledCanvasDefinition(draft, { asset: "TM-0099" })
+    expect(compiled.elements[0]).toMatchObject({
+      kind: "datamatrix",
+      key: "asset",
+      value: "TM-0099",
+      x: 8,
+      y: 8,
+      size: 72,
+    })
+  })
+
   it("keeps imported package render options in canvas print sources", () => {
     const draft = createDraftFromUserTemplatePackage({
       schema: "tuckmark.user-template-package.v1",
