@@ -289,6 +289,8 @@ type CanvasClipboardReadResult =
       kind: "empty"
     }
 
+type CanvasToastTone = "info" | "success" | "warning" | "error"
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
@@ -507,6 +509,68 @@ function supportsAsyncClipboard() {
     typeof navigator.clipboard?.read === "function" &&
     typeof navigator.clipboard?.write === "function" &&
     typeof globalThis.ClipboardItem !== "undefined"
+  )
+}
+
+function getClipboardToastTone(message: string): CanvasToastTone | null {
+  if (!message) {
+    return null
+  }
+
+  if (message === "移动鼠标以放置，单击确认，按 Esc 取消。") {
+    return "info"
+  }
+
+  if (
+    message.includes("拷贝") ||
+    message.includes("粘贴") ||
+    message.includes("剪贴板") ||
+    message === "已取消粘贴放置。"
+  ) {
+    if (
+      message.includes("失败") ||
+      message.includes("不可用") ||
+      message.includes("不支持") ||
+      message.includes("只读") ||
+      message.includes("没有可粘贴")
+    ) {
+      return "error"
+    }
+    if (message === "已取消粘贴放置。") {
+      return "warning"
+    }
+    if (
+      message.includes("已拷贝") ||
+      message.startsWith("已粘贴") ||
+      message.includes("已将剪贴板文本粘贴")
+    ) {
+      return "success"
+    }
+    return "info"
+  }
+
+  return null
+}
+
+function CanvasClipboardToast({ message, tone }: { message: string; tone: CanvasToastTone }) {
+  const icon =
+    tone === "success" ? (
+      <CheckCircle2 className="size-4" />
+    ) : tone === "error" || tone === "warning" ? (
+      <AlertCircle className="size-4" />
+    ) : (
+      <Copy className="size-4" />
+    )
+
+  return (
+    <aside
+      className={cn("tm-canvas-toast", `tm-canvas-toast--${tone}`)}
+      aria-live="polite"
+      role="status"
+    >
+      <div className="tm-canvas-toast__icon">{icon}</div>
+      <div className="tm-canvas-toast__message">{message}</div>
+    </aside>
   )
 }
 
@@ -6120,6 +6184,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
   const canUndo = state.historyIndex > 0
   const canRedo = state.historyIndex < state.history.length - 1
   const inspectorReadOnly = interactionLocked || state.pendingPaste !== null
+  const clipboardToastTone = getClipboardToastTone(state.outputStatus)
   const handleStagePointerChange = (point: { x: number; y: number } | null) => {
     stagePointerRef.current = point
   }
@@ -6175,13 +6240,11 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
               <p>
                 {readOnly
                   ? "历史快照只读查看。"
-                  : state.pendingPaste
-                    ? "粘贴预览会跟随鼠标，单击确认落位。"
-                    : startupSyncPending
-                      ? "正在恢复同设备草稿。"
-                      : state.loading
-                        ? "正在读取当前画布草稿。"
-                        : "单色编辑，所见即所得。"}
+                  : startupSyncPending
+                    ? "正在恢复同设备草稿。"
+                    : state.loading
+                      ? "正在读取当前画布草稿。"
+                      : "单色编辑，所见即所得。"}
               </p>
             </div>
             <div className="tm-pane__meta">
@@ -6204,7 +6267,10 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
             </div>
           </div>
           <div className="tm-pane__body tm-pane__body--canvas-stage">
-            {state.outputStatus ? (
+            {clipboardToastTone ? (
+              <CanvasClipboardToast message={state.outputStatus} tone={clipboardToastTone} />
+            ) : null}
+            {state.outputStatus && !clipboardToastTone ? (
               <div className="tm-pane__notice">{state.outputStatus}</div>
             ) : null}
             {startupSyncPending || state.loading ? (

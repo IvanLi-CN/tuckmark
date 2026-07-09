@@ -203,3 +203,5 @@ while the workbench was being productized:
     cancels on `Escape` or `Cmd/Ctrl+Z`
   - confirmation writes one history entry, while cancellation restores the
     previous selection without mutating persisted draft state
+  - clipboard hints were then lifted into toast-style overlay feedback so the
+    center pane keeps a stable document flow while the user places content

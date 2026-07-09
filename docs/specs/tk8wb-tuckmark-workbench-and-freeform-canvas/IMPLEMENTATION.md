@@ -90,6 +90,8 @@
     pending placement preview flow
   - `Escape` and `Cmd/Ctrl+Z` cancelling pending placement without writing a
     history entry, while confirmation writes exactly one new history snapshot
+  - clipboard guidance and outcome copy rendered as overlay toast feedback
+    instead of inline notices that reflow the editor pane
   - read-only historical snapshots keeping `拷贝` available while leaving
     paste and all other mutating actions disabled
 - Canvas snapping now resolves through the persistent `snapEnabled` editor flag

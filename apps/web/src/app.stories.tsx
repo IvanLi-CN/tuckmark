@@ -441,7 +441,7 @@ export const CanvasWorkspaceClipboard: Story = {
     docs: {
       description: {
         story:
-          "Clipboard entry points keep duplicate semantics separate from `新副本`, while paste enters a placement mode that follows the cursor until the user confirms the drop position.",
+          "Clipboard entry points keep duplicate semantics separate from `新副本`, while paste enters a placement mode that follows the cursor and reports progress through toast-style feedback instead of reflowing the pane.",
       },
     },
   },
@@ -508,6 +508,7 @@ export const CanvasWorkspaceClipboard: Story = {
       await expect(
         canvas.findByText("移动鼠标以放置，单击确认，按 Esc 取消。")
       ).resolves.toBeVisible()
+      await expect(canvas.findByText("单色编辑，所见即所得。")).resolves.toBeVisible()
       await expect(
         canvasElement.querySelectorAll('.tm-layer-list--inspector input[aria-label$="图层名称"]')
           .length

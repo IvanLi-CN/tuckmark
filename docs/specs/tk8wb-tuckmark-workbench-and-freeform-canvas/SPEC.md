@@ -279,6 +279,8 @@ output.
     in the same pending placement preview flow
   - pending clipboard placement may be cancelled with `Escape` or `Cmd/Ctrl+Z`
     before it writes a new history entry
+  - clipboard hints and outcomes render as toast-like weak prompts and must
+    not shift the static editor pane document flow
   - historical read-only canvas versions may copy selected elements but must
     not paste or otherwise mutate the draft
 - Transformer snapping is commit-time only: handles may move freely while being
@@ -554,7 +556,7 @@ output.
   PR: include
   ![Canvas workspace](./assets/canvas-wide-1280x800.png)
 
-- `1600×1200` canvas clipboard workflow after Storybook `拷贝` + `粘贴`, showing the pending placement preview, status feedback, and the distinct `拷贝` / `粘贴` / `新副本` actions together.
+- `1600×1200` canvas clipboard workflow after Storybook `拷贝` + `粘贴`, showing the pending placement toast, stable editor copy, and the distinct `拷贝` / `粘贴` / `新副本` actions together.
 
   ![Canvas clipboard workflow](./assets/canvas-clipboard-story-1600x1200.png)
 

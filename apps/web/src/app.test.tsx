@@ -1503,6 +1503,8 @@ describe("web workbench app", () => {
     expect(pasteEvent.defaultPrevented).toBe(true)
     expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
     expect(document.body.textContent).toContain("移动鼠标以放置，单击确认，按 Esc 取消。")
+    expect(document.body.textContent).toContain("单色编辑，所见即所得。")
+    expect(document.body.textContent).not.toContain("粘贴预览会跟随鼠标，单击确认落位。")
 
     await act(async () => {
       dispatchWindowKey("Enter")
@@ -1564,6 +1566,7 @@ describe("web workbench app", () => {
     expect(clipboardMocks.read).toHaveBeenCalledTimes(1)
     expect(queryCanvasLayerNameInputs()).toHaveLength(originalLayerCount + 1)
     expect(document.body.textContent).toContain("移动鼠标以放置，单击确认，按 Esc 取消。")
+    expect(document.body.textContent).toContain("单色编辑，所见即所得。")
     expect(queryButton("粘贴").disabled).toBe(true)
     expect(queryButton("新副本").disabled).toBe(true)
     expect(queryButton("删除").disabled).toBe(true)
