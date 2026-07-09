@@ -76,10 +76,30 @@
   - direct start/end endpoint handles for single selected `line` elements
   - wheel zoom relative to pointer
   - `Space + drag` pan
-  - keyboard move, duplicate, delete, undo, redo, and clear selection
+  - keyboard move, copy, paste, duplicate, delete, undo, redo, and clear
+    selection
+- Canvas clipboard coverage now includes:
+  - window `copy` / `paste` event handling for selected elements when focus is
+    outside editable form controls
+  - async button `拷贝` / `粘贴` entry points backed by `navigator.clipboard`
+    and web custom formats when the browser supports them
+  - structured payload round-trips that preserve copied element order and open
+    a pending placement preview that follows the latest stage pointer until
+    click or `Enter` confirmation
+  - plain-text fallback that creates one new `text` element through the same
+    pending placement preview flow
+  - `Escape` and `Cmd/Ctrl+Z` cancelling pending placement without writing a
+    history entry, while confirmation writes exactly one new history snapshot
+  - clipboard guidance and outcome copy rendered as overlay toast feedback
+    instead of inline notices that reflow the editor pane
+  - read-only historical snapshots keeping `拷贝` available while leaving
+    paste and all other mutating actions disabled
 - Canvas snapping now resolves through the persistent `snapEnabled` editor flag
-  across drag end, transformer commit, line endpoint adjustment, and keyboard
-  movement.
+  across live element dragging, pending clipboard placement, drag end,
+  transformer commit, line endpoint adjustment, and keyboard movement.
+- Ordinary pointer dragging now opens a runtime selection-drag session so the
+  grabbed element and any already-selected companions preview and commit as one
+  snapped translation instead of only updating the directly grabbed node.
 - Transformer commits snap final geometry to the existing `1mm` grid for
   text, rectangle, triangle, barcode, QR, circle, and line elements. Rotation
   remains freeform, and text transforms continue to preserve saved font size
@@ -142,6 +162,8 @@
     `user-template`
   - draft field registry and per-element replacement bindings
   - per-layer metadata
+  - runtime-only pending clipboard placement bookkeeping kept outside
+    persisted drafts, sync state, saved versions, and autosaves
   - preset-scoped browser storage persistence for scratch drafts
   - same-device sync state records shared with `TuckmarkService` for scratch
     drafts, recent templates, and recent prints

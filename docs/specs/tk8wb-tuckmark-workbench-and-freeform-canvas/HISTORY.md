@@ -186,3 +186,32 @@ while the workbench was being productized:
   - Storybook fallback evidence now covers both selected and invalid Data
     Matrix states to keep the new symbol inside the same visual review path as
     other first-class canvas elements
+- A later canvas interaction pass separated clipboard semantics from immediate
+  duplicate semantics:
+  - layer actions and multi-select actions now expose `拷贝`, `粘贴`, and
+    `新副本` as distinct affordances instead of overloading duplicate as copy
+  - selected elements can round-trip through the system clipboard using a
+    structured Tuckmark payload, while plain external text pastes back as one
+    new text layer
+  - historical read-only versions keep copy available but continue to block
+    paste and every other draft mutation path
+- The clipboard placement flow was then refined to better match common editor
+  expectations:
+  - clipboard paste now enters a pending placement preview instead of applying
+    an immediate repeated offset
+  - the preview follows the mouse position, confirms on click or `Enter`, and
+    cancels on `Escape` or `Cmd/Ctrl+Z`
+  - confirmation writes one history entry, while cancellation restores the
+    previous selection without mutating persisted draft state
+  - clipboard hints were then lifted into toast-style overlay feedback so the
+    center pane keeps a stable document flow while the user places content
+  - a follow-up snap pass then aligned both ordinary element dragging and
+    pending clipboard placement to the existing live `1mm` grid so movement no
+    longer waits until drop to show snap behavior
+  - ordinary pointer dragging was then refined again so dragging any member of
+    the current selection carries the whole selected set through that same live
+    snap path instead of moving only the directly grabbed node
+  - the normal Konva drag-bound path now converts stage-space pointer
+    coordinates back into canvas-space millimeter geometry before snapping, so
+    zoomed or panned canvases keep the same strong live snap feel instead of
+    producing offset or barely perceptible movement

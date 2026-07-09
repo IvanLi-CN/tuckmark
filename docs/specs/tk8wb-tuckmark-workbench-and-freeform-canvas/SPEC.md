@@ -267,8 +267,29 @@ output.
   - `fit to view`
   - transformer-based resize / rotation with final geometry snapped on
     transform commit when `snapEnabled` is active
+  - system clipboard `Copy` / `Paste` for selected elements through keyboard
+    clipboard events when focus is not inside editable form controls
   - `Delete`, `Duplicate`, `Undo`, `Redo`, and `Escape`
-- Transformer snapping is commit-time only: handles may move freely while being
+- Clipboard paste behavior:
+  - structured Tuckmark clipboard payload restores the copied element set as
+    new layers, preserves the copied relative layer order and geometry, and
+    enters a pending placement preview that follows the current pointer until
+    the user confirms with click or `Enter`
+  - plain `text/plain` clipboard content falls back to one new `text` element
+    in the same pending placement preview flow
+  - pending clipboard placement may be cancelled with `Escape` or `Cmd/Ctrl+Z`
+    before it writes a new history entry
+  - pending clipboard placement respects the active `snapEnabled` grid while
+    following the pointer so preview movement lands on the same `1mm` cadence
+    as ordinary element dragging
+  - clipboard hints and outcomes render as toast-like weak prompts and must
+    not shift the static editor pane document flow
+  - historical read-only canvas versions may copy selected elements but must
+    not paste or otherwise mutate the draft
+- Ordinary element dragging snaps live to the existing `1mm` grid when
+  `snapEnabled` is active, and dragging any member of the current selection
+  moves that selected set together through the same live snap path. Transformer
+  handles remain commit-time only: they may move freely while being
   adjusted, then position and snap-compatible dimensions land on the existing
   `1mm` grid at release. Rotation is not snapped, and text resizing preserves
   the saved font-size semantics while snapping the text box position and
@@ -301,11 +322,13 @@ output.
   - automatic wrapping, two-end text justification, vertical text, and
     independent horizontal and vertical stretch toggles
 - Layer rail supports:
+  - copy
+  - paste
   - rename
   - reorder
   - lock / unlock
   - show / hide
-  - duplicate
+  - duplicate as `新副本`
   - delete
 - Multi-select inspector behavior:
   - zero selection shows a focused onboarding hint
@@ -426,6 +449,10 @@ output.
 - Canvas workspace supports create, select, move, resize, rotate, duplicate,
   reorder, visibility toggle, lock toggle, and delete for `text`, `rect`,
   `circle`, `triangle`, `line`, `barcode`, and `qr`.
+- Canvas workspace round-trips selected elements through the system clipboard:
+  structured Tuckmark payloads and plain-text clipboard fallbacks both enter a
+  pointer-following placement preview, then confirm into new layers only after
+  the user clicks or presses `Enter`.
 - Selected text exposes font size, font family, three-by-three alignment,
   automatic wrapping, two-end justification, horizontal stretch, vertical
   stretch, vertical text, and rotation controls in the property inspector.
@@ -475,6 +502,8 @@ output.
   including cancel and empty-name validation paths.
 - Opening a historical version switches the stage into read-only mode and
   restore returns that version into the current working copy.
+- Historical read-only versions keep `拷贝` available for selected elements and
+  keep `粘贴` disabled.
 - Canvas dimensions can be freely edited on scratch, system-template copy, and
   user-template working-copy sources; historical read-only versions keep the
   control disabled.
@@ -532,6 +561,16 @@ output.
 
   PR: include
   ![Canvas workspace](./assets/canvas-wide-1280x800.png)
+
+- `1600×1200` canvas clipboard workflow after Storybook `拷贝` + `粘贴`, showing the pending placement toast, stable editor copy, snap-aligned preview movement, and the distinct `拷贝` / `粘贴` / `新副本` actions together.
+
+  PR: include
+  ![Canvas clipboard workflow](./assets/canvas-clipboard-story-1600x1200.png)
+
+- `1600×1200` snap-enabled canvas workspace story showing the ordinary selection editing state with the persistent `吸附` toggle enabled for live drag snapping.
+
+  PR: include
+  ![Canvas snap-enabled workspace](./assets/canvas-snap-enabled-story-1600x1200.png)
 
 - `1280×800` canvas workspace with a selected text element before inline editing.
 

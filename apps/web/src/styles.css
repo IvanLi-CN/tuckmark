@@ -704,12 +704,58 @@
   }
 
   .tm-pane__body--canvas-stage {
-    @apply flex-col;
+    @apply relative flex-col;
   }
 
   .tm-pane__notice {
     @apply rounded-xl border border-border/70 bg-background/80 px-3 py-2 text-sm text-muted-foreground;
     flex: none;
+  }
+
+  .tm-canvas-toast {
+    position: absolute;
+    top: 0.75rem;
+    left: 50%;
+    z-index: 10;
+    display: flex;
+    width: min(540px, calc(100% - 1.5rem));
+    align-items: center;
+    gap: 0.625rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in oklab, var(--border) 78%, white);
+    background: color-mix(in oklab, var(--background) 86%, white 14%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.86),
+      0 10px 20px rgba(73, 46, 24, 0.1);
+    padding: 0.625rem 0.875rem;
+    pointer-events: none;
+    transform: translateX(-50%);
+    backdrop-filter: blur(12px);
+  }
+
+  .tm-canvas-toast__icon {
+    @apply grid size-7 shrink-0 place-items-center rounded-full;
+    background: color-mix(in oklab, var(--primary) 12%, white);
+    color: var(--primary);
+  }
+
+  .tm-canvas-toast__message {
+    @apply min-w-0 text-sm leading-5 text-foreground;
+  }
+
+  .tm-canvas-toast--success .tm-canvas-toast__icon {
+    background: color-mix(in oklab, #1d7a52 14%, white);
+    color: #1d7a52;
+  }
+
+  .tm-canvas-toast--warning .tm-canvas-toast__icon {
+    background: color-mix(in oklab, #a56a1b 16%, white);
+    color: #a56a1b;
+  }
+
+  .tm-canvas-toast--error .tm-canvas-toast__icon {
+    background: color-mix(in oklab, #b64242 16%, white);
+    color: #b64242;
   }
 
   .tm-pane__stack {

@@ -71,6 +71,7 @@ import {
   createDraftFromSystemTemplate,
   duplicateDraftAsTemplate,
   duplicateDraftElement,
+  getCanvasElementClipboardText,
   getElementGeometry,
   getElementSelectionBounds,
   getPresetById,
@@ -190,6 +191,7 @@ type CanvasPageState = {
   history: CanvasDraftDocument[]
   historyIndex: number
   editingId: string | null
+  pendingPaste: CanvasPendingPaste | null
   outputStatus: string
   autosavesExpanded: boolean
   versionsOpen: boolean
@@ -256,8 +258,184 @@ type CanvasIssue = {
   detail: string
 }
 
+type CanvasClipboardPayload = {
+  version: 1
+  kind: "tuckmark-canvas-elements"
+  elements: CanvasDraftElement[]
+}
+
+type CanvasPendingPaste = {
+  ids: string[]
+  previousSelectedIds: string[]
+  previousEditingId: string | null
+  confirmStatus: string
+}
+
+type CanvasClipboardReadResult =
+  | {
+      kind: "canvas"
+      payload: CanvasClipboardPayload
+      signature: string
+    }
+  | {
+      kind: "invalid"
+    }
+  | {
+      kind: "text"
+      text: string
+      signature: string
+    }
+  | {
+      kind: "empty"
+    }
+
+type CanvasToastTone = "info" | "success" | "warning" | "error"
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
+}
+
+const CANVAS_CLIPBOARD_FORMAT = "application/x.tuckmark-canvas-elements+json"
+const CANVAS_WEB_CUSTOM_CLIPBOARD_FORMAT = `web ${CANVAS_CLIPBOARD_FORMAT}`
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function isCanvasLayerMeta(value: unknown): value is CanvasDraftElement["meta"] {
+  return (
+    isRecord(value) &&
+    typeof value.name === "string" &&
+    typeof value.visible === "boolean" &&
+    typeof value.locked === "boolean"
+  )
+}
+
+function isCanvasElementBinding(
+  value: unknown
+): value is NonNullable<CanvasDraftElement["binding"]> {
+  return (
+    isRecord(value) &&
+    typeof value.fieldKey === "string" &&
+    (value.kind === "text" ||
+      value.kind === "barcode" ||
+      value.kind === "qr" ||
+      value.kind === "datamatrix")
+  )
+}
+
+function hasOptionalRotation(value: unknown) {
+  return value === undefined || isFiniteNumber(value)
+}
+
+function isClipboardCanvasElement(value: unknown): value is CanvasDraftElement {
+  if (!isRecord(value) || typeof value.id !== "string" || !isCanvasLayerMeta(value.meta)) {
+    return false
+  }
+  if (value.binding !== undefined && !isCanvasElementBinding(value.binding)) {
+    return false
+  }
+
+  switch (value.kind) {
+    case "text":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.width) &&
+        isFiniteNumber(value.height) &&
+        isFiniteNumber(value.fontSize) &&
+        typeof value.fontFamily === "string" &&
+        isFiniteNumber(value.lineHeight) &&
+        (value.fontWeight === "normal" || value.fontWeight === "bold") &&
+        typeof value.align === "string" &&
+        (value.justifyAlign === undefined || typeof value.justifyAlign === "string") &&
+        typeof value.verticalAlign === "string" &&
+        typeof value.stretchX === "boolean" &&
+        typeof value.stretchY === "boolean" &&
+        typeof value.autoWrap === "boolean" &&
+        typeof value.verticalText === "boolean" &&
+        typeof value.value === "string" &&
+        (value.maxLines === undefined || isFiniteNumber(value.maxLines)) &&
+        hasOptionalRotation(value.rotation)
+      )
+    case "rect":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.width) &&
+        isFiniteNumber(value.height) &&
+        isFiniteNumber(value.strokeWidth) &&
+        typeof value.fill === "string" &&
+        typeof value.stroke === "string" &&
+        isFiniteNumber(value.radius) &&
+        hasOptionalRotation(value.rotation)
+      )
+    case "circle":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.size) &&
+        isFiniteNumber(value.strokeWidth) &&
+        typeof value.fill === "string" &&
+        typeof value.stroke === "string"
+      )
+    case "triangle":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.width) &&
+        isFiniteNumber(value.height) &&
+        isFiniteNumber(value.strokeWidth) &&
+        typeof value.fill === "string" &&
+        typeof value.stroke === "string" &&
+        hasOptionalRotation(value.rotation)
+      )
+    case "line":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.x2) &&
+        isFiniteNumber(value.y2) &&
+        isFiniteNumber(value.strokeWidth) &&
+        typeof value.stroke === "string"
+      )
+    case "barcode":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.width) &&
+        isFiniteNumber(value.height) &&
+        typeof value.value === "string" &&
+        value.format === "CODE128" &&
+        typeof value.showValue === "boolean" &&
+        hasOptionalRotation(value.rotation)
+      )
+    case "qr":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.size) &&
+        typeof value.value === "string" &&
+        (value.errorCorrectionLevel === "L" ||
+          value.errorCorrectionLevel === "M" ||
+          value.errorCorrectionLevel === "Q" ||
+          value.errorCorrectionLevel === "H") &&
+        hasOptionalRotation(value.rotation)
+      )
+    case "datamatrix":
+      return (
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.y) &&
+        isFiniteNumber(value.size) &&
+        typeof value.value === "string" &&
+        hasOptionalRotation(value.rotation)
+      )
+    default:
+      return false
+  }
 }
 
 function getCanvasTextLineHeight(lineHeight?: number) {
@@ -286,6 +464,613 @@ function toComparableDraft(draft: CanvasDraftDocument) {
 
 function sameDraftContent(left: CanvasDraftDocument, right: CanvasDraftDocument): boolean {
   return stableStringify(toComparableDraft(left)) === stableStringify(toComparableDraft(right))
+}
+
+function getElementSelectionBoundsForIds(elements: CanvasDraftElement[]) {
+  const [firstElement, ...rest] = elements
+  if (!firstElement) {
+    return null
+  }
+
+  const firstBounds = getElementSelectionBounds(firstElement)
+  return rest.reduce(
+    (bounds, element) => {
+      const next = getElementSelectionBounds(element)
+      const left = Math.min(bounds.x, next.x)
+      const top = Math.min(bounds.y, next.y)
+      const right = Math.max(bounds.x + bounds.width, next.x + next.width)
+      const bottom = Math.max(bounds.y + bounds.height, next.y + next.height)
+
+      return {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+      }
+    },
+    {
+      x: firstBounds.x,
+      y: firstBounds.y,
+      width: firstBounds.width,
+      height: firstBounds.height,
+    }
+  )
+}
+
+function translateElementsByIds(
+  elements: CanvasDraftElement[],
+  ids: Set<string>,
+  deltaX: number,
+  deltaY: number
+) {
+  if (deltaX === 0 && deltaY === 0) {
+    return elements
+  }
+
+  return elements.map((element) =>
+    ids.has(element.id) ? translateElement(element, deltaX, deltaY) : element
+  )
+}
+
+function supportsAsyncClipboard() {
+  return (
+    typeof window !== "undefined" &&
+    window.isSecureContext !== false &&
+    typeof navigator !== "undefined" &&
+    typeof navigator.clipboard?.read === "function" &&
+    typeof navigator.clipboard?.write === "function" &&
+    typeof globalThis.ClipboardItem !== "undefined"
+  )
+}
+
+function getClipboardToastTone(message: string): CanvasToastTone | null {
+  if (!message) {
+    return null
+  }
+
+  if (message === "移动鼠标以放置，单击确认，按 Esc 取消。") {
+    return "info"
+  }
+
+  if (
+    message.includes("拷贝") ||
+    message.includes("粘贴") ||
+    message.includes("剪贴板") ||
+    message === "已取消粘贴放置。"
+  ) {
+    if (
+      message.includes("失败") ||
+      message.includes("不可用") ||
+      message.includes("不支持") ||
+      message.includes("只读") ||
+      message.includes("没有可粘贴")
+    ) {
+      return "error"
+    }
+    if (message === "已取消粘贴放置。") {
+      return "warning"
+    }
+    if (
+      message.includes("已拷贝") ||
+      message.startsWith("已粘贴") ||
+      message.includes("已将剪贴板文本粘贴")
+    ) {
+      return "success"
+    }
+    return "info"
+  }
+
+  return null
+}
+
+function CanvasClipboardToast({ message, tone }: { message: string; tone: CanvasToastTone }) {
+  const icon =
+    tone === "success" ? (
+      <CheckCircle2 className="size-4" />
+    ) : tone === "error" || tone === "warning" ? (
+      <AlertCircle className="size-4" />
+    ) : (
+      <Copy className="size-4" />
+    )
+
+  return (
+    <aside
+      className={cn("tm-canvas-toast", `tm-canvas-toast--${tone}`)}
+      aria-live="polite"
+      role="status"
+    >
+      <div className="tm-canvas-toast__icon">{icon}</div>
+      <div className="tm-canvas-toast__message">{message}</div>
+    </aside>
+  )
+}
+
+function isCanvasClipboardBypassTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  )
+}
+
+function getSelectedCanvasElements(state: CanvasPageState): CanvasDraftElement[] {
+  if (state.selectedIds.length === 0) {
+    return []
+  }
+  return state.draft.elements.filter((element) => state.selectedIds.includes(element.id))
+}
+
+function createCanvasClipboardPayload(elements: CanvasDraftElement[]): CanvasClipboardPayload {
+  return {
+    version: 1,
+    kind: "tuckmark-canvas-elements",
+    elements: structuredClone(elements),
+  }
+}
+
+function serializeCanvasClipboardPayload(payload: CanvasClipboardPayload) {
+  return stableStringify(payload)
+}
+
+function parseCanvasClipboardPayload(value: string): CanvasClipboardPayload | null {
+  if (!value) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<CanvasClipboardPayload>
+    if (
+      parsed.version !== 1 ||
+      parsed.kind !== "tuckmark-canvas-elements" ||
+      !Array.isArray(parsed.elements) ||
+      !parsed.elements.every((element) => isClipboardCanvasElement(element))
+    ) {
+      return null
+    }
+    return {
+      version: 1,
+      kind: "tuckmark-canvas-elements",
+      elements: parsed.elements as CanvasDraftElement[],
+    }
+  } catch {
+    return null
+  }
+}
+
+function normalizeClipboardElements(
+  state: CanvasPageState,
+  elements: CanvasDraftElement[]
+): CanvasDraftElement[] {
+  return normalizeDraftDocument({
+    version: 1,
+    unit: "mm",
+    id: "clipboard-paste",
+    presetId: state.presetId,
+    name: "clipboard-paste",
+    source: state.routeSource,
+    width: state.liveDraft.width,
+    height: state.liveDraft.height,
+    fields: structuredClone(state.liveDraft.fields),
+    elements: structuredClone(elements),
+    editor: {
+      gridEnabled: state.gridEnabled,
+      snapEnabled: state.snapEnabled,
+    },
+  }).elements
+}
+
+function buildCanvasClipboardPlainText(elements: CanvasDraftElement[]): string | null {
+  const values = elements
+    .map((element) => getCanvasElementClipboardText(element))
+    .filter((value): value is string => value !== null)
+
+  if (values.length === 0) {
+    return null
+  }
+
+  return values.join("\n")
+}
+
+function writeCanvasClipboardToDataTransfer(
+  dataTransfer: DataTransfer,
+  elements: CanvasDraftElement[]
+): string {
+  const payload = createCanvasClipboardPayload(elements)
+  const serialized = serializeCanvasClipboardPayload(payload)
+  const plainText = buildCanvasClipboardPlainText(elements)
+  dataTransfer.setData(CANVAS_CLIPBOARD_FORMAT, serialized)
+  if (plainText !== null) {
+    dataTransfer.setData("text/plain", plainText)
+  }
+  return serialized
+}
+
+async function writeCanvasClipboardToNavigator(elements: CanvasDraftElement[]): Promise<string> {
+  const payload = createCanvasClipboardPayload(elements)
+  const serialized = serializeCanvasClipboardPayload(payload)
+  const clipboardItemData: Record<string, Blob> = {
+    [CANVAS_WEB_CUSTOM_CLIPBOARD_FORMAT]: new Blob([serialized], {
+      type: CANVAS_CLIPBOARD_FORMAT,
+    }),
+  }
+  const plainText = buildCanvasClipboardPlainText(elements)
+  if (plainText !== null) {
+    clipboardItemData["text/plain"] = new Blob([plainText], {
+      type: "text/plain",
+    })
+  }
+
+  await navigator.clipboard.write([new ClipboardItem(clipboardItemData)])
+  return serialized
+}
+
+function readCanvasClipboardFromDataTransfer(
+  dataTransfer: DataTransfer
+): CanvasClipboardReadResult {
+  let sawStructuredPayload = false
+  for (const format of [CANVAS_CLIPBOARD_FORMAT, CANVAS_WEB_CUSTOM_CLIPBOARD_FORMAT]) {
+    const payloadText = dataTransfer.getData(format)
+    if (!payloadText) {
+      continue
+    }
+    sawStructuredPayload = true
+    const payload = parseCanvasClipboardPayload(payloadText)
+    if (payload) {
+      return {
+        kind: "canvas",
+        payload,
+        signature: serializeCanvasClipboardPayload(payload),
+      }
+    }
+  }
+  if (sawStructuredPayload) {
+    return { kind: "invalid" }
+  }
+
+  const plainText = dataTransfer.getData("text/plain")
+  if (plainText) {
+    return {
+      kind: "text",
+      text: plainText,
+      signature: `text:${plainText}`,
+    }
+  }
+
+  return { kind: "empty" }
+}
+
+async function readCanvasClipboardFromNavigator(): Promise<CanvasClipboardReadResult> {
+  const items = await navigator.clipboard.read()
+  let sawStructuredPayload = false
+
+  for (const item of items) {
+    for (const format of [CANVAS_WEB_CUSTOM_CLIPBOARD_FORMAT, CANVAS_CLIPBOARD_FORMAT]) {
+      if (item.types.includes(format)) {
+        sawStructuredPayload = true
+        const blob = await item.getType(format)
+        const payload = parseCanvasClipboardPayload(await blob.text())
+        if (payload) {
+          return {
+            kind: "canvas",
+            payload,
+            signature: serializeCanvasClipboardPayload(payload),
+          }
+        }
+      }
+    }
+  }
+  if (sawStructuredPayload) {
+    return { kind: "invalid" }
+  }
+
+  for (const item of items) {
+    if (item.types.includes("text/plain")) {
+      const blob = await item.getType("text/plain")
+      const text = await blob.text()
+      if (text) {
+        return {
+          kind: "text",
+          text,
+          signature: `text:${text}`,
+        }
+      }
+    }
+  }
+
+  return { kind: "empty" }
+}
+
+function getViewportCenterInCanvasSpace(
+  viewport: StageViewport,
+  viewportSize: StageViewportSize
+): { x: number; y: number } {
+  const displayScale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+  const left = -viewport.x / displayScale
+  const top = -viewport.y / displayScale
+
+  return {
+    x: left + viewportSize.width / displayScale / 2,
+    y: top + viewportSize.height / displayScale / 2,
+  }
+}
+
+function createClipboardTextElement(
+  state: CanvasPageState,
+  text: string,
+  viewportSize: StageViewportSize
+): Extract<CanvasDraftElement, { kind: "text" }> {
+  const seeded = createCanvasElement("text", state.liveDraft.elements.length, {
+    value: text,
+    height: undefined,
+    maxLines: undefined,
+  })
+
+  if (seeded.kind !== "text") {
+    throw new Error("unexpected clipboard text seed")
+  }
+
+  const layout = resolveTextLayout({
+    text,
+    fontSize: seeded.fontSize,
+    width: seeded.width,
+    height: seeded.height,
+    lineHeight: seeded.lineHeight,
+    fontFamily: seeded.fontFamily,
+    fontWeight: seeded.fontWeight,
+    align: seeded.align,
+    maxLines: seeded.maxLines,
+    verticalAlign: seeded.verticalAlign,
+    stretchX: seeded.stretchX,
+    stretchY: seeded.stretchY,
+    autoWrap: seeded.autoWrap,
+    verticalText: seeded.verticalText,
+    measureText: measureCanvasTextLine,
+  })
+  const center = getViewportCenterInCanvasSpace(state.viewport, viewportSize)
+  const width = seeded.width
+  const height = layout.naturalHeight
+
+  return {
+    ...seeded,
+    value: text,
+    height,
+    maxLines: undefined,
+    x: center.x - width / 2,
+    y: center.y - height / 2,
+  }
+}
+
+function applyDraftPreviewUpdate(
+  state: CanvasPageState,
+  updater: (draft: CanvasDraftDocument) => CanvasDraftDocument
+): CanvasPageState {
+  const nextDraft = normalizeDraftDocument(updater(cloneDraft(state.draft)))
+  nextDraft.editor.gridEnabled = state.gridEnabled
+  nextDraft.editor.snapEnabled = state.snapEnabled
+  return {
+    ...state,
+    draft: nextDraft,
+    selectedIds: updateSelectionAfterDraft(state, nextDraft),
+    storageMode: "persisted",
+  }
+}
+
+function clearPendingPastePreview(
+  state: CanvasPageState,
+  options?: {
+    outputStatus?: string
+    restoreSelection?: boolean
+  }
+): CanvasPageState {
+  if (!state.pendingPaste) {
+    return {
+      ...state,
+      outputStatus: options?.outputStatus ?? state.outputStatus,
+    }
+  }
+
+  const previousSelectedIds = options?.restoreSelection
+    ? state.pendingPaste.previousSelectedIds.filter((id) =>
+        state.liveDraft.elements.some((element) => element.id === id)
+      )
+    : state.selectedIds.filter((id) =>
+        state.liveDraft.elements.some((element) => element.id === id)
+      )
+
+  return {
+    ...state,
+    draft: cloneDraft(state.liveDraft),
+    selectedIds: previousSelectedIds,
+    editingId: options?.restoreSelection ? state.pendingPaste.previousEditingId : state.editingId,
+    pendingPaste: null,
+    outputStatus: options?.outputStatus ?? state.outputStatus,
+  }
+}
+
+export function cancelPendingPastePlacement(state: CanvasPageState): CanvasPageState {
+  return clearPendingPastePreview(state, {
+    outputStatus: "已取消粘贴放置。",
+    restoreSelection: true,
+  })
+}
+
+export function confirmPendingPastePlacement(state: CanvasPageState): CanvasPageState {
+  if (!state.pendingPaste) {
+    return state
+  }
+
+  const nextDraft = normalizeDraftDocument(cloneDraft(state.draft))
+  nextDraft.editor.gridEnabled = state.gridEnabled
+  nextDraft.editor.snapEnabled = state.snapEnabled
+  const next = pushHistory(state, nextDraft)
+
+  return {
+    ...next,
+    selectedIds: state.pendingPaste.ids.filter((id) =>
+      nextDraft.elements.some((element) => element.id === id)
+    ),
+    editingId: null,
+    pendingPaste: null,
+    outputStatus: state.pendingPaste.confirmStatus,
+    storageMode: "persisted",
+  }
+}
+
+export function movePendingPasteToPoint(
+  state: CanvasPageState,
+  point: { x: number; y: number }
+): CanvasPageState {
+  if (!state.pendingPaste) {
+    return state
+  }
+
+  const pendingElements = state.draft.elements.filter((element) =>
+    state.pendingPaste?.ids.includes(element.id)
+  )
+  const bounds = getElementSelectionBoundsForIds(pendingElements)
+  if (!bounds) {
+    return clearPendingPastePreview(state)
+  }
+
+  const delta = getSelectionTranslationToPoint(bounds, point, state.snapEnabled)
+  const deltaX = delta.x
+  const deltaY = delta.y
+  if (Math.abs(deltaX) < 0.001 && Math.abs(deltaY) < 0.001) {
+    return state
+  }
+
+  const pendingIds = new Set(state.pendingPaste.ids)
+  return applyDraftPreviewUpdate(state, (draft) => ({
+    ...draft,
+    elements: translateElementsByIds(draft.elements, pendingIds, deltaX, deltaY),
+  }))
+}
+
+export function startClipboardPastePlacement(
+  state: CanvasPageState,
+  clipboard: CanvasClipboardReadResult,
+  viewportSize: StageViewportSize,
+  point?: { x: number; y: number }
+): CanvasPageState {
+  const baseState = state.pendingPaste
+    ? clearPendingPastePreview(state, { restoreSelection: true })
+    : state
+
+  if (clipboard.kind === "invalid") {
+    return {
+      ...baseState,
+      outputStatus: "剪贴板中的画布内容不可用。",
+    }
+  }
+
+  if (clipboard.kind === "empty") {
+    return {
+      ...baseState,
+      outputStatus: "剪贴板中没有可粘贴的画布内容。",
+    }
+  }
+
+  const placementPoint = point ?? getViewportCenterInCanvasSpace(baseState.viewport, viewportSize)
+  const placementHint = "移动鼠标以放置，单击确认，按 Esc 取消。"
+
+  if (clipboard.kind === "canvas") {
+    let sourceElements: CanvasDraftElement[]
+    try {
+      sourceElements = normalizeClipboardElements(baseState, clipboard.payload.elements)
+    } catch {
+      return {
+        ...baseState,
+        outputStatus: "剪贴板中的画布内容不可用。",
+      }
+    }
+    if (sourceElements.length === 0) {
+      return {
+        ...baseState,
+        outputStatus: "剪贴板中的画布内容不可用。",
+      }
+    }
+
+    const nextSelectedIds: string[] = []
+    const previewElements = sourceElements.map((element, index) => {
+      const clone = duplicateDraftElement(element, baseState.liveDraft.elements.length + index, {
+        offsetX: 0,
+        offsetY: 0,
+      })
+      nextSelectedIds.push(clone.id)
+      return clone
+    })
+    const previewBounds = getElementSelectionBoundsForIds(previewElements)
+    if (!previewBounds) {
+      return {
+        ...baseState,
+        outputStatus: "剪贴板中的画布内容不可用。",
+      }
+    }
+
+    const delta = getSelectionTranslationToPoint(
+      previewBounds,
+      placementPoint,
+      baseState.snapEnabled
+    )
+    const positionedPreviewElements = previewElements.map((element) =>
+      translateElement(element, delta.x, delta.y)
+    )
+    const nextDraft = normalizeDraftDocument({
+      ...cloneDraft(baseState.liveDraft),
+      elements: [...baseState.liveDraft.elements, ...positionedPreviewElements],
+    })
+    nextDraft.editor.gridEnabled = baseState.gridEnabled
+    nextDraft.editor.snapEnabled = baseState.snapEnabled
+
+    return {
+      ...baseState,
+      draft: nextDraft,
+      selectedIds: nextSelectedIds,
+      editingId: null,
+      pendingPaste: {
+        ids: nextSelectedIds,
+        previousSelectedIds: baseState.selectedIds,
+        previousEditingId: baseState.editingId,
+        confirmStatus:
+          nextSelectedIds.length === 1
+            ? "已粘贴 1 个图层。"
+            : `已粘贴 ${nextSelectedIds.length} 个图层。`,
+      },
+      outputStatus: placementHint,
+    }
+  }
+
+  const seededTextElement = createClipboardTextElement(baseState, clipboard.text, viewportSize)
+  const textBounds = getElementSelectionBounds(seededTextElement)
+  const textDelta = getSelectionTranslationToPoint(
+    textBounds,
+    placementPoint,
+    baseState.snapEnabled
+  )
+  const nextTextElement = translateElement(seededTextElement, textDelta.x, textDelta.y) as Extract<
+    CanvasDraftElement,
+    { kind: "text" }
+  >
+  const nextDraft = normalizeDraftDocument({
+    ...cloneDraft(baseState.liveDraft),
+    elements: [...baseState.liveDraft.elements, nextTextElement],
+  })
+  nextDraft.editor.gridEnabled = baseState.gridEnabled
+  nextDraft.editor.snapEnabled = baseState.snapEnabled
+
+  return {
+    ...baseState,
+    draft: nextDraft,
+    selectedIds: [nextTextElement.id],
+    editingId: null,
+    pendingPaste: {
+      ids: [nextTextElement.id],
+      previousSelectedIds: baseState.selectedIds,
+      previousEditingId: baseState.editingId,
+      confirmStatus: "已将剪贴板文本粘贴为新文本图层。",
+    },
+    outputStatus: placementHint,
+  }
 }
 
 function hasVisibleTextSelection(state: CanvasPageState) {
@@ -424,7 +1209,7 @@ function shouldUseScenarioDraft(scenario: CanvasStoryScenario): boolean {
   )
 }
 
-function createCanvasStateFromDraft(
+export function createCanvasStateFromDraft(
   rawDraft: CanvasDraftDocument,
   options?: {
     selectedIds?: string[]
@@ -457,6 +1242,7 @@ function createCanvasStateFromDraft(
     history: [cloneDraft(draft)],
     historyIndex: 0,
     editingId: null,
+    pendingPaste: null,
     outputStatus: options?.outputStatus ?? "",
     autosavesExpanded: false,
     versionsOpen: options?.versionsOpen ?? false,
@@ -743,6 +1529,117 @@ function snapElementPosition(element: CanvasDraftElement, x: number, y: number, 
   return { x: nextX, y: nextY }
 }
 
+function getSelectionTranslationToPoint(
+  bounds: { x: number; y: number; width: number; height: number },
+  point: { x: number; y: number },
+  snapEnabled: boolean
+) {
+  const deltaX = point.x - (bounds.x + bounds.width / 2)
+  const deltaY = point.y - (bounds.y + bounds.height / 2)
+  return {
+    x: snapEnabled ? snapValue(deltaX, true) : deltaX,
+    y: snapEnabled ? snapValue(deltaY, true) : deltaY,
+  }
+}
+
+export function getSnappedDragStagePosition(
+  element: CanvasDraftElement,
+  canvasPosition: { x: number; y: number },
+  rotationOrigin: { x: number; y: number },
+  snapEnabled: boolean
+) {
+  const snappedPosition = snapElementPosition(
+    element,
+    canvasPosition.x - rotationOrigin.x,
+    canvasPosition.y - rotationOrigin.y,
+    snapEnabled
+  )
+  return {
+    x: snappedPosition.x + rotationOrigin.x,
+    y: snappedPosition.y + rotationOrigin.y,
+  }
+}
+
+function projectCanvasPointToStagePosition(
+  point: { x: number; y: number },
+  viewport: StageViewport
+) {
+  const displayScale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+  return {
+    x: viewport.x + point.x * displayScale,
+    y: viewport.y + point.y * displayScale,
+  }
+}
+
+export function getSnappedDragAbsolutePosition(
+  element: CanvasDraftElement,
+  absolutePosition: { x: number; y: number },
+  rotationOrigin: { x: number; y: number },
+  viewport: StageViewport,
+  snapEnabled: boolean
+) {
+  return projectCanvasPointToStagePosition(
+    getSnappedDragStagePosition(
+      element,
+      projectStagePointToCanvasPosition(absolutePosition, viewport),
+      rotationOrigin,
+      snapEnabled
+    ),
+    viewport
+  )
+}
+
+function projectStagePointToCanvasPosition(
+  point: { x: number; y: number },
+  viewport: StageViewport
+) {
+  const displayScale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+  return {
+    x: (point.x - viewport.x) / displayScale,
+    y: (point.y - viewport.y) / displayScale,
+  }
+}
+
+export function createSelectionDragPreview(
+  baseDraft: CanvasDraftDocument,
+  draggedId: string,
+  selectedIds: string[],
+  stagePosition: { x: number; y: number },
+  rotationOrigin: { x: number; y: number },
+  snapEnabled: boolean
+): {
+  deltaX: number
+  deltaY: number
+  draft: CanvasDraftDocument
+  movedIds: string[]
+} | null {
+  const draggedElement = baseDraft.elements.find((element) => element.id === draggedId)
+  if (!draggedElement) {
+    return null
+  }
+
+  const movedIds = selectedIds.includes(draggedId) ? selectedIds : [draggedId]
+  const snappedPosition = snapElementPosition(
+    draggedElement,
+    stagePosition.x - rotationOrigin.x,
+    stagePosition.y - rotationOrigin.y,
+    snapEnabled
+  )
+  const deltaX = snappedPosition.x - draggedElement.x
+  const deltaY = snappedPosition.y - draggedElement.y
+  const draft = normalizeDraftDocument({
+    ...cloneDraft(baseDraft),
+    elements: translateElementsByIds(baseDraft.elements, new Set(movedIds), deltaX, deltaY),
+  })
+
+  return {
+    deltaX,
+    deltaY,
+    draft,
+    movedIds,
+  }
+}
+
 function getStagePointer(
   stage: Konva.Stage,
   viewport: StageViewport
@@ -929,7 +1826,7 @@ function duplicateSelected(state: CanvasPageState): CanvasPageState {
   return {
     ...nextState,
     selectedIds: nextSelectedIds,
-    outputStatus: nextSelectedIds.length > 0 ? "已复制所选图层。" : nextState.outputStatus,
+    outputStatus: nextSelectedIds.length > 0 ? "已创建所选图层的新副本。" : nextState.outputStatus,
   }
 }
 
@@ -1850,7 +2747,7 @@ function CanvasToolbar({
   onOpenVersions: () => void
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
-  const interactionLocked = readOnly || state.loading
+  const interactionLocked = readOnly || state.loading || state.pendingPaste !== null
 
   return (
     <div className="tm-canvas-toolbar">
@@ -2038,11 +2935,13 @@ function CanvasToolbar({
             value={
               readOnly
                 ? "历史快照只读"
-                : state.loading
-                  ? "正在读取草稿"
-                  : state.selectedIds.length > 0
-                    ? `已选 ${state.selectedIds.length} 项`
-                    : "未选择元素"
+                : state.pendingPaste
+                  ? "待放置预览"
+                  : state.loading
+                    ? "正在读取草稿"
+                    : state.selectedIds.length > 0
+                      ? `已选 ${state.selectedIds.length} 项`
+                      : "未选择元素"
             }
             density="compact"
             size="sm"
@@ -2153,13 +3052,22 @@ function CanvasLayerRail({
 function CanvasLayerPanel({
   state,
   readOnly,
+  clipboardSupported,
+  onCopy,
+  onPaste,
   onChange,
 }: {
   state: CanvasPageState
   readOnly: boolean
+  clipboardSupported: boolean
+  onCopy: () => Promise<void>
+  onPaste: () => Promise<void>
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   const selectedCount = state.selectedIds.length
+  const clipboardUnsupportedTitle = clipboardSupported
+    ? undefined
+    : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
 
   if (state.loading) {
     return (
@@ -2180,11 +3088,31 @@ function CanvasLayerPanel({
           <Button
             size="sm"
             variant="outline"
+            title={clipboardUnsupportedTitle}
+            disabled={selectedCount === 0 || !clipboardSupported}
+            onClick={() => void onCopy()}
+          >
+            <Copy className="size-4" />
+            拷贝
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            title={clipboardUnsupportedTitle}
+            disabled={readOnly || !clipboardSupported}
+            onClick={() => void onPaste()}
+          >
+            <ArrowDownToLine className="size-4" />
+            粘贴
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             disabled={selectedCount === 0 || readOnly}
             onClick={() => onChange((current) => duplicateSelected(current))}
           >
-            <Copy className="size-4" />
-            复制
+            <Plus className="size-4" />
+            新副本
           </Button>
           <Button
             size="sm"
@@ -2339,10 +3267,16 @@ function CanvasLayerPanel({
 function CanvasInspector({
   state,
   readOnly,
+  clipboardSupported,
+  onCopy,
+  onPaste,
   onChange,
 }: {
   state: CanvasPageState
   readOnly: boolean
+  clipboardSupported: boolean
+  onCopy: () => Promise<void>
+  onPaste: () => Promise<void>
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   const selectedItems = state.draft.elements.filter((item) => state.selectedIds.includes(item.id))
@@ -2387,11 +3321,35 @@ function CanvasInspector({
             <Button
               type="button"
               variant="outline"
+              title={
+                clipboardSupported ? undefined : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
+              }
+              disabled={!clipboardSupported}
+              onClick={() => void onCopy()}
+            >
+              <Copy className="size-4" />
+              拷贝
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              title={
+                clipboardSupported ? undefined : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
+              }
+              disabled={readOnly || !clipboardSupported}
+              onClick={() => void onPaste()}
+            >
+              <ArrowDownToLine className="size-4" />
+              粘贴
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
               disabled={readOnly}
               onClick={() => onChange((current) => duplicateSelected(current))}
             >
-              <Copy className="size-4" />
-              复制所选
+              <Plus className="size-4" />
+              新副本
             </Button>
             <Button
               type="button"
@@ -3759,11 +4717,13 @@ function CanvasStageView({
   readOnly,
   onChange,
   onViewportSizeChange,
+  onPointerChange,
 }: {
   state: CanvasPageState
   readOnly: boolean
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
   onViewportSizeChange: (size: StageViewportSize) => void
+  onPointerChange: (point: { x: number; y: number } | null) => void
 }) {
   const stageRef = React.useRef<Konva.Stage | null>(null)
   const transformerRef = React.useRef<Konva.Transformer | null>(null)
@@ -3777,6 +4737,14 @@ function CanvasStageView({
     viewportY: number
   } | null>(null)
   const selectionActiveRef = React.useRef(false)
+  const elementDragSessionRef = React.useRef<{
+    baseDraft: CanvasDraftDocument
+    draggedId: string
+    movedIds: string[]
+    rotationOrigin: { x: number; y: number }
+    lastDeltaX: number
+    lastDeltaY: number
+  } | null>(null)
 
   const measuredStageHostSize = useElementSize(stageHostElement)
   const stageViewportSize = React.useMemo(
@@ -3812,8 +4780,9 @@ function CanvasStageView({
     [state.draft.elements, state.selectedIds]
   )
   const selectedSingleElement = selectedElements.length === 1 ? selectedElements[0] : null
-  const selectedLineElement = selectedSingleElement?.kind === "line" ? selectedSingleElement : null
-  const transformerEnabled = !state.editingId && !selectedLineElement
+  const selectedLineElement =
+    !state.pendingPaste && selectedSingleElement?.kind === "line" ? selectedSingleElement : null
+  const transformerEnabled = !state.editingId && !selectedLineElement && !state.pendingPaste
   const transformerAnchors = isSquareResizeElement(selectedSingleElement)
     ? TRANSFORMER_CORNER_ANCHORS
     : TRANSFORMER_ALL_ANCHORS
@@ -3888,11 +4857,36 @@ function CanvasStageView({
     if (event.target.getParent()?.className === "Transformer") {
       return
     }
-    const stage = event.target.getStage()
+    const stage = event.target.getStage?.() ?? stageRef.current
     if (!stage) {
       return
     }
     if (state.editingId && blurActiveInlineTextEditor()) {
+      return
+    }
+
+    const point = getStagePointer(stage, state.viewport)
+    onPointerChange(point)
+
+    if (state.pendingPaste) {
+      if (event.evt.button === 1 || event.evt.button === 2 || state.spacePressed) {
+        const pointer = stage.getPointerPosition()
+        if (!pointer) {
+          return
+        }
+        isPanningRef.current = true
+        panOriginRef.current = {
+          pointerX: pointer.x,
+          pointerY: pointer.y,
+          viewportX: state.viewport.x,
+          viewportY: state.viewport.y,
+        }
+        return
+      }
+
+      if (event.evt.button === 0 && point) {
+        onChange((current) => confirmPendingPastePlacement(movePendingPasteToPoint(current, point)))
+      }
       return
     }
 
@@ -3911,7 +4905,6 @@ function CanvasStageView({
         }
         return
       }
-      const point = getStagePointer(stage, state.viewport)
       if (!point) {
         return
       }
@@ -3957,12 +4950,17 @@ function CanvasStageView({
       return
     }
 
-    if (!selectionActiveRef.current) {
+    const point = getStagePointer(stage, state.viewport)
+    onPointerChange(point)
+
+    if (state.pendingPaste) {
+      if (point) {
+        onChange((current) => movePendingPasteToPoint(current, point))
+      }
       return
     }
 
-    const point = getStagePointer(stage, state.viewport)
-    if (!point) {
+    if (!selectionActiveRef.current || !point) {
       return
     }
     onChange((current) => ({
@@ -4063,6 +5061,37 @@ function CanvasStageView({
       transformer.getLayer()?.batchDraw()
     },
     [onChange, readOnly]
+  )
+
+  const previewElementDragSelection = React.useCallback(
+    (
+      session: NonNullable<typeof elementDragSessionRef.current>,
+      stagePosition: { x: number; y: number }
+    ) => {
+      const preview = createSelectionDragPreview(
+        session.baseDraft,
+        session.draggedId,
+        session.movedIds,
+        stagePosition,
+        session.rotationOrigin,
+        state.snapEnabled
+      )
+      if (!preview) {
+        return null
+      }
+      return {
+        ...preview,
+        draft: {
+          ...preview.draft,
+          editor: {
+            ...preview.draft.editor,
+            gridEnabled: state.gridEnabled,
+            snapEnabled: state.snapEnabled,
+          },
+        },
+      }
+    },
+    [state.gridEnabled, state.snapEnabled]
   )
 
   return (
@@ -4204,9 +5233,25 @@ function CanvasStageView({
                     offsetY={geometry.rotationOrigin.y}
                     rotation={"rotation" in element ? (element.rotation ?? 0) : 0}
                     draggable={
-                      !readOnly && !element.meta.locked && !state.spacePressed && !state.editingId
+                      !readOnly &&
+                      !state.pendingPaste &&
+                      !element.meta.locked &&
+                      !state.spacePressed &&
+                      !state.editingId
                     }
-                    onClick={(event) =>
+                    dragBoundFunc={(position) =>
+                      getSnappedDragAbsolutePosition(
+                        element,
+                        position,
+                        geometry.rotationOrigin,
+                        state.viewport,
+                        state.snapEnabled
+                      )
+                    }
+                    onClick={(event) => {
+                      if (state.pendingPaste) {
+                        return
+                      }
                       onChange((current) => ({
                         ...setSelection(
                           current,
@@ -4216,8 +5261,11 @@ function CanvasStageView({
                         focus: "center-right",
                         activePanel: "attributes",
                       }))
-                    }
-                    onTap={(event) =>
+                    }}
+                    onTap={(event) => {
+                      if (state.pendingPaste) {
+                        return
+                      }
                       onChange((current) => ({
                         ...setSelection(
                           current,
@@ -4227,9 +5275,9 @@ function CanvasStageView({
                         focus: "center-right",
                         activePanel: "attributes",
                       }))
-                    }
+                    }}
                     onDblClick={() =>
-                      readOnly || element.meta.locked
+                      readOnly || state.pendingPaste || element.meta.locked
                         ? undefined
                         : onChange((current) => ({
                             ...current,
@@ -4237,26 +5285,117 @@ function CanvasStageView({
                             selectedIds: [element.id],
                           }))
                     }
-                    onDragEnd={(event) => {
-                      if (readOnly) {
+                    onDragStart={(event) => {
+                      if (readOnly || state.pendingPaste) {
                         return
                       }
-                      const position = snapElementPosition(
-                        element,
-                        event.target.x() - geometry.rotationOrigin.x,
-                        event.target.y() - geometry.rotationOrigin.y,
-                        state.snapEnabled
-                      )
-                      onChange((current) =>
-                        applyDraftUpdate(current, (draft) => ({
-                          ...draft,
-                          elements: draft.elements.map((item) =>
-                            item.id === element.id
-                              ? ({ ...item, ...position } as CanvasDraftElement)
-                              : item
-                          ),
+                      event.cancelBubble = true
+                      const movedIds = state.selectedIds.includes(element.id)
+                        ? state.selectedIds
+                        : [element.id]
+                      elementDragSessionRef.current = {
+                        baseDraft: cloneDraft(state.liveDraft),
+                        draggedId: element.id,
+                        movedIds,
+                        rotationOrigin: geometry.rotationOrigin,
+                        lastDeltaX: 0,
+                        lastDeltaY: 0,
+                      }
+                      onChange((current) => ({
+                        ...current,
+                        selectedIds: movedIds,
+                        editingId: null,
+                        focus: "center-right",
+                        activePanel: "attributes",
+                      }))
+                    }}
+                    onDragMove={(event) => {
+                      if (readOnly || state.pendingPaste) {
+                        return
+                      }
+                      event.cancelBubble = true
+                      const session = elementDragSessionRef.current
+                      if (!session || session.draggedId !== element.id) {
+                        return
+                      }
+                      const preview = previewElementDragSelection(session, {
+                        x: event.target.x(),
+                        y: event.target.y(),
+                      })
+                      if (!preview) {
+                        return
+                      }
+                      if (
+                        Math.abs(preview.deltaX - session.lastDeltaX) < 0.001 &&
+                        Math.abs(preview.deltaY - session.lastDeltaY) < 0.001
+                      ) {
+                        return
+                      }
+                      session.lastDeltaX = preview.deltaX
+                      session.lastDeltaY = preview.deltaY
+                      onChange((current) => ({
+                        ...current,
+                        liveDraft: preview.draft,
+                        draft: preview.draft,
+                        selectedIds: preview.movedIds,
+                        editingId: null,
+                        storageMode: "persisted",
+                      }))
+                    }}
+                    onDragEnd={(event) => {
+                      if (readOnly || state.pendingPaste) {
+                        return
+                      }
+                      event.cancelBubble = true
+                      const session = elementDragSessionRef.current
+                      elementDragSessionRef.current = null
+                      if (!session || session.draggedId !== element.id) {
+                        const position = snapElementPosition(
+                          element,
+                          event.target.x() - geometry.rotationOrigin.x,
+                          event.target.y() - geometry.rotationOrigin.y,
+                          state.snapEnabled
+                        )
+                        onChange((current) =>
+                          applyDraftUpdate(current, (draft) => ({
+                            ...draft,
+                            elements: draft.elements.map((item) =>
+                              item.id === element.id
+                                ? ({ ...item, ...position } as CanvasDraftElement)
+                                : item
+                            ),
+                          }))
+                        )
+                        return
+                      }
+                      const preview = previewElementDragSelection(session, {
+                        x: event.target.x(),
+                        y: event.target.y(),
+                      })
+                      if (!preview) {
+                        return
+                      }
+                      if (Math.abs(preview.deltaX) < 0.001 && Math.abs(preview.deltaY) < 0.001) {
+                        onChange((current) => ({
+                          ...current,
+                          selectedIds: preview.movedIds,
+                          editingId: null,
+                          focus: "center-right",
+                          activePanel: "attributes",
                         }))
-                      )
+                        return
+                      }
+                      onChange((current) => {
+                        const next = pushHistory(current, preview.draft)
+                        return {
+                          ...next,
+                          selectedIds: preview.movedIds,
+                          editingId: null,
+                          focus: "center-right",
+                          activePanel: "attributes",
+                          storageMode: "persisted",
+                        }
+                      })
                     }}
                   >
                     <KonvaRect
@@ -4655,7 +5794,12 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     React.useState<TemplateNameDialogState | null>(null)
   const readOnly = state.readOnlyVersion !== null
   const interactionLocked = readOnly || state.loading
+  const asyncClipboardSupported = supportsAsyncClipboard()
   const [, setFontLoadGeneration] = React.useState(0)
+  const stateRef = React.useRef(state)
+  const interactionLockedRef = React.useRef(interactionLocked)
+  const stageViewportSizeRef = React.useRef(stageViewportSize)
+  const stagePointerRef = React.useRef<{ x: number; y: number } | null>(null)
   const draftFontFamilies = React.useMemo(
     () =>
       state.draft.elements.flatMap((element) =>
@@ -4663,6 +5807,18 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       ),
     [state.draft.elements]
   )
+
+  React.useEffect(() => {
+    stateRef.current = state
+  }, [state])
+
+  React.useEffect(() => {
+    interactionLockedRef.current = interactionLocked
+  }, [interactionLocked])
+
+  React.useEffect(() => {
+    stageViewportSizeRef.current = stageViewportSize
+  }, [stageViewportSize])
 
   React.useEffect(() => {
     let cancelled = false
@@ -4936,6 +6092,24 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         }
         return
       }
+      if (stateRef.current.pendingPaste) {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+          event.preventDefault()
+          setState((current) => cancelPendingPastePlacement(current))
+          return
+        }
+        if (event.key === "Escape") {
+          event.preventDefault()
+          setState((current) => cancelPendingPastePlacement(current))
+          return
+        }
+        if (event.key === "Enter") {
+          event.preventDefault()
+          setState((current) => confirmPendingPastePlacement(current))
+          return
+        }
+        return
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
         event.preventDefault()
         setState((current) => (event.shiftKey ? redoDraft(current) : undoDraft(current)))
@@ -5001,6 +6175,61 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       window.removeEventListener("blur", handleWindowBlur)
     }
   }, [interactionLocked])
+
+  React.useEffect(() => {
+    const handleCopy = (event: ClipboardEvent) => {
+      if (isCanvasClipboardBypassTarget(event.target) || !event.clipboardData) {
+        return
+      }
+
+      const selectedElements = getSelectedCanvasElements(stateRef.current)
+      if (selectedElements.length === 0) {
+        return
+      }
+
+      event.preventDefault()
+      writeCanvasClipboardToDataTransfer(event.clipboardData, selectedElements)
+      setState((current) => ({
+        ...current,
+        outputStatus: "已拷贝所选图层。",
+      }))
+    }
+
+    const handlePaste = (event: ClipboardEvent) => {
+      if (isCanvasClipboardBypassTarget(event.target) || !event.clipboardData) {
+        return
+      }
+
+      if (interactionLockedRef.current) {
+        event.preventDefault()
+        if (stateRef.current.readOnlyVersion) {
+          setState((current) => ({
+            ...current,
+            outputStatus: "当前快照只读，无法粘贴。",
+          }))
+        }
+        return
+      }
+
+      event.preventDefault()
+      const clipboard = readCanvasClipboardFromDataTransfer(event.clipboardData)
+      setState((current) =>
+        startClipboardPastePlacement(
+          current,
+          clipboard,
+          stageViewportSizeRef.current,
+          stagePointerRef.current ?? undefined
+        )
+      )
+    }
+
+    window.addEventListener("copy", handleCopy)
+    window.addEventListener("paste", handlePaste)
+    return () => {
+      window.removeEventListener("copy", handleCopy)
+      window.removeEventListener("paste", handlePaste)
+    }
+  }, [])
 
   const openVersion = React.useCallback((version: UserTemplateVersionSnapshot) => {
     setState((current) => ({
@@ -5162,8 +6391,72 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     setState(nextState)
   }, [controller, state])
 
+  const handleCopyToClipboard = React.useCallback(async () => {
+    if (!asyncClipboardSupported) {
+      setState((current) => ({
+        ...current,
+        outputStatus: "当前环境不支持按钮拷贝，请使用键盘快捷键。",
+      }))
+      return
+    }
+
+    const selectedElements = getSelectedCanvasElements(stateRef.current)
+    if (selectedElements.length === 0) {
+      return
+    }
+
+    try {
+      await writeCanvasClipboardToNavigator(selectedElements)
+      setState((current) => ({
+        ...current,
+        outputStatus: "已拷贝所选图层。",
+      }))
+    } catch {
+      setState((current) => ({
+        ...current,
+        outputStatus: "拷贝失败，请检查浏览器剪贴板权限。",
+      }))
+    }
+  }, [asyncClipboardSupported])
+
+  const handlePasteFromClipboard = React.useCallback(async () => {
+    if (!asyncClipboardSupported) {
+      setState((current) => ({
+        ...current,
+        outputStatus: "当前环境不支持按钮粘贴，请使用键盘快捷键。",
+      }))
+      return
+    }
+
+    if (interactionLockedRef.current) {
+      return
+    }
+
+    try {
+      const clipboard = await readCanvasClipboardFromNavigator()
+      setState((current) =>
+        startClipboardPastePlacement(
+          current,
+          clipboard,
+          stageViewportSizeRef.current,
+          stagePointerRef.current ?? undefined
+        )
+      )
+    } catch {
+      setState((current) => ({
+        ...current,
+        outputStatus: "粘贴失败，请检查浏览器剪贴板权限。",
+      }))
+    }
+  }, [asyncClipboardSupported])
+
   const canUndo = state.historyIndex > 0
   const canRedo = state.historyIndex < state.history.length - 1
+  const inspectorReadOnly = interactionLocked || state.pendingPaste !== null
+  const clipboardToastTone = getClipboardToastTone(state.outputStatus)
+  const handleStagePointerChange = (point: { x: number; y: number } | null) => {
+    stagePointerRef.current = point
+  }
 
   return (
     <section className="tm-workspace">
@@ -5205,7 +6498,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
             </div>
           </div>
           <div className="tm-pane__body">
-            <CanvasLayerRail state={state} readOnly={interactionLocked} onChange={setState} />
+            <CanvasLayerRail state={state} readOnly={inspectorReadOnly} onChange={setState} />
           </div>
         </aside>
 
@@ -5243,7 +6536,10 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
             </div>
           </div>
           <div className="tm-pane__body tm-pane__body--canvas-stage">
-            {state.outputStatus ? (
+            {clipboardToastTone ? (
+              <CanvasClipboardToast message={state.outputStatus} tone={clipboardToastTone} />
+            ) : null}
+            {state.outputStatus && !clipboardToastTone ? (
               <div className="tm-pane__notice">{state.outputStatus}</div>
             ) : null}
             {startupSyncPending || state.loading ? (
@@ -5263,6 +6559,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
                 readOnly={interactionLocked}
                 onChange={setState}
                 onViewportSizeChange={setStageViewportSize}
+                onPointerChange={handleStagePointerChange}
               />
             )}
           </div>
@@ -5318,16 +6615,30 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
           <div className="tm-pane__body">
             <div className="tm-pane__stack">
               {state.activePanel === "attributes" ? (
-                <CanvasInspector state={state} readOnly={interactionLocked} onChange={setState} />
+                <CanvasInspector
+                  state={state}
+                  readOnly={inspectorReadOnly}
+                  clipboardSupported={asyncClipboardSupported}
+                  onCopy={handleCopyToClipboard}
+                  onPaste={handlePasteFromClipboard}
+                  onChange={setState}
+                />
               ) : (
                 <CanvasOutput
                   controller={controller}
                   state={state}
-                  readOnly={interactionLocked}
+                  readOnly={inspectorReadOnly}
                   onChange={setState}
                 />
               )}
-              <CanvasLayerPanel state={state} readOnly={interactionLocked} onChange={setState} />
+              <CanvasLayerPanel
+                state={state}
+                readOnly={inspectorReadOnly}
+                clipboardSupported={asyncClipboardSupported}
+                onCopy={handleCopyToClipboard}
+                onPaste={handlePasteFromClipboard}
+                onChange={setState}
+              />
             </div>
           </div>
         </aside>
