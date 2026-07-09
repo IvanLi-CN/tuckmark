@@ -3673,7 +3673,7 @@ function renderElementNode(element: CanvasDraftElement): React.ReactNode {
               x={canvasDotsToMillimeters(8)}
               y={canvasDotsToMillimeters(16)}
               width={element.size - canvasDotsToMillimeters(16)}
-              text="二维码\n无效"
+              text={"二维码\n无效"}
               align="center"
               fontSize={canvasDotsToMillimeters(12)}
               fontStyle="bold"
@@ -3720,7 +3720,7 @@ function renderElementNode(element: CanvasDraftElement): React.ReactNode {
               x={canvasDotsToMillimeters(8)}
               y={canvasDotsToMillimeters(14)}
               width={element.size - canvasDotsToMillimeters(16)}
-              text="数据矩阵码\n无效"
+              text={"数据矩阵码\n无效"}
               align="center"
               fontSize={canvasDotsToMillimeters(12)}
               fontStyle="bold"
