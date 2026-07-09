@@ -4,6 +4,11 @@ export type FooterVersionMetadata = {
   ariaLabel: string | null
 }
 
+export type RuntimeBuildMetadata = {
+  appVersion: string
+  buildRef: string
+}
+
 export function normalizeVersionTag(value: string | null | undefined): string {
   const trimmed = value?.trim() ?? ""
   if (!trimmed) {
@@ -23,6 +28,45 @@ export function normalizeBuildRef(value: string | null | undefined): string {
   return trimmed
 }
 
+export function normalizeRuntimeBuildMetadata({
+  appVersion,
+  buildRef,
+}: {
+  appVersion?: string | null
+  buildRef?: string | null
+}): RuntimeBuildMetadata {
+  return {
+    appVersion: normalizeVersionTag(appVersion),
+    buildRef: normalizeBuildRef(buildRef),
+  }
+}
+
+export function hasBuildMetadataMismatch(
+  current: {
+    appVersion?: string | null
+    buildRef?: string | null
+  },
+  next: {
+    appVersion?: string | null
+    buildRef?: string | null
+  }
+): boolean {
+  const normalizedCurrent = normalizeRuntimeBuildMetadata(current)
+  const normalizedNext = normalizeRuntimeBuildMetadata(next)
+
+  const buildRefChanged =
+    (normalizedCurrent.buildRef || normalizedNext.buildRef) &&
+    normalizedCurrent.buildRef !== normalizedNext.buildRef
+  if (buildRefChanged) {
+    return true
+  }
+
+  return Boolean(
+    (normalizedCurrent.appVersion || normalizedNext.appVersion) &&
+      normalizedCurrent.appVersion !== normalizedNext.appVersion
+  )
+}
+
 export function resolveFooterVersionMetadata({
   appVersion,
   buildRef,
@@ -30,8 +74,9 @@ export function resolveFooterVersionMetadata({
   appVersion?: string | null
   buildRef?: string | null
 }): FooterVersionMetadata {
-  const normalizedVersion = normalizeVersionTag(appVersion)
-  const normalizedBuildRef = normalizeBuildRef(buildRef)
+  const normalizedMetadata = normalizeRuntimeBuildMetadata({ appVersion, buildRef })
+  const normalizedVersion = normalizedMetadata.appVersion
+  const normalizedBuildRef = normalizedMetadata.buildRef
   const versionLabel = normalizedVersion ? `v${normalizedVersion}` : null
   const buildLabel = normalizedBuildRef ? `build ${normalizedBuildRef}` : null
 

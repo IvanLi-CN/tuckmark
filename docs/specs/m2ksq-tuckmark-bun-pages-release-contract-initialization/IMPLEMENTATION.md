@@ -23,18 +23,29 @@
   - untagged owner-facing builds render `build <shortsha>` only
   - local no-build-ref fallback can still use the root package version so local
     previews do not go blank
+- `apps/web/vite.config.ts` also emits a same-origin `version.json` payload
+  from the same runtime build metadata truth source. The browser-static service
+  worker explicitly bypasses cache handling for this file so the probe never
+  enters app-shell precache.
 - `apps/web/public/pwa/` stores generated Tuckmark maskable PNG icons.
 - `apps/web/src/pwa-lifecycle.ts` owns service worker registration, update
   detection, low-frequency background rechecks, stale-tab catch-up triggers,
-  `SKIP_WAITING`, and reload-on-controller-change behavior.
+  `SKIP_WAITING`, reload-on-controller-change behavior, and a same-origin
+  `version.json` fallback for stranded clients that do not currently surface a
+  waiting worker.
+- `apps/web/src/pwa-lifecycle.ts` exposes the update-detection source in its
+  runtime snapshot so owner-facing UI can stay generic while tests and stories
+  still distinguish waiting-worker versus version-probe prompts.
 - `apps/web/src/pwa-update-toast.tsx` owns the non-blocking update prompt shown
   from the shared workbench shell. Its update action uses a project-owned
   confirmation dialog instead of browser-native `confirm`.
 - `apps/web/tests/pwa.spec.ts` covers service worker registration, offline
-  route refresh, and PWA asset inspection.
+  route refresh, and PWA asset inspection including `version.json` consistency
+  and non-precache behavior.
 - `apps/web/src/pwa-lifecycle.test.ts` covers the guarded update-check cadence:
   immediate startup checks, 30-minute periodic polling, 10-minute stale-tab
-  activation catch-up, offline skips, online retries, and in-flight dedupe.
+  activation catch-up, offline skips, online retries, in-flight dedupe, and
+  stranded-client version-probe mismatch recovery.
 - `.github/workflows/pages.yml` runs on `main` pushes, manual dispatch, and
   published GitHub Releases. Release-triggered runs check out the published tag.
   Manual dispatch can also receive a `release_tag` input.

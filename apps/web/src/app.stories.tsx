@@ -13,6 +13,7 @@ import {
   clearRecentCanvasDimensions,
   recordRecentCanvasDimension,
 } from "./lib/canvas-dimensions.js"
+import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import type { AppContext } from "./types.js"
 import {
   resetUserTemplateStoreForTest,
@@ -58,6 +59,18 @@ const longTitleDemoClient = Object.assign(Object.create(longTitleDemoBaseClient)
     return longTitleTemplates
   },
 }) as ApiClient
+
+const strandedPwaUpdateSnapshot: PwaUpdateSnapshot = {
+  status: "ready",
+  source: "version-probe",
+  registration: null,
+  waitingWorker: null,
+  detectedBuildMetadata: {
+    appVersion: "",
+    buildRef: "e499426",
+  },
+  error: null,
+}
 
 const meta: Meta<typeof WorkbenchAppStory> = {
   title: "Tuckmark/Workbench",
@@ -138,6 +151,14 @@ export const Home: Story = {
   args: {
     context: runtimeContext,
     initialEntries: ["/"],
+  },
+}
+
+export const HomeWithStrandedPwaUpdate: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/"],
+    pwaUpdateSnapshot: strandedPwaUpdateSnapshot,
   },
 }
 

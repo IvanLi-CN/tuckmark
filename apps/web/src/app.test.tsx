@@ -15,6 +15,7 @@ import {
 import { snapTransformedElementGeometry } from "./canvas-page.js"
 import { buildInputFromTemplate, fallbackTemplates } from "./demo-data.js"
 import { loadRecentActivity } from "./lib/recent-activity.js"
+import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import type { AppContext, CanvasDraftElement, PreviewArtifact } from "./types.js"
 import {
   loadWorkingCopy,
@@ -42,10 +43,12 @@ const browserPayloadMocks = vi.hoisted(() => ({
 
 const pwaToastMocks = vi.hoisted(() => ({
   applyPwaUpdate: vi.fn(),
-  usePwaUpdate: vi.fn(() => ({
+  usePwaUpdate: vi.fn<() => PwaUpdateSnapshot>(() => ({
     status: "idle",
+    source: "none",
     registration: null,
     waitingWorker: null,
+    detectedBuildMetadata: null,
     error: null,
   })),
 }))
@@ -806,8 +809,10 @@ beforeEach(async () => {
   pwaToastMocks.applyPwaUpdate.mockReset()
   pwaToastMocks.usePwaUpdate.mockReturnValue({
     status: "idle",
+    source: "none",
     registration: null,
     waitingWorker: null,
+    detectedBuildMetadata: null,
     error: null,
   })
 
@@ -912,8 +917,10 @@ describe("web workbench app", () => {
   it("shows a non-blocking PWA update prompt when a new browser-static version is ready", async () => {
     pwaToastMocks.usePwaUpdate.mockReturnValue({
       status: "ready",
+      source: "service-worker",
       registration: null,
       waitingWorker: null,
+      detectedBuildMetadata: null,
       error: null,
     })
 
@@ -946,11 +953,32 @@ describe("web workbench app", () => {
     )
   })
 
+  it("reuses the same owner-facing prompt when a version probe detects a stranded client", async () => {
+    pwaToastMocks.usePwaUpdate.mockReturnValue({
+      status: "ready",
+      source: "version-probe",
+      registration: null,
+      waitingWorker: null,
+      detectedBuildMetadata: {
+        appVersion: "",
+        buildRef: "e499426",
+      },
+      error: null,
+    })
+
+    await renderApp(browserRuntimeContext)
+
+    expect(document.body.textContent).toContain("新版本可用")
+    expect(document.querySelector('[aria-label="Tuckmark Web update status"]')).not.toBeNull()
+  })
+
   it("keeps new-version caching silent until the update is ready", async () => {
     pwaToastMocks.usePwaUpdate.mockReturnValue({
       status: "installing",
+      source: "service-worker",
       registration: null,
       waitingWorker: null,
+      detectedBuildMetadata: null,
       error: null,
     })
 

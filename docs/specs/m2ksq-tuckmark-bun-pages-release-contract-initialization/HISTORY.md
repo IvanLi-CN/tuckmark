@@ -23,3 +23,9 @@ version and build reference are now separate fields, so tagged deploys show
 `v<release-version>` while keeping `build <shortsha>` in tooltip metadata, and
 untagged mainline deploys show `build <shortsha>` only instead of masquerading
 as a published version.
+
+The PWA update contract was tightened again after stranded installed clients
+were observed to miss prompts unless a waiting worker was already visible.
+Browser-static Pages builds now publish same-origin runtime metadata through
+`version.json`, and the lifecycle controller treats either waiting-worker ready
+or version-probe mismatch as a valid non-blocking update prompt source.
