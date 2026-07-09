@@ -933,6 +933,17 @@ export const CanvasWorkspaceDataMatrixInvalid: Story = {
     const canvas = within(canvasElement)
     await expect((await canvas.findAllByDisplayValue("待修正数据矩阵码")).length).toBeGreaterThan(0)
     await canvas.findByText("数据矩阵码内容为空")
+    const sections = Array.from(canvasElement.querySelectorAll<HTMLElement>(".tm-editor-section"))
+    const contentSection = sections.find(
+      (section) => section.querySelector(".tm-editor-section__title")?.textContent === "内容"
+    )
+    const geometrySection = sections.find(
+      (section) => section.querySelector(".tm-editor-section__title")?.textContent === "几何与样式"
+    )
+    expect(contentSection).toBeTruthy()
+    expect(contentSection?.textContent ?? "").toContain("数据矩阵码内容为空")
+    expect(geometrySection).toBeTruthy()
+    expect(geometrySection?.textContent ?? "").not.toContain("数据矩阵码内容为空")
   },
 }
 

@@ -2438,6 +2438,9 @@ function CanvasInspector({
 
   const issue = getElementIssue(element)
   const warning = getElementCanvasWarning(state.draft, element)
+  const hasEncodedContentIssue =
+    issue != null &&
+    (element.kind === "barcode" || element.kind === "qr" || element.kind === "datamatrix")
 
   const rotateSelectedElementBy = (delta: number) => {
     updateElement((item) =>
@@ -2556,6 +2559,13 @@ function CanvasInspector({
                 }}
               />
             </div>
+          ) : null}
+          {hasEncodedContentIssue ? (
+            <Alert variant="destructive" className="col-span-full">
+              <AlertCircle className="mt-0.5 size-4" />
+              <AlertTitle>{issue.title}</AlertTitle>
+              <AlertDescription>{issue.detail}</AlertDescription>
+            </Alert>
           ) : null}
         </div>
       </CanvasSection>
@@ -2975,13 +2985,6 @@ function CanvasInspector({
                 "stroke-width"
               )
             : null}
-          {issue ? (
-            <Alert variant="destructive" className="col-span-full">
-              <AlertCircle className="mt-0.5 size-4" />
-              <AlertTitle>{issue.title}</AlertTitle>
-              <AlertDescription>{issue.detail}</AlertDescription>
-            </Alert>
-          ) : null}
           {!issue && warning ? (
             <Alert className="col-span-full">
               <AlertCircle className="mt-0.5 size-4" />
