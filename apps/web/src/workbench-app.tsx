@@ -2187,9 +2187,16 @@ function CanvasPageLegacy({
               </Select>
               <div className="grid gap-2">
                 {(
-                  ["text", "rect", "circle", "triangle", "line", "barcode", "qr", "datamatrix"] as Array<
-                    CanvasElement["kind"]
-                  >
+                  [
+                    "text",
+                    "rect",
+                    "circle",
+                    "triangle",
+                    "line",
+                    "barcode",
+                    "qr",
+                    "datamatrix",
+                  ] as Array<CanvasElement["kind"]>
                 ).map((kind) => (
                   <Button
                     key={kind}

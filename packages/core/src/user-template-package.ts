@@ -107,9 +107,7 @@ function validateUserTemplatePackageSemantics(templatePackage: UserTemplatePacka
         throw new Error(`Element ${index + 1} references unknown field: ${element.key}`)
       }
       if (
-        (element.kind === "barcode" ||
-          element.kind === "qr" ||
-          element.kind === "datamatrix") &&
+        (element.kind === "barcode" || element.kind === "qr" || element.kind === "datamatrix") &&
         resolveTemplateElementValue(element, fieldDefaults).trim().length === 0
       ) {
         throw new Error(`Element ${index + 1} requires default ${element.kind} content`)

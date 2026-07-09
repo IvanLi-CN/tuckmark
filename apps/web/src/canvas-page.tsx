@@ -1184,11 +1184,7 @@ function applyTransformedNodeToElement(
     }
   }
 
-  if (
-    element.kind === "qr" ||
-    element.kind === "datamatrix" ||
-    element.kind === "circle"
-  ) {
+  if (element.kind === "qr" || element.kind === "datamatrix" || element.kind === "circle") {
     node.scaleX(1)
     node.scaleY(1)
     const nextSize = Math.max(
@@ -2538,9 +2534,7 @@ function CanvasInspector({
               />
             </div>
           ) : null}
-          {element.kind === "barcode" ||
-          element.kind === "qr" ||
-          element.kind === "datamatrix" ? (
+          {element.kind === "barcode" || element.kind === "qr" || element.kind === "datamatrix" ? (
             <div className="tm-inspector-inline-field">
               <Label htmlFor="encoded-value" className="tm-inspector-inline-label">
                 编码
@@ -2998,9 +2992,7 @@ function CanvasInspector({
         </div>
       </CanvasSection>
 
-      {element.kind === "barcode" ||
-      element.kind === "qr" ||
-      element.kind === "datamatrix" ? (
+      {element.kind === "barcode" || element.kind === "qr" || element.kind === "datamatrix" ? (
         <CanvasSection title="编码设置" className="tm-inspector-section">
           <div className="tm-inspector-form">
             {element.kind === "barcode" ? (

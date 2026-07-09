@@ -38,9 +38,7 @@ export function encodeDataMatrix(value: string): DataMatrixEncoding {
       throw new Error("bwip-js returned no Data Matrix symbol")
     }
     if (symbol.pixx !== symbol.pixy) {
-      throw new Error(
-        `Rectangular Data Matrix is not supported (${symbol.pixx}x${symbol.pixy})`
-      )
+      throw new Error(`Rectangular Data Matrix is not supported (${symbol.pixx}x${symbol.pixy})`)
     }
 
     return {

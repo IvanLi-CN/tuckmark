@@ -1944,9 +1944,7 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
     return document
   }
 
-  const preset = getPresetById(
-    scenario === "barcode-selected" ? "shipping-wide" : "ops-tag"
-  )
+  const preset = getPresetById(scenario === "barcode-selected" ? "shipping-wide" : "ops-tag")
   return createDraftFromPreset(preset)
 }
 

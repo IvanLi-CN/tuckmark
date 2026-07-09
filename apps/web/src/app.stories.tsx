@@ -931,9 +931,7 @@ export const CanvasWorkspaceDataMatrixInvalid: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect((await canvas.findAllByDisplayValue("待修正数据矩阵码")).length).toBeGreaterThan(
-      0
-    )
+    await expect((await canvas.findAllByDisplayValue("待修正数据矩阵码")).length).toBeGreaterThan(0)
     await canvas.findByText("数据矩阵码内容为空")
   },
 }
