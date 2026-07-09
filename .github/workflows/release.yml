@@ -83,3 +83,14 @@ jobs:
             "${RELEASE_ARGS[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: Redeploy Pages with release metadata
+        run: |
+          VERSION="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).release_version")"
+          TYPE_LABEL="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).type_label")"
+          if [ "$TYPE_LABEL" = "type:none" ]; then
+            echo "Skipping Pages redeploy for type:none"
+            exit 0
+          fi
+          gh workflow run pages.yml --ref main -f release_tag="$VERSION"
+        env:
+          GH_TOKEN: ${{ github.token }}

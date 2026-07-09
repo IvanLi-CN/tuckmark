@@ -9,6 +9,7 @@ import {
   hashPwaString,
   resolveApiOrigin,
   resolveAppVersion,
+  resolveBuildRef,
   resolvePublicBase,
   resolveRepositoryUrl,
   resolveRightsUrl,
@@ -120,18 +121,21 @@ describe("PWA build assets", () => {
 describe("footer metadata", () => {
   it("uses package and repository defaults", () => {
     expect(resolveAppVersion({})).toBe("0.1.0")
+    expect(resolveBuildRef({})).toBe("")
     expect(resolveRepositoryUrl({})).toBe("https://github.com/IvanLi-CN/tuckmark")
     expect(resolveRightsUrl({})).toBe("https://ivanli.cc/")
   })
 
   it("allows builds to override metadata", () => {
     const env = {
-      TUCKMARK_APP_VERSION: "v1.2.3-preview.4",
+      TUCKMARK_APP_VERSION: "1.2.3-preview.4",
+      TUCKMARK_BUILD_REF: "e4994267326eb940dca6878193b0c514e69a7f0e",
       TUCKMARK_REPOSITORY_URL: "https://example.test/repo/",
       TUCKMARK_RIGHTS_URL: "https://example.test/rights/",
     }
 
-    expect(resolveAppVersion(env)).toBe("v1.2.3-preview.4")
+    expect(resolveAppVersion(env)).toBe("1.2.3-preview.4")
+    expect(resolveBuildRef(env)).toBe("e499426")
     expect(resolveRepositoryUrl(env)).toBe("https://example.test/repo/")
     expect(resolveRightsUrl(env)).toBe("https://example.test/rights/")
   })
@@ -142,7 +146,20 @@ describe("footer metadata", () => {
         GITHUB_REF_TYPE: "tag",
         GITHUB_REF_NAME: "v0.2.0-preview.5",
       })
-    ).toBe("v0.2.0-preview.5")
+    ).toBe("0.2.0-preview.5")
+  })
+
+  it("uses build-only metadata for untagged owner-facing builds", () => {
+    expect(
+      resolveAppVersion({
+        GITHUB_SHA: "e4994267326eb940dca6878193b0c514e69a7f0e",
+      })
+    ).toBe("")
+    expect(
+      resolveBuildRef({
+        GITHUB_SHA: "e4994267326eb940dca6878193b0c514e69a7f0e",
+      })
+    ).toBe("e499426")
   })
 })
 
@@ -152,14 +169,29 @@ describe("Pages workflow metadata", () => {
     "utf8"
   )
 
-  it("keeps owner-facing Pages on mainline builds instead of release tags", () => {
-    expect(pagesWorkflow).toContain("branches: [main]")
-    expect(pagesWorkflow).toContain("if: github.ref == 'refs/heads/main'")
-    expect(pagesWorkflow).toContain("ref: refs/heads/main")
-    expect(pagesWorkflow).not.toContain("types: [published]")
-    expect(pagesWorkflow).not.toContain("release_tag:")
-    expect(pagesWorkflow).not.toContain("github.event.release.tag_name")
-    expect(pagesWorkflow).toContain("main+$(git rev-parse --short HEAD)")
+  it("redeploys Pages when a GitHub Release is published", () => {
+    expect(pagesWorkflow).toContain("release:\n    types: [published]")
+  })
+
+  it("checks out the published release tag for release-triggered Pages builds", () => {
+    expect(pagesWorkflow).toContain("github.event.release.tag_name")
+  })
+
+  it("accepts an explicit release tag for release workflow dispatches", () => {
+    expect(pagesWorkflow).toContain("release_tag:")
+    expect(pagesWorkflow).toContain("Validate and check out manual release tag")
+    expect(pagesWorkflow).toContain('gh release view "$tag_name" --json tagName')
+    expect(pagesWorkflow).toContain("refs/tags/$tag_name:refs/tags/$tag_name")
+    expect(pagesWorkflow).toContain("TUCKMARK_APP_VERSION=")
+    expect(pagesWorkflow).toContain("TUCKMARK_BUILD_REF=")
+    expect(pagesWorkflow).toContain("git rev-parse --short HEAD")
+  })
+
+  it("keeps manual Pages dispatches pinned to main when no release tag is provided", () => {
+    expect(pagesWorkflow).toContain(
+      `ref: \${{ github.event_name == 'release' && github.event.release.tag_name || 'refs/heads/main' }}`
+    )
+    expect(pagesWorkflow).not.toContain("&& inputs.release_tag != '' && inputs.release_tag")
   })
 })
 
@@ -169,17 +201,9 @@ describe("Release workflow Pages redeploy", () => {
     "utf8"
   )
 
-  it("publishes preview releases as prereleases without redeploying owner-facing Pages", () => {
-    expect(releaseWorkflow).toContain("concurrency:")
-    expect(releaseWorkflow).toContain("group: release")
-    expect(releaseWorkflow).toContain("CHANNEL_LABEL=")
-    expect(releaseWorkflow).toContain("RELEASE_ARGS=()")
-    expect(releaseWorkflow).toContain("RELEASE_ARGS+=(--prerelease --latest=false)")
-    expect(releaseWorkflow).toContain('"${' + 'RELEASE_ARGS[@]}"')
-    expect(releaseWorkflow).toContain('--target "$MERGE_SHA"')
-    expect(releaseWorkflow).toContain('git checkout --detach "$MERGE_SHA"')
-    expect(releaseWorkflow).not.toContain("$=RELEASE_FLAGS")
-    expect(releaseWorkflow).not.toContain("gh workflow run pages.yml")
+  it("dispatches Pages after publishing a GitHub Release", () => {
+    expect(releaseWorkflow).toContain("actions: write")
+    expect(releaseWorkflow).toContain("gh workflow run pages.yml --ref main -f release_tag")
   })
 })
 

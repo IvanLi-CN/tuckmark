@@ -52,10 +52,13 @@ output.
 - The device entry button opens a right-side `device drawer`.
 - `StatusFooter` contains:
   - left: active surface, mode, and route path
-  - right: GitHub repository link, current app version, site rights notice,
-    Service API readiness, and browser-direct print readiness
+  - right: GitHub repository link, owner-facing release/build metadata, site
+    rights notice, Service API readiness, and browser-direct print readiness
 - Footer version and repository metadata must come from build-time metadata with
   environment overrides, not from hard-coded component literals.
+- Tagged owner-facing builds show `v<release-version>` only and expose
+  `build <shortsha>` in tooltip metadata; untagged owner-facing builds show
+  `build <shortsha>` only.
 - `browser-static`, `server-http`, and `demo` reuse the same route tree and the
   same page components.
 - Static Pages keeps browser history routing semantics and ships a `404.html`

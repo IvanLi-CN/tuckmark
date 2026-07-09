@@ -3,29 +3,32 @@ import { fileURLToPath } from "node:url"
 import type { StorybookConfig } from "@storybook/react-vite"
 import tailwindcss from "@tailwindcss/vite"
 import { mergeConfig } from "vite"
-import rootPackageJson from "../../../package.json" with { type: "json" }
+import {
+  resolveAppVersion,
+  resolveBuildRef,
+  resolveRepositoryUrl,
+  resolveRightsUrl,
+} from "../build-metadata.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DEFAULT_REPOSITORY_URL = "https://github.com/IvanLi-CN/tuckmark"
-const DEFAULT_RIGHTS_URL = "https://ivanli.cc/"
 
 const config: StorybookConfig = {
   framework: "@storybook/react-vite",
   stories: ["../src/**/*.stories.@(ts|tsx)"],
   addons: ["@storybook/addon-docs"],
   async viteFinal(baseConfig) {
+    const storybookEnv = {
+      ...process.env,
+      GITHUB_SHA: process.env.TUCKMARK_BUILD_REF ? process.env.GITHUB_SHA : undefined,
+    }
+
     return mergeConfig(baseConfig, {
       plugins: [tailwindcss()],
       define: {
-        __TUCKMARK_APP_VERSION__: JSON.stringify(
-          process.env.TUCKMARK_APP_VERSION || rootPackageJson.version
-        ),
-        __TUCKMARK_REPOSITORY_URL__: JSON.stringify(
-          process.env.TUCKMARK_REPOSITORY_URL || DEFAULT_REPOSITORY_URL
-        ),
-        __TUCKMARK_RIGHTS_URL__: JSON.stringify(
-          process.env.TUCKMARK_RIGHTS_URL || DEFAULT_RIGHTS_URL
-        ),
+        __TUCKMARK_APP_VERSION__: JSON.stringify(resolveAppVersion(storybookEnv)),
+        __TUCKMARK_BUILD_REF__: JSON.stringify(resolveBuildRef(storybookEnv)),
+        __TUCKMARK_REPOSITORY_URL__: JSON.stringify(resolveRepositoryUrl(storybookEnv)),
+        __TUCKMARK_RIGHTS_URL__: JSON.stringify(resolveRightsUrl(storybookEnv)),
       },
       resolve: {
         alias: {

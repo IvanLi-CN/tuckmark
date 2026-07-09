@@ -159,8 +159,11 @@ while the workbench was being productized:
 - The shared footer also became an operator support surface:
   - repository link and site rights notice are visible without opening
     developer tools
-  - the displayed app version is injected from build metadata with environment
-    overrides
+  - the displayed owner-facing release/build metadata is injected from build
+    metadata with environment overrides
+  - tagged builds show `v<release-version>` and keep `build <shortsha>` in
+    tooltip metadata, while untagged owner-facing builds fall back to
+    `build <shortsha>` only
   - Service API and browser-direct readiness stay visible beside the support
     metadata
 - The marquee-selection affordance was later tightened to match screen-space
