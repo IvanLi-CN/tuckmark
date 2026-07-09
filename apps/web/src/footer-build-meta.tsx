@@ -21,10 +21,7 @@ export function FooterBuildMeta({
   }
 
   const metaNode = (
-    <span
-      className="tm-footer__meta"
-      tabIndex={metadata.tooltipLabel ? 0 : undefined}
-    >
+    <span className="tm-footer__meta" tabIndex={metadata.tooltipLabel ? 0 : undefined}>
       <Tag className="size-3.5" aria-hidden="true" />
       <span className="tm-footer__meta-copy">{metadata.visibleLabel}</span>
     </span>
