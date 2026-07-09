@@ -1533,19 +1533,59 @@ function getSelectionTranslationToPoint(
 
 export function getSnappedDragStagePosition(
   element: CanvasDraftElement,
-  stagePosition: { x: number; y: number },
+  canvasPosition: { x: number; y: number },
   rotationOrigin: { x: number; y: number },
   snapEnabled: boolean
 ) {
   const snappedPosition = snapElementPosition(
     element,
-    stagePosition.x - rotationOrigin.x,
-    stagePosition.y - rotationOrigin.y,
+    canvasPosition.x - rotationOrigin.x,
+    canvasPosition.y - rotationOrigin.y,
     snapEnabled
   )
   return {
     x: snappedPosition.x + rotationOrigin.x,
     y: snappedPosition.y + rotationOrigin.y,
+  }
+}
+
+function projectCanvasPointToStagePosition(
+  point: { x: number; y: number },
+  viewport: StageViewport
+) {
+  const displayScale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+  return {
+    x: viewport.x + point.x * displayScale,
+    y: viewport.y + point.y * displayScale,
+  }
+}
+
+export function getSnappedDragAbsolutePosition(
+  element: CanvasDraftElement,
+  absolutePosition: { x: number; y: number },
+  rotationOrigin: { x: number; y: number },
+  viewport: StageViewport,
+  snapEnabled: boolean
+) {
+  return projectCanvasPointToStagePosition(
+    getSnappedDragStagePosition(
+      element,
+      projectStagePointToCanvasPosition(absolutePosition, viewport),
+      rotationOrigin,
+      snapEnabled
+    ),
+    viewport
+  )
+}
+
+function projectStagePointToCanvasPosition(
+  point: { x: number; y: number },
+  viewport: StageViewport
+) {
+  const displayScale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+  return {
+    x: (point.x - viewport.x) / displayScale,
+    y: (point.y - viewport.y) / displayScale,
   }
 }
 
@@ -5189,10 +5229,11 @@ function CanvasStageView({
                       !state.editingId
                     }
                     dragBoundFunc={(position) =>
-                      getSnappedDragStagePosition(
+                      getSnappedDragAbsolutePosition(
                         element,
                         position,
                         geometry.rotationOrigin,
+                        state.viewport,
                         state.snapEnabled
                       )
                     }

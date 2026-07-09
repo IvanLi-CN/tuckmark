@@ -18,12 +18,14 @@ import {
   confirmPendingPastePlacement,
   createCanvasStateFromDraft,
   createSelectionDragPreview,
+  getSnappedDragAbsolutePosition,
   getSnappedDragStagePosition,
   movePendingPasteToPoint,
   snapTransformedElementGeometry,
   startClipboardPastePlacement,
 } from "./canvas-page.js"
 import { buildInputFromTemplate, fallbackTemplates } from "./demo-data.js"
+import { CANVAS_DOTS_PER_MILLIMETER } from "./lib/canvas-units.js"
 import { loadRecentActivity } from "./lib/recent-activity.js"
 import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import type { AppContext, CanvasDraftElement, PreviewArtifact } from "./types.js"
@@ -1750,6 +1752,45 @@ describe("web workbench app", () => {
     expect(getSnappedDragStagePosition(rect, { x: 14.4, y: 19.6 }, { x: 6, y: 4 }, false)).toEqual({
       x: 14.4,
       y: 19.6,
+    })
+  })
+
+  it("snaps drag bound positions in stage space through the canvas grid", () => {
+    const rect: CanvasDraftElement = {
+      id: "rect-snap-absolute",
+      kind: "rect",
+      x: 8,
+      y: 16,
+      width: 18,
+      height: 10,
+      strokeWidth: 0.25,
+      fill: "none",
+      stroke: "#111111",
+      radius: 0,
+      rotation: 0,
+      meta: { name: "Rect", visible: true, locked: false },
+    }
+    const viewport = {
+      x: 120,
+      y: 56,
+      scale: 2,
+    }
+    const displayScale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+
+    expect(
+      getSnappedDragAbsolutePosition(
+        rect,
+        {
+          x: viewport.x + 14.4 * displayScale,
+          y: viewport.y + 19.6 * displayScale,
+        },
+        { x: 6, y: 4 },
+        viewport,
+        true
+      )
+    ).toEqual({
+      x: viewport.x + 14 * displayScale,
+      y: viewport.y + 20 * displayScale,
     })
   })
 

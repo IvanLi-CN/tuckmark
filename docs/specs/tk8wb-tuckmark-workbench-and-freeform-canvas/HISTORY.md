@@ -211,3 +211,7 @@ while the workbench was being productized:
   - ordinary pointer dragging was then refined again so dragging any member of
     the current selection carries the whole selected set through that same live
     snap path instead of moving only the directly grabbed node
+  - the normal Konva drag-bound path now converts stage-space pointer
+    coordinates back into canvas-space millimeter geometry before snapping, so
+    zoomed or panned canvases keep the same strong live snap feel instead of
+    producing offset or barely perceptible movement
