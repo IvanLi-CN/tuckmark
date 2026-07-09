@@ -312,7 +312,9 @@ function isCanvasLayerMeta(value: unknown): value is CanvasDraftElement["meta"] 
   )
 }
 
-function isCanvasElementBinding(value: unknown): value is NonNullable<CanvasDraftElement["binding"]> {
+function isCanvasElementBinding(
+  value: unknown
+): value is NonNullable<CanvasDraftElement["binding"]> {
   return (
     isRecord(value) &&
     typeof value.fieldKey === "string" &&
@@ -581,7 +583,9 @@ async function writeCanvasClipboardToNavigator(elements: CanvasDraftElement[]): 
   return serialized
 }
 
-function readCanvasClipboardFromDataTransfer(dataTransfer: DataTransfer): CanvasClipboardReadResult {
+function readCanvasClipboardFromDataTransfer(
+  dataTransfer: DataTransfer
+): CanvasClipboardReadResult {
   let sawStructuredPayload = false
   for (const format of [CANVAS_CLIPBOARD_FORMAT, CANVAS_WEB_CUSTOM_CLIPBOARD_FORMAT]) {
     const payloadText = dataTransfer.getData(format)
@@ -2939,9 +2943,7 @@ function CanvasInspector({
               type="button"
               variant="outline"
               title={
-                clipboardSupported
-                  ? undefined
-                  : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
+                clipboardSupported ? undefined : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
               }
               disabled={!clipboardSupported}
               onClick={() => void onCopy()}
@@ -2953,9 +2955,7 @@ function CanvasInspector({
               type="button"
               variant="outline"
               title={
-                clipboardSupported
-                  ? undefined
-                  : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
+                clipboardSupported ? undefined : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
               }
               disabled={readOnly || !clipboardSupported}
               onClick={() => void onPaste()}

@@ -1660,7 +1660,9 @@ describe("web workbench app", () => {
     )
     await flush(8)
 
-    const versionButton = document.querySelector(".tm-version-list__item") as HTMLButtonElement | null
+    const versionButton = document.querySelector(
+      ".tm-version-list__item"
+    ) as HTMLButtonElement | null
     expect(versionButton).not.toBeNull()
 
     await act(async () => {

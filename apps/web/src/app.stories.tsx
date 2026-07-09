@@ -502,14 +502,10 @@ export const CanvasWorkspaceClipboard: Story = {
       ).length
 
       await userEvent.click(canvas.getByRole("button", { name: "拷贝" }))
-      await expect(
-        canvas.findByText("已拷贝所选图层。")
-      ).resolves.toBeVisible()
+      await expect(canvas.findByText("已拷贝所选图层。")).resolves.toBeVisible()
 
       await userEvent.click(canvas.getByRole("button", { name: "粘贴" }))
-      await expect(
-        canvas.findByText("已粘贴 1 个图层。")
-      ).resolves.toBeVisible()
+      await expect(canvas.findByText("已粘贴 1 个图层。")).resolves.toBeVisible()
       await expect(
         canvasElement.querySelectorAll('.tm-layer-list--inspector input[aria-label$="图层名称"]')
           .length
