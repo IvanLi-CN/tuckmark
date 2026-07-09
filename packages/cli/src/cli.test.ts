@@ -13,6 +13,10 @@ const fixturePath = path.join(
   repoRoot,
   "packages/core/fixtures/electronics-component-label.package.json"
 )
+const dataMatrixFixturePath = path.join(
+  repoRoot,
+  "packages/core/fixtures/data-matrix-rack-tag.package.json"
+)
 
 async function runCli(args: string[]) {
   return execFileAsync("bun", ["tsx", "--tsconfig", cliTsconfigPath, cliPath, ...args], {
@@ -75,6 +79,30 @@ describe("cli smoke", () => {
       width: 192,
     })
     expect(result.artifact.pngPath).toContain("preview.png")
+  })
+
+  it("validates and previews Data Matrix template packages through the shared CLI path", {
+    timeout: 20_000,
+  }, async () => {
+    const validation = JSON.parse(
+      (await runCli(["template-package", "validate", "--file", dataMatrixFixturePath])).stdout
+    ) as { ok: boolean; id: string }
+    expect(validation).toMatchObject({
+      ok: true,
+      id: "rack-tag-datamatrix",
+    })
+
+    const preview = JSON.parse(
+      (await runCli(["template-package", "preview", "--file", dataMatrixFixturePath])).stdout
+    ) as {
+      artifact: { source: string; name: string; width: number; pngPath: string }
+    }
+    expect(preview.artifact).toMatchObject({
+      source: "canvas",
+      name: "Rack Tag Data Matrix",
+      width: 192,
+    })
+    expect(preview.artifact.pngPath).toContain("preview.png")
   })
 
   it("preserves package render options when CLI overrides one field", {

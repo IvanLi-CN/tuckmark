@@ -892,6 +892,61 @@ export const CanvasWorkspaceBarcodeInvalid: Story = {
   },
 }
 
+export const CanvasWorkspaceDataMatrixSelected: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "datamatrix-selected",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("资产矩阵码")).length).toBeGreaterThan(0)
+    await canvas.findByLabelText("边长")
+    await canvas.findByLabelText("编码")
+    await canvas.findByText("固定使用通用 ECC200 方形符号，不提供额外格式开关。")
+  },
+}
+
+export const CanvasWorkspaceDataMatrixInvalid: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "datamatrix-invalid",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("待修正数据矩阵码")).length).toBeGreaterThan(0)
+    await canvas.findByText("数据矩阵码内容为空")
+    const sections = Array.from(canvasElement.querySelectorAll<HTMLElement>(".tm-editor-section"))
+    const contentSection = sections.find(
+      (section) => section.querySelector(".tm-editor-section__title")?.textContent === "内容"
+    )
+    const geometrySection = sections.find(
+      (section) => section.querySelector(".tm-editor-section__title")?.textContent === "几何与样式"
+    )
+    expect(contentSection).toBeTruthy()
+    expect(contentSection?.textContent ?? "").toContain("数据矩阵码内容为空")
+    expect(geometrySection).toBeTruthy()
+    expect(geometrySection?.textContent ?? "").not.toContain("数据矩阵码内容为空")
+  },
+}
+
 export const CanvasWorkspaceOutputTab: Story = {
   args: {
     context: runtimeContext,

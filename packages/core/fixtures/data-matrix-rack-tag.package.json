@@ -1,0 +1,66 @@
+{
+  "schema": "tuckmark.user-template-package.v1",
+  "id": "rack-tag-datamatrix",
+  "name": "Rack Tag Data Matrix",
+  "description": "Rack asset label with Data Matrix symbol.",
+  "canvas": {
+    "width": 192,
+    "height": 96
+  },
+  "fields": [
+    {
+      "key": "asset",
+      "label": "Asset",
+      "defaultValue": "TM-0001"
+    },
+    {
+      "key": "port",
+      "label": "Port",
+      "defaultValue": "Gi1/0/1"
+    }
+  ],
+  "elements": [
+    {
+      "kind": "text",
+      "key": "asset",
+      "x": 12,
+      "y": 26,
+      "width": 90,
+      "fontSize": 20,
+      "fontWeight": "bold",
+      "align": "left",
+      "maxLines": 1,
+      "rotation": 0
+    },
+    {
+      "kind": "text",
+      "key": "port",
+      "x": 12,
+      "y": 52,
+      "width": 90,
+      "fontSize": 14,
+      "fontWeight": "normal",
+      "align": "left",
+      "maxLines": 1,
+      "rotation": 0
+    },
+    {
+      "kind": "datamatrix",
+      "key": "asset",
+      "x": 112,
+      "y": 12,
+      "size": 72,
+      "rotation": 0
+    }
+  ],
+  "sampleInput": {
+    "asset": "TM-0001",
+    "port": "Gi1/0/1"
+  },
+  "renderOptions": {
+    "paperType": "gap",
+    "printWidthDots": 384,
+    "threshold": 80
+  },
+  "tags": ["ops", "datamatrix"]
+}

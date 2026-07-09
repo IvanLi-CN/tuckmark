@@ -137,6 +137,15 @@ export const qrElementSchema = z.object({
     errorCorrectionLevel: z.enum(["L", "M", "Q", "H"]).default("M"),
     rotation: z.number().default(0),
 });
+export const dataMatrixElementSchema = z.object({
+    kind: z.literal("datamatrix"),
+    key: z.string().min(1),
+    x: z.number(),
+    y: z.number(),
+    size: z.number().positive(),
+    value: z.string().optional(),
+    rotation: z.number().default(0),
+});
 export const templateElementSchema = z.discriminatedUnion("kind", [
     textElementSchema,
     rectElementSchema,
@@ -145,6 +154,7 @@ export const templateElementSchema = z.discriminatedUnion("kind", [
     lineElementSchema,
     barcodeElementSchema,
     qrElementSchema,
+    dataMatrixElementSchema,
 ]);
 export const templateSchema = z.object({
     id: z.string().min(1),

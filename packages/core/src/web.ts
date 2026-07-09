@@ -1,3 +1,5 @@
+export type { DataMatrixEncoding } from "./data-matrix.js"
+export { encodeDataMatrix } from "./data-matrix.js"
 export { presetTemplateData } from "./preset-template-data.js"
 export { buildSvg, escapeXml } from "./svg-renderer.js"
 export type {

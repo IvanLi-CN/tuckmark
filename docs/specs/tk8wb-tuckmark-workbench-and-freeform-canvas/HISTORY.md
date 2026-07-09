@@ -174,3 +174,15 @@ while the workbench was being productized:
   - selection-box storage and inclusion tests remain in canvas-space geometry
   - follow-on cleanup kept the Storybook scenario and projection tests aligned
     with the same screen-space rendering contract
+- The shared symbol contract was later expanded to include first-class Data
+  Matrix support:
+  - the printable schema, Web draft model, and user-template package contract
+    now accept `kind: "datamatrix"` beside existing barcode and QR elements
+  - Data Matrix is intentionally scoped to generic square `ECC200` symbols and
+    does not introduce GS1, FNC1, or rectangular-extension behavior
+  - one shared `bwip-js`-backed encoder now feeds stage rendering, SVG preview,
+    and print output so all surfaces use the same module matrix and error
+    semantics
+  - Storybook fallback evidence now covers both selected and invalid Data
+    Matrix states to keep the new symbol inside the same visual review path as
+    other first-class canvas elements

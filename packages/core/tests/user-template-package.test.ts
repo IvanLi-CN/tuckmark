@@ -387,4 +387,53 @@ describe("UserTemplatePackage", () => {
       })
     ).toThrow(/requires default qr content/)
   })
+
+  it("parses and compiles Data Matrix package elements through the shared canvas schema", () => {
+    const parsed = parseUserTemplatePackage({
+      ...componentPackage,
+      id: "component-bin-dm",
+      name: "Component Bin DM",
+      fields: [{ key: "part", label: "Part", defaultValue: "INA219" }],
+      elements: [
+        {
+          kind: "datamatrix",
+          key: "part",
+          x: 12,
+          y: 12,
+          size: 72,
+          value: "INA219",
+          rotation: 0,
+        },
+      ],
+      sampleInput: { part: "INA219" },
+    })
+    const canvas = compileUserTemplatePackageToCanvas(parsed)
+
+    expect(canvas.elements[0]).toMatchObject({
+      kind: "datamatrix",
+      key: "part",
+      value: "INA219",
+      size: 72,
+    })
+  })
+
+  it("rejects empty Data Matrix defaults before preview", () => {
+    expect(() =>
+      parseUserTemplatePackage({
+        ...componentPackage,
+        fields: [{ key: "code", label: "Code", defaultValue: "" }],
+        sampleInput: {},
+        elements: [
+          {
+            kind: "datamatrix",
+            key: "code",
+            x: 10,
+            y: 10,
+            size: 64,
+            rotation: 0,
+          },
+        ],
+      })
+    ).toThrow(/requires default datamatrix content/)
+  })
 })

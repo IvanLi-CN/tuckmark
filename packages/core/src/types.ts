@@ -166,6 +166,16 @@ export const qrElementSchema = z.object({
   rotation: z.number().default(0),
 })
 
+export const dataMatrixElementSchema = z.object({
+  kind: z.literal("datamatrix"),
+  key: z.string().min(1),
+  x: z.number(),
+  y: z.number(),
+  size: z.number().positive(),
+  value: z.string().optional(),
+  rotation: z.number().default(0),
+})
+
 export const templateElementSchema = z.discriminatedUnion("kind", [
   textElementSchema,
   rectElementSchema,
@@ -174,6 +184,7 @@ export const templateElementSchema = z.discriminatedUnion("kind", [
   lineElementSchema,
   barcodeElementSchema,
   qrElementSchema,
+  dataMatrixElementSchema,
 ])
 export type TemplateElement = z.infer<typeof templateElementSchema>
 

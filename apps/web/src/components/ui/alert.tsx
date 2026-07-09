@@ -25,7 +25,7 @@ function Alert({
     <div
       role="alert"
       className={cn(
-        "grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1",
+        "grid grid-cols-[0_minmax(0,1fr)] items-start gap-x-0 gap-y-1 has-[>svg]:grid-cols-[auto_minmax(0,1fr)] has-[>svg]:gap-x-3 [&>svg]:row-span-2",
         alertVariants({ variant }),
         className
       )}
@@ -35,11 +35,21 @@ function Alert({
 }
 
 function AlertTitle({ className, ...props }: React.ComponentProps<"h5">) {
-  return <h5 className={cn("font-medium leading-none tracking-tight", className)} {...props} />
+  return (
+    <h5
+      className={cn("col-start-2 font-medium leading-none tracking-tight", className)}
+      {...props}
+    />
+  )
 }
 
 function AlertDescription({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("text-sm [&_p]:leading-relaxed", className)} {...props} />
+  return (
+    <div
+      className={cn("col-start-2 min-w-0 text-sm [&_p]:leading-relaxed", className)}
+      {...props}
+    />
+  )
 }
 
 export { Alert, AlertDescription, AlertTitle }

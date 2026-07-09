@@ -195,6 +195,7 @@ const CANVAS_TOOL_LABELS: Record<CanvasElement["kind"], string> = {
   line: "线条",
   barcode: "Code128",
   qr: "QR",
+  datamatrix: "数据矩阵码",
 }
 
 const WIDE_TRIPLE_THRESHOLD = 1280
@@ -482,6 +483,16 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         value: "https://tuckmark.local/item/TM-0001",
         errorCorrectionLevel: "M",
       }
+    case "datamatrix":
+      return {
+        id: `datamatrix-${crypto.randomUUID()}`,
+        kind,
+        x: seedX,
+        y: seedY,
+        size: 72,
+        value: "TM-0001",
+        rotation: 0,
+      }
   }
 }
 
@@ -711,6 +722,16 @@ function toCanvasPrintSource(
               size: element.size,
               value: element.value,
               errorCorrectionLevel: element.errorCorrectionLevel,
+              rotation: element.rotation ?? 0,
+            }
+          case "datamatrix":
+            return {
+              kind: "datamatrix" as const,
+              key: element.id,
+              x: element.x,
+              y: element.y,
+              size: element.size,
+              value: element.value,
               rotation: element.rotation ?? 0,
             }
           default:
@@ -2166,9 +2187,16 @@ function CanvasPageLegacy({
               </Select>
               <div className="grid gap-2">
                 {(
-                  ["text", "rect", "circle", "triangle", "line", "barcode", "qr"] as Array<
-                    CanvasElement["kind"]
-                  >
+                  [
+                    "text",
+                    "rect",
+                    "circle",
+                    "triangle",
+                    "line",
+                    "barcode",
+                    "qr",
+                    "datamatrix",
+                  ] as Array<CanvasElement["kind"]>
                 ).map((kind) => (
                   <Button
                     key={kind}
@@ -2965,6 +2993,31 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
               )
             }
 
+            if (element.kind === "datamatrix") {
+              return (
+                <KonvaRect
+                  key={element.id}
+                  x={element.x}
+                  y={element.y}
+                  width={element.size}
+                  height={element.size}
+                  fill="#ffffff"
+                  stroke={isSelected ? "#8b4c21" : "#2d231b"}
+                  strokeWidth={2}
+                  cornerRadius={8}
+                  draggable
+                  onClick={() => state.setSelectedCanvasElementId(element.id)}
+                  onDragEnd={(event) =>
+                    state.updateCanvasElement(element.id, (current) =>
+                      current.kind === "datamatrix"
+                        ? { ...current, x: event.target.x(), y: event.target.y() }
+                        : current
+                    )
+                  }
+                />
+              )
+            }
+
             return null
           })}
         </Layer>
@@ -3009,6 +3062,9 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
         return { ...current, [key]: value }
       }
       if (current.kind === "qr" && ["x", "y", "size"].includes(key)) {
+        return { ...current, [key]: value }
+      }
+      if (current.kind === "datamatrix" && ["x", "y", "size"].includes(key)) {
         return { ...current, [key]: value }
       }
       return current
@@ -3151,6 +3207,18 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
               const nextValue = event.currentTarget.value
               state.updateCanvasElement(element.id, (current) =>
                 current.kind === "qr" ? { ...current, value: nextValue } : current
+              )
+            }}
+          />
+        ) : null}
+
+        {element.kind === "datamatrix" ? (
+          <Textarea
+            value={element.value}
+            onChange={(event) => {
+              const nextValue = event.currentTarget.value
+              state.updateCanvasElement(element.id, (current) =>
+                current.kind === "datamatrix" ? { ...current, value: nextValue } : current
               )
             }}
           />
