@@ -1549,6 +1549,46 @@ export function getSnappedDragStagePosition(
   }
 }
 
+export function createSelectionDragPreview(
+  baseDraft: CanvasDraftDocument,
+  draggedId: string,
+  selectedIds: string[],
+  stagePosition: { x: number; y: number },
+  rotationOrigin: { x: number; y: number },
+  snapEnabled: boolean
+): {
+  deltaX: number
+  deltaY: number
+  draft: CanvasDraftDocument
+  movedIds: string[]
+} | null {
+  const draggedElement = baseDraft.elements.find((element) => element.id === draggedId)
+  if (!draggedElement) {
+    return null
+  }
+
+  const movedIds = selectedIds.includes(draggedId) ? selectedIds : [draggedId]
+  const snappedPosition = snapElementPosition(
+    draggedElement,
+    stagePosition.x - rotationOrigin.x,
+    stagePosition.y - rotationOrigin.y,
+    snapEnabled
+  )
+  const deltaX = snappedPosition.x - draggedElement.x
+  const deltaY = snappedPosition.y - draggedElement.y
+  const draft = normalizeDraftDocument({
+    ...cloneDraft(baseDraft),
+    elements: translateElementsByIds(baseDraft.elements, new Set(movedIds), deltaX, deltaY),
+  })
+
+  return {
+    deltaX,
+    deltaY,
+    draft,
+    movedIds,
+  }
+}
+
 function getStagePointer(
   stage: Konva.Stage,
   viewport: StageViewport
@@ -4646,6 +4686,14 @@ function CanvasStageView({
     viewportY: number
   } | null>(null)
   const selectionActiveRef = React.useRef(false)
+  const elementDragSessionRef = React.useRef<{
+    baseDraft: CanvasDraftDocument
+    draggedId: string
+    movedIds: string[]
+    rotationOrigin: { x: number; y: number }
+    lastDeltaX: number
+    lastDeltaY: number
+  } | null>(null)
 
   const measuredStageHostSize = useElementSize(stageHostElement)
   const stageViewportSize = React.useMemo(
@@ -4964,6 +5012,37 @@ function CanvasStageView({
     [onChange, readOnly]
   )
 
+  const previewElementDragSelection = React.useCallback(
+    (
+      session: NonNullable<typeof elementDragSessionRef.current>,
+      stagePosition: { x: number; y: number }
+    ) => {
+      const preview = createSelectionDragPreview(
+        session.baseDraft,
+        session.draggedId,
+        session.movedIds,
+        stagePosition,
+        session.rotationOrigin,
+        state.snapEnabled
+      )
+      if (!preview) {
+        return null
+      }
+      return {
+        ...preview,
+        draft: {
+          ...preview.draft,
+          editor: {
+            ...preview.draft.editor,
+            gridEnabled: state.gridEnabled,
+            snapEnabled: state.snapEnabled,
+          },
+        },
+      }
+    },
+    [state.gridEnabled, state.snapEnabled]
+  )
+
   return (
     <div className="tm-stage-shell">
       <div className="tm-stage-wrap tm-stage-wrap--editor">
@@ -5154,26 +5233,117 @@ function CanvasStageView({
                             selectedIds: [element.id],
                           }))
                     }
+                    onDragStart={(event) => {
+                      if (readOnly || state.pendingPaste) {
+                        return
+                      }
+                      event.cancelBubble = true
+                      const movedIds = state.selectedIds.includes(element.id)
+                        ? state.selectedIds
+                        : [element.id]
+                      elementDragSessionRef.current = {
+                        baseDraft: cloneDraft(state.liveDraft),
+                        draggedId: element.id,
+                        movedIds,
+                        rotationOrigin: geometry.rotationOrigin,
+                        lastDeltaX: 0,
+                        lastDeltaY: 0,
+                      }
+                      onChange((current) => ({
+                        ...current,
+                        selectedIds: movedIds,
+                        editingId: null,
+                        focus: "center-right",
+                        activePanel: "attributes",
+                      }))
+                    }}
+                    onDragMove={(event) => {
+                      if (readOnly || state.pendingPaste) {
+                        return
+                      }
+                      event.cancelBubble = true
+                      const session = elementDragSessionRef.current
+                      if (!session || session.draggedId !== element.id) {
+                        return
+                      }
+                      const preview = previewElementDragSelection(session, {
+                        x: event.target.x(),
+                        y: event.target.y(),
+                      })
+                      if (!preview) {
+                        return
+                      }
+                      if (
+                        Math.abs(preview.deltaX - session.lastDeltaX) < 0.001 &&
+                        Math.abs(preview.deltaY - session.lastDeltaY) < 0.001
+                      ) {
+                        return
+                      }
+                      session.lastDeltaX = preview.deltaX
+                      session.lastDeltaY = preview.deltaY
+                      onChange((current) => ({
+                        ...current,
+                        liveDraft: preview.draft,
+                        draft: preview.draft,
+                        selectedIds: preview.movedIds,
+                        editingId: null,
+                        storageMode: "persisted",
+                      }))
+                    }}
                     onDragEnd={(event) => {
                       if (readOnly || state.pendingPaste) {
                         return
                       }
-                      const position = snapElementPosition(
-                        element,
-                        event.target.x() - geometry.rotationOrigin.x,
-                        event.target.y() - geometry.rotationOrigin.y,
-                        state.snapEnabled
-                      )
-                      onChange((current) =>
-                        applyDraftUpdate(current, (draft) => ({
-                          ...draft,
-                          elements: draft.elements.map((item) =>
-                            item.id === element.id
-                              ? ({ ...item, ...position } as CanvasDraftElement)
-                              : item
-                          ),
+                      event.cancelBubble = true
+                      const session = elementDragSessionRef.current
+                      elementDragSessionRef.current = null
+                      if (!session || session.draggedId !== element.id) {
+                        const position = snapElementPosition(
+                          element,
+                          event.target.x() - geometry.rotationOrigin.x,
+                          event.target.y() - geometry.rotationOrigin.y,
+                          state.snapEnabled
+                        )
+                        onChange((current) =>
+                          applyDraftUpdate(current, (draft) => ({
+                            ...draft,
+                            elements: draft.elements.map((item) =>
+                              item.id === element.id
+                                ? ({ ...item, ...position } as CanvasDraftElement)
+                                : item
+                            ),
+                          }))
+                        )
+                        return
+                      }
+                      const preview = previewElementDragSelection(session, {
+                        x: event.target.x(),
+                        y: event.target.y(),
+                      })
+                      if (!preview) {
+                        return
+                      }
+                      if (Math.abs(preview.deltaX) < 0.001 && Math.abs(preview.deltaY) < 0.001) {
+                        onChange((current) => ({
+                          ...current,
+                          selectedIds: preview.movedIds,
+                          editingId: null,
+                          focus: "center-right",
+                          activePanel: "attributes",
                         }))
-                      )
+                        return
+                      }
+                      onChange((current) => {
+                        const next = pushHistory(current, preview.draft)
+                        return {
+                          ...next,
+                          selectedIds: preview.movedIds,
+                          editingId: null,
+                          focus: "center-right",
+                          activePanel: "attributes",
+                          storageMode: "persisted",
+                        }
+                      })
                     }}
                   >
                     <KonvaRect

@@ -97,6 +97,9 @@
 - Canvas snapping now resolves through the persistent `snapEnabled` editor flag
   across live element dragging, pending clipboard placement, drag end,
   transformer commit, line endpoint adjustment, and keyboard movement.
+- Ordinary pointer dragging now opens a runtime selection-drag session so the
+  grabbed element and any already-selected companions preview and commit as one
+  snapped translation instead of only updating the directly grabbed node.
 - Transformer commits snap final geometry to the existing `1mm` grid for
   text, rectangle, triangle, barcode, QR, circle, and line elements. Rotation
   remains freeform, and text transforms continue to preserve saved font size

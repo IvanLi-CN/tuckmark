@@ -287,8 +287,9 @@ output.
   - historical read-only canvas versions may copy selected elements but must
     not paste or otherwise mutate the draft
 - Ordinary element dragging snaps live to the existing `1mm` grid when
-  `snapEnabled` is active. Transformer handles remain commit-time only: they
-  may move freely while being
+  `snapEnabled` is active, and dragging any member of the current selection
+  moves that selected set together through the same live snap path. Transformer
+  handles remain commit-time only: they may move freely while being
   adjusted, then position and snap-compatible dimensions land on the existing
   `1mm` grid at release. Rotation is not snapped, and text resizing preserves
   the saved font-size semantics while snapping the text box position and
@@ -564,6 +565,10 @@ output.
 - `1600×1200` canvas clipboard workflow after Storybook `拷贝` + `粘贴`, showing the pending placement toast, stable editor copy, snap-aligned preview movement, and the distinct `拷贝` / `粘贴` / `新副本` actions together.
 
   ![Canvas clipboard workflow](./assets/canvas-clipboard-story-1600x1200.png)
+
+- `1600×1200` snap-enabled canvas workspace story showing the ordinary selection editing state with the persistent `吸附` toggle enabled for live drag snapping.
+
+  ![Canvas snap-enabled workspace](./assets/canvas-snap-enabled-story-1600x1200.png)
 
 - `1280×800` canvas workspace with a selected text element before inline editing.
 

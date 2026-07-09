@@ -17,6 +17,7 @@ import {
   cancelPendingPastePlacement,
   confirmPendingPastePlacement,
   createCanvasStateFromDraft,
+  createSelectionDragPreview,
   getSnappedDragStagePosition,
   movePendingPasteToPoint,
   snapTransformedElementGeometry,
@@ -1750,6 +1751,47 @@ describe("web workbench app", () => {
       x: 14.4,
       y: 19.6,
     })
+  })
+
+  it("moves the whole selected set during drag previews instead of only the grabbed element", () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const selectedElements = draft.elements.filter(
+      (element) => element.kind === "text" || element.kind === "qr"
+    )
+    const [draggedElement, companionElement] = selectedElements
+    if (!draggedElement || !companionElement) {
+      throw new Error("expected draggable multi-selection elements")
+    }
+
+    const preview = createSelectionDragPreview(
+      draft,
+      draggedElement.id,
+      [draggedElement.id, companionElement.id],
+      { x: draggedElement.x + 4.4, y: draggedElement.y + 7.6 },
+      { x: 0, y: 0 },
+      true
+    )
+
+    if (!preview) {
+      throw new Error("expected drag preview")
+    }
+
+    const draggedPreview = preview.draft.elements.find(
+      (element) => element.id === draggedElement.id
+    )
+    const companionPreview = preview.draft.elements.find(
+      (element) => element.id === companionElement.id
+    )
+    if (!draggedPreview || !companionPreview) {
+      throw new Error("expected moved preview elements")
+    }
+
+    expect(draggedPreview.x).toBeCloseTo(Math.round(draggedPreview.x), 6)
+    expect(draggedPreview.y).toBeCloseTo(Math.round(draggedPreview.y), 6)
+    expect(draggedPreview.x).toBeCloseTo(draggedElement.x + preview.deltaX, 6)
+    expect(draggedPreview.y).toBeCloseTo(draggedElement.y + preview.deltaY, 6)
+    expect(companionPreview.x).toBeCloseTo(companionElement.x + preview.deltaX, 6)
+    expect(companionPreview.y).toBeCloseTo(companionElement.y + preview.deltaY, 6)
   })
 
   it("restores the previous selection when pending placement is cancelled", () => {

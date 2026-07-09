@@ -546,6 +546,12 @@ export const CanvasWorkspaceSnapEnabled: Story = {
     viewport: {
       defaultViewport: "canvas-wide-editor",
     },
+    docs: {
+      description: {
+        story:
+          "When `吸附` is enabled, ordinary dragging and selection dragging both resolve through the same live `1mm` snap path.",
+      },
+    },
   },
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },

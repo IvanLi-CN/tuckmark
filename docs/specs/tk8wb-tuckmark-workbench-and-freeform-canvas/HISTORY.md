@@ -208,3 +208,6 @@ while the workbench was being productized:
   - a follow-up snap pass then aligned both ordinary element dragging and
     pending clipboard placement to the existing live `1mm` grid so movement no
     longer waits until drop to show snap behavior
+  - ordinary pointer dragging was then refined again so dragging any member of
+    the current selection carries the whole selected set through that same live
+    snap path instead of moving only the directly grabbed node
