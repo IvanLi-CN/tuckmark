@@ -51,8 +51,11 @@ and a reproducible worktree bootstrap path.
 - Mainline release uses a durable snapshot and supports backfill.
 - Pages deployment is separate from GitHub Release publication.
 - Published GitHub Releases and automated release publication trigger a fresh
-  Pages deployment with release tag metadata so the browser-static footer version
-  matches the published release tag.
+  Pages deployment with release tag metadata so the browser-static footer shows
+  the published release version while the build reference remains available in
+  tooltip metadata.
+- Untagged mainline Pages deploys must expose `build <shortsha>` only instead
+  of reusing stale package or release version text.
 - Repository settings must align with repo-local declarations.
 
 ## Acceptance
@@ -70,8 +73,10 @@ and a reproducible worktree bootstrap path.
   frequency, while stale tabs catch up when the page becomes active or returns
   online.
 - Release can publish stable and preview bundles from durable snapshots
-- Pages redeploys after release publication display the published release tag in
-  footer metadata
+- Pages redeploys after release publication display the published release tag
+  in footer metadata and expose `build <shortsha>` via tooltip
+- Untagged `main` Pages deploys display `build <shortsha>` only in footer
+  metadata
 - GitHub labels, protection, and Pages settings align with repository truth
 
 ## Visual Evidence
@@ -109,3 +114,20 @@ shell.
 
 PR: include
 ![PWA update prompt in workbench viewport](./assets/pwa-workbench-update-toast-viewport.png)
+
+The footer build-metadata contract is captured from Storybook canvas so release
+and untagged states can be reviewed without relying on a live deployment.
+Tagged builds keep the published release version visible while exposing the
+exact build reference in tooltip metadata for operator support.
+
+![Tagged footer build metadata](./assets/footer-build-meta-tagged.png)
+
+Hovering the tagged footer metadata reveals the build reference without turning
+it into always-visible footer text.
+
+![Tagged footer build metadata tooltip](./assets/footer-build-meta-tagged-tooltip.png)
+
+Untagged mainline builds do not masquerade as a release. They expose only the
+current `build <shortsha>` marker in the owner-facing footer.
+
+![Untagged footer build metadata](./assets/footer-build-meta-untagged.png)

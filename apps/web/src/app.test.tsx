@@ -758,6 +758,10 @@ beforeEach(async () => {
     value: "0.1.0",
     configurable: true,
   })
+  Object.defineProperty(globalThis, "__TUCKMARK_BUILD_REF__", {
+    value: "",
+    configurable: true,
+  })
   Object.defineProperty(globalThis, "__TUCKMARK_REPOSITORY_URL__", {
     value: "https://github.com/IvanLi-CN/tuckmark",
     configurable: true,
@@ -823,6 +827,7 @@ afterEach(async () => {
   globalThis.indexedDB = originalIndexedDb
   window.matchMedia = originalMatchMedia
   Reflect.deleteProperty(globalThis, "__TUCKMARK_APP_VERSION__")
+  Reflect.deleteProperty(globalThis, "__TUCKMARK_BUILD_REF__")
   Reflect.deleteProperty(globalThis, "__TUCKMARK_REPOSITORY_URL__")
   Reflect.deleteProperty(globalThis, "__TUCKMARK_RIGHTS_URL__")
   document.body.innerHTML = ""
@@ -847,6 +852,7 @@ describe("web workbench app", () => {
     expect(document.body.textContent).not.toContain("Releases")
     expect(document.body.textContent).toContain("Service API: disabled")
     expect(document.body.textContent).toContain("Browser direct: available")
+    expect(document.body.textContent).not.toContain("build ")
 
     const githubLink = document.querySelector<HTMLAnchorElement>(
       'a[href="https://github.com/IvanLi-CN/tuckmark"]'
@@ -854,6 +860,53 @@ describe("web workbench app", () => {
     const rightsLink = document.querySelector<HTMLAnchorElement>('a[href="https://ivanli.cc/"]')
     expect(githubLink?.textContent).toBe("GitHub")
     expect(rightsLink?.textContent).toBe("© 2026 Ivan Li")
+  })
+
+  it("renders tagged owner-facing builds as version with build reference in tooltip only", async () => {
+    Object.defineProperty(globalThis, "__TUCKMARK_APP_VERSION__", {
+      value: "0.2.0-preview.11",
+      configurable: true,
+    })
+    Object.defineProperty(globalThis, "__TUCKMARK_BUILD_REF__", {
+      value: "e4994267326eb940dca6878193b0c514e69a7f0e",
+      configurable: true,
+    })
+
+    await renderApp(browserRuntimeContext)
+
+    expect(document.body.textContent).toContain("v0.2.0-preview.11")
+    expect(document.body.textContent).not.toContain("build e499426")
+    const taggedFooterMeta = document.querySelector<HTMLElement>(".tm-footer__meta")
+    expect(taggedFooterMeta?.textContent).toContain("v0.2.0-preview.11")
+    expect(taggedFooterMeta?.getAttribute("tabindex")).toBe("0")
+
+    await act(async () => {
+      taggedFooterMeta?.focus()
+      taggedFooterMeta?.dispatchEvent(new FocusEvent("focus", { bubbles: true }))
+      taggedFooterMeta?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }))
+      await flush()
+    })
+
+    const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]')
+    expect(tooltip?.textContent).toContain("build e499426")
+  })
+
+  it("renders untagged owner-facing builds as build reference only", async () => {
+    Object.defineProperty(globalThis, "__TUCKMARK_APP_VERSION__", {
+      value: "",
+      configurable: true,
+    })
+    Object.defineProperty(globalThis, "__TUCKMARK_BUILD_REF__", {
+      value: "e499426",
+      configurable: true,
+    })
+
+    await renderApp(browserRuntimeContext)
+
+    expect(document.body.textContent).toContain("build e499426")
+    expect(document.body.textContent).not.toContain("v0.1.0")
+    const untaggedFooterMeta = document.querySelector<HTMLElement>(".tm-footer__meta")
+    expect(untaggedFooterMeta?.getAttribute("tabindex")).toBeNull()
   })
 
   it("shows a non-blocking PWA update prompt when a new browser-static version is ready", async () => {

@@ -7,7 +7,8 @@
 - The shared shell now includes:
   - a top navigation header
   - a shared status footer with route/runtime state, GitHub repository link,
-    build-time app version, site rights notice, and print-path readiness
+    build-time release/build metadata, site rights notice, and print-path
+    readiness
   - one right-side device drawer reused across runtime, browser-static, and
     demo surfaces
 - Template workspace is implemented as a left template browser, center batch

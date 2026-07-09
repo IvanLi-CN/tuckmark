@@ -428,6 +428,20 @@
     white-space: nowrap;
   }
 
+  .tm-footer__meta[tabindex] {
+    cursor: help;
+    border-radius: 0.35rem;
+  }
+
+  .tm-footer__meta[tabindex]:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--ring) 65%, white);
+    outline-offset: 2px;
+  }
+
+  .tm-footer__meta-copy {
+    @apply inline-flex items-center;
+  }
+
   .tm-footer__link svg,
   .tm-footer__meta svg {
     color: color-mix(in oklab, var(--foreground) 62%, var(--muted-foreground));

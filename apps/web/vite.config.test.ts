@@ -8,6 +8,7 @@ import {
   hashPwaString,
   resolveApiOrigin,
   resolveAppVersion,
+  resolveBuildRef,
   resolvePublicBase,
   resolveRepositoryUrl,
   resolveRightsUrl,
@@ -119,6 +120,7 @@ describe("PWA build assets", () => {
 describe("footer metadata", () => {
   it("uses package and repository defaults", () => {
     expect(resolveAppVersion({})).toBe("0.1.0")
+    expect(resolveBuildRef({})).toBe("")
     expect(resolveRepositoryUrl({})).toBe("https://github.com/IvanLi-CN/tuckmark")
     expect(resolveRightsUrl({})).toBe("https://ivanli.cc/")
   })
@@ -126,11 +128,13 @@ describe("footer metadata", () => {
   it("allows builds to override metadata", () => {
     const env = {
       TUCKMARK_APP_VERSION: "1.2.3-preview.4",
+      TUCKMARK_BUILD_REF: "e4994267326eb940dca6878193b0c514e69a7f0e",
       TUCKMARK_REPOSITORY_URL: "https://example.test/repo/",
       TUCKMARK_RIGHTS_URL: "https://example.test/rights/",
     }
 
     expect(resolveAppVersion(env)).toBe("1.2.3-preview.4")
+    expect(resolveBuildRef(env)).toBe("e499426")
     expect(resolveRepositoryUrl(env)).toBe("https://example.test/repo/")
     expect(resolveRightsUrl(env)).toBe("https://example.test/rights/")
   })
@@ -142,6 +146,19 @@ describe("footer metadata", () => {
         GITHUB_REF_NAME: "v0.2.0-preview.5",
       })
     ).toBe("0.2.0-preview.5")
+  })
+
+  it("uses build-only metadata for untagged owner-facing builds", () => {
+    expect(
+      resolveAppVersion({
+        GITHUB_SHA: "e4994267326eb940dca6878193b0c514e69a7f0e",
+      })
+    ).toBe("")
+    expect(
+      resolveBuildRef({
+        GITHUB_SHA: "e4994267326eb940dca6878193b0c514e69a7f0e",
+      })
+    ).toBe("e499426")
   })
 })
 
@@ -163,6 +180,8 @@ describe("Pages workflow metadata", () => {
     expect(pagesWorkflow).toContain("release_tag:")
     expect(pagesWorkflow).toContain("inputs.release_tag")
     expect(pagesWorkflow).toContain("TUCKMARK_APP_VERSION=")
+    expect(pagesWorkflow).toContain("TUCKMARK_BUILD_REF=")
+    expect(pagesWorkflow).toContain("git rev-parse --short HEAD")
   })
 })
 

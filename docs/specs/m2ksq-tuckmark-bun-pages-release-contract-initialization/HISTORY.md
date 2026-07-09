@@ -17,3 +17,9 @@ falls back to the root package version after a release tag is published for the
 same commit. Automated publication dispatches Pages explicitly with the new tag
 because releases created with the repository token do not create a separate
 Pages `release` event run.
+
+The footer metadata contract was later tightened again: owner-facing release
+version and build reference are now separate fields, so tagged deploys show
+`v<release-version>` while keeping `build <shortsha>` in tooltip metadata, and
+untagged mainline deploys show `build <shortsha>` only instead of masquerading
+as a published version.

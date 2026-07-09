@@ -19,7 +19,6 @@ import {
   ScanSearch,
   Settings2,
   SquarePen,
-  Tag,
   Trash2,
   Upload,
   Wifi,
@@ -78,6 +77,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
 import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
+import { FooterBuildMeta } from "./footer-build-meta.js"
 import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
 import { canvasDotsToMillimeters } from "./lib/canvas-units.js"
 import { cn } from "./lib/utils.js"
@@ -1312,7 +1312,6 @@ function WorkbenchLayout({
   const surfaceLabel =
     controller.context.surface === "server-http" ? "Server HTTP" : "Browser static"
   const modeLabel = controller.context.mode === "demo" ? "Demo mode" : "Runtime mode"
-  const versionLabel = `v${__TUCKMARK_APP_VERSION__}`
 
   return (
     <div className={cn("tm-shell", "tm-selectable-none", isCanvasRoute && "tm-shell--canvas")}>
@@ -1383,10 +1382,10 @@ function WorkbenchLayout({
             <GitHubMark className="size-3.5" />
             GitHub
           </a>
-          <span className="tm-footer__meta">
-            <Tag className="size-3.5" aria-hidden="true" />
-            {versionLabel}
-          </span>
+          <FooterBuildMeta
+            appVersion={__TUCKMARK_APP_VERSION__}
+            buildRef={__TUCKMARK_BUILD_REF__}
+          />
           <a href={__TUCKMARK_RIGHTS_URL__} target="_blank" rel="noreferrer">
             © 2026 Ivan Li
           </a>

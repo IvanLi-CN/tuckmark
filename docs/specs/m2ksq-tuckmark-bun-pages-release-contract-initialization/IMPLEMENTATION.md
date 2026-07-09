@@ -15,10 +15,14 @@
 
 - `apps/web/vite.config.ts` emits `manifest.webmanifest` and `sw.js` only for
   `browser-static` production builds.
-- `apps/web/vite.config.ts` resolves footer metadata from
-  `TUCKMARK_APP_VERSION`, then from GitHub tag build context, then from the root
-  package version. GitHub tag values are normalized without a leading `v`
-  because the UI owns the visible `v` prefix.
+- `apps/web/vite.config.ts` and `apps/web/build-metadata.ts` now split
+  owner-facing footer metadata into `TUCKMARK_APP_VERSION` and
+  `TUCKMARK_BUILD_REF`.
+  - tagged builds render `v<release-version>` and keep `build <shortsha>` in
+    tooltip metadata
+  - untagged owner-facing builds render `build <shortsha>` only
+  - local no-build-ref fallback can still use the root package version so local
+    previews do not go blank
 - `apps/web/public/pwa/` stores generated Tuckmark maskable PNG icons.
 - `apps/web/src/pwa-lifecycle.ts` owns service worker registration, update
   detection, low-frequency background rechecks, stale-tab catch-up triggers,
@@ -35,6 +39,7 @@
   published GitHub Releases. Release-triggered runs check out the published tag.
   Manual dispatch can also receive a `release_tag` input.
 - `.github/workflows/release.yml` dispatches `pages.yml` with the newly published
-  release tag after `gh release create` succeeds. The Pages build injects that
-  tag through `TUCKMARK_APP_VERSION` so the browser-static footer metadata
-  matches the release that triggered the redeploy.
+  release tag after `gh release create` succeeds. Pages always injects
+  `TUCKMARK_BUILD_REF`, and tagged deploys also inject `TUCKMARK_APP_VERSION`,
+  so the browser-static footer metadata matches the release/build that
+  triggered the redeploy.
