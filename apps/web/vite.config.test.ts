@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
+import { buildReleasePlan } from "../../.github/scripts/release-plan.mjs"
 import {
   createPwaHtmlTags,
   createPwaManifest,
@@ -183,6 +184,10 @@ describe("Pages workflow metadata", () => {
     expect(pagesWorkflow).toContain("TUCKMARK_BUILD_REF=")
     expect(pagesWorkflow).toContain("git rev-parse --short HEAD")
   })
+
+  it("keeps manual Pages dispatches pinned to main when no release tag is provided", () => {
+    expect(pagesWorkflow).toContain("|| 'refs/heads/main' }}")
+  })
 })
 
 describe("Release workflow Pages redeploy", () => {
@@ -194,5 +199,50 @@ describe("Release workflow Pages redeploy", () => {
   it("dispatches Pages after publishing a GitHub Release", () => {
     expect(releaseWorkflow).toContain("actions: write")
     expect(releaseWorkflow).toContain("gh workflow run pages.yml --ref main -f release_tag")
+  })
+})
+
+describe("release train planning", () => {
+  it("continues the current higher preview train instead of falling back to a lower patch line", () => {
+    const plan = buildReleasePlan(
+      {
+        type_label: "type:patch",
+        channel_label: "channel:preview",
+      },
+      ["v0.1.1", "v0.1.2-preview.7", "v0.2.0-preview.10"],
+      "0.1.0"
+    )
+
+    expect(plan.requested_version).toBe("v0.1.2")
+    expect(plan.current_train_version).toBe("v0.2.0")
+    expect(plan.stable_version).toBe("v0.2.0")
+    expect(plan.release_version).toBe("v0.2.0-preview.11")
+  })
+
+  it("promotes the active preview train when a stable release is published after preview work moved ahead", () => {
+    const plan = buildReleasePlan(
+      {
+        type_label: "type:patch",
+        channel_label: "channel:stable",
+      },
+      ["v0.1.1", "v0.2.0-preview.10"],
+      "0.1.0"
+    )
+
+    expect(plan.release_version).toBe("v0.2.0")
+  })
+
+  it("starts a new preview train when the requested bump is higher than the current one", () => {
+    const plan = buildReleasePlan(
+      {
+        type_label: "type:major",
+        channel_label: "channel:preview",
+      },
+      ["v0.1.1", "v0.2.0-preview.10"],
+      "0.1.0"
+    )
+
+    expect(plan.stable_version).toBe("v1.0.0")
+    expect(plan.release_version).toBe("v1.0.0-preview.1")
   })
 })
