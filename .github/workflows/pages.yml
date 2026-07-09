@@ -28,9 +28,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.release_tag != '' && inputs.release_tag || 'refs/heads/main' }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || 'refs/heads/main' }}
           fetch-depth: 0
           submodules: recursive
+      - name: Validate and check out manual release tag
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG_NAME: ${{ inputs.release_tag }}
+        run: |
+          tag_name="$RELEASE_TAG_NAME"
+          case "$tag_name" in
+            v[0-9]*)
+              ;;
+            *)
+              echo "release_tag must be a published release tag like v1.2.3" >&2
+              exit 1
+              ;;
+          esac
+          gh release view "$tag_name" --json tagName >/dev/null
+          git fetch --depth=1 origin "refs/tags/$tag_name:refs/tags/$tag_name"
+          git checkout --detach "refs/tags/$tag_name"
+          git submodule update --init --recursive
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
