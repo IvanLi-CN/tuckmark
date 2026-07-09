@@ -6,6 +6,10 @@ on:
     types: [completed]
   workflow_dispatch:
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
@@ -22,8 +26,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
       - id: snapshot
         name: Select release snapshot
         run: node .github/scripts/select-release-snapshot.mjs
@@ -45,6 +47,13 @@ jobs:
           cp "$SNAPSHOT" work/release/release-intent.json
       - name: Build release plan
         run: node .github/scripts/release-plan.mjs
+      - name: Check out release commit
+        run: |
+          MERGE_SHA="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).merge_sha")"
+          git checkout --detach "$MERGE_SHA"
+          git submodule update --init --recursive
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
       - name: Build bundles
         run: |
           bun run build
@@ -55,16 +64,33 @@ jobs:
         run: |
           VERSION="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).release_version")"
           TYPE_LABEL="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).type_label")"
+          CHANNEL_LABEL="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).channel_label || ''")"
+          MERGE_SHA="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).merge_sha")"
           if [ "$TYPE_LABEL" = "type:none" ]; then
             echo "Skipping release for type:none"
             exit 0
+          fi
+          RELEASE_ARGS=()
+          if [ "$CHANNEL_LABEL" = "channel:preview" ]; then
+            RELEASE_ARGS+=(--prerelease --latest=false)
           fi
           gh release create "$VERSION" \
             work/release/bundles/tuckmark-runtime-bundle.tgz \
             work/release/bundles/tuckmark-cli-bundle.tgz \
             --title "$VERSION" \
-            --notes "Tuckmark release $VERSION"
-
+            --notes "Tuckmark release $VERSION" \
+            --target "$MERGE_SHA" \
+            "${RELEASE_ARGS[@]}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Redeploy Pages with release metadata
+        run: |
+          VERSION="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).release_version")"
+          TYPE_LABEL="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).type_label")"
+          if [ "$TYPE_LABEL" = "type:none" ]; then
+            echo "Skipping Pages redeploy for type:none"
+            exit 0
+          fi
           gh workflow run pages.yml --ref main -f release_tag="$VERSION"
         env:
           GH_TOKEN: ${{ github.token }}

@@ -34,15 +34,32 @@ The published site:
 - supports `?demo=true` and `?demo=false` on the same app surface
 
 Pages is independent from GitHub Release publication.
+Mainline pushes produce the default owner-facing Pages deployment, while
+published GitHub Releases and manual `release_tag` dispatches may trigger a
+fresh Pages deploy that carries tagged footer metadata for the released build.
+Owner-facing footer metadata follows one contract:
+
+- tagged deploys show the published release version and keep the build ref in
+  tooltip metadata
+- untagged mainline deploys show `build <shortsha>` only
 
 ## Release Contract
 
 `ci-main` writes a durable `release-intent.json` snapshot after merge.
 
-`release.yml` consumes that snapshot to publish:
+`release.yml` consumes that snapshot, checks out the snapshot `merge_sha`, and
+publishes:
 
 - `stable`: `vX.Y.Z`
 - `preview`: `vX.Y.Z-preview.<n>`
+
+Preview releases are GitHub prereleases and must not override the owner-facing
+Pages deployment accidentally through an arbitrary non-contract workflow path.
+
+The release train is monotonic across preview and stable publication:
+once `main` has moved to a higher preview train, later preview/stable releases
+must continue or finalize that train instead of falling back to a lower patch
+line.
 
 The release workflow uploads:
 
