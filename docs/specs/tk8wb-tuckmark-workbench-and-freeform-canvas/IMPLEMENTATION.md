@@ -95,8 +95,8 @@
   - read-only historical snapshots keeping `拷贝` available while leaving
     paste and all other mutating actions disabled
 - Canvas snapping now resolves through the persistent `snapEnabled` editor flag
-  across drag end, transformer commit, line endpoint adjustment, and keyboard
-  movement.
+  across live element dragging, pending clipboard placement, drag end,
+  transformer commit, line endpoint adjustment, and keyboard movement.
 - Transformer commits snap final geometry to the existing `1mm` grid for
   text, rectangle, triangle, barcode, QR, circle, and line elements. Rotation
   remains freeform, and text transforms continue to preserve saved font size

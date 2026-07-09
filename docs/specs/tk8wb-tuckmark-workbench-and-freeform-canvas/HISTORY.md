@@ -205,3 +205,6 @@ while the workbench was being productized:
     previous selection without mutating persisted draft state
   - clipboard hints were then lifted into toast-style overlay feedback so the
     center pane keeps a stable document flow while the user places content
+  - a follow-up snap pass then aligned both ordinary element dragging and
+    pending clipboard placement to the existing live `1mm` grid so movement no
+    longer waits until drop to show snap behavior

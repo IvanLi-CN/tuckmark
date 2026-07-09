@@ -17,6 +17,7 @@ import {
   cancelPendingPastePlacement,
   confirmPendingPastePlacement,
   createCanvasStateFromDraft,
+  getSnappedDragStagePosition,
   movePendingPasteToPoint,
   snapTransformedElementGeometry,
   startClipboardPastePlacement,
@@ -1675,14 +1676,30 @@ describe("web workbench app", () => {
         signature: "text-source",
       },
       { width: 760, height: 520 },
-      { x: 32, y: 18 }
+      { x: 32.4, y: 18.6 }
     )
 
     expect(previewState.liveDraft.elements).toHaveLength(draft.elements.length)
     expect(previewState.draft.elements).toHaveLength(draft.elements.length + 1)
     expect(previewState.pendingPaste).not.toBeNull()
 
-    const movedState = movePendingPasteToPoint(previewState, { x: 40, y: 22 })
+    const initialPreviewElement = previewState.draft.elements.find((element) =>
+      previewState.pendingPaste?.ids.includes(element.id)
+    )
+    if (!initialPreviewElement) {
+      throw new Error("expected initial pending preview element")
+    }
+
+    expect(initialPreviewElement.x - sourceElement.x).toBeCloseTo(
+      Math.round(initialPreviewElement.x - sourceElement.x),
+      6
+    )
+    expect(initialPreviewElement.y - sourceElement.y).toBeCloseTo(
+      Math.round(initialPreviewElement.y - sourceElement.y),
+      6
+    )
+
+    const movedState = movePendingPasteToPoint(previewState, { x: 40.4, y: 22.6 })
     const pendingElement = movedState.draft.elements.find((element) =>
       movedState.pendingPaste?.ids.includes(element.id)
     )
@@ -1691,14 +1708,48 @@ describe("web workbench app", () => {
     }
 
     const pendingBounds = getElementSelectionBounds(pendingElement)
-    expect(pendingBounds.x + pendingBounds.width / 2).toBeCloseTo(40, 3)
-    expect(pendingBounds.y + pendingBounds.height / 2).toBeCloseTo(22, 3)
+    expect(pendingElement.x - initialPreviewElement.x).toBeCloseTo(
+      Math.round(pendingElement.x - initialPreviewElement.x),
+      6
+    )
+    expect(pendingElement.y - initialPreviewElement.y).toBeCloseTo(
+      Math.round(pendingElement.y - initialPreviewElement.y),
+      6
+    )
+    expect(pendingBounds.x + pendingBounds.width / 2).toBeCloseTo(40.4, 0)
+    expect(pendingBounds.y + pendingBounds.height / 2).toBeCloseTo(22.6, 0)
 
     const confirmedState = confirmPendingPastePlacement(movedState)
     expect(confirmedState.pendingPaste).toBeNull()
     expect(confirmedState.liveDraft.elements).toHaveLength(draft.elements.length + 1)
     expect(confirmedState.historyIndex).toBe(1)
     expect(confirmedState.outputStatus).toContain("已粘贴 1 个图层。")
+  })
+
+  it("snaps drag preview positions to the canvas grid while preserving the rotation origin offset", () => {
+    const rect: CanvasDraftElement = {
+      id: "rect-snap-drag",
+      kind: "rect",
+      x: 8,
+      y: 16,
+      width: 18,
+      height: 10,
+      strokeWidth: 0.25,
+      fill: "none",
+      stroke: "#111111",
+      radius: 0,
+      rotation: 12,
+      meta: { name: "Rect", visible: true, locked: false },
+    }
+
+    expect(getSnappedDragStagePosition(rect, { x: 14.4, y: 19.6 }, { x: 6, y: 4 }, true)).toEqual({
+      x: 14,
+      y: 20,
+    })
+    expect(getSnappedDragStagePosition(rect, { x: 14.4, y: 19.6 }, { x: 6, y: 4 }, false)).toEqual({
+      x: 14.4,
+      y: 19.6,
+    })
   })
 
   it("restores the previous selection when pending placement is cancelled", () => {

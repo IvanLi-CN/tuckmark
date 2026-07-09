@@ -786,8 +786,7 @@ function getViewportCenterInCanvasSpace(
 function createClipboardTextElement(
   state: CanvasPageState,
   text: string,
-  viewportSize: StageViewportSize,
-  point?: { x: number; y: number }
+  viewportSize: StageViewportSize
 ): Extract<CanvasDraftElement, { kind: "text" }> {
   const seeded = createCanvasElement("text", state.liveDraft.elements.length, {
     value: text,
@@ -816,7 +815,7 @@ function createClipboardTextElement(
     verticalText: seeded.verticalText,
     measureText: measureCanvasTextLine,
   })
-  const center = point ?? getViewportCenterInCanvasSpace(state.viewport, viewportSize)
+  const center = getViewportCenterInCanvasSpace(state.viewport, viewportSize)
   const width = seeded.width
   const height = layout.naturalHeight
 
@@ -922,8 +921,9 @@ export function movePendingPasteToPoint(
     return clearPendingPastePreview(state)
   }
 
-  const deltaX = point.x - (bounds.x + bounds.width / 2)
-  const deltaY = point.y - (bounds.y + bounds.height / 2)
+  const delta = getSelectionTranslationToPoint(bounds, point, state.snapEnabled)
+  const deltaX = delta.x
+  const deltaY = delta.y
   if (Math.abs(deltaX) < 0.001 && Math.abs(deltaY) < 0.001) {
     return state
   }
@@ -996,10 +996,13 @@ export function startClipboardPastePlacement(
       }
     }
 
-    const deltaX = placementPoint.x - (previewBounds.x + previewBounds.width / 2)
-    const deltaY = placementPoint.y - (previewBounds.y + previewBounds.height / 2)
+    const delta = getSelectionTranslationToPoint(
+      previewBounds,
+      placementPoint,
+      baseState.snapEnabled
+    )
     const positionedPreviewElements = previewElements.map((element) =>
-      translateElement(element, deltaX, deltaY)
+      translateElement(element, delta.x, delta.y)
     )
     const nextDraft = normalizeDraftDocument({
       ...cloneDraft(baseState.liveDraft),
@@ -1026,12 +1029,17 @@ export function startClipboardPastePlacement(
     }
   }
 
-  const nextTextElement = createClipboardTextElement(
-    baseState,
-    clipboard.text,
-    viewportSize,
-    placementPoint
+  const seededTextElement = createClipboardTextElement(baseState, clipboard.text, viewportSize)
+  const textBounds = getElementSelectionBounds(seededTextElement)
+  const textDelta = getSelectionTranslationToPoint(
+    textBounds,
+    placementPoint,
+    baseState.snapEnabled
   )
+  const nextTextElement = translateElement(seededTextElement, textDelta.x, textDelta.y) as Extract<
+    CanvasDraftElement,
+    { kind: "text" }
+  >
   const nextDraft = normalizeDraftDocument({
     ...cloneDraft(baseState.liveDraft),
     elements: [...baseState.liveDraft.elements, nextTextElement],
@@ -1508,6 +1516,37 @@ function snapElementPosition(element: CanvasDraftElement, x: number, y: number, 
     }
   }
   return { x: nextX, y: nextY }
+}
+
+function getSelectionTranslationToPoint(
+  bounds: { x: number; y: number; width: number; height: number },
+  point: { x: number; y: number },
+  snapEnabled: boolean
+) {
+  const deltaX = point.x - (bounds.x + bounds.width / 2)
+  const deltaY = point.y - (bounds.y + bounds.height / 2)
+  return {
+    x: snapEnabled ? snapValue(deltaX, true) : deltaX,
+    y: snapEnabled ? snapValue(deltaY, true) : deltaY,
+  }
+}
+
+export function getSnappedDragStagePosition(
+  element: CanvasDraftElement,
+  stagePosition: { x: number; y: number },
+  rotationOrigin: { x: number; y: number },
+  snapEnabled: boolean
+) {
+  const snappedPosition = snapElementPosition(
+    element,
+    stagePosition.x - rotationOrigin.x,
+    stagePosition.y - rotationOrigin.y,
+    snapEnabled
+  )
+  return {
+    x: snappedPosition.x + rotationOrigin.x,
+    y: snappedPosition.y + rotationOrigin.y,
+  }
 }
 
 function getStagePointer(
@@ -5069,6 +5108,14 @@ function CanvasStageView({
                       !element.meta.locked &&
                       !state.spacePressed &&
                       !state.editingId
+                    }
+                    dragBoundFunc={(position) =>
+                      getSnappedDragStagePosition(
+                        element,
+                        position,
+                        geometry.rotationOrigin,
+                        state.snapEnabled
+                      )
                     }
                     onClick={(event) => {
                       if (state.pendingPaste) {

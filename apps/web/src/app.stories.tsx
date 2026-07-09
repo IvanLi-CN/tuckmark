@@ -441,7 +441,7 @@ export const CanvasWorkspaceClipboard: Story = {
     docs: {
       description: {
         story:
-          "Clipboard entry points keep duplicate semantics separate from `新副本`, while paste enters a placement mode that follows the cursor and reports progress through toast-style feedback instead of reflowing the pane.",
+          "Clipboard entry points keep duplicate semantics separate from `新副本`, while paste enters a placement mode that follows the cursor, respects the active snap grid, and reports progress through toast-style feedback instead of reflowing the pane.",
       },
     },
   },
