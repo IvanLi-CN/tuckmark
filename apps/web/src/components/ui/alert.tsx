@@ -36,12 +36,20 @@ function Alert({
 
 function AlertTitle({ className, ...props }: React.ComponentProps<"h5">) {
   return (
-    <h5 className={cn("col-start-2 font-medium leading-none tracking-tight", className)} {...props} />
+    <h5
+      className={cn("col-start-2 font-medium leading-none tracking-tight", className)}
+      {...props}
+    />
   )
 }
 
 function AlertDescription({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("col-start-2 min-w-0 text-sm [&_p]:leading-relaxed", className)} {...props} />
+  return (
+    <div
+      className={cn("col-start-2 min-w-0 text-sm [&_p]:leading-relaxed", className)}
+      {...props}
+    />
+  )
 }
 
 export { Alert, AlertDescription, AlertTitle }
