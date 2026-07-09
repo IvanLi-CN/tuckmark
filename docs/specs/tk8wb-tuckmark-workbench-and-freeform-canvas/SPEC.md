@@ -564,10 +564,12 @@ output.
 
 - `1600×1200` canvas clipboard workflow after Storybook `拷贝` + `粘贴`, showing the pending placement toast, stable editor copy, snap-aligned preview movement, and the distinct `拷贝` / `粘贴` / `新副本` actions together.
 
+  PR: include
   ![Canvas clipboard workflow](./assets/canvas-clipboard-story-1600x1200.png)
 
 - `1600×1200` snap-enabled canvas workspace story showing the ordinary selection editing state with the persistent `吸附` toggle enabled for live drag snapping.
 
+  PR: include
   ![Canvas snap-enabled workspace](./assets/canvas-snap-enabled-story-1600x1200.png)
 
 - `1280×800` canvas workspace with a selected text element before inline editing.
