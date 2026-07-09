@@ -1556,9 +1556,11 @@ describe("web workbench app", () => {
 
     expect(copyEvent.defaultPrevented).toBe(true)
     expect(clipboardData.getData("application/x.tuckmark-canvas-elements+json")).toContain(
-      "\"kind\":\"datamatrix\""
+      '"kind":"datamatrix"'
     )
-    expect(clipboardData.getData("text/plain")).toContain("rack-a.lan-01|TM-0001|https://tuckmark.local")
+    expect(clipboardData.getData("text/plain")).toContain(
+      "rack-a.lan-01|TM-0001|https://tuckmark.local"
+    )
 
     const pasteEvent = dispatchClipboardEvent("paste", clipboardData)
     await flush(4)
