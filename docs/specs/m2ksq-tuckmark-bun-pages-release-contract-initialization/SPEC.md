@@ -120,14 +120,17 @@ and untagged states can be reviewed without relying on a live deployment.
 Tagged builds keep the published release version visible while exposing the
 exact build reference in tooltip metadata for operator support.
 
+PR: include
 ![Tagged footer build metadata](./assets/footer-build-meta-tagged.png)
 
 Hovering the tagged footer metadata reveals the build reference without turning
 it into always-visible footer text.
 
+PR: include
 ![Tagged footer build metadata tooltip](./assets/footer-build-meta-tagged-tooltip.png)
 
 Untagged mainline builds do not masquerade as a release. They expose only the
 current `build <shortsha>` marker in the owner-facing footer.
 
+PR: include
 ![Untagged footer build metadata](./assets/footer-build-meta-untagged.png)
