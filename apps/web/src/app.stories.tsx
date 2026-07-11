@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { expect, userEvent, within } from "storybook/test"
+import { expect, fireEvent, userEvent, within } from "storybook/test"
 
 import type { ApiClient } from "./api-client.js"
 import { DemoApiClient } from "./api-client.js"
@@ -609,7 +609,7 @@ export const CanvasWorkspaceMagneticSnap: Story = {
     ])
     await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "1")
 
-    await userEvent.pointer({ keys: "[/MouseLeft]", target: stage, coords: target })
+    await fireEvent.mouseUp(window, target)
     await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "0")
   },
 }

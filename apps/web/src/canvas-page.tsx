@@ -1308,7 +1308,7 @@ function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryS
     const text = draft.elements.find((element) => element.kind === "text")
     return text ? [text.id] : []
   }
-  if (scenario === "rect-selected" || scenario === "magnetic-snap") {
+  if (scenario === "rect-selected") {
     const rect = draft.elements.find((element) => element.kind === "rect")
     return rect ? [rect.id] : []
   }

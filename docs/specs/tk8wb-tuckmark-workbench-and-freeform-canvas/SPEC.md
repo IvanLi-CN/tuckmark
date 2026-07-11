@@ -584,6 +584,11 @@ output.
   PR: include
   ![Canvas snap-enabled workspace](./assets/canvas-snap-enabled-story-1600x1200.png)
 
+- `1280×800` magnetic-snap Storybook scene while the selected rectangle aligns to a rotated locked reference edge; the temporary blue guide shows the live edge hit.
+
+  PR: include
+  ![Canvas magnetic snap guide](./assets/canvas-magnetic-snap-story-1280x800.png)
+
 - `1280×800` canvas workspace with a selected text element before inline editing.
 
   PR: include
