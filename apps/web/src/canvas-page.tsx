@@ -86,6 +86,13 @@ import {
   translateElement,
   updateBoundElementValue,
 } from "./canvas-editor-model.js"
+import {
+  type CanvasSnapGuide,
+  type CanvasTransformBox,
+  resolveCanvasSnap,
+  resolveTransformerSnap,
+  translateCanvasSnapBounds,
+} from "./canvas-snap.js"
 import { DimensionPicker } from "./components/canvas/dimension-picker.js"
 import { InspectorNumberField } from "./components/canvas/inspector-number-field.js"
 import { TextFontFamilySelect } from "./components/canvas/text-font-family-select.js"
@@ -157,10 +164,21 @@ type CanvasPageProps = {
 
 const INSPECTOR_SELECT_TRIGGER_CLASS = "tm-inspector-select h-7 rounded-sm px-2 py-0 text-xs"
 
-type StageViewport = {
+export type StageViewport = {
   x: number
   y: number
   scale: number
+}
+
+export function isTransformerInteractionTarget(target: Konva.Node | null | undefined): boolean {
+  let node = target
+  while (node) {
+    if (node.className === "Transformer") {
+      return true
+    }
+    node = node.getParent()
+  }
+  return false
 }
 
 type StageViewportSize = {
@@ -916,6 +934,29 @@ export function confirmPendingPastePlacement(state: CanvasPageState): CanvasPage
   }
 }
 
+function getPendingPastePlacementSnap(state: CanvasPageState, point: { x: number; y: number }) {
+  if (!state.pendingPaste) {
+    return null
+  }
+
+  const pendingElements = state.draft.elements.filter((element) =>
+    state.pendingPaste?.ids.includes(element.id)
+  )
+  const bounds = getElementSelectionBoundsForIds(pendingElements)
+  if (!bounds) {
+    return null
+  }
+
+  return resolvePointerPlacementSnap(
+    state.liveDraft,
+    state.pendingPaste.ids,
+    bounds,
+    point,
+    state.viewport,
+    state.snapEnabled
+  )
+}
+
 export function movePendingPasteToPoint(
   state: CanvasPageState,
   point: { x: number; y: number }
@@ -924,17 +965,13 @@ export function movePendingPasteToPoint(
     return state
   }
 
-  const pendingElements = state.draft.elements.filter((element) =>
-    state.pendingPaste?.ids.includes(element.id)
-  )
-  const bounds = getElementSelectionBoundsForIds(pendingElements)
-  if (!bounds) {
+  const snap = getPendingPastePlacementSnap(state, point)
+  if (!snap) {
     return clearPendingPastePreview(state)
   }
 
-  const delta = getSelectionTranslationToPoint(bounds, point, state.snapEnabled)
-  const deltaX = delta.x
-  const deltaY = delta.y
+  const deltaX = snap.x
+  const deltaY = snap.y
   if (Math.abs(deltaX) < 0.001 && Math.abs(deltaY) < 0.001) {
     return state
   }
@@ -1007,9 +1044,12 @@ export function startClipboardPastePlacement(
       }
     }
 
-    const delta = getSelectionTranslationToPoint(
+    const delta = resolvePointerPlacementSnap(
+      baseState.liveDraft,
+      nextSelectedIds,
       previewBounds,
       placementPoint,
+      baseState.viewport,
       baseState.snapEnabled
     )
     const positionedPreviewElements = previewElements.map((element) =>
@@ -1042,9 +1082,12 @@ export function startClipboardPastePlacement(
 
   const seededTextElement = createClipboardTextElement(baseState, clipboard.text, viewportSize)
   const textBounds = getElementSelectionBounds(seededTextElement)
-  const textDelta = getSelectionTranslationToPoint(
+  const textDelta = resolvePointerPlacementSnap(
+    baseState.liveDraft,
+    [seededTextElement.id],
     textBounds,
     placementPoint,
+    baseState.viewport,
     baseState.snapEnabled
   )
   const nextTextElement = translateElement(seededTextElement, textDelta.x, textDelta.y) as Extract<
@@ -1170,6 +1213,7 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
     scenario === "datamatrix-selected" ||
     scenario === "datamatrix-invalid" ||
     scenario === "rect-selected" ||
+    scenario === "magnetic-snap" ||
     scenario === "circle-selected" ||
     scenario === "triangle-selected" ||
     scenario === "line-selected"
@@ -1203,6 +1247,7 @@ function shouldUseScenarioDraft(scenario: CanvasStoryScenario): boolean {
     scenario === "datamatrix-selected" ||
     scenario === "datamatrix-invalid" ||
     scenario === "rect-selected" ||
+    scenario === "magnetic-snap" ||
     scenario === "circle-selected" ||
     scenario === "triangle-selected" ||
     scenario === "line-selected"
@@ -1297,14 +1342,23 @@ function getScenarioViewport(
   _draft: CanvasDraftDocument,
   scenario: CanvasStoryScenario
 ): StageViewport | undefined {
-  if (scenario !== "marquee-selection") {
-    return undefined
+  if (scenario === "marquee-selection") {
+    return {
+      scale: 3.44,
+      x: -370,
+      y: 36,
+    }
   }
-  return {
-    scale: 3.44,
-    x: -370,
-    y: 36,
+
+  if (scenario === "magnetic-snap") {
+    return {
+      scale: 1.25,
+      x: 48,
+      y: 112,
+    }
   }
+
+  return undefined
 }
 
 function getScenarioSelectionBox(scenario: CanvasStoryScenario): CanvasSelectionBox | undefined {
@@ -1391,22 +1445,6 @@ function applyDraftUpdate(
   }
 }
 
-function applyLiveDraftUpdate(
-  state: CanvasPageState,
-  updater: (draft: CanvasDraftDocument) => CanvasDraftDocument
-): CanvasPageState {
-  const nextDraft = normalizeDraftDocument(updater(cloneDraft(state.liveDraft)))
-  nextDraft.editor.gridEnabled = state.gridEnabled
-  nextDraft.editor.snapEnabled = state.snapEnabled
-  return {
-    ...state,
-    liveDraft: nextDraft,
-    draft: nextDraft,
-    selectedIds: updateSelectionAfterDraft(state, nextDraft),
-    storageMode: "persisted",
-  }
-}
-
 function updateEditorAssistState(
   state: CanvasPageState,
   nextEditor: CanvasDraftDocument["editor"]
@@ -1441,20 +1479,6 @@ function setSelection(state: CanvasPageState, id: string, multi: boolean): Canva
   }
 }
 
-function snapValue(value: number, enabled: boolean) {
-  if (!enabled) {
-    return value
-  }
-  return Math.round(value / GRID_SIZE) * GRID_SIZE
-}
-
-function snapDimension(value: number, min: number, enabled: boolean) {
-  if (!enabled) {
-    return Math.max(min, value)
-  }
-  return Math.max(min, snapValue(value, true))
-}
-
 function clampRectRadius(radius: number, width: number, height: number) {
   return clamp(radius, 0, Math.max(0, Math.min(width, height) / 2))
 }
@@ -1487,13 +1511,8 @@ function updateLineEndpoint(
   draft: CanvasDraftDocument,
   lineId: string,
   endpoint: LineEndpoint,
-  point: { x: number; y: number },
-  snapEnabled: boolean
+  point: { x: number; y: number }
 ): CanvasDraftDocument {
-  const nextPoint = {
-    x: snapValue(point.x, snapEnabled),
-    y: snapValue(point.y, snapEnabled),
-  }
   return normalizeDraftDocument({
     ...draft,
     elements: draft.elements.map((element) => {
@@ -1503,60 +1522,84 @@ function updateLineEndpoint(
       return endpoint === "start"
         ? {
             ...element,
-            x: nextPoint.x,
-            y: nextPoint.y,
+            x: point.x,
+            y: point.y,
           }
         : {
             ...element,
-            x2: nextPoint.x,
-            y2: nextPoint.y,
+            x2: point.x,
+            y2: point.y,
           }
     }),
   })
 }
 
-function snapElementPosition(element: CanvasDraftElement, x: number, y: number, enabled: boolean) {
-  const nextX = snapValue(x, enabled)
-  const nextY = snapValue(y, enabled)
-  if (element.kind === "line") {
-    return {
-      x: nextX,
-      y: nextY,
-      x2: snapValue(nextX + (element.x2 - element.x), enabled),
-      y2: snapValue(nextY + (element.y2 - element.y), enabled),
-    }
-  }
-  return { x: nextX, y: nextY }
-}
-
 function getSelectionTranslationToPoint(
   bounds: { x: number; y: number; width: number; height: number },
-  point: { x: number; y: number },
-  snapEnabled: boolean
+  point: { x: number; y: number }
 ) {
   const deltaX = point.x - (bounds.x + bounds.width / 2)
   const deltaY = point.y - (bounds.y + bounds.height / 2)
   return {
-    x: snapEnabled ? snapValue(deltaX, true) : deltaX,
-    y: snapEnabled ? snapValue(deltaY, true) : deltaY,
+    x: deltaX,
+    y: deltaY,
   }
 }
 
-export function getSnappedDragStagePosition(
-  element: CanvasDraftElement,
-  canvasPosition: { x: number; y: number },
-  rotationOrigin: { x: number; y: number },
+function createCanvasSnapContext(
+  draft: CanvasDraftDocument,
+  movingIds: Iterable<string>,
+  viewport: StageViewport,
+  enabled: boolean
+) {
+  return {
+    draft,
+    movingIds,
+    displayScale: viewport.scale * CANVAS_DOTS_PER_MILLIMETER,
+    enabled,
+    gridSize: GRID_SIZE,
+  }
+}
+
+function resolvePointerPlacementSnap(
+  draft: CanvasDraftDocument,
+  movingIds: Iterable<string>,
+  bounds: { x: number; y: number; width: number; height: number },
+  point: { x: number; y: number },
+  viewport: StageViewport,
   snapEnabled: boolean
 ) {
-  const snappedPosition = snapElementPosition(
-    element,
-    canvasPosition.x - rotationOrigin.x,
-    canvasPosition.y - rotationOrigin.y,
-    snapEnabled
+  const raw = getSelectionTranslationToPoint(bounds, point)
+  const snap = resolveCanvasSnap(
+    createCanvasSnapContext(draft, movingIds, viewport, snapEnabled),
+    translateCanvasSnapBounds(bounds, raw.x, raw.y)
   )
   return {
-    x: snappedPosition.x + rotationOrigin.x,
-    y: snappedPosition.y + rotationOrigin.y,
+    x: raw.x + snap.deltaX,
+    y: raw.y + snap.deltaY,
+    guides: snap.guides,
+  }
+}
+
+function resolveLineEndpointSnap(
+  draft: CanvasDraftDocument,
+  lineId: string,
+  point: { x: number; y: number },
+  viewport: StageViewport,
+  snapEnabled: boolean
+) {
+  const snap = resolveCanvasSnap(createCanvasSnapContext(draft, [lineId], viewport, snapEnabled), {
+    x: point.x,
+    y: point.y,
+    width: 0,
+    height: 0,
+  })
+  return {
+    point: {
+      x: point.x + snap.deltaX,
+      y: point.y + snap.deltaY,
+    },
+    guides: snap.guides,
   }
 }
 
@@ -1571,24 +1614,6 @@ function projectCanvasPointToStagePosition(
   }
 }
 
-export function getSnappedDragAbsolutePosition(
-  element: CanvasDraftElement,
-  absolutePosition: { x: number; y: number },
-  rotationOrigin: { x: number; y: number },
-  viewport: StageViewport,
-  snapEnabled: boolean
-) {
-  return projectCanvasPointToStagePosition(
-    getSnappedDragStagePosition(
-      element,
-      projectStagePointToCanvasPosition(absolutePosition, viewport),
-      rotationOrigin,
-      snapEnabled
-    ),
-    viewport
-  )
-}
-
 function projectStagePointToCanvasPosition(
   point: { x: number; y: number },
   viewport: StageViewport
@@ -1600,17 +1625,74 @@ function projectStagePointToCanvasPosition(
   }
 }
 
-export function createSelectionDragPreview(
+export function zoomViewportAtPointer(
+  viewport: StageViewport,
+  pointer: { x: number; y: number },
+  wheelDelta: number
+): StageViewport {
+  if (!Number.isFinite(wheelDelta) || wheelDelta === 0) {
+    return viewport
+  }
+
+  const displayScale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+  const canvasPoint = {
+    x: (pointer.x - viewport.x) / displayScale,
+    y: (pointer.y - viewport.y) / displayScale,
+  }
+  const direction = wheelDelta > 0 ? -1 : 1
+  const scale = clamp(
+    direction > 0 ? viewport.scale * ZOOM_STEP : viewport.scale / ZOOM_STEP,
+    ZOOM_MIN,
+    ZOOM_MAX
+  )
+
+  return {
+    scale,
+    x: pointer.x - canvasPoint.x * scale * CANVAS_DOTS_PER_MILLIMETER,
+    y: pointer.y - canvasPoint.y * scale * CANVAS_DOTS_PER_MILLIMETER,
+  }
+}
+
+export function projectStageTransformerBoxToCanvas(
+  box: CanvasTransformBox,
+  viewport: StageViewport
+): CanvasTransformBox {
+  const displayScale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+  return {
+    ...box,
+    x: (box.x - viewport.x) / displayScale,
+    y: (box.y - viewport.y) / displayScale,
+    width: box.width / displayScale,
+    height: box.height / displayScale,
+  }
+}
+
+export function projectCanvasTransformerBoxToStage(
+  box: CanvasTransformBox,
+  viewport: StageViewport
+): CanvasTransformBox {
+  const displayScale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+  return {
+    ...box,
+    x: viewport.x + box.x * displayScale,
+    y: viewport.y + box.y * displayScale,
+    width: box.width * displayScale,
+    height: box.height * displayScale,
+  }
+}
+
+function getSelectionDragResolution(
   baseDraft: CanvasDraftDocument,
   draggedId: string,
   selectedIds: string[],
   stagePosition: { x: number; y: number },
   rotationOrigin: { x: number; y: number },
+  viewport: StageViewport,
   snapEnabled: boolean
 ): {
   deltaX: number
   deltaY: number
-  draft: CanvasDraftDocument
+  guides: CanvasSnapGuide[]
   movedIds: string[]
 } | null {
   const draggedElement = baseDraft.elements.find((element) => element.id === draggedId)
@@ -1619,24 +1701,102 @@ export function createSelectionDragPreview(
   }
 
   const movedIds = selectedIds.includes(draggedId) ? selectedIds : [draggedId]
-  const snappedPosition = snapElementPosition(
-    draggedElement,
-    stagePosition.x - rotationOrigin.x,
-    stagePosition.y - rotationOrigin.y,
+  const movedElements = baseDraft.elements.filter((element) => movedIds.includes(element.id))
+  const bounds = getElementSelectionBoundsForIds(movedElements)
+  if (!bounds) {
+    return null
+  }
+
+  const rawDeltaX = stagePosition.x - rotationOrigin.x - draggedElement.x
+  const rawDeltaY = stagePosition.y - rotationOrigin.y - draggedElement.y
+  const snap = resolveCanvasSnap(
+    createCanvasSnapContext(baseDraft, movedIds, viewport, snapEnabled),
+    translateCanvasSnapBounds(bounds, rawDeltaX, rawDeltaY)
+  )
+
+  return {
+    deltaX: rawDeltaX + snap.deltaX,
+    deltaY: rawDeltaY + snap.deltaY,
+    guides: snap.guides,
+    movedIds,
+  }
+}
+
+function getSnappedDragAbsolutePosition(
+  baseDraft: CanvasDraftDocument,
+  draggedId: string,
+  selectedIds: string[],
+  absolutePosition: { x: number; y: number },
+  rotationOrigin: { x: number; y: number },
+  viewport: StageViewport,
+  snapEnabled: boolean
+) {
+  const canvasPosition = projectStagePointToCanvasPosition(absolutePosition, viewport)
+  const resolution = getSelectionDragResolution(
+    baseDraft,
+    draggedId,
+    selectedIds,
+    canvasPosition,
+    rotationOrigin,
+    viewport,
     snapEnabled
   )
-  const deltaX = snappedPosition.x - draggedElement.x
-  const deltaY = snappedPosition.y - draggedElement.y
+  const draggedElement = baseDraft.elements.find((element) => element.id === draggedId)
+  if (!resolution || !draggedElement) {
+    return absolutePosition
+  }
+  return projectCanvasPointToStagePosition(
+    {
+      x: draggedElement.x + resolution.deltaX + rotationOrigin.x,
+      y: draggedElement.y + resolution.deltaY + rotationOrigin.y,
+    },
+    viewport
+  )
+}
+
+export function createSelectionDragPreview(
+  baseDraft: CanvasDraftDocument,
+  draggedId: string,
+  selectedIds: string[],
+  stagePosition: { x: number; y: number },
+  rotationOrigin: { x: number; y: number },
+  viewport: StageViewport,
+  snapEnabled: boolean
+): {
+  deltaX: number
+  deltaY: number
+  draft: CanvasDraftDocument
+  movedIds: string[]
+  guides: CanvasSnapGuide[]
+} | null {
+  const resolution = getSelectionDragResolution(
+    baseDraft,
+    draggedId,
+    selectedIds,
+    stagePosition,
+    rotationOrigin,
+    viewport,
+    snapEnabled
+  )
+  if (!resolution) {
+    return null
+  }
   const draft = normalizeDraftDocument({
     ...cloneDraft(baseDraft),
-    elements: translateElementsByIds(baseDraft.elements, new Set(movedIds), deltaX, deltaY),
+    elements: translateElementsByIds(
+      baseDraft.elements,
+      new Set(resolution.movedIds),
+      resolution.deltaX,
+      resolution.deltaY
+    ),
   })
 
   return {
-    deltaX,
-    deltaY,
+    deltaX: resolution.deltaX,
+    deltaY: resolution.deltaY,
     draft,
-    movedIds,
+    movedIds: resolution.movedIds,
+    guides: resolution.guides,
   }
 }
 
@@ -1909,75 +2069,50 @@ function moveSelectedByKeyboard(
   return applyDraftUpdate(state, (draft) => ({
     ...draft,
     elements: draft.elements.map((element) =>
-      state.selectedIds.includes(element.id)
-        ? translateElement(
-            element,
-            state.snapEnabled ? snapValue(deltaX, true) : deltaX,
-            state.snapEnabled ? snapValue(deltaY, true) : deltaY
-          )
-        : element
+      state.selectedIds.includes(element.id) ? translateElement(element, deltaX, deltaY) : element
     ),
   }))
 }
 
-export function snapTransformedElementGeometry(
-  element: CanvasDraftElement,
-  snapEnabled: boolean
+export function normalizeTransformedElementGeometry(
+  element: CanvasDraftElement
 ): CanvasDraftElement {
-  if (!snapEnabled) {
-    return element
-  }
-
   switch (element.kind) {
     case "line":
-      return {
-        ...element,
-        x: snapValue(element.x, true),
-        y: snapValue(element.y, true),
-        x2: snapValue(element.x2, true),
-        y2: snapValue(element.y2, true),
-      }
+      return element
     case "text": {
-      const width = snapDimension(element.width, 24 / CANVAS_DOTS_PER_MILLIMETER, true)
-      const height = snapDimension(element.height, 8 / CANVAS_DOTS_PER_MILLIMETER, true)
+      const width = Math.max(24 / CANVAS_DOTS_PER_MILLIMETER, element.width)
+      const height = Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, element.height)
       return {
         ...element,
-        x: snapValue(element.x, true),
-        y: snapValue(element.y, true),
         width,
         height,
       }
     }
     case "rect": {
-      const width = snapDimension(element.width, 16 / CANVAS_DOTS_PER_MILLIMETER, true)
-      const height = snapDimension(element.height, 16 / CANVAS_DOTS_PER_MILLIMETER, true)
+      const width = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.width)
+      const height = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.height)
       return {
         ...element,
-        x: snapValue(element.x, true),
-        y: snapValue(element.y, true),
         width,
         height,
         radius: clampRectRadius(element.radius, width, height),
       }
     }
     case "triangle": {
-      const width = snapDimension(element.width, 16 / CANVAS_DOTS_PER_MILLIMETER, true)
-      const height = snapDimension(element.height, 16 / CANVAS_DOTS_PER_MILLIMETER, true)
+      const width = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.width)
+      const height = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.height)
       return {
         ...element,
-        x: snapValue(element.x, true),
-        y: snapValue(element.y, true),
         width,
         height,
       }
     }
     case "barcode": {
-      const width = snapDimension(element.width, 36 / CANVAS_DOTS_PER_MILLIMETER, true)
-      const height = snapDimension(element.height, 18 / CANVAS_DOTS_PER_MILLIMETER, true)
+      const width = Math.max(36 / CANVAS_DOTS_PER_MILLIMETER, element.width)
+      const height = Math.max(18 / CANVAS_DOTS_PER_MILLIMETER, element.height)
       return {
         ...element,
-        x: snapValue(element.x, true),
-        y: snapValue(element.y, true),
         width,
         height,
       }
@@ -1985,32 +2120,51 @@ export function snapTransformedElementGeometry(
     case "qr":
     case "datamatrix":
     case "circle": {
-      const size = snapDimension(element.size, 24 / CANVAS_DOTS_PER_MILLIMETER, true)
+      const size = Math.max(24 / CANVAS_DOTS_PER_MILLIMETER, element.size)
       return {
         ...element,
-        x: snapValue(element.x, true),
-        y: snapValue(element.y, true),
         size,
       }
     }
   }
 }
 
+type CanvasTransformedNode = {
+  id: string
+  rotation: number
+  scaleX: number
+  scaleY: number
+  transformMatrix: number[]
+  x: number
+  y: number
+}
+
+function captureTransformedNode(node: Konva.Group): CanvasTransformedNode {
+  return {
+    id: node.id(),
+    rotation: node.rotation(),
+    scaleX: node.scaleX(),
+    scaleY: node.scaleY(),
+    transformMatrix: node.getTransform().getMatrix(),
+    x: node.x(),
+    y: node.y(),
+  }
+}
+
 function applyTransformedNodeToElement(
   element: CanvasDraftElement,
-  node: Konva.Group
+  node: CanvasTransformedNode
 ): CanvasDraftElement {
-  const scaleX = node.scaleX()
-  const scaleY = node.scaleY()
-
   if (element.kind === "line") {
     const deltaX = element.x2 - element.x
     const deltaY = element.y2 - element.y
-    const start = node.getTransform().point({ x: 0, y: 0 })
-    const end = node.getTransform().point({ x: deltaX, y: deltaY })
-    node.scaleX(1)
-    node.scaleY(1)
-    node.rotation(0)
+    const [a = 1, b = 0, c = 0, d = 1, e = 0, f = 0] = node.transformMatrix
+    const transformPoint = (point: { x: number; y: number }) => ({
+      x: a * point.x + c * point.y + e,
+      y: b * point.x + d * point.y + f,
+    })
+    const start = transformPoint({ x: 0, y: 0 })
+    const end = transformPoint({ x: deltaX, y: deltaY })
     return {
       ...element,
       x: start.x,
@@ -2021,80 +2175,59 @@ function applyTransformedNodeToElement(
   }
 
   if (element.kind === "text") {
-    node.scaleX(1)
-    node.scaleY(1)
-    const nextWidth = Math.max(24 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
-    const nextHeight = Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, element.height * scaleY)
+    const nextWidth = Math.max(24 / CANVAS_DOTS_PER_MILLIMETER, element.width * node.scaleX)
+    const nextHeight = Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, element.height * node.scaleY)
     return {
       ...element,
-      x: node.x() - nextWidth / 2,
-      y: node.y() - nextHeight / 2,
+      x: node.x - nextWidth / 2,
+      y: node.y - nextHeight / 2,
       width: nextWidth,
       height: nextHeight,
-      rotation: node.rotation(),
+      rotation: node.rotation,
     }
   }
 
-  if (element.kind === "rect") {
-    node.scaleX(1)
-    node.scaleY(1)
-    const nextWidth = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
-    const nextHeight = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.height * scaleY)
+  if (element.kind === "rect" || element.kind === "triangle") {
+    const nextWidth = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.width * node.scaleX)
+    const nextHeight = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.height * node.scaleY)
     return {
       ...element,
-      x: node.x() - nextWidth / 2,
-      y: node.y() - nextHeight / 2,
+      x: node.x - nextWidth / 2,
+      y: node.y - nextHeight / 2,
       width: nextWidth,
       height: nextHeight,
-      radius: clampRectRadius(element.radius, nextWidth, nextHeight),
-      rotation: node.rotation(),
-    }
-  }
-
-  if (element.kind === "triangle") {
-    node.scaleX(1)
-    node.scaleY(1)
-    const nextWidth = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
-    const nextHeight = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.height * scaleY)
-    return {
-      ...element,
-      x: node.x() - nextWidth / 2,
-      y: node.y() - nextHeight / 2,
-      width: nextWidth,
-      height: nextHeight,
-      rotation: node.rotation(),
+      ...(element.kind === "rect"
+        ? { radius: clampRectRadius(element.radius, nextWidth, nextHeight) }
+        : {}),
+      rotation: node.rotation,
     }
   }
 
   if (element.kind === "barcode") {
-    node.scaleX(1)
-    node.scaleY(1)
-    const nextWidth = Math.max(36 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
-    const nextHeight = Math.max(18 / CANVAS_DOTS_PER_MILLIMETER, element.height * scaleY)
+    const nextWidth = Math.max(36 / CANVAS_DOTS_PER_MILLIMETER, element.width * node.scaleX)
+    const nextHeight = Math.max(18 / CANVAS_DOTS_PER_MILLIMETER, element.height * node.scaleY)
     return {
       ...element,
-      x: node.x() - nextWidth / 2,
-      y: node.y() - nextHeight / 2,
+      x: node.x - nextWidth / 2,
+      y: node.y - nextHeight / 2,
       width: nextWidth,
       height: nextHeight,
-      rotation: node.rotation(),
+      rotation: node.rotation,
     }
   }
 
   if (element.kind === "qr" || element.kind === "datamatrix" || element.kind === "circle") {
-    node.scaleX(1)
-    node.scaleY(1)
     const nextSize = Math.max(
       24 / CANVAS_DOTS_PER_MILLIMETER,
-      element.size * Math.max(scaleX, scaleY)
+      element.size * Math.max(node.scaleX, node.scaleY)
     )
     return {
       ...element,
-      x: node.x() - nextSize / 2,
-      y: node.y() - nextSize / 2,
+      x: node.x - nextSize / 2,
+      y: node.y - nextSize / 2,
       size: nextSize,
       ...(element.kind === "qr" || element.kind === "datamatrix"
-        ? { rotation: node.rotation() }
+        ? { rotation: node.rotation }
         : {}),
     }
   }
@@ -2104,15 +2237,14 @@ function applyTransformedNodeToElement(
 
 function applyTransformedNodesToDraft(
   draft: CanvasDraftDocument,
-  nodes: Konva.Group[],
-  snapEnabled = false
+  nodes: CanvasTransformedNode[]
 ): CanvasDraftDocument {
   return {
     ...draft,
     elements: draft.elements.map((item) => {
-      const node = nodes.find((candidate) => candidate.id() === item.id)
+      const node = nodes.find((candidate) => candidate.id === item.id)
       return node
-        ? snapTransformedElementGeometry(applyTransformedNodeToElement(item, node), snapEnabled)
+        ? normalizeTransformedElementGeometry(applyTransformedNodeToElement(item, node))
         : item
     }),
   }
@@ -4728,6 +4860,9 @@ function CanvasStageView({
   const stageRef = React.useRef<Konva.Stage | null>(null)
   const transformerRef = React.useRef<Konva.Transformer | null>(null)
   const nodeRefs = React.useRef<Record<string, Konva.Group | null>>({})
+  const transformerSnapGuidesRef = React.useRef<CanvasSnapGuide[]>([])
+  const hadPendingPasteRef = React.useRef(Boolean(state.pendingPaste))
+  const [snapGuides, setSnapGuides] = React.useState<CanvasSnapGuide[]>([])
   const [stageHostElement, setStageHostElement] = React.useState<HTMLDivElement | null>(null)
   const isPanningRef = React.useRef(false)
   const panOriginRef = React.useRef<{
@@ -4745,6 +4880,20 @@ function CanvasStageView({
     lastDeltaX: number
     lastDeltaY: number
   } | null>(null)
+
+  const updateSnapGuides = React.useCallback((nextGuides: CanvasSnapGuide[]) => {
+    setSnapGuides((current) =>
+      current.length === nextGuides.length &&
+      current.every(
+        (guide, index) =>
+          guide.axis === nextGuides[index]?.axis &&
+          guide.coordinate === nextGuides[index]?.coordinate &&
+          guide.kind === nextGuides[index]?.kind
+      )
+        ? current
+        : nextGuides
+    )
+  }, [])
 
   const measuredStageHostSize = useElementSize(stageHostElement)
   const stageViewportSize = React.useMemo(
@@ -4814,6 +4963,14 @@ function CanvasStageView({
   }, [onViewportSizeChange, stageViewportSize])
 
   React.useEffect(() => {
+    if (!state.snapEnabled || (hadPendingPasteRef.current && !state.pendingPaste)) {
+      transformerSnapGuidesRef.current = []
+      updateSnapGuides([])
+    }
+    hadPendingPasteRef.current = Boolean(state.pendingPaste)
+  }, [state.pendingPaste, state.snapEnabled, updateSnapGuides])
+
+  React.useEffect(() => {
     if (!trackedTextFontFamily) {
       textFontUsageSessionRef.current = null
       return
@@ -4854,7 +5011,7 @@ function CanvasStageView({
     if (readOnly) {
       return
     }
-    if (event.target.getParent()?.className === "Transformer") {
+    if (isTransformerInteractionTarget(event.target)) {
       return
     }
     const stage = event.target.getStage?.() ?? stageRef.current
@@ -4955,6 +5112,7 @@ function CanvasStageView({
 
     if (state.pendingPaste) {
       if (point) {
+        updateSnapGuides(getPendingPastePlacementSnap(state, point)?.guides ?? [])
         onChange((current) => movePendingPasteToPoint(current, point))
       }
       return
@@ -4977,6 +5135,7 @@ function CanvasStageView({
     if (readOnly) {
       return
     }
+    updateSnapGuides([])
     isPanningRef.current = false
     panOriginRef.current = null
 
@@ -5046,21 +5205,29 @@ function CanvasStageView({
       if (!transformer) {
         return
       }
+      if (!commitHistory) {
+        updateSnapGuides(transformerSnapGuidesRef.current)
+        transformer.getLayer()?.batchDraw()
+        return
+      }
       const nodes = transformer.nodes().filter((node): node is Konva.Group => Boolean(node))
       if (nodes.length === 0) {
         return
       }
+      const transformedNodes = nodes.map(captureTransformedNode)
       onChange((current) =>
-        commitHistory
-          ? applyDraftUpdate(current, (draft) =>
-              applyTransformedNodesToDraft(draft, nodes, current.snapEnabled)
-            )
-          : applyLiveDraftUpdate(current, (draft) => applyTransformedNodesToDraft(draft, nodes))
+        applyDraftUpdate(current, (draft) => applyTransformedNodesToDraft(draft, transformedNodes))
       )
+      nodes.forEach((node) => {
+        node.scaleX(1)
+        node.scaleY(1)
+      })
+      updateSnapGuides([])
+      transformerSnapGuidesRef.current = []
       transformer.forceUpdate()
       transformer.getLayer()?.batchDraw()
     },
-    [onChange, readOnly]
+    [onChange, readOnly, updateSnapGuides]
   )
 
   const previewElementDragSelection = React.useCallback(
@@ -5074,6 +5241,7 @@ function CanvasStageView({
         session.movedIds,
         stagePosition,
         session.rotationOrigin,
+        state.viewport,
         state.snapEnabled
       )
       if (!preview) {
@@ -5091,11 +5259,15 @@ function CanvasStageView({
         },
       }
     },
-    [state.gridEnabled, state.snapEnabled]
+    [state.gridEnabled, state.snapEnabled, state.viewport]
   )
 
   return (
-    <div className="tm-stage-shell">
+    <div
+      className="tm-stage-shell"
+      data-snap-guides={snapGuides.length}
+      data-testid="canvas-stage-shell"
+    >
       <div className="tm-stage-wrap tm-stage-wrap--editor">
         <div ref={setStageHostElement} className="tm-stage-surface">
           <div className="tm-stage-paper tm-stage-paper--base" style={paperStyle} />
@@ -5130,6 +5302,7 @@ function CanvasStageView({
           onMouseDown={handleStageMouseDown}
           onMouseMove={handleStageMouseMove}
           onMouseUp={handleStageMouseUp}
+          onMouseLeave={() => updateSnapGuides([])}
           onDblClick={handleStageDoubleClick}
           onWheel={(event) => {
             event.evt.preventDefault()
@@ -5137,42 +5310,17 @@ function CanvasStageView({
             if (!stage) {
               return
             }
-            const shouldZoom = event.evt.ctrlKey || event.evt.metaKey
-
-            if (!shouldZoom) {
-              onChange((current) => ({
-                ...current,
-                viewport: {
-                  ...current.viewport,
-                  x: current.viewport.x - event.evt.deltaX,
-                  y: current.viewport.y - event.evt.deltaY,
-                },
-              }))
-              return
-            }
-
             const pointer = stage.getPointerPosition()
             if (!pointer) {
               return
             }
-            const oldScale = state.viewport.scale
-            const mousePointTo = {
-              x: (pointer.x - state.viewport.x) / (oldScale * CANVAS_DOTS_PER_MILLIMETER),
-              y: (pointer.y - state.viewport.y) / (oldScale * CANVAS_DOTS_PER_MILLIMETER),
+            const wheelDelta = event.evt.deltaY || event.evt.deltaX
+            if (!wheelDelta) {
+              return
             }
-            const direction = event.evt.deltaY > 0 ? -1 : 1
-            const newScale = clamp(
-              direction > 0 ? oldScale * ZOOM_STEP : oldScale / ZOOM_STEP,
-              ZOOM_MIN,
-              ZOOM_MAX
-            )
             onChange((current) => ({
               ...current,
-              viewport: {
-                scale: newScale,
-                x: pointer.x - mousePointTo.x * newScale * CANVAS_DOTS_PER_MILLIMETER,
-                y: pointer.y - mousePointTo.y * newScale * CANVAS_DOTS_PER_MILLIMETER,
-              },
+              viewport: zoomViewportAtPointer(current.viewport, pointer, wheelDelta),
             }))
           }}
         >
@@ -5239,15 +5387,22 @@ function CanvasStageView({
                       !state.spacePressed &&
                       !state.editingId
                     }
-                    dragBoundFunc={(position) =>
-                      getSnappedDragAbsolutePosition(
-                        element,
+                    dragBoundFunc={(position) => {
+                      const session = elementDragSessionRef.current
+                      const baseDraft = session?.baseDraft ?? state.liveDraft
+                      const movedIds =
+                        session?.movedIds ??
+                        (state.selectedIds.includes(element.id) ? state.selectedIds : [element.id])
+                      return getSnappedDragAbsolutePosition(
+                        baseDraft,
+                        element.id,
+                        movedIds,
                         position,
-                        geometry.rotationOrigin,
+                        session?.rotationOrigin ?? geometry.rotationOrigin,
                         state.viewport,
                         state.snapEnabled
                       )
-                    }
+                    }}
                     onClick={(event) => {
                       if (state.pendingPaste) {
                         return
@@ -5286,6 +5441,9 @@ function CanvasStageView({
                           }))
                     }
                     onDragStart={(event) => {
+                      if (isTransformerInteractionTarget(event.target)) {
+                        return
+                      }
                       if (readOnly || state.pendingPaste) {
                         return
                       }
@@ -5310,6 +5468,9 @@ function CanvasStageView({
                       }))
                     }}
                     onDragMove={(event) => {
+                      if (isTransformerInteractionTarget(event.target)) {
+                        return
+                      }
                       if (readOnly || state.pendingPaste) {
                         return
                       }
@@ -5325,6 +5486,7 @@ function CanvasStageView({
                       if (!preview) {
                         return
                       }
+                      updateSnapGuides(preview.guides)
                       if (
                         Math.abs(preview.deltaX - session.lastDeltaX) < 0.001 &&
                         Math.abs(preview.deltaY - session.lastDeltaY) < 0.001
@@ -5343,28 +5505,32 @@ function CanvasStageView({
                       }))
                     }}
                     onDragEnd={(event) => {
+                      if (isTransformerInteractionTarget(event.target)) {
+                        return
+                      }
                       if (readOnly || state.pendingPaste) {
                         return
                       }
                       event.cancelBubble = true
                       const session = elementDragSessionRef.current
                       elementDragSessionRef.current = null
+                      updateSnapGuides([])
                       if (!session || session.draggedId !== element.id) {
-                        const position = snapElementPosition(
-                          element,
-                          event.target.x() - geometry.rotationOrigin.x,
-                          event.target.y() - geometry.rotationOrigin.y,
-                          state.snapEnabled
-                        )
                         onChange((current) =>
-                          applyDraftUpdate(current, (draft) => ({
-                            ...draft,
-                            elements: draft.elements.map((item) =>
-                              item.id === element.id
-                                ? ({ ...item, ...position } as CanvasDraftElement)
-                                : item
-                            ),
-                          }))
+                          (() => {
+                            const preview = createSelectionDragPreview(
+                              current.liveDraft,
+                              element.id,
+                              [element.id],
+                              { x: event.target.x(), y: event.target.y() },
+                              geometry.rotationOrigin,
+                              current.viewport,
+                              current.snapEnabled
+                            )
+                            return preview
+                              ? applyDraftUpdate(current, () => preview.draft)
+                              : current
+                          })()
                         )
                         return
                       }
@@ -5457,6 +5623,7 @@ function CanvasStageView({
                       }}
                       onDragStart={(event) => {
                         event.cancelBubble = true
+                        updateSnapGuides([])
                         onChange((current) => ({
                           ...current,
                           selectedIds: [selectedLineElement.id],
@@ -5465,13 +5632,20 @@ function CanvasStageView({
                       }}
                       onDragMove={(event) => {
                         event.cancelBubble = true
+                        const snapped = resolveLineEndpointSnap(
+                          state.draft,
+                          selectedLineElement.id,
+                          { x: event.target.x(), y: event.target.y() },
+                          state.viewport,
+                          state.snapEnabled
+                        )
+                        updateSnapGuides(snapped.guides)
                         onChange((current) => {
                           const nextDraft = updateLineEndpoint(
                             current.draft,
                             selectedLineElement.id,
                             handle.endpoint,
-                            { x: event.target.x(), y: event.target.y() },
-                            current.snapEnabled
+                            snapped.point
                           )
                           return {
                             ...current,
@@ -5487,13 +5661,20 @@ function CanvasStageView({
                         if (readOnly) {
                           return
                         }
+                        const snapped = resolveLineEndpointSnap(
+                          state.draft,
+                          selectedLineElement.id,
+                          { x: event.target.x(), y: event.target.y() },
+                          state.viewport,
+                          state.snapEnabled
+                        )
+                        updateSnapGuides([])
                         onChange((current) => {
                           const nextDraft = updateLineEndpoint(
                             current.draft,
                             selectedLineElement.id,
                             handle.endpoint,
-                            { x: event.target.x(), y: event.target.y() },
-                            current.snapEnabled
+                            snapped.point
                           )
                           const next = pushHistory(current, nextDraft)
                           return {
@@ -5529,15 +5710,68 @@ function CanvasStageView({
                 ignoreStroke
                 listening={!readOnly && transformerEnabled}
                 boundBoxFunc={(oldBox, newBox) => {
-                  if (Math.abs(newBox.width) < 16 || Math.abs(newBox.height) < 16) {
+                  const snapped = resolveTransformerSnap(
+                    createCanvasSnapContext(
+                      state.liveDraft,
+                      state.selectedIds,
+                      state.viewport,
+                      state.snapEnabled
+                    ),
+                    projectStageTransformerBoxToCanvas(newBox, state.viewport),
+                    transformerRef.current?.getActiveAnchor() ?? null,
+                    { preserveAspectRatio: transformerKeepRatio }
+                  )
+                  const snappedStageBox = projectCanvasTransformerBoxToStage(
+                    snapped.box,
+                    state.viewport
+                  )
+                  if (
+                    Math.abs(snappedStageBox.width) < 16 ||
+                    Math.abs(snappedStageBox.height) < 16
+                  ) {
+                    transformerSnapGuidesRef.current = []
                     return oldBox
                   }
-                  return newBox
+                  transformerSnapGuidesRef.current = snapped.guides
+                  return snappedStageBox
+                }}
+                onTransformStart={() => {
+                  transformerSnapGuidesRef.current = []
+                  updateSnapGuides([])
                 }}
                 onTransform={() => applyTransformerChange(false)}
                 onTransformEnd={() => applyTransformerChange(true)}
               />
             </Group>
+            {snapGuides.map((guide) => {
+              const displayScale = state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+              const left = state.viewport.x
+              const top = state.viewport.y
+              const right = left + state.draft.width * displayScale
+              const bottom = top + state.draft.height * displayScale
+              const coordinate =
+                (guide.axis === "x" ? state.viewport.x : state.viewport.y) +
+                guide.coordinate * displayScale
+              return guide.axis === "x" ? (
+                <KonvaLine
+                  key={`snap-x-${guide.coordinate}`}
+                  points={[coordinate, top, coordinate, bottom]}
+                  stroke="#1d9bf0"
+                  strokeWidth={1}
+                  dash={[4, 4]}
+                  listening={false}
+                />
+              ) : (
+                <KonvaLine
+                  key={`snap-y-${guide.coordinate}`}
+                  points={[left, coordinate, right, coordinate]}
+                  stroke="#1d9bf0"
+                  strokeWidth={1}
+                  dash={[4, 4]}
+                  listening={false}
+                />
+              )
+            })}
             {selectionBoxStageRect ? (
               <KonvaRect
                 x={selectionBoxStageRect.x}
