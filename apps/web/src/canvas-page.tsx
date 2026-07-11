@@ -170,6 +170,17 @@ export type StageViewport = {
   scale: number
 }
 
+export function isTransformerInteractionTarget(target: Konva.Node | null | undefined): boolean {
+  let node = target
+  while (node) {
+    if (node.className === "Transformer") {
+      return true
+    }
+    node = node.getParent()
+  }
+  return false
+}
+
 type StageViewportSize = {
   width: number
   height: number
@@ -1434,22 +1445,6 @@ function applyDraftUpdate(
   }
 }
 
-function applyLiveDraftUpdate(
-  state: CanvasPageState,
-  updater: (draft: CanvasDraftDocument) => CanvasDraftDocument
-): CanvasPageState {
-  const nextDraft = normalizeDraftDocument(updater(cloneDraft(state.liveDraft)))
-  nextDraft.editor.gridEnabled = state.gridEnabled
-  nextDraft.editor.snapEnabled = state.snapEnabled
-  return {
-    ...state,
-    liveDraft: nextDraft,
-    draft: nextDraft,
-    selectedIds: updateSelectionAfterDraft(state, nextDraft),
-    storageMode: "persisted",
-  }
-}
-
 function updateEditorAssistState(
   state: CanvasPageState,
   nextEditor: CanvasDraftDocument["editor"]
@@ -2134,21 +2129,42 @@ export function normalizeTransformedElementGeometry(
   }
 }
 
+type CanvasTransformedNode = {
+  id: string
+  rotation: number
+  scaleX: number
+  scaleY: number
+  transformMatrix: number[]
+  x: number
+  y: number
+}
+
+function captureTransformedNode(node: Konva.Group): CanvasTransformedNode {
+  return {
+    id: node.id(),
+    rotation: node.rotation(),
+    scaleX: node.scaleX(),
+    scaleY: node.scaleY(),
+    transformMatrix: node.getTransform().getMatrix(),
+    x: node.x(),
+    y: node.y(),
+  }
+}
+
 function applyTransformedNodeToElement(
   element: CanvasDraftElement,
-  node: Konva.Group
+  node: CanvasTransformedNode
 ): CanvasDraftElement {
-  const scaleX = node.scaleX()
-  const scaleY = node.scaleY()
-
   if (element.kind === "line") {
     const deltaX = element.x2 - element.x
     const deltaY = element.y2 - element.y
-    const start = node.getTransform().point({ x: 0, y: 0 })
-    const end = node.getTransform().point({ x: deltaX, y: deltaY })
-    node.scaleX(1)
-    node.scaleY(1)
-    node.rotation(0)
+    const [a = 1, b = 0, c = 0, d = 1, e = 0, f = 0] = node.transformMatrix
+    const transformPoint = (point: { x: number; y: number }) => ({
+      x: a * point.x + c * point.y + e,
+      y: b * point.x + d * point.y + f,
+    })
+    const start = transformPoint({ x: 0, y: 0 })
+    const end = transformPoint({ x: deltaX, y: deltaY })
     return {
       ...element,
       x: start.x,
@@ -2159,80 +2175,59 @@ function applyTransformedNodeToElement(
   }
 
   if (element.kind === "text") {
-    node.scaleX(1)
-    node.scaleY(1)
-    const nextWidth = Math.max(24 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
-    const nextHeight = Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, element.height * scaleY)
+    const nextWidth = Math.max(24 / CANVAS_DOTS_PER_MILLIMETER, element.width * node.scaleX)
+    const nextHeight = Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, element.height * node.scaleY)
     return {
       ...element,
-      x: node.x() - nextWidth / 2,
-      y: node.y() - nextHeight / 2,
+      x: node.x - nextWidth / 2,
+      y: node.y - nextHeight / 2,
       width: nextWidth,
       height: nextHeight,
-      rotation: node.rotation(),
+      rotation: node.rotation,
     }
   }
 
-  if (element.kind === "rect") {
-    node.scaleX(1)
-    node.scaleY(1)
-    const nextWidth = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
-    const nextHeight = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.height * scaleY)
+  if (element.kind === "rect" || element.kind === "triangle") {
+    const nextWidth = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.width * node.scaleX)
+    const nextHeight = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.height * node.scaleY)
     return {
       ...element,
-      x: node.x() - nextWidth / 2,
-      y: node.y() - nextHeight / 2,
+      x: node.x - nextWidth / 2,
+      y: node.y - nextHeight / 2,
       width: nextWidth,
       height: nextHeight,
-      radius: clampRectRadius(element.radius, nextWidth, nextHeight),
-      rotation: node.rotation(),
-    }
-  }
-
-  if (element.kind === "triangle") {
-    node.scaleX(1)
-    node.scaleY(1)
-    const nextWidth = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
-    const nextHeight = Math.max(16 / CANVAS_DOTS_PER_MILLIMETER, element.height * scaleY)
-    return {
-      ...element,
-      x: node.x() - nextWidth / 2,
-      y: node.y() - nextHeight / 2,
-      width: nextWidth,
-      height: nextHeight,
-      rotation: node.rotation(),
+      ...(element.kind === "rect"
+        ? { radius: clampRectRadius(element.radius, nextWidth, nextHeight) }
+        : {}),
+      rotation: node.rotation,
     }
   }
 
   if (element.kind === "barcode") {
-    node.scaleX(1)
-    node.scaleY(1)
-    const nextWidth = Math.max(36 / CANVAS_DOTS_PER_MILLIMETER, element.width * scaleX)
-    const nextHeight = Math.max(18 / CANVAS_DOTS_PER_MILLIMETER, element.height * scaleY)
+    const nextWidth = Math.max(36 / CANVAS_DOTS_PER_MILLIMETER, element.width * node.scaleX)
+    const nextHeight = Math.max(18 / CANVAS_DOTS_PER_MILLIMETER, element.height * node.scaleY)
     return {
       ...element,
-      x: node.x() - nextWidth / 2,
-      y: node.y() - nextHeight / 2,
+      x: node.x - nextWidth / 2,
+      y: node.y - nextHeight / 2,
       width: nextWidth,
       height: nextHeight,
-      rotation: node.rotation(),
+      rotation: node.rotation,
     }
   }
 
   if (element.kind === "qr" || element.kind === "datamatrix" || element.kind === "circle") {
-    node.scaleX(1)
-    node.scaleY(1)
     const nextSize = Math.max(
       24 / CANVAS_DOTS_PER_MILLIMETER,
-      element.size * Math.max(scaleX, scaleY)
+      element.size * Math.max(node.scaleX, node.scaleY)
     )
     return {
       ...element,
-      x: node.x() - nextSize / 2,
-      y: node.y() - nextSize / 2,
+      x: node.x - nextSize / 2,
+      y: node.y - nextSize / 2,
       size: nextSize,
       ...(element.kind === "qr" || element.kind === "datamatrix"
-        ? { rotation: node.rotation() }
+        ? { rotation: node.rotation }
         : {}),
     }
   }
@@ -2242,12 +2237,12 @@ function applyTransformedNodeToElement(
 
 function applyTransformedNodesToDraft(
   draft: CanvasDraftDocument,
-  nodes: Konva.Group[]
+  nodes: CanvasTransformedNode[]
 ): CanvasDraftDocument {
   return {
     ...draft,
     elements: draft.elements.map((item) => {
-      const node = nodes.find((candidate) => candidate.id() === item.id)
+      const node = nodes.find((candidate) => candidate.id === item.id)
       return node
         ? normalizeTransformedElementGeometry(applyTransformedNodeToElement(item, node))
         : item
@@ -5016,7 +5011,7 @@ function CanvasStageView({
     if (readOnly) {
       return
     }
-    if (event.target.getParent()?.className === "Transformer") {
+    if (isTransformerInteractionTarget(event.target)) {
       return
     }
     const stage = event.target.getStage?.() ?? stageRef.current
@@ -5210,20 +5205,25 @@ function CanvasStageView({
       if (!transformer) {
         return
       }
+      if (!commitHistory) {
+        updateSnapGuides(transformerSnapGuidesRef.current)
+        transformer.getLayer()?.batchDraw()
+        return
+      }
       const nodes = transformer.nodes().filter((node): node is Konva.Group => Boolean(node))
       if (nodes.length === 0) {
         return
       }
-      const guides = transformerSnapGuidesRef.current
+      const transformedNodes = nodes.map(captureTransformedNode)
       onChange((current) =>
-        commitHistory
-          ? applyDraftUpdate(current, (draft) => applyTransformedNodesToDraft(draft, nodes))
-          : applyLiveDraftUpdate(current, (draft) => applyTransformedNodesToDraft(draft, nodes))
+        applyDraftUpdate(current, (draft) => applyTransformedNodesToDraft(draft, transformedNodes))
       )
-      updateSnapGuides(commitHistory ? [] : guides)
-      if (commitHistory) {
-        transformerSnapGuidesRef.current = []
-      }
+      nodes.forEach((node) => {
+        node.scaleX(1)
+        node.scaleY(1)
+      })
+      updateSnapGuides([])
+      transformerSnapGuidesRef.current = []
       transformer.forceUpdate()
       transformer.getLayer()?.batchDraw()
     },
@@ -5441,6 +5441,9 @@ function CanvasStageView({
                           }))
                     }
                     onDragStart={(event) => {
+                      if (isTransformerInteractionTarget(event.target)) {
+                        return
+                      }
                       if (readOnly || state.pendingPaste) {
                         return
                       }
@@ -5465,6 +5468,9 @@ function CanvasStageView({
                       }))
                     }}
                     onDragMove={(event) => {
+                      if (isTransformerInteractionTarget(event.target)) {
+                        return
+                      }
                       if (readOnly || state.pendingPaste) {
                         return
                       }
@@ -5499,6 +5505,9 @@ function CanvasStageView({
                       }))
                     }}
                     onDragEnd={(event) => {
+                      if (isTransformerInteractionTarget(event.target)) {
+                        return
+                      }
                       if (readOnly || state.pendingPaste) {
                         return
                       }

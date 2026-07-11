@@ -222,6 +222,9 @@ while the workbench was being productized:
     magnetic policy across drag, paste placement, line endpoints, and resize
   - Transformer handles now resolve their active edge during movement and no
     longer jump onto a rounded geometry only after release
+  - Transformer preview now leaves the Konva node scale intact until transform
+    end, then normalizes and commits it once so a resize handle cannot resolve
+    as a translation-only edit
   - rotated reference bounds, low-zoom grid tolerance, temporary edge guides,
     and fixed keyboard nudges were made explicit so the editor has one
     predictable snapping vocabulary

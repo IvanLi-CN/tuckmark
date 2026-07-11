@@ -589,6 +589,11 @@ output.
   PR: include
   ![Canvas magnetic snap guide](./assets/canvas-magnetic-snap-story-1280x800.png)
 
+- `1280×800` demo canvas after expanding the selected rectangle through its top-left Transformer handle; the rectangle grows while the fixed right and bottom edges remain aligned.
+
+  PR: include
+  ![Canvas Transformer resize](./assets/canvas-transformer-resize-1280x800.png)
+
 - `1280×800` canvas workspace with a selected text element before inline editing.
 
   PR: include

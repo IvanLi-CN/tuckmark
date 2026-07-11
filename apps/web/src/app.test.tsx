@@ -18,6 +18,7 @@ import {
   confirmPendingPastePlacement,
   createCanvasStateFromDraft,
   createSelectionDragPreview,
+  isTransformerInteractionTarget,
   movePendingPasteToPoint,
   normalizeTransformedElementGeometry,
   projectCanvasTransformerBoxToStage,
@@ -1744,6 +1745,24 @@ describe("web workbench app", () => {
     expect(confirmedState.liveDraft.elements).toHaveLength(draft.elements.length + 1)
     expect(confirmedState.historyIndex).toBe(1)
     expect(confirmedState.outputStatus).toContain("已粘贴 1 个图层。")
+  })
+
+  it("does not route a nested Transformer handle event into element dragging", () => {
+    const transformer = {
+      className: "Transformer",
+      getParent: () => null,
+    }
+    const transformerHandle = {
+      className: "Rect",
+      getParent: () => transformer,
+    }
+    const elementHitTarget = {
+      className: "Rect",
+      getParent: () => null,
+    }
+
+    expect(isTransformerInteractionTarget(transformerHandle as never)).toBe(true)
+    expect(isTransformerInteractionTarget(elementHitTarget as never)).toBe(false)
   })
 
   it("zooms around the pointer without requiring a modifier key", () => {
