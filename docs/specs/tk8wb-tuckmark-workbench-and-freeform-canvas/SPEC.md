@@ -261,12 +261,11 @@ output.
   - Shift multi-selection
   - marquee selection
   - drag move
-  - drag-end snap-to-grid when `snapEnabled` is active
-  - wheel zoom relative to pointer
+  - live magnetic snapping when `snapEnabled` is active
+  - direct wheel zoom relative to pointer without a modifier key
   - `Space + drag` stage pan
   - `fit to view`
-  - transformer-based resize / rotation with final geometry snapped on
-    transform commit when `snapEnabled` is active
+  - transformer-based resize / rotation with real-time active-edge snapping
   - system clipboard `Copy` / `Paste` for selected elements through keyboard
     clipboard events when focus is not inside editable form controls
   - `Delete`, `Duplicate`, `Undo`, `Redo`, and `Escape`
@@ -279,23 +278,36 @@ output.
     in the same pending placement preview flow
   - pending clipboard placement may be cancelled with `Escape` or `Cmd/Ctrl+Z`
     before it writes a new history entry
-  - pending clipboard placement respects the active `snapEnabled` grid while
-    following the pointer so preview movement lands on the same `1mm` cadence
+  - pending clipboard placement follows the same live magnetic snap contract
     as ordinary element dragging
   - clipboard hints and outcomes render as toast-like weak prompts and must
     not shift the static editor pane document flow
   - historical read-only canvas versions may copy selected elements but must
     not paste or otherwise mutate the draft
-- Ordinary element dragging snaps live to the existing `1mm` grid when
-  `snapEnabled` is active, and dragging any member of the current selection
-  moves that selected set together through the same live snap path. Transformer
-  handles remain commit-time only: they may move freely while being
-  adjusted, then position and snap-compatible dimensions land on the existing
-  `1mm` grid at release. Rotation is not snapped, and text resizing preserves
-  the saved font-size semantics while snapping the text box position and
-  dimensions.
+- `snapEnabled` governs one shared pointer magnetic-snap policy across ordinary
+  and multi-selection dragging, pending clipboard placement, line endpoints,
+  and Transformer resize handles. Candidates are the `1mm` grid, the four
+  canvas edges, and the visible outer bounds of other elements; moving and
+  pending elements are excluded, while visible locked elements remain valid
+  references. Rotated elements use their visible axis-aligned outer bounds.
+- Canvas and element edges use an `8px` screen-space threshold. The grid uses
+  `min(8px, 40% of the current grid spacing)` so low zoom still leaves a free
+  adjustment zone. X and Y resolve independently by screen distance; within
+  `0.5px`, element edges win over canvas edges, which win over grid targets.
+- Dragging a selection applies one rigid snapped translation. Line editing
+  snaps only the active endpoint. Transformer resize snaps only the active
+  handle edge and keeps its opposite edge fixed; transform completion commits
+  the current live geometry without a second rounding jump. Rotation remains
+  freeform, square-element proportions and minimum sizes remain intact, and
+  text resizing preserves saved font-size semantics.
+- Snapping to a canvas or element edge displays a temporary one-pixel guide;
+  grid-only hits do not add a guide. Guides disappear when the target is left,
+  the interaction ends, or snapping is disabled, and never persist, print, or
+  export.
 - The snap toolbar button controls and reports the persistent `snapEnabled`
-  flag. No keyboard modifier temporarily overrides snapping.
+  flag. No keyboard modifier temporarily overrides snapping; keyboard arrows
+  remain exact `1mm` moves, or `10mm` with Shift, outside the pointer-magnetic
+  policy.
 - Text elements support double-click inline editing on the stage.
 - Text inspector controls expose:
   - numeric font size

@@ -563,6 +563,57 @@ export const CanvasWorkspaceSnapEnabled: Story = {
   },
 }
 
+export const CanvasWorkspaceMagneticSnap: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "magnetic-snap",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "A deterministic edge-alignment setup: the selected rectangle can magnetically align to the locked, rotated reference bounds and canvas edges while `吸附` is active.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const snapButton = await canvas.findByRole("button", { name: "吸附" })
+    await expect(snapButton).toHaveAttribute("aria-pressed", "true")
+    const stage = canvasElement.querySelector(".konvajs-content")
+    if (!stage) {
+      throw new Error("expected Konva stage content")
+    }
+
+    const stageRect = stage.getBoundingClientRect()
+    const start = {
+      clientX: stageRect.left + 188,
+      clientY: stageRect.top + 282,
+    }
+    const target = {
+      clientX: stageRect.left + 283,
+      clientY: stageRect.top + 282,
+    }
+
+    await userEvent.pointer([
+      { target: stage, coords: start },
+      { keys: "[MouseLeft>]", target: stage, coords: start },
+      { target: stage, coords: target },
+    ])
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "1")
+
+    await userEvent.pointer({ keys: "[/MouseLeft]", target: stage, coords: target })
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "0")
+  },
+}
+
 export const CanvasWorkspaceNarrow: Story = {
   args: {
     context: runtimeContext,

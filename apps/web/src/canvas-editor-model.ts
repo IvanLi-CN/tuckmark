@@ -1887,7 +1887,7 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
                     : "top",
               stretchX: false,
               stretchY: false,
-              autoWrap: scenario === "text-centered-selected" ? false : true,
+              autoWrap: scenario !== "text-centered-selected",
               verticalText: false,
               maxLines:
                 scenario === "text-justify-selected" ||
@@ -1918,6 +1918,37 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
           }
         : element
     )
+    return document
+  }
+
+  if (scenario === "magnetic-snap") {
+    const document = createDraftFromPreset(getPresetById("ops-tag"))
+    document.elements = [
+      createCanvasElement("rect", 0, {
+        x: 8,
+        y: 13,
+        width: 12,
+        height: 8,
+        radius: 0,
+        strokeWidth: 0.25,
+        meta: { name: "待对齐矩形", visible: true, locked: false },
+      }),
+      createCanvasElement("rect", 1, {
+        x: 30,
+        y: 11,
+        width: 12,
+        height: 8,
+        radius: 0,
+        strokeWidth: 0.25,
+        rotation: 8,
+        meta: { name: "边缘参考", visible: true, locked: true },
+      }),
+    ]
+    document.editor = {
+      ...document.editor,
+      gridEnabled: true,
+      snapEnabled: true,
+    }
     return document
   }
 
@@ -1979,6 +2010,7 @@ export type CanvasStoryScenario =
   | "text-centered-selected"
   | "text-ready"
   | "rect-selected"
+  | "magnetic-snap"
   | "circle-selected"
   | "triangle-selected"
   | "line-selected"

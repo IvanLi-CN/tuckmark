@@ -74,7 +74,7 @@
     `barcode`
   - proportional corner resize handles for `qr`, `datamatrix`, and `circle`
   - direct start/end endpoint handles for single selected `line` elements
-  - wheel zoom relative to pointer
+  - direct wheel zoom relative to pointer without a modifier key
   - `Space + drag` pan
   - keyboard move, copy, paste, duplicate, delete, undo, redo, and clear
     selection
@@ -94,16 +94,21 @@
     instead of inline notices that reflow the editor pane
   - read-only historical snapshots keeping `拷贝` available while leaving
     paste and all other mutating actions disabled
-- Canvas snapping now resolves through the persistent `snapEnabled` editor flag
-  across live element dragging, pending clipboard placement, drag end,
-  transformer commit, line endpoint adjustment, and keyboard movement.
-- Ordinary pointer dragging now opens a runtime selection-drag session so the
-  grabbed element and any already-selected companions preview and commit as one
-  snapped translation instead of only updating the directly grabbed node.
-- Transformer commits snap final geometry to the existing `1mm` grid for
-  text, rectangle, triangle, barcode, QR, circle, and line elements. Rotation
-  remains freeform, and text transforms continue to preserve saved font size
-  while snapping the text box bounds.
+- Canvas snapping resolves through one pure screen-space magnetic policy behind
+  the persistent `snapEnabled` editor flag. It serves ordinary and multi-select
+  dragging, pending clipboard placement, line endpoint adjustment, and
+  Transformer resize; keyboard nudges remain exact fixed-distance moves.
+- The resolver compares grid lines, canvas edges, and visible static element
+  bounds independently on each axis. It excludes moving preview elements,
+  includes visible locked references, honors rotated visible bounds, and keeps
+  low-zoom grid snapping below forty percent of grid spacing.
+- Ordinary pointer dragging keeps the selected set rigid. Transformer bounds
+  snap live through their active edge before the draft update, then commit that
+  same geometry without a release-time rounding pass. Rotation stays freeform,
+  text transforms retain font size, and existing minimum-size and proportional
+  shape constraints continue to apply.
+- Stage-only guide lines render for canvas and element edge hits, clear at the
+  end of each interaction, and do not affect stored draft, printing, or export.
 - Marquee selection overlay is now projected into stage space rather than
   rendered inside the scaled content group, so its dashed border stays `1
   logical px` across zoom levels while the stored selection box and inclusion

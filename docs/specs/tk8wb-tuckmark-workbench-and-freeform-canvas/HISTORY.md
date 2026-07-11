@@ -215,3 +215,13 @@ while the workbench was being productized:
     coordinates back into canvas-space millimeter geometry before snapping, so
     zoomed or panned canvases keep the same strong live snap feel instead of
     producing offset or barely perceptible movement
+- The snap contract was then unified around a proximity-based resolver:
+  - wheel input over the canvas now always zooms around the pointer and leaves
+    panning to the existing drag affordances
+  - grid, canvas edges, and visible element edges share one screen-space
+    magnetic policy across drag, paste placement, line endpoints, and resize
+  - Transformer handles now resolve their active edge during movement and no
+    longer jump onto a rounded geometry only after release
+  - rotated reference bounds, low-zoom grid tolerance, temporary edge guides,
+    and fixed keyboard nudges were made explicit so the editor has one
+    predictable snapping vocabulary

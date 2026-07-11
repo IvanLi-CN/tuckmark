@@ -18,11 +18,12 @@ import {
   confirmPendingPastePlacement,
   createCanvasStateFromDraft,
   createSelectionDragPreview,
-  getSnappedDragAbsolutePosition,
-  getSnappedDragStagePosition,
   movePendingPasteToPoint,
-  snapTransformedElementGeometry,
+  normalizeTransformedElementGeometry,
+  projectCanvasTransformerBoxToStage,
+  projectStageTransformerBoxToCanvas,
   startClipboardPastePlacement,
+  zoomViewportAtPointer,
 } from "./canvas-page.js"
 import { buildInputFromTemplate, fallbackTemplates } from "./demo-data.js"
 import { CANVAS_DOTS_PER_MILLIMETER } from "./lib/canvas-units.js"
@@ -359,7 +360,7 @@ function dispatchClipboardEvent(
 
 async function readStoredClipboardText(type: string): Promise<string | null> {
   const item = clipboardItems[0]
-  if (!item || !item.types.includes(type)) {
+  if (!item?.types.includes(type)) {
     return null
   }
   return (await item.getType(type)).text()
@@ -1691,6 +1692,7 @@ describe("web workbench app", () => {
 
   it("tracks pending placement outside liveDraft until confirmation", () => {
     const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    draft.editor.snapEnabled = false
     const sourceElement = draft.elements.find((element) => element.kind === "text")
     if (!sourceElement) {
       throw new Error("expected a text element in shipping-wide")
@@ -1725,15 +1727,6 @@ describe("web workbench app", () => {
       throw new Error("expected initial pending preview element")
     }
 
-    expect(initialPreviewElement.x - sourceElement.x).toBeCloseTo(
-      Math.round(initialPreviewElement.x - sourceElement.x),
-      6
-    )
-    expect(initialPreviewElement.y - sourceElement.y).toBeCloseTo(
-      Math.round(initialPreviewElement.y - sourceElement.y),
-      6
-    )
-
     const movedState = movePendingPasteToPoint(previewState, { x: 40.4, y: 22.6 })
     const pendingElement = movedState.draft.elements.find((element) =>
       movedState.pendingPaste?.ids.includes(element.id)
@@ -1743,14 +1736,6 @@ describe("web workbench app", () => {
     }
 
     const pendingBounds = getElementSelectionBounds(pendingElement)
-    expect(pendingElement.x - initialPreviewElement.x).toBeCloseTo(
-      Math.round(pendingElement.x - initialPreviewElement.x),
-      6
-    )
-    expect(pendingElement.y - initialPreviewElement.y).toBeCloseTo(
-      Math.round(pendingElement.y - initialPreviewElement.y),
-      6
-    )
     expect(pendingBounds.x + pendingBounds.width / 2).toBeCloseTo(40.4, 0)
     expect(pendingBounds.y + pendingBounds.height / 2).toBeCloseTo(22.6, 0)
 
@@ -1761,69 +1746,50 @@ describe("web workbench app", () => {
     expect(confirmedState.outputStatus).toContain("已粘贴 1 个图层。")
   })
 
-  it("snaps drag preview positions to the canvas grid while preserving the rotation origin offset", () => {
-    const rect: CanvasDraftElement = {
-      id: "rect-snap-drag",
-      kind: "rect",
-      x: 8,
-      y: 16,
-      width: 18,
-      height: 10,
-      strokeWidth: 0.25,
-      fill: "none",
-      stroke: "#111111",
-      radius: 0,
-      rotation: 12,
-      meta: { name: "Rect", visible: true, locked: false },
+  it("zooms around the pointer without requiring a modifier key", () => {
+    const viewport = { x: 120, y: 56, scale: 2 }
+    const pointer = { x: 360, y: 216 }
+    const canvasPoint = {
+      x: (pointer.x - viewport.x) / (viewport.scale * CANVAS_DOTS_PER_MILLIMETER),
+      y: (pointer.y - viewport.y) / (viewport.scale * CANVAS_DOTS_PER_MILLIMETER),
     }
 
-    expect(getSnappedDragStagePosition(rect, { x: 14.4, y: 19.6 }, { x: 6, y: 4 }, true)).toEqual({
-      x: 14,
-      y: 20,
-    })
-    expect(getSnappedDragStagePosition(rect, { x: 14.4, y: 19.6 }, { x: 6, y: 4 }, false)).toEqual({
-      x: 14.4,
-      y: 19.6,
-    })
+    const zoomed = zoomViewportAtPointer(viewport, pointer, -1)
+
+    expect(zoomed.scale).toBeGreaterThan(viewport.scale)
+    expect((pointer.x - zoomed.x) / (zoomed.scale * CANVAS_DOTS_PER_MILLIMETER)).toBeCloseTo(
+      canvasPoint.x
+    )
+    expect((pointer.y - zoomed.y) / (zoomed.scale * CANVAS_DOTS_PER_MILLIMETER)).toBeCloseTo(
+      canvasPoint.y
+    )
+    expect(zoomViewportAtPointer({ ...viewport, scale: 5 }, pointer, -1).scale).toBe(5)
+    expect(zoomViewportAtPointer({ ...viewport, scale: 0.45 }, pointer, 1).scale).toBe(0.45)
   })
 
-  it("snaps drag bound positions in stage space through the canvas grid", () => {
-    const rect: CanvasDraftElement = {
-      id: "rect-snap-absolute",
-      kind: "rect",
-      x: 8,
-      y: 16,
-      width: 18,
-      height: 10,
-      strokeWidth: 0.25,
-      fill: "none",
-      stroke: "#111111",
-      radius: 0,
-      rotation: 0,
-      meta: { name: "Rect", visible: true, locked: false },
-    }
-    const viewport = {
-      x: 120,
-      y: 56,
-      scale: 2,
-    }
-    const displayScale = viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+  it("converts Transformer boxes between stage and canvas coordinates before snapping", () => {
+    const viewport = { x: 120, y: 56, scale: 2 }
+    const stageBox = { x: 184, y: 120, width: 160, height: 96, rotation: 0 }
 
-    expect(
-      getSnappedDragAbsolutePosition(
-        rect,
-        {
-          x: viewport.x + 14.4 * displayScale,
-          y: viewport.y + 19.6 * displayScale,
-        },
-        { x: 6, y: 4 },
-        viewport,
-        true
-      )
-    ).toEqual({
-      x: viewport.x + 14 * displayScale,
-      y: viewport.y + 20 * displayScale,
+    expect(projectStageTransformerBoxToCanvas(stageBox, viewport)).toEqual({
+      x: 4,
+      y: 4,
+      width: 10,
+      height: 6,
+      rotation: 0,
     })
+    expect(
+      projectCanvasTransformerBoxToStage(
+        {
+          x: 4,
+          y: 4,
+          width: 10,
+          height: 6,
+          rotation: 0,
+        },
+        viewport
+      )
+    ).toEqual(stageBox)
   })
 
   it("moves the whole selected set during drag previews instead of only the grabbed element", () => {
@@ -1842,6 +1808,7 @@ describe("web workbench app", () => {
       [draggedElement.id, companionElement.id],
       { x: draggedElement.x + 4.4, y: draggedElement.y + 7.6 },
       { x: 0, y: 0 },
+      { x: 0, y: 0, scale: 1 },
       true
     )
 
@@ -1859,8 +1826,6 @@ describe("web workbench app", () => {
       throw new Error("expected moved preview elements")
     }
 
-    expect(draggedPreview.x).toBeCloseTo(Math.round(draggedPreview.x), 6)
-    expect(draggedPreview.y).toBeCloseTo(Math.round(draggedPreview.y), 6)
     expect(draggedPreview.x).toBeCloseTo(draggedElement.x + preview.deltaX, 6)
     expect(draggedPreview.y).toBeCloseTo(draggedElement.y + preview.deltaY, 6)
     expect(companionPreview.x).toBeCloseTo(companionElement.x + preview.deltaX, 6)
@@ -2682,7 +2647,7 @@ describe("web workbench app", () => {
     expect(workingCopy?.draft.editor.snapEnabled).toBe(false)
   })
 
-  it("snaps transformed element geometry to the canvas grid without changing rotation or text size", () => {
+  it("normalizes transformed element geometry without changing freeform dimensions", () => {
     const rect: CanvasDraftElement = {
       id: "rect-1",
       kind: "rect",
@@ -2698,12 +2663,12 @@ describe("web workbench app", () => {
       meta: { name: "Rect", visible: true, locked: false },
     }
 
-    expect(snapTransformedElementGeometry(rect, true)).toMatchObject({
-      x: 4,
-      y: 6,
-      width: 29,
-      height: 11,
-      radius: 5.5,
+    expect(normalizeTransformedElementGeometry(rect)).toMatchObject({
+      x: 3.7,
+      y: 6.2,
+      width: 28.9,
+      height: 10.9,
+      radius: 5.45,
       rotation: 17,
     })
 
@@ -2729,15 +2694,14 @@ describe("web workbench app", () => {
       meta: { name: "Text", visible: true, locked: false },
     }
 
-    expect(snapTransformedElementGeometry(text, true)).toMatchObject({
-      x: 1,
-      y: 3,
-      width: 24,
-      height: 12,
+    expect(normalizeTransformedElementGeometry(text)).toMatchObject({
+      x: 1.4,
+      y: 2.6,
+      width: 24.1,
+      height: 11.9,
       fontSize: 4.4,
       rotation: 13,
     })
-    expect(snapTransformedElementGeometry(text, false)).toEqual(text)
   })
 
   it("keeps a restored saved version as the current working copy after reopening", async () => {
