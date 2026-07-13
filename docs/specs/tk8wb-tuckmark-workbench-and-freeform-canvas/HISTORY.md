@@ -228,3 +228,9 @@ while the workbench was being productized:
   - rotated reference bounds, low-zoom grid tolerance, temporary edge guides,
     and fixed keyboard nudges were made explicit so the editor has one
     predictable snapping vocabulary
+- Canvas typography later made its physical design-size contract explicit:
+  - new text and plain external-text paste use a `5.0 mm` design size
+  - `fontSize` remains a font-em measurement rather than a normalized ink
+    height, and compiles through the existing `8 dots/mm` output boundary
+  - existing templates, drafts, and imported layers preserve their saved
+    font-size values without migration

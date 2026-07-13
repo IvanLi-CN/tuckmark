@@ -1657,6 +1657,8 @@ describe("web workbench app", () => {
     await flush(4)
 
     expect(document.body.textContent).toContain("移动鼠标以放置，单击确认，按 Esc 取消。")
+    expect(document.querySelector('label[for="text-font-size"]')?.textContent).toBe("字号")
+    expect(document.querySelector<HTMLInputElement>("#text-font-size")?.value).toBe("5.0")
 
     await act(async () => {
       dispatchWindowKey("Enter")

@@ -326,6 +326,12 @@ export const CanvasWorkspaceWide: Story = {
     viewport: {
       defaultViewport: "canvas-wide-editor",
     },
+    docs: {
+      description: {
+        story:
+          "New canvas text defaults to a 5.0 mm font design size; the inspector keeps the established 字号 label.",
+      },
+    },
   },
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
@@ -710,7 +716,8 @@ export const CanvasWorkspaceTextReady: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await canvas.findByText("已选 1 项")
-    await canvas.findByLabelText("字号")
+    const fontSize = await canvas.findByLabelText("字号")
+    await expect(fontSize).toHaveDisplayValue("5.0")
   },
 }
 

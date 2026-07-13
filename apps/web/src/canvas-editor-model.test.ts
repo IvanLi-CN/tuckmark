@@ -13,6 +13,7 @@ import {
   createDraftFromPreset,
   createDraftFromSystemTemplate,
   createDraftFromUserTemplatePackage,
+  DEFAULT_CANVAS_TEXT_FONT_SIZE_MILLIMETERS,
   getElementBounds,
   getElementGeometry,
   getElementSelectionBounds,
@@ -123,6 +124,7 @@ describe("canvas-editor-model monochrome contract", () => {
 
     expect(text).toMatchObject({
       kind: "text",
+      fontSize: DEFAULT_CANVAS_TEXT_FONT_SIZE_MILLIMETERS,
       fontFamily: DEFAULT_TEXT_FONT_FAMILY,
       lineHeight: 1.2,
       verticalAlign: "top",
@@ -144,6 +146,33 @@ describe("canvas-editor-model monochrome contract", () => {
     expect(triangle.stroke).toBe("#111111")
     assertLineElement(line)
     expect(line.stroke).toBe("#111111")
+  })
+
+  it("compiles the new text design size from millimeters to printable dots", () => {
+    const draft = createDraftFromPreset(getPresetById("ops-tag"))
+    draft.elements = [createCanvasElement("text", 0)]
+
+    const definition = compileDraftToCanvasDefinition(draft)
+    const text = definition.elements[0]
+
+    expect(text).toMatchObject({
+      kind: "text",
+      fontSize: 40,
+    })
+  })
+
+  it("preserves system template text sizes when creating editable canvas drafts", () => {
+    const template = getSystemTemplateById("shipping-compact")
+    const templateText = template.elements.find((element) => element.kind === "text")
+    const draftText = createDraftFromSystemTemplate(template).elements.find(
+      (element) => element.kind === "text"
+    )
+
+    if (templateText?.kind !== "text" || draftText?.kind !== "text") {
+      throw new Error("expected system template text")
+    }
+
+    expect(draftText.fontSize).toBe(templateText.fontSize / 8)
   })
 
   it("compiles circle and triangle geometry to printable dots", () => {

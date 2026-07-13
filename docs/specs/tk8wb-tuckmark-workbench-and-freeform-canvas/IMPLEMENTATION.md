@@ -289,6 +289,11 @@
     three-by-three text alignment, automatic wrapping, two-end justification,
     vertical text, integer rotation, adjacent 45-degree rotation increment
     controls, and independent stretch toggles for selected text
+  - canvas text design size is stored in millimeters: newly created and
+    plain-text pasted layers start at `5.0 mm`, while the output compiler
+    converts that value to `40 dots`; existing stored values remain untouched
+  - the inspector retains the established `字号` label while the saved value
+    continues to use millimeters
 - Line rotation remains an editor-side endpoint transform only:
   - transformer rotation rewrites the line endpoints immediately
   - shared draft/core schemas do not persist a separate `line.rotation` field
