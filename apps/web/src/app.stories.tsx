@@ -338,6 +338,42 @@ export const CanvasWorkspaceWide: Story = {
   },
 }
 
+export const CanvasWorkspaceWheelPan: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "wide-default",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "Unmodified wheel and touchpad input pan the stage while modified wheel input zooms.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const paper = canvasElement.querySelector(".tm-stage-paper--base")
+    const stage = canvasElement.querySelector(".konvajs-content")
+    if (!(paper instanceof HTMLElement) || !stage) {
+      throw new Error("Missing canvas stage surface")
+    }
+
+    const before = paper.getBoundingClientRect()
+    await fireEvent.wheel(stage, { deltaX: 96, deltaY: 0 })
+    const after = paper.getBoundingClientRect()
+
+    await expect(after.width).toBeCloseTo(before.width, 1)
+    await expect(after.x).toBeLessThan(before.x - 80)
+  },
+}
+
 export const CanvasWorkspaceMarqueeSelection: Story = {
   args: {
     context: runtimeContext,

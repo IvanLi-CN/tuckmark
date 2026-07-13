@@ -21,6 +21,7 @@ import {
   isTransformerInteractionTarget,
   movePendingPasteToPoint,
   normalizeTransformedElementGeometry,
+  panViewportByWheel,
   projectCanvasTransformerBoxToStage,
   projectStageTransformerBoxToCanvas,
   startClipboardPastePlacement,
@@ -1767,7 +1768,7 @@ describe("web workbench app", () => {
     expect(isTransformerInteractionTarget(elementHitTarget as never)).toBe(false)
   })
 
-  it("zooms around the pointer without requiring a modifier key", () => {
+  it("zooms around the pointer", () => {
     const viewport = { x: 120, y: 56, scale: 2 }
     const pointer = { x: 360, y: 216 }
     const canvasPoint = {
@@ -1786,6 +1787,14 @@ describe("web workbench app", () => {
     )
     expect(zoomViewportAtPointer({ ...viewport, scale: 5 }, pointer, -1).scale).toBe(5)
     expect(zoomViewportAtPointer({ ...viewport, scale: 0.45 }, pointer, 1).scale).toBe(0.45)
+  })
+
+  it("pans the viewport by wheel deltas without changing its scale", () => {
+    expect(panViewportByWheel({ scale: 1.5, x: 100, y: 200 }, 24, -36)).toEqual({
+      scale: 1.5,
+      x: 76,
+      y: 236,
+    })
   })
 
   it("converts Transformer boxes between stage and canvas coordinates before snapping", () => {

@@ -1653,6 +1653,22 @@ export function zoomViewportAtPointer(
   }
 }
 
+export function panViewportByWheel(
+  viewport: StageViewport,
+  deltaX: number,
+  deltaY: number
+): StageViewport {
+  if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY) || (!deltaX && !deltaY)) {
+    return viewport
+  }
+
+  return {
+    ...viewport,
+    x: viewport.x - deltaX,
+    y: viewport.y - deltaY,
+  }
+}
+
 export function projectStageTransformerBoxToCanvas(
   box: CanvasTransformBox,
   viewport: StageViewport
@@ -5310,17 +5326,20 @@ function CanvasStageView({
             if (!stage) {
               return
             }
-            const pointer = stage.getPointerPosition()
-            if (!pointer) {
-              return
-            }
-            const wheelDelta = event.evt.deltaY || event.evt.deltaX
-            if (!wheelDelta) {
+            if (event.evt.ctrlKey || event.evt.metaKey) {
+              const pointer = stage.getPointerPosition()
+              if (!pointer || !event.evt.deltaY) {
+                return
+              }
+              onChange((current) => ({
+                ...current,
+                viewport: zoomViewportAtPointer(current.viewport, pointer, event.evt.deltaY),
+              }))
               return
             }
             onChange((current) => ({
               ...current,
-              viewport: zoomViewportAtPointer(current.viewport, pointer, wheelDelta),
+              viewport: panViewportByWheel(current.viewport, event.evt.deltaX, event.evt.deltaY),
             }))
           }}
         >

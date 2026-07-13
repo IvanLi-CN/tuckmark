@@ -270,7 +270,8 @@ output.
   - marquee selection
   - drag move
   - live magnetic snapping when `snapEnabled` is active
-  - direct wheel zoom relative to pointer without a modifier key
+  - unmodified wheel or touchpad scroll pans the stage on both axes
+  - `Ctrl/Command + wheel` zooms relative to the pointer
   - `Space + drag` stage pan
   - `fit to view`
   - transformer-based resize / rotation with real-time active-edge snapping
@@ -505,7 +506,8 @@ output.
   triangles resize width and height independently, QR and circle elements stay
   square/round, and single line elements edit endpoints directly.
 - Canvas workspace supports marquee selection, Shift multi-select, stage pan,
-  wheel zoom, and fit-to-view without horizontal shell breakage.
+  unmodified wheel/touchpad pan, modified-wheel zoom, and fit-to-view without
+  horizontal shell breakage.
 - Marquee selection chrome is editor-only stage-space affordance: its border
   remains `1 logical px dashed` at any zoom level while selection bounds and
   hit semantics continue to use canvas-space geometry.
