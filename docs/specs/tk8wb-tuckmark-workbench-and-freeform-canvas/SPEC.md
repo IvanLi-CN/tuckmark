@@ -172,6 +172,10 @@ output.
   - `text` uses top-left `x/y` container geometry with persisted `width`,
     `height`, `fontSize`, `fontFamily`, `lineHeight`, horizontal `align`,
     `verticalAlign`, `stretchX`, `stretchY`, `autoWrap`, and `verticalText`
+  - canvas-draft `fontSize` is the font design size in millimeters, not CSS
+    pixels, typographic points, or a normalized visible-ink height; new text
+    and plain-text paste start at `5.0 mm`, which compiles to `40 dots` at the
+    `8 dots/mm` print boundary
 - Stage transform semantics match the element geometry model:
   - new freeform `rect` elements default to square corners; existing templates
     and stored drafts preserve their explicit `radius`
@@ -219,6 +223,10 @@ output.
 - Text rendering is clipped to the text element container on the stage and in
   SVG / print output. Text ink must not render outside the element bounds.
 - New text elements default to `noto-sans-sc`.
+- The text inspector retains the `字号` field label and keeps `0.1 mm` editing
+  precision with a `1.0 mm` lower bound.
+- Existing templates, saved drafts, and imported elements retain their stored
+  font sizes; the new-text default does not migrate or reflow them.
 - Text font families resolve through one deterministic contract shared by:
   - draft/schema validation
   - canvas text measurement
@@ -469,6 +477,9 @@ output.
   automatic wrapping, two-end justification, horizontal stretch, vertical
   stretch, vertical text, and rotation controls in the property inspector.
 - New text defaults to `noto-sans-sc` instead of a system fallback family.
+- New text and external plain-text paste default to `5.0 mm` design size, and
+  the selected-text inspector labels that value as `字号`.
+- Existing template, draft, and imported text font sizes remain unchanged.
 - The font selector shows a flat list of explicit named fonts, exposes more
   than `20` bundled choices, and previews each option using the selected font
   stack.
@@ -689,6 +700,11 @@ output.
 
   PR: include
   ![Canvas text container controls](./assets/canvas-text-container-controls-1280x800.png)
+
+- `1280×800` canvas workspace showing a newly created text layer with the
+  selected inspector explicitly displaying `字号` at `5.0`.
+
+  ![Canvas text default 5 millimeters](./assets/canvas-text-default-5mm-1280x800.png)
 
 - Storybook canvas flat font-selector state showing a long explicit named-font
   list with each option rendered in its own font stack

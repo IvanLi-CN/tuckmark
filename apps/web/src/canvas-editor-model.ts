@@ -67,6 +67,7 @@ export const CANVAS_TOOL_LABELS: Record<CanvasElement["kind"], string> = {
 export const CANVAS_HISTORY_LIMIT = 50
 export const CANVAS_MIN_WIDTH = 960
 export const CANVAS_WIDE_THRESHOLD = 1280
+export const DEFAULT_CANVAS_TEXT_FONT_SIZE_MILLIMETERS = 5
 
 const DRAFT_STORAGE_VERSION = 1
 const DRAFT_STORAGE_PREFIX = `tuckmark:canvas-draft:v${DRAFT_STORAGE_VERSION}:`
@@ -340,7 +341,7 @@ export function createCanvasElement(
   const base = (() => {
     switch (kind) {
       case "text": {
-        const fontSize = canvasDotsToMillimeters(24)
+        const fontSize = DEFAULT_CANVAS_TEXT_FONT_SIZE_MILLIMETERS
         return {
           id: `text-${crypto.randomUUID()}`,
           kind,
@@ -1729,6 +1730,21 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
         },
       }),
     ]
+    return document
+  }
+
+  if (scenario === "text-ready") {
+    const document = createDraftFromPreset(getPresetById("ops-tag"))
+    const text = createCanvasElement("text", 0, {
+      x: 4,
+      y: 4,
+      width: 26,
+      meta: { name: "默认文本", visible: true, locked: false },
+    })
+    if (text.kind !== "text") {
+      throw new Error("expected text canvas element")
+    }
+    document.elements = [text]
     return document
   }
 
