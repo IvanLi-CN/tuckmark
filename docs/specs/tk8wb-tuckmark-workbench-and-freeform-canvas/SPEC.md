@@ -587,6 +587,11 @@ output.
   PR: include
   ![Canvas workspace](./assets/canvas-wide-1280x800.png)
 
+- `1280×800` mock-demo canvas after horizontal and vertical wheel panning; the
+  label content moves within the stage while the fitted zoom remains stable.
+
+  ![Canvas wheel pan](./assets/canvas-wheel-pan-1280x800.jpg)
+
 - `1600×1200` canvas clipboard workflow after Storybook `拷贝` + `粘贴`, showing the pending placement toast, stable editor copy, snap-aligned preview movement, and the distinct `拷贝` / `粘贴` / `新副本` actions together.
 
   PR: include
