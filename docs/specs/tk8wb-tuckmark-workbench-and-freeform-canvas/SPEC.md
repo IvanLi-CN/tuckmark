@@ -270,8 +270,7 @@ output.
   - marquee selection
   - drag move
   - live magnetic snapping when `snapEnabled` is active
-  - unmodified wheel or touchpad scroll pans the stage on both axes
-  - `Ctrl/Command + wheel` zooms relative to the pointer
+  - direct wheel zoom relative to the pointer without a modifier key
   - `Space + drag` stage pan
   - `fit to view`
   - transformer-based resize / rotation with real-time active-edge snapping
@@ -506,7 +505,7 @@ output.
   triangles resize width and height independently, QR and circle elements stay
   square/round, and single line elements edit endpoints directly.
 - Canvas workspace supports marquee selection, Shift multi-select, stage pan,
-  unmodified wheel/touchpad pan, modified-wheel zoom, and fit-to-view without
+  direct wheel zoom, and fit-to-view without
   horizontal shell breakage.
 - Marquee selection chrome is editor-only stage-space affordance: its border
   remains `1 logical px dashed` at any zoom level while selection bounds and
@@ -587,10 +586,11 @@ output.
   PR: include
   ![Canvas workspace](./assets/canvas-wide-1280x800.png)
 
-- `1280×800` mock-demo canvas after horizontal and vertical wheel panning; the
-  label content moves within the stage while the fitted zoom remains stable.
+- `1280×800` mock-demo canvas after direct wheel zoom; the active `296%` scale
+  is reflected by the enlarged label content while the three-column workbench
+  remains usable.
 
-  ![Canvas wheel pan](./assets/canvas-wheel-pan-1280x800.jpg)
+  ![Canvas wheel zoom](./assets/canvas-wheel-zoom-1280x800.jpg)
 
 - `1600×1200` canvas clipboard workflow after Storybook `拷贝` + `粘贴`, showing the pending placement toast, stable editor copy, snap-aligned preview movement, and the distinct `拷贝` / `粘贴` / `新副本` actions together.
 

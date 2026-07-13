@@ -338,7 +338,7 @@ export const CanvasWorkspaceWide: Story = {
   },
 }
 
-export const CanvasWorkspaceWheelPan: Story = {
+export const CanvasWorkspaceWheelZoom: Story = {
   args: {
     context: runtimeContext,
     initialEntries: ["/canvas"],
@@ -350,8 +350,7 @@ export const CanvasWorkspaceWheelPan: Story = {
     },
     docs: {
       description: {
-        story:
-          "Unmodified wheel and touchpad input pan the stage while modified wheel input zooms.",
+        story: "Wheel input zooms around the pointer, while Space + drag pans the stage.",
       },
     },
   },
@@ -366,11 +365,10 @@ export const CanvasWorkspaceWheelPan: Story = {
     }
 
     const before = paper.getBoundingClientRect()
-    await fireEvent.wheel(stage, { deltaX: 96, deltaY: 0 })
+    await fireEvent.wheel(stage, { deltaY: -96 })
     const after = paper.getBoundingClientRect()
 
-    await expect(after.width).toBeCloseTo(before.width, 1)
-    await expect(after.x).toBeLessThan(before.x - 80)
+    await expect(after.width).toBeGreaterThan(before.width)
   },
 }
 

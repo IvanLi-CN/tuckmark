@@ -1653,22 +1653,6 @@ export function zoomViewportAtPointer(
   }
 }
 
-export function panViewportByWheel(
-  viewport: StageViewport,
-  deltaX: number,
-  deltaY: number
-): StageViewport {
-  if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY) || (!deltaX && !deltaY)) {
-    return viewport
-  }
-
-  return {
-    ...viewport,
-    x: viewport.x - deltaX,
-    y: viewport.y - deltaY,
-  }
-}
-
 export function projectStageTransformerBoxToCanvas(
   box: CanvasTransformBox,
   viewport: StageViewport
@@ -5027,9 +5011,6 @@ function CanvasStageView({
     if (readOnly) {
       return
     }
-    if (isTransformerInteractionTarget(event.target)) {
-      return
-    }
     const stage = event.target.getStage?.() ?? stageRef.current
     if (!stage) {
       return
@@ -5041,22 +5022,26 @@ function CanvasStageView({
     const point = getStagePointer(stage, state.viewport)
     onPointerChange(point)
 
-    if (state.pendingPaste) {
-      if (event.evt.button === 1 || event.evt.button === 2 || state.spacePressed) {
-        const pointer = stage.getPointerPosition()
-        if (!pointer) {
-          return
-        }
-        isPanningRef.current = true
-        panOriginRef.current = {
-          pointerX: pointer.x,
-          pointerY: pointer.y,
-          viewportX: state.viewport.x,
-          viewportY: state.viewport.y,
-        }
+    if (event.evt.button === 1 || event.evt.button === 2 || state.spacePressed) {
+      const pointer = stage.getPointerPosition()
+      if (!pointer) {
         return
       }
+      isPanningRef.current = true
+      panOriginRef.current = {
+        pointerX: pointer.x,
+        pointerY: pointer.y,
+        viewportX: state.viewport.x,
+        viewportY: state.viewport.y,
+      }
+      return
+    }
 
+    if (isTransformerInteractionTarget(event.target)) {
+      return
+    }
+
+    if (state.pendingPaste) {
       if (event.evt.button === 0 && point) {
         onChange((current) => confirmPendingPastePlacement(movePendingPasteToPoint(current, point)))
       }
@@ -5064,20 +5049,6 @@ function CanvasStageView({
     }
 
     if (event.target === stage) {
-      if (event.evt.button === 1 || event.evt.button === 2 || state.spacePressed) {
-        const pointer = stage.getPointerPosition()
-        if (!pointer) {
-          return
-        }
-        isPanningRef.current = true
-        panOriginRef.current = {
-          pointerX: pointer.x,
-          pointerY: pointer.y,
-          viewportX: state.viewport.x,
-          viewportY: state.viewport.y,
-        }
-        return
-      }
       if (!point) {
         return
       }
@@ -5326,20 +5297,14 @@ function CanvasStageView({
             if (!stage) {
               return
             }
-            if (event.evt.ctrlKey || event.evt.metaKey) {
-              const pointer = stage.getPointerPosition()
-              if (!pointer || !event.evt.deltaY) {
-                return
-              }
-              onChange((current) => ({
-                ...current,
-                viewport: zoomViewportAtPointer(current.viewport, pointer, event.evt.deltaY),
-              }))
+            const pointer = stage.getPointerPosition()
+            const wheelDelta = event.evt.deltaY || event.evt.deltaX
+            if (!pointer || !wheelDelta) {
               return
             }
             onChange((current) => ({
               ...current,
-              viewport: panViewportByWheel(current.viewport, event.evt.deltaX, event.evt.deltaY),
+              viewport: zoomViewportAtPointer(current.viewport, pointer, wheelDelta),
             }))
           }}
         >

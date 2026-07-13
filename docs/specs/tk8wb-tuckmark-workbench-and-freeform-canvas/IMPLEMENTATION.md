@@ -74,8 +74,7 @@
     `barcode`
   - proportional corner resize handles for `qr`, `datamatrix`, and `circle`
   - direct start/end endpoint handles for single selected `line` elements
-  - unmodified wheel or touchpad scroll pan on both stage axes
-  - `Ctrl/Command + wheel` zoom relative to the pointer
+  - direct wheel zoom relative to the pointer without a modifier key
   - `Space + drag` pan
   - keyboard move, copy, paste, duplicate, delete, undo, redo, and clear
     selection
@@ -211,7 +210,7 @@
     dimensions and merged with built-in presets for suggestions
   - suggestions opening from focus / typing / hover without a separate arrow
     toggle, and closing on outside click
-  - zoom controls and modified-wheel zoom clamped at 500% maximum scale
+  - zoom controls and wheel zoom clamped at 500% maximum scale
   - explicit save / save-as and successful real or demo print as the only
     history-recording events
   - narrow canvas workspaces scrolling vertically so the editor-header
@@ -333,7 +332,7 @@
 - `404.html` SPA fallback is present for static Pages deep links.
 - Storybook coverage includes stable canvas scenarios for:
   - wide editor
-  - unmodified-wheel canvas panning
+  - direct wheel canvas zoom and Space-drag panning
   - marquee selection at `344%` zoom
   - narrow desktop editor
   - selected text
