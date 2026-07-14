@@ -21,8 +21,10 @@ import {
   isTransformerInteractionTarget,
   movePendingPasteToPoint,
   normalizeTransformedElementGeometry,
+  panViewportByWheel,
   projectCanvasTransformerBoxToStage,
   projectStageTransformerBoxToCanvas,
+  shouldPanCanvasWheel,
   startClipboardPastePlacement,
   zoomViewportAtPointer,
 } from "./canvas-page.js"
@@ -1786,6 +1788,18 @@ describe("web workbench app", () => {
     )
     expect(zoomViewportAtPointer({ ...viewport, scale: 5 }, pointer, -1).scale).toBe(5)
     expect(zoomViewportAtPointer({ ...viewport, scale: 0.45 }, pointer, 1).scale).toBe(0.45)
+  })
+
+  it("separates horizontal or button-held pan gestures from vertical wheel zoom", () => {
+    expect(shouldPanCanvasWheel(96, 0, 0, false, false)).toBe(true)
+    expect(shouldPanCanvasWheel(0, 96, 0, false, false)).toBe(false)
+    expect(shouldPanCanvasWheel(0, 96, 8, false, false)).toBe(true)
+    expect(shouldPanCanvasWheel(96, 0, 8, true, false)).toBe(false)
+    expect(panViewportByWheel({ scale: 1.5, x: 100, y: 200 }, 24, -36)).toEqual({
+      scale: 1.5,
+      x: 76,
+      y: 236,
+    })
   })
 
   it("converts Transformer boxes between stage and canvas coordinates before snapping", () => {

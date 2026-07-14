@@ -216,8 +216,9 @@ while the workbench was being productized:
     zoomed or panned canvases keep the same strong live snap feel instead of
     producing offset or barely perceptible movement
 - The snap contract was then unified around a proximity-based resolver:
-  - wheel input over the canvas always zooms around the pointer and leaves
-    panning to the existing drag affordances
+  - vertical wheel input zooms around the pointer, while horizontal wheel input
+    and button-held two-axis wheel gestures pan the stage; this preserves
+    ordinary wheel zoom while supporting Logitech tilt-wheel navigation
   - grid, canvas edges, and visible element edges share one screen-space
     magnetic policy across drag, paste placement, line endpoints, and resize
   - Transformer handles now resolve their active edge during movement and no

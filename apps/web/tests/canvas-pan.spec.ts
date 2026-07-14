@@ -32,6 +32,23 @@ test("canvas wheel input zooms around the pointer without a modifier key", async
   await expect.poll(async () => (await getPaperBounds(page)).width).toBeGreaterThan(before.width)
 })
 
+test("horizontal wheel input pans without changing zoom", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto("/canvas?demo=true")
+
+  const stage = page.locator(".konvajs-content")
+  await stage.hover({ position: { x: 220, y: 180 } })
+  const before = await getPaperBounds(page)
+
+  await page.mouse.wheel(96, 0)
+
+  await expect.poll(async () => (await getPaperBounds(page)).x).toBeLessThan(before.x - 80)
+  const after = await getPaperBounds(page)
+  expect(after.y).toBeCloseTo(before.y, 1)
+  expect(after.width).toBeCloseTo(before.width, 1)
+  expect(after.height).toBeCloseTo(before.height, 1)
+})
+
 test("Space + drag pans from label content without changing zoom", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto("/canvas?demo=true")

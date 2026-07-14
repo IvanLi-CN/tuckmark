@@ -1653,6 +1653,35 @@ export function zoomViewportAtPointer(
   }
 }
 
+export function shouldPanCanvasWheel(
+  deltaX: number,
+  deltaY: number,
+  buttons: number,
+  ctrlKey: boolean,
+  metaKey: boolean
+): boolean {
+  if (ctrlKey || metaKey) {
+    return false
+  }
+  return buttons !== 0 || Math.abs(deltaX) > Math.abs(deltaY)
+}
+
+export function panViewportByWheel(
+  viewport: StageViewport,
+  deltaX: number,
+  deltaY: number
+): StageViewport {
+  if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY) || (!deltaX && !deltaY)) {
+    return viewport
+  }
+
+  return {
+    ...viewport,
+    x: viewport.x - deltaX,
+    y: viewport.y - deltaY,
+  }
+}
+
 export function projectStageTransformerBoxToCanvas(
   box: CanvasTransformBox,
   viewport: StageViewport
@@ -5297,14 +5326,24 @@ function CanvasStageView({
             if (!stage) {
               return
             }
+            const { buttons, ctrlKey, deltaX, deltaY, metaKey } = event.evt
+            if (!deltaX && !deltaY) {
+              return
+            }
+            if (shouldPanCanvasWheel(deltaX, deltaY, buttons, ctrlKey, metaKey)) {
+              onChange((current) => ({
+                ...current,
+                viewport: panViewportByWheel(current.viewport, deltaX, deltaY),
+              }))
+              return
+            }
             const pointer = stage.getPointerPosition()
-            const wheelDelta = event.evt.deltaY || event.evt.deltaX
-            if (!pointer || !wheelDelta) {
+            if (!pointer) {
               return
             }
             onChange((current) => ({
               ...current,
-              viewport: zoomViewportAtPointer(current.viewport, pointer, wheelDelta),
+              viewport: zoomViewportAtPointer(current.viewport, pointer, deltaY || deltaX),
             }))
           }}
         >

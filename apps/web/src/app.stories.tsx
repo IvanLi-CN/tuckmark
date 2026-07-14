@@ -338,7 +338,7 @@ export const CanvasWorkspaceWide: Story = {
   },
 }
 
-export const CanvasWorkspaceWheelZoom: Story = {
+export const CanvasWorkspaceWheelNavigation: Story = {
   args: {
     context: runtimeContext,
     initialEntries: ["/canvas"],
@@ -350,7 +350,8 @@ export const CanvasWorkspaceWheelZoom: Story = {
     },
     docs: {
       description: {
-        story: "Wheel input zooms around the pointer, while Space + drag pans the stage.",
+        story:
+          "Vertical wheel input zooms around the pointer; horizontal wheel input and Space + drag pan the stage.",
       },
     },
   },
@@ -366,9 +367,15 @@ export const CanvasWorkspaceWheelZoom: Story = {
 
     const before = paper.getBoundingClientRect()
     await fireEvent.wheel(stage, { deltaY: -96 })
-    const after = paper.getBoundingClientRect()
+    const afterZoom = paper.getBoundingClientRect()
 
-    await expect(after.width).toBeGreaterThan(before.width)
+    await expect(afterZoom.width).toBeGreaterThan(before.width)
+
+    await fireEvent.wheel(stage, { deltaX: 96 })
+    const afterPan = paper.getBoundingClientRect()
+
+    await expect(afterPan.width).toBeCloseTo(afterZoom.width, 1)
+    await expect(afterPan.x).toBeLessThan(afterZoom.x - 80)
   },
 }
 
