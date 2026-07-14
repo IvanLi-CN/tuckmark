@@ -270,9 +270,11 @@ output.
   - marquee selection
   - drag move
   - live magnetic snapping when `snapEnabled` is active
-  - vertical wheel zoom relative to the pointer without a modifier key
-  - horizontal wheel / tilt-wheel stage pan, including button-held two-axis
-    wheel gestures when the browser preserves the held-button state
+  - coarse physical-wheel bursts zoom relative to the pointer without a
+    modifier key
+  - fine pixel-level two-axis wheel bursts pan the stage, including Logitech
+    Options+ `CUSTOM_PAN` gestures that suppress the held-button state
+  - horizontal wheel / tilt-wheel stage pan
   - `Space + drag` stage pan
   - `fit to view`
   - transformer-based resize / rotation with real-time active-edge snapping
@@ -588,16 +590,16 @@ output.
   PR: include
   ![Canvas workspace](./assets/canvas-wide-1280x800.png)
 
-- `1280×800` mock-demo canvas after direct wheel zoom; the active `296%` scale
+- `1280×800` mock-demo canvas after coarse physical-wheel zoom; the active `296%` scale
   is reflected by the enlarged label content while the three-column workbench
   remains usable.
 
   ![Canvas wheel zoom](./assets/canvas-wheel-zoom-1280x800.jpg)
 
-- Chrome mock-demo canvas after an M720-style horizontal tilt-wheel event;
+- Chrome mock-demo canvas after a horizontal wheel event;
   the label shifts horizontally while its rendered scale remains unchanged.
 
-  ![Canvas horizontal tilt-wheel pan](./assets/canvas-m720-horizontal-pan-1765x1168.jpg)
+  ![Canvas horizontal wheel pan](./assets/canvas-m720-horizontal-pan-1765x1168.jpg)
 
 - `1600×1200` canvas clipboard workflow after Storybook `拷贝` + `粘贴`, showing the pending placement toast, stable editor copy, snap-aligned preview movement, and the distinct `拷贝` / `粘贴` / `新副本` actions together.
 

@@ -15,6 +15,7 @@ import {
 } from "./canvas-editor-model.js"
 import {
   cancelPendingPastePlacement,
+  classifyCanvasWheelIntent,
   confirmPendingPastePlacement,
   createCanvasStateFromDraft,
   createSelectionDragPreview,
@@ -24,7 +25,6 @@ import {
   panViewportByWheel,
   projectCanvasTransformerBoxToStage,
   projectStageTransformerBoxToCanvas,
-  shouldPanCanvasWheel,
   startClipboardPastePlacement,
   zoomViewportAtPointer,
 } from "./canvas-page.js"
@@ -1790,11 +1790,12 @@ describe("web workbench app", () => {
     expect(zoomViewportAtPointer({ ...viewport, scale: 0.45 }, pointer, 1).scale).toBe(0.45)
   })
 
-  it("separates horizontal or button-held pan gestures from vertical wheel zoom", () => {
-    expect(shouldPanCanvasWheel(96, 0, 0, false, false)).toBe(true)
-    expect(shouldPanCanvasWheel(0, 96, 0, false, false)).toBe(false)
-    expect(shouldPanCanvasWheel(0, 96, 8, false, false)).toBe(true)
-    expect(shouldPanCanvasWheel(96, 0, 8, true, false)).toBe(false)
+  it("separates fine pan gestures from coarse wheel zoom", () => {
+    expect(classifyCanvasWheelIntent(96, 0, 0, false, false)).toBe("pan")
+    expect(classifyCanvasWheelIntent(0, 8, 0, false, false)).toBe("defer")
+    expect(classifyCanvasWheelIntent(0, 64, 0, false, false)).toBe("zoom")
+    expect(classifyCanvasWheelIntent(0, 8, 8, false, false)).toBe("pan")
+    expect(classifyCanvasWheelIntent(96, 0, 8, true, false)).toBe("zoom")
     expect(panViewportByWheel({ scale: 1.5, x: 100, y: 200 }, 24, -36)).toEqual({
       scale: 1.5,
       x: 76,

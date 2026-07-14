@@ -351,7 +351,7 @@ export const CanvasWorkspaceWheelNavigation: Story = {
     docs: {
       description: {
         story:
-          "Vertical wheel input zooms around the pointer; horizontal wheel input and Space + drag pan the stage.",
+          "Coarse wheel input zooms around the pointer; fine two-axis pan gestures, horizontal wheel input, and Space + drag pan the stage.",
       },
     },
   },
@@ -371,11 +371,22 @@ export const CanvasWorkspaceWheelNavigation: Story = {
 
     await expect(afterZoom.width).toBeGreaterThan(before.width)
 
+    await new Promise((resolve) => setTimeout(resolve, 150))
     await fireEvent.wheel(stage, { deltaX: 96 })
     const afterPan = paper.getBoundingClientRect()
 
     await expect(afterPan.width).toBeCloseTo(afterZoom.width, 1)
     await expect(afterPan.x).toBeLessThan(afterZoom.x - 80)
+
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    for (const deltaY of [5, 8, 5, 4, 2, 1]) {
+      await fireEvent.wheel(stage, { deltaY })
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    const afterFinePan = paper.getBoundingClientRect()
+
+    await expect(afterFinePan.width).toBeCloseTo(afterPan.width, 1)
+    await expect(afterFinePan.y).toBeLessThan(afterPan.y - 20)
   },
 }
 

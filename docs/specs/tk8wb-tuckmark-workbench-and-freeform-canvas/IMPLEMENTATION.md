@@ -74,9 +74,15 @@
     `barcode`
   - proportional corner resize handles for `qr`, `datamatrix`, and `circle`
   - direct start/end endpoint handles for single selected `line` elements
-  - vertical wheel zoom relative to the pointer without a modifier key
-  - horizontal wheel / tilt-wheel pan and button-held two-axis wheel pan
+  - coarse physical-wheel bursts zoom relative to the pointer without a
+    modifier key
+  - fine pixel-level two-axis bursts pan, including Logitech Options+
+    `CUSTOM_PAN` gestures that reach the browser with `buttons=0`
+  - horizontal wheel / tilt-wheel pan
   - `Space + drag` pan
+  - the browser does not expose the Logitech gesture source directly, so wheel
+    intent is classified and locked for each continuous input burst; this keeps
+    a physical wheel's fine leading or trailing events in zoom mode
   - keyboard move, copy, paste, duplicate, delete, undo, redo, and clear
     selection
 - Canvas clipboard coverage now includes:
@@ -333,7 +339,8 @@
 - `404.html` SPA fallback is present for static Pages deep links.
 - Storybook coverage includes stable canvas scenarios for:
   - wide editor
-  - vertical wheel canvas zoom, horizontal wheel panning, and Space-drag panning
+  - burst-classified physical-wheel zoom, fine two-axis gesture panning,
+    horizontal wheel panning, and Space-drag panning
   - marquee selection at `344%` zoom
   - narrow desktop editor
   - selected text

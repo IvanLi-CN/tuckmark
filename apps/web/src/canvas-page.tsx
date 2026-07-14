@@ -1653,17 +1653,26 @@ export function zoomViewportAtPointer(
   }
 }
 
-export function shouldPanCanvasWheel(
+export type CanvasWheelIntent = "pan" | "zoom" | "defer"
+
+const CANVAS_WHEEL_ZOOM_DELTA_THRESHOLD = 24
+const CANVAS_WHEEL_INTENT_DELAY_MS = 40
+const CANVAS_WHEEL_BURST_IDLE_MS = 120
+
+export function classifyCanvasWheelIntent(
   deltaX: number,
   deltaY: number,
   buttons: number,
   ctrlKey: boolean,
   metaKey: boolean
-): boolean {
+): CanvasWheelIntent {
   if (ctrlKey || metaKey) {
-    return false
+    return "zoom"
   }
-  return buttons !== 0 || Math.abs(deltaX) > Math.abs(deltaY)
+  if (buttons !== 0 || Math.abs(deltaX) > Math.abs(deltaY)) {
+    return "pan"
+  }
+  return Math.abs(deltaY) >= CANVAS_WHEEL_ZOOM_DELTA_THRESHOLD ? "zoom" : "defer"
 }
 
 export function panViewportByWheel(
@@ -4894,6 +4903,13 @@ function CanvasStageView({
   const [snapGuides, setSnapGuides] = React.useState<CanvasSnapGuide[]>([])
   const [stageHostElement, setStageHostElement] = React.useState<HTMLDivElement | null>(null)
   const isPanningRef = React.useRef(false)
+  const wheelBurstRef = React.useRef<{
+    intent: Exclude<CanvasWheelIntent, "defer"> | null
+    lastEventAt: number
+    pendingX: number
+    pendingY: number
+    timer: ReturnType<typeof setTimeout> | null
+  }>({ intent: null, lastEventAt: 0, pendingX: 0, pendingY: 0, timer: null })
   const panOriginRef = React.useRef<{
     pointerX: number
     pointerY: number
@@ -4923,6 +4939,15 @@ function CanvasStageView({
         : nextGuides
     )
   }, [])
+
+  React.useEffect(
+    () => () => {
+      if (wheelBurstRef.current.timer) {
+        clearTimeout(wheelBurstRef.current.timer)
+      }
+    },
+    []
+  )
 
   const measuredStageHostSize = useElementSize(stageHostElement)
   const stageViewportSize = React.useMemo(
@@ -5330,20 +5355,69 @@ function CanvasStageView({
             if (!deltaX && !deltaY) {
               return
             }
-            if (shouldPanCanvasWheel(deltaX, deltaY, buttons, ctrlKey, metaKey)) {
+            const now = performance.now()
+            const burst = wheelBurstRef.current
+            if (now - burst.lastEventAt >= CANVAS_WHEEL_BURST_IDLE_MS) {
+              if (burst.timer) {
+                clearTimeout(burst.timer)
+              }
+              burst.intent = null
+              burst.pendingX = 0
+              burst.pendingY = 0
+              burst.timer = null
+            }
+            burst.lastEventAt = now
+
+            const detectedIntent = classifyCanvasWheelIntent(
+              deltaX,
+              deltaY,
+              buttons,
+              ctrlKey,
+              metaKey
+            )
+            const intent = burst.intent ?? detectedIntent
+            if (intent === "pan") {
+              burst.intent = "pan"
               onChange((current) => ({
                 ...current,
                 viewport: panViewportByWheel(current.viewport, deltaX, deltaY),
               }))
               return
             }
+            if (intent === "defer") {
+              burst.pendingX += deltaX
+              burst.pendingY += deltaY
+              if (!burst.timer) {
+                burst.timer = setTimeout(() => {
+                  const pendingX = burst.pendingX
+                  const pendingY = burst.pendingY
+                  burst.intent = "pan"
+                  burst.pendingX = 0
+                  burst.pendingY = 0
+                  burst.timer = null
+                  onChange((current) => ({
+                    ...current,
+                    viewport: panViewportByWheel(current.viewport, pendingX, pendingY),
+                  }))
+                }, CANVAS_WHEEL_INTENT_DELAY_MS)
+              }
+              return
+            }
+            burst.intent = "zoom"
+            if (burst.timer) {
+              clearTimeout(burst.timer)
+              burst.timer = null
+            }
+            const wheelDelta = burst.pendingY + deltaY || burst.pendingX + deltaX
+            burst.pendingX = 0
+            burst.pendingY = 0
             const pointer = stage.getPointerPosition()
             if (!pointer) {
               return
             }
             onChange((current) => ({
               ...current,
-              viewport: zoomViewportAtPointer(current.viewport, pointer, deltaY || deltaX),
+              viewport: zoomViewportAtPointer(current.viewport, pointer, wheelDelta),
             }))
           }}
         >
