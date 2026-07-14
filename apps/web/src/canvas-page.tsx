@@ -89,8 +89,8 @@ import {
 import {
   type CanvasSnapGuide,
   type CanvasTransformBox,
-  resolveDirectHandleSnap,
   resolveCanvasSnap,
+  resolveDirectHandleSnap,
   resolveTransformerSnap,
   translateCanvasSnapBounds,
 } from "./canvas-snap.js"
@@ -1346,10 +1346,7 @@ function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryS
     const line = draft.elements.find((element) => element.kind === "line")
     return line ? [line.id] : []
   }
-  if (
-    scenario === "line-endpoint-center-snap" ||
-    scenario === "line-endpoint-center-guide-state"
-  ) {
+  if (scenario === "line-endpoint-center-snap" || scenario === "line-endpoint-center-guide-state") {
     const line = draft.elements.find((element) => element.kind === "line")
     return line ? [line.id] : []
   }

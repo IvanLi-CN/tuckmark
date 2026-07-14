@@ -1921,10 +1921,7 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
     return document
   }
 
-  if (
-    scenario === "text-bottom-center-snap" ||
-    scenario === "text-bottom-center-guide-state"
-  ) {
+  if (scenario === "text-bottom-center-snap" || scenario === "text-bottom-center-guide-state") {
     const document = createDraftFromPreset(getPresetById("ops-tag"))
     const [primaryText, secondaryText] = document.elements.filter(
       (element): element is Extract<CanvasDraftElement, { kind: "text" }> => element.kind === "text"
@@ -2031,10 +2028,7 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
     return document
   }
 
-  if (
-    scenario === "line-endpoint-center-snap" ||
-    scenario === "line-endpoint-center-guide-state"
-  ) {
+  if (scenario === "line-endpoint-center-snap" || scenario === "line-endpoint-center-guide-state") {
     const document = createDraftFromPreset(getPresetById("ops-tag"))
     document.elements = [
       createCanvasElement("line", 0, {

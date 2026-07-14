@@ -366,9 +366,7 @@ export function resolveTransformerSnap(
     }
 
     if (yDistance > 0) {
-      const height = sources.y.includes("min")
-        ? box.height - snap.deltaY
-        : box.height + snap.deltaY
+      const height = sources.y.includes("min") ? box.height - snap.deltaY : box.height + snap.deltaY
       const width = height * aspectRatio
       nextBox.width = width
       nextBox.height = height

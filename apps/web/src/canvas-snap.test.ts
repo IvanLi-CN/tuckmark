@@ -7,8 +7,8 @@ import {
 } from "./canvas-editor-model.js"
 import {
   getTransformerSnapSources,
-  resolveDirectHandleSnap,
   resolveCanvasSnap,
+  resolveDirectHandleSnap,
   resolveTransformerSnap,
 } from "./canvas-snap.js"
 import type { CanvasDraftElement } from "./types.js"
