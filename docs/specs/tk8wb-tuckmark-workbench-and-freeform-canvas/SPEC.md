@@ -599,6 +599,7 @@ output.
 - Chrome mock-demo canvas after a horizontal wheel event;
   the label shifts horizontally while its rendered scale remains unchanged.
 
+  PR: include
   ![Canvas horizontal wheel pan](./assets/canvas-m720-horizontal-pan-1765x1168.jpg)
 
 - `1600×1200` canvas clipboard workflow after Storybook `拷贝` + `粘贴`, showing the pending placement toast, stable editor copy, snap-aligned preview movement, and the distinct `拷贝` / `粘贴` / `新副本` actions together.
