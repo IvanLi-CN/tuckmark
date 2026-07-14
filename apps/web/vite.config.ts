@@ -399,6 +399,9 @@ export default defineConfig(({ command, mode }) => {
         },
       },
     },
+    optimizeDeps: {
+      exclude: ["@sqlite.org/sqlite-wasm"],
+    },
     test: {
       exclude: ["tests/**"],
       testTimeout: 30000,

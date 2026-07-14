@@ -19,6 +19,13 @@ its route-owned narrow fallback. `/canvas` is now an editor-first label tool
 with a stable three-column desktop layout and a route-local narrow desktop
 mode that keeps the stage visible while switching one contextual side rail.
 
+The local durability model is also route-owned now. Supported Chromium desktop
+and installed-PWA surfaces run browser-local persistence on `SQLite Wasm +
+OPFS`, while `/system` owns directory authorization, JSON mirror sync, ZIP
+backup / restore, and whole-dataset import / export. Unsupported browsers keep
+the editor usable with the legacy browser-local fallback, but do not expose
+directory-backed workflows.
+
 The freeform canvas uses `react-konva` for interactive editing only. Preview
 and print continue to normalize back into the shared canvas schema and the
 existing artifact pipeline through `toCanvasPrintSource`.
@@ -97,6 +104,10 @@ output.
 - `system` page contains:
   - app settings
   - default print settings
+  - local data directory status, permission state, writer-lease state, and
+    last-sync health
+  - directory attach / switch actions plus manual sync, manual backup, whole
+    dataset restore, whole dataset import, and whole dataset export
   - device management and probe actions
 - `home` page contains:
   - recent templates
@@ -380,6 +391,23 @@ output.
   cross-device account sync or remote document service is introduced.
 - Browser-local user templates, saved versions, autosaves, and user-template
   working copies stay browser-local only and do not sync through the service.
+- Durable runtime storage contract:
+  - supported Chromium desktop / installed-PWA surfaces use a worker-backed
+    `SQLite Wasm` runtime with the `opfs-sahpool` VFS
+  - unsupported or incomplete environments fall back to the existing
+    browser-local compatibility path built on `IndexedDB`, `localStorage`, and
+    in-memory test fallbacks
+  - first startup performs one browser-local migration of existing user
+    templates, saved versions, autosaves, working copies, and runtime app
+    settings into the unified runtime store
+  - post-migration route components read and write through one runtime
+    repository / service boundary instead of scattering direct browser storage
+    mutations in page components
+- Runtime app settings contract:
+  - default print render settings and the one-shot directory-permission nudge
+    state are persisted beside user template data
+  - document-specific draft edits must not silently overwrite the global
+    default print settings snapshot
 - Browser-local user template persistence contract:
   - source kinds are `scratch`, `preset-template`, and `user-template`
   - first save from `scratch` or `preset-template` creates a browser-local user
@@ -402,6 +430,54 @@ output.
   - replaceable-element editing only exposes one field-name input with
     autocomplete and dropdown selection over existing fields; it does not add a
     second binding selector
+- User data directory mirror contract:
+  - the directory-backed mirror is only supported when both `File System Access
+    API` directory handles and `OPFS` runtime storage are available
+  - `/system` persists one `FileSystemDirectoryHandle` and requests
+    `readwrite` permission on demand before sync, backup, restore, or import
+  - non-supporting environments and denied-permission states keep the workbench
+    usable, but disable directory sync and whole-dataset backup flows with an
+    explicit capability message
+  - the mirrored tree is versioned JSON:
+    - `manifest.json`
+    - `settings/app-settings.json`
+    - `templates/<templateId>/template.json`
+    - `templates/<templateId>/versions/<versionId>.json`
+    - `templates/<templateId>/working-copy.json`
+    - `drafts/scratch/<presetId>.json`
+    - `drafts/preset-template/<presetId>.json`
+    - `backups/manual/*.zip`
+    - `backups/protection/*.zip`
+  - `manifest.json` records the schema version, snapshot timestamps, source,
+    and aggregate counts for templates, versions, and working copies
+  - directory attach behavior is explicit:
+    - an empty directory can be initialized from the current runtime snapshot
+    - an existing Tuckmark directory requires an explicit choice between
+      importing the directory dataset or overwriting it with the current
+      browser-local dataset
+  - manual backups write fixed-location ZIP snapshots under `backups/manual/`
+  - restore and whole-dataset import write a protection ZIP snapshot under
+    `backups/protection/` before replacing current runtime data
+  - protection snapshots retain the most recent `20`; manual backups are not
+    auto-pruned
+  - ZIP export, ZIP import, manual backup, and restore all use the same
+    logical archive contract rather than dumping raw SQLite files
+  - restore and whole-dataset import replace the active runtime dataset and
+    reload the current app state without asking the user to clear browser data
+  - mirror conflicts resolve as latest-modified-wins; no field-level merge or
+    background daemon is introduced
+  - key data mutations flush immediately, working-copy and scratch updates flush
+    after a short debounce
+  - first successful user-template save may show one non-blocking directory
+    setup prompt when the environment supports directory access and the user has
+    not already dismissed that prompt
+- Cross-tab write coordination contract:
+  - directory mirror and archive mutations are coordinated by a single-writer
+    lease with `BroadcastChannel` state broadcasts
+  - one tab performs directory sync / backup / restore work while other tabs
+    surface status refresh and an explicit take-over action
+  - the workbench does not attempt concurrent multi-writer directory mutation
+    or cross-tab SQLite RPC in this round
 - Template list contract:
   - `/templates` groups cards into `系统模板` and `我的模板`
   - clicking a system-template card enters the structured print-entry flow
@@ -554,6 +630,31 @@ output.
 - `server-http` startup restores recent activity from the merged sync snapshot.
 - Scratch canvas drafts can be restored from the merged same-device sync
   snapshot after reload.
+- Supported Chromium desktop / installed-PWA surfaces migrate existing
+  browser-local template data into the unified runtime store once, then keep
+  user templates, saved versions, working copies, scratch drafts, and runtime
+  app settings readable after reload.
+- `/system` can show unsupported, unconfigured, permission-required, and
+  configured-healthy data-directory states without breaking the rest of the
+  workbench.
+- In a supported environment, `/system` can authorize a data directory, switch
+  directories, sync the runtime snapshot, create a fixed-location backup,
+  inspect and restore a backup ZIP, inspect and import a runtime ZIP, and
+  export the current runtime ZIP.
+- Authorized data directories expose the versioned JSON tree and ZIP backup
+  layout described in this spec; permission failure or handle loss reports a
+  user-visible error instead of silently dropping writes.
+- Restore and whole-dataset import create a protection snapshot before
+  replacing the active runtime dataset, and the workbench reflects the
+  imported/restored data immediately afterward.
+- The template-workspace single-template package import continues to handle only
+  `tuckmark.user-template-package.v1`; whole-dataset import / export remains a
+  `/system`-only workflow.
+- First successful save of a user template only shows the directory setup prompt
+  once per browser-local profile while the directory remains unconfigured.
+- Cross-tab directory workflows keep one active writer lease, broadcast status
+  updates to peers, and surface an explicit take-over path instead of
+  optimistic concurrent writes.
 - `1100×820` keeps the `/canvas` stage visible while one contextual side rail
   is hidden.
 - `1280×800`, `1440×900`, and `1600×1024` keep the professional three-column
@@ -766,6 +867,57 @@ output.
 
   PR: include
   ![System workspace](./assets/system-1600x1024.png)
+
+- `1600×1200` `/system` data-storage card in an unsupported browser state,
+  making the capability boundary explicit without blocking the rest of the
+  workbench shell.
+
+  PR: include
+  ![System data storage unsupported](./assets/system-data-storage-unsupported-1600x1200.png)
+
+- `1600×1200` `/system` data-storage card in the unconfigured-but-supported
+  state, with directory actions visible before any handle is attached.
+
+  PR: include
+  ![System data storage unconfigured](./assets/system-data-storage-unconfigured-1600x1200.png)
+
+- `1600×1200` `/system` data-storage card in the configured healthy state,
+  showing directory manifest counts, granted permission, and last-sync
+  metadata.
+
+  PR: include
+  ![System data storage configured healthy](./assets/system-data-storage-configured-healthy-1600x1200.png)
+
+- `1600×1200` `/system` directory-attach conflict dialog, requiring an explicit
+  choice between importing an existing directory dataset or overwriting it with
+  the current browser-local runtime snapshot.
+
+  PR: include
+  ![System data storage attach choice](./assets/system-data-storage-attach-choice-1600x1200.png)
+
+- `1600×1200` `/system` fixed-location backup list, combining manual backups
+  with restore-protection snapshots.
+
+  PR: include
+  ![System data storage backup list](./assets/system-data-storage-backup-list-1600x1200.png)
+
+- `1600×1200` `/system` whole-dataset ZIP import confirmation dialog, showing
+  the archive summary before replacement.
+
+  PR: include
+  ![System data storage import confirm](./assets/system-data-storage-import-confirm-1600x1200.png)
+
+- `1600×1200` `/system` backup-restore confirmation dialog, reusing the same
+  archive summary model before replacing runtime data.
+
+  PR: include
+  ![System data storage restore confirm](./assets/system-data-storage-restore-confirm-1600x1200.png)
+
+- `1600×1200` `/system` permission-required state after the browser keeps the
+  directory handle but no longer grants read/write access.
+
+  PR: include
+  ![System data storage permission denied](./assets/system-data-storage-permission-denied-1600x1200.png)
 
 - DimensionPicker autocomplete filters millimeter suggestions by width prefix
   while height is empty, and selecting a row applies width and height together.

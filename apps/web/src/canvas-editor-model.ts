@@ -1102,6 +1102,33 @@ export function loadStoredDraftDocument(presetId: string): CanvasDraftDocument |
   }
 }
 
+export function listStoredDraftDocuments(): Array<{
+  presetId: string
+  draft: CanvasDraftDocument
+}> {
+  if (typeof window === "undefined") {
+    return []
+  }
+
+  const items: Array<{
+    presetId: string
+    draft: CanvasDraftDocument
+  }> = []
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index)
+    if (!key?.startsWith(DRAFT_STORAGE_PREFIX)) {
+      continue
+    }
+    const presetId = key.slice(DRAFT_STORAGE_PREFIX.length)
+    const draft = loadStoredDraftDocument(presetId)
+    if (!draft) {
+      continue
+    }
+    items.push({ presetId, draft })
+  }
+  return items
+}
+
 export function persistDraftDocument(document: CanvasDraftDocument): void {
   if (typeof window === "undefined") {
     return

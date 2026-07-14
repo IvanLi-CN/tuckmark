@@ -502,7 +502,12 @@ export const TEXT_FONT_METRIC_PROFILES: Record<TextFontFamily, TextFontMetricPro
   ) as Record<TextFontFamily, TextFontMetricProfile>
 
 export function getTextFontDefinition(fontFamily?: TextFontFamily): TextFontDefinition {
-  return textFontRegistry.find((definition) => definition.id === resolveTextFontFamily(fontFamily))!
+  const resolvedFontFamily = resolveTextFontFamily(fontFamily)
+  const definition = textFontRegistry.find((entry) => entry.id === resolvedFontFamily)
+  if (!definition) {
+    throw new Error(`Unknown text font family: ${resolvedFontFamily}`)
+  }
+  return definition
 }
 
 export function getTextFontMetricProfile(fontFamily?: TextFontFamily): TextFontMetricProfile {

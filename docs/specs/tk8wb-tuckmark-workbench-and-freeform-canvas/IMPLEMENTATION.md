@@ -11,6 +11,13 @@
     readiness
   - one right-side device drawer reused across runtime, browser-static, and
     demo surfaces
+- The `/system` page now combines existing app / print settings with a route
+  owned `SystemDataStorageCard` that surfaces:
+  - browser capability state for `File System Access API` + `OPFS`
+  - configured directory name, permission state, writer-lease role, last sync,
+    and last error
+  - attach / switch directory, request permission, sync now, backup now,
+    export runtime ZIP, import runtime ZIP, and restore backup actions
 - Template workspace is implemented as a left template browser, center batch
   table, and right preview/print rail.
 - Template browser now weak-groups cards into:
@@ -172,15 +179,27 @@
   - versioned `CanvasDraftDocument`
   - source-aware working copies for `scratch`, `preset-template`, and
     `user-template`
+  - a shared runtime-store abstraction that prefers `@sqlite.org/sqlite-wasm`
+    in a worker with `opfs-sahpool`, and falls back to the legacy browser-local
+    store when the environment cannot support that path
   - draft field registry and per-element replacement bindings
   - per-layer metadata
+  - runtime app settings persisted beside template data, including default print
+    render options and the one-shot directory-setup nudge flag
+  - runtime mutation events used by background mirror sync and cross-tab status
+    refresh
   - runtime-only pending clipboard placement bookkeeping kept outside
     persisted drafts, sync state, saved versions, and autosaves
-  - preset-scoped browser storage persistence for scratch drafts
+  - one-time migration of existing browser-local user templates, saved
+    versions, autosaves, working copies, and compatible local settings into the
+    unified runtime store
+  - preset-scoped browser storage persistence for scratch drafts still feeding
+    same-device sync, while scratch and preset-template working copies are also
+    mirrored into the runtime store for backup / export
   - same-device sync state records shared with `TuckmarkService` for scratch
     drafts, recent templates, and recent prints
-  - IndexedDB-backed browser-local user template persistence with memory
-    fallback in incomplete test/browser environments
+  - legacy `IndexedDB` / `localStorage` persistence retained as the compatibility
+    backend, with memory fallback in incomplete test/browser environments
   - in-memory undo/redo history capped to `50`
 - Browser-local user template model coverage includes:
   - `UserTemplateRecord`
@@ -196,6 +215,9 @@
   - save as creating a new template from the current draft or read-only version
   - first-save and save-as template naming through a project-owned input dialog
     instead of browser-native `prompt`
+  - first successful user-template save raising a one-shot non-blocking
+    directory-setup toast when directory workflows are supported but not yet
+    configured
   - read-only historical restore creating a new current working copy instead of
     mutating saved history in place
 - Canvas dimension editing now covers:
@@ -248,6 +270,23 @@
   packages through the existing canvas artifact seam.
 - The template workspace can import a `tuckmark.user-template-package.v1` JSON
   file and save it as a browser-local user template.
+- Whole-dataset durability and archive management are implemented through:
+  - `data-directory-service.ts` for capability probing, handle persistence,
+    attach / switch decisions, permission requests, JSON mirror sync, runtime
+    ZIP import / export, manual backup, and restore-protection snapshotting
+  - `cross-tab-coordinator.ts` for single-writer lease coordination and
+    `BroadcastChannel` status broadcasts across tabs
+  - a versioned mirror tree rooted at `manifest.json`, with
+    `settings/app-settings.json`, `templates/*`, `drafts/scratch/*`,
+    `drafts/preset-template/*`, `backups/manual/*`, and
+    `backups/protection/*`
+  - one ZIP archive contract reused by manual backup, restore, import, and
+    export instead of dumping the underlying SQLite database file
+  - protection snapshot retention capped at the most recent `20`
+- Directory-backed workflows intentionally stop short of a background helper:
+  - no writes happen after the browser process exits
+  - no directory watcher or file-system daemon is introduced
+  - mirror conflicts resolve by latest timestamp, not by field-level merge
 - Repo-local developer and user skills document the source-tree and released
   CLI workflows for agent template generation and printing.
 - A high-cost agent practice script can call `codex exec` to generate multiple
@@ -359,6 +398,9 @@
   - text-selected canvas selectable contract
   - DimensionPicker state gallery and filtering interaction
   - full canvas workspace header dimension autocomplete state
+  - `/system` data storage card states for unsupported, unconfigured,
+    configured healthy, directory-attach choice, backup list, import confirm,
+    restore confirm, and permission-required flows
 
 ## Remaining validation
 
@@ -376,8 +418,11 @@
   - `bun run --filter @tuckmark/core test` passed
   - `bun run --filter @tuckmark/web typecheck` passed
   - `bun run --filter @tuckmark/web test` passed
+  - `bun run build:web` passed
   - `bun run --filter @tuckmark/web build:pages` passed
+  - `bun run build:web:pages` passed
   - `bun run --filter @tuckmark/web build:storybook` passed
+  - `bun run test:e2e:web` passed
   - `bun run --filter @tuckmark/web test:e2e -- tests/user-template-flow.spec.ts` passed
   - `bun run --filter @tuckmark/web test:e2e -- user-template-flow.spec.ts` passed
   - `bun run --filter @tuckmark/web test:e2e -- template-table.spec.ts` passed
@@ -385,6 +430,12 @@
   - `bun run --filter @tuckmark/web test:e2e:sync` passed
   - `bun run build:web:pages` passed
   - `bun run --filter @tuckmark/web test:e2e -- --grep "template large mode"` passed
+  - browser verification passed for:
+    - `/system` data-storage card state gallery covering unsupported,
+      unconfigured, configured healthy, attach-choice, backup-list,
+      import-confirm, restore-confirm, and permission-required states
+    - first successful user-template save surfacing the one-shot directory
+      setup prompt before the user navigates into `/system`
   - `bun run --filter @tuckmark/cli typecheck` passed
   - `bun run --filter @tuckmark/core typecheck` passed
   - `bun run --filter @tuckmark/core test tests/renderer.test.ts` passed

@@ -11,6 +11,28 @@ import {
   printPreviewArtifact,
   restoreBrowserPrinter,
 } from "./browser-printer.js"
+import { getSharedCrossTabCoordinator } from "./cross-tab-coordinator.js"
+import type { DataArchiveInspection } from "./data-directory-service.js"
+import {
+  attachDataDirectory,
+  createManualBackup,
+  exportRuntimeArchive,
+  getDataDirectoryStatus,
+  importRuntimeArchive,
+  inspectConfiguredBackup,
+  inspectImportArchiveFile,
+  pickDataDirectory,
+  requestConfiguredDirectoryPermission,
+  restoreConfiguredBackup,
+  supportsDataDirectoryFeatures,
+  syncConfiguredDataDirectory,
+  tryBackgroundMirrorSync,
+} from "./data-directory-service.js"
+import type {
+  DataDirectoryAttachmentInspection,
+  DataDirectoryBackupEntry,
+  DataDirectoryStatus,
+} from "./data-directory-types.js"
 import { buildInputFromTemplate, defaultRenderOptions, fallbackTemplates } from "./demo-data.js"
 import {
   type CanvasDimension,
@@ -21,6 +43,11 @@ import {
 import { canvasDotsToMillimeters, canvasMillimetersToDots } from "./lib/canvas-units.js"
 import { loadRecentActivity, type RecentActivityState } from "./lib/recent-activity.js"
 import { resolveAppContext } from "./runtime.js"
+import {
+  getRuntimeStoreEventTabId,
+  type RuntimeStoreMutationReason,
+  subscribeRuntimeStoreMutations,
+} from "./runtime-store-events.js"
 import type {
   AppContext,
   ArtifactData,
@@ -31,7 +58,11 @@ import type {
   Template,
   UserTemplateSummary,
 } from "./types.js"
-import { listUserTemplates } from "./user-template-store.js"
+import {
+  listUserTemplates,
+  loadRuntimeAppSettings,
+  saveRuntimeAppSettings,
+} from "./user-template-store.js"
 import {
   applySyncStateToBrowser,
   deleteCanvasDraftLocally,
@@ -43,6 +74,48 @@ import {
 
 type UiPrintResult = PrintResult | BrowserPrintResult
 const SYNC_PRESET_IDS = ["shipping-wide", "ops-tag", "compact-note"] as const
+const DATA_DIRECTORY_DEBOUNCE_MS = 900
+
+type DataDirectoryDialogState =
+  | {
+      kind: "attach-choice"
+      handle: FileSystemDirectoryHandle
+      inspection: DataDirectoryAttachmentInspection
+    }
+  | {
+      kind: "import-confirm"
+      inspection: DataArchiveInspection
+    }
+  | {
+      kind: "restore-confirm"
+      entry: DataDirectoryBackupEntry
+      inspection: DataArchiveInspection
+    }
+
+export type WorkbenchDataDirectoryDialogState = DataDirectoryDialogState
+
+function createDefaultDataDirectoryStatus(): DataDirectoryStatus {
+  return {
+    supported: supportsDataDirectoryFeatures(),
+    configured: false,
+    directoryName: null,
+    permissionState: supportsDataDirectoryFeatures() ? "unconfigured" : "unsupported",
+    health: supportsDataDirectoryFeatures() ? "unconfigured" : "unsupported",
+    manifest: null,
+    lastSyncAt: null,
+    lastError: null,
+    backups: [],
+    leaseRole: "unsupported",
+    leaseExpiresAt: null,
+    runtimeSummary: {
+      exportedAt: new Date(0).toISOString(),
+      snapshotUpdatedAt: null,
+      templates: 0,
+      versions: 0,
+      workingCopies: 0,
+    },
+  }
+}
 
 function sortPrinters(printers: Printer[]): Printer[] {
   return [...printers].sort((left, right) => {
@@ -98,7 +171,7 @@ export function useWorkbenchController({
     "none" | "auto" | "explicit"
   >("none")
   const [preferredPrinterName, setPreferredPrinterName] = React.useState("")
-  const [renderOptions, setRenderOptions] = React.useState<RenderOptions>(defaultRenderOptions)
+  const [renderOptions, setRenderOptionsState] = React.useState<RenderOptions>(defaultRenderOptions)
   const [preview, setPreview] = React.useState<PreviewResult | null>(null)
   const [artifactData, setArtifactData] = React.useState<ArtifactData | null>(null)
   const [previewPrintSource, setPreviewPrintSource] = React.useState<BrowserPrintSource | null>(
@@ -121,11 +194,21 @@ export function useWorkbenchController({
   )
   const [canvasDimensions, setCanvasDimensions] = React.useState(() => loadRecentCanvasDimensions())
   const [userTemplates, setUserTemplates] = React.useState<UserTemplateSummary[]>([])
+  const [dataDirectoryStatus, setDataDirectoryStatus] = React.useState<DataDirectoryStatus>(() =>
+    createDefaultDataDirectoryStatus()
+  )
+  const [dataDirectoryBusy, setDataDirectoryBusy] = React.useState<string | null>(null)
+  const [dataDirectoryDialog, setDataDirectoryDialog] =
+    React.useState<DataDirectoryDialogState | null>(null)
+  const [directorySetupNudgeOpen, setDirectorySetupNudgeOpen] = React.useState(false)
   const [startupSyncReady, setStartupSyncReady] = React.useState(
     !(context.surface === "server-http" && context.mode === "runtime")
   )
   const syncInFlightRef = React.useRef<Promise<void> | null>(null)
   const syncQueuedRef = React.useRef(false)
+  const dataDirectorySyncTimerRef = React.useRef<number | null>(null)
+  const coordinator = React.useMemo(() => getSharedCrossTabCoordinator(), [])
+  const runtimeEventTabId = React.useMemo(() => getRuntimeStoreEventTabId(), [])
 
   const browserPrintSupported = React.useMemo(() => isBrowserPrintSupported(), [])
   const browserDirectConfigured = context.capabilities.browserDirectPrintPath !== "disabled"
@@ -140,6 +223,26 @@ export function useWorkbenchController({
     () => printers.find((printer) => printer.id === printerId) ?? null,
     [printerId, printers]
   )
+
+  const refreshDataDirectoryStatus = React.useCallback(async () => {
+    const next = await getDataDirectoryStatus(coordinator.getState())
+    setDataDirectoryStatus(next)
+    return next
+  }, [coordinator])
+
+  const setRenderOptions = React.useCallback((next: React.SetStateAction<RenderOptions>) => {
+    setRenderOptionsState(next)
+  }, [])
+
+  const updateRenderOptions = React.useCallback((next: React.SetStateAction<RenderOptions>) => {
+    setRenderOptionsState((current) => {
+      const resolved = typeof next === "function" ? next(current) : next
+      void saveRuntimeAppSettings({
+        defaultRenderOptions: resolved,
+      })
+      return resolved
+    })
+  }, [])
 
   const resolveSourceDimension = React.useCallback(
     (source: BrowserPrintSource | null): CanvasDimension | null => {
@@ -288,12 +391,91 @@ export function useWorkbenchController({
     return nextTemplates
   }, [])
 
+  const refreshRenderOptionsFromStore = React.useCallback(async () => {
+    const settings = await loadRuntimeAppSettings()
+    setRenderOptionsState(settings.defaultRenderOptions)
+    return settings
+  }, [])
+
+  const runDataDirectoryTask = React.useCallback(
+    async <T,>(key: string, task: () => Promise<T>): Promise<T | undefined> => {
+      setDataDirectoryBusy(key)
+      setError(null)
+      try {
+        return await task()
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+        await refreshDataDirectoryStatus().catch(() => undefined)
+        return undefined
+      } finally {
+        setDataDirectoryBusy(null)
+      }
+    },
+    [refreshDataDirectoryStatus]
+  )
+
+  const scheduleDataDirectorySync = React.useCallback(
+    (reason: RuntimeStoreMutationReason) => {
+      if (dataDirectorySyncTimerRef.current !== null) {
+        window.clearTimeout(dataDirectorySyncTimerRef.current)
+      }
+      const delay =
+        reason === "autosave-saved" || reason === "working-copy-replaced"
+          ? DATA_DIRECTORY_DEBOUNCE_MS
+          : 0
+      dataDirectorySyncTimerRef.current = window.setTimeout(() => {
+        dataDirectorySyncTimerRef.current = null
+        void tryBackgroundMirrorSync(coordinator).finally(() => {
+          void refreshDataDirectoryStatus()
+        })
+      }, delay)
+    },
+    [coordinator, refreshDataDirectoryStatus]
+  )
+
+  const maybeOpenDirectorySetupNudge = React.useCallback(async () => {
+    if (!supportsDataDirectoryFeatures()) {
+      return
+    }
+    const [settings, status] = await Promise.all([
+      loadRuntimeAppSettings(),
+      refreshDataDirectoryStatus(),
+    ])
+    if (settings.permissionNudgeSeen || status.configured) {
+      return
+    }
+    setDirectorySetupNudgeOpen(true)
+    await saveRuntimeAppSettings({
+      permissionNudgeSeen: true,
+    })
+  }, [refreshDataDirectoryStatus])
+
+  React.useEffect(() => {
+    coordinator.start()
+    const unsubscribe = coordinator.subscribe((state) => {
+      setDataDirectoryStatus((current) => ({
+        ...current,
+        leaseRole: state.role,
+        leaseExpiresAt: state.leaseExpiresAt,
+      }))
+      void refreshDataDirectoryStatus()
+    })
+    return () => {
+      unsubscribe()
+      coordinator.stop()
+    }
+  }, [coordinator, refreshDataDirectoryStatus])
+
   React.useEffect(() => {
     setStartupSyncReady(!(context.surface === "server-http" && context.mode === "runtime"))
     void (async () => {
       try {
-        await refreshSetup()
-        await refreshUserTemplates()
+        await Promise.all([
+          refreshSetup(),
+          refreshUserTemplates(),
+          refreshRenderOptionsFromStore(),
+          refreshDataDirectoryStatus(),
+        ])
         if (context.surface === "server-http" && context.mode === "runtime") {
           const next = await syncWebState(client, [...SYNC_PRESET_IDS])
           setRecentActivity(next.recentActivity)
@@ -304,7 +486,38 @@ export function useWorkbenchController({
         setStartupSyncReady(true)
       }
     })()
-  }, [client, context.mode, context.surface, refreshSetup, refreshUserTemplates])
+  }, [
+    client,
+    context.mode,
+    context.surface,
+    refreshDataDirectoryStatus,
+    refreshRenderOptionsFromStore,
+    refreshSetup,
+    refreshUserTemplates,
+  ])
+
+  React.useEffect(() => {
+    const unsubscribe = subscribeRuntimeStoreMutations((event) => {
+      if (event.originTabId !== runtimeEventTabId) {
+        void refreshUserTemplates()
+        void refreshRenderOptionsFromStore()
+      }
+      scheduleDataDirectorySync(event.reason)
+      void refreshDataDirectoryStatus()
+    })
+    return () => {
+      unsubscribe()
+      if (dataDirectorySyncTimerRef.current !== null) {
+        window.clearTimeout(dataDirectorySyncTimerRef.current)
+      }
+    }
+  }, [
+    refreshDataDirectoryStatus,
+    refreshRenderOptionsFromStore,
+    refreshUserTemplates,
+    runtimeEventTabId,
+    scheduleDataDirectorySync,
+  ])
 
   const scheduleSync = React.useCallback(() => {
     if (context.surface !== "server-http" || context.mode !== "runtime") {
@@ -862,6 +1075,164 @@ export function useWorkbenchController({
     }
   }, [client, run, selectedPrinter])
 
+  const dismissDirectorySetupNudge = React.useCallback(() => {
+    setDirectorySetupNudgeOpen(false)
+  }, [])
+
+  const handleImportantUserDataSaved = React.useCallback(async () => {
+    await refreshDataDirectoryStatus()
+    await maybeOpenDirectorySetupNudge()
+  }, [maybeOpenDirectorySetupNudge, refreshDataDirectoryStatus])
+
+  const chooseDataDirectory = React.useCallback(async () => {
+    const result = await runDataDirectoryTask("pick-data-directory", async () => {
+      const picked = await pickDataDirectory()
+      setDataDirectoryDialog({
+        kind: "attach-choice",
+        handle: picked.handle,
+        inspection: picked.inspection,
+      })
+      return picked
+    })
+    return result
+  }, [runDataDirectoryTask])
+
+  const cancelDataDirectoryDialog = React.useCallback(() => {
+    setDataDirectoryDialog(null)
+  }, [])
+
+  const confirmDataDirectoryAttachment = React.useCallback(
+    async (mode: "overwrite-current" | "import-existing") => {
+      if (dataDirectoryDialog?.kind !== "attach-choice") {
+        return
+      }
+      const result = await runDataDirectoryTask("attach-data-directory", async () => {
+        const outcome = await attachDataDirectory({
+          handle: dataDirectoryDialog.handle,
+          mode,
+        })
+        await refreshDataDirectoryStatus()
+        return outcome
+      })
+      if (!result) {
+        return
+      }
+      setDataDirectoryDialog(null)
+      setDirectorySetupNudgeOpen(false)
+      if (result === "replaced-runtime" && typeof window !== "undefined") {
+        window.location.reload()
+      }
+    },
+    [dataDirectoryDialog, refreshDataDirectoryStatus, runDataDirectoryTask]
+  )
+
+  const requestDataDirectoryPermission = React.useCallback(async () => {
+    await runDataDirectoryTask("request-data-directory-permission", async () => {
+      await requestConfiguredDirectoryPermission(true)
+      await refreshDataDirectoryStatus()
+    })
+  }, [refreshDataDirectoryStatus, runDataDirectoryTask])
+
+  const syncDataDirectoryNow = React.useCallback(async () => {
+    await runDataDirectoryTask("sync-data-directory", async () => {
+      await syncConfiguredDataDirectory({
+        coordinator,
+        requestIfNeeded: true,
+      })
+      await refreshDataDirectoryStatus()
+    })
+  }, [coordinator, refreshDataDirectoryStatus, runDataDirectoryTask])
+
+  const createManualDataBackup = React.useCallback(async () => {
+    await runDataDirectoryTask("backup-data-directory", async () => {
+      await createManualBackup({
+        coordinator,
+      })
+      await refreshDataDirectoryStatus()
+    })
+  }, [coordinator, refreshDataDirectoryStatus, runDataDirectoryTask])
+
+  const exportDataArchive = React.useCallback(async () => {
+    await runDataDirectoryTask("export-runtime-archive", async () => {
+      await exportRuntimeArchive()
+    })
+  }, [runDataDirectoryTask])
+
+  const inspectImportDataArchive = React.useCallback(
+    async (file: File) => {
+      await runDataDirectoryTask("inspect-import-archive", async () => {
+        const inspection = await inspectImportArchiveFile(file)
+        setDataDirectoryDialog({
+          kind: "import-confirm",
+          inspection,
+        })
+      })
+    },
+    [runDataDirectoryTask]
+  )
+
+  const confirmImportDataArchive = React.useCallback(async () => {
+    if (dataDirectoryDialog?.kind !== "import-confirm") {
+      return
+    }
+    const result = await runDataDirectoryTask("import-runtime-archive", async () => {
+      await importRuntimeArchive({
+        coordinator,
+        snapshot: dataDirectoryDialog.inspection.snapshot,
+      })
+      await refreshDataDirectoryStatus()
+      return true
+    })
+    if (!result) {
+      return
+    }
+    setDataDirectoryDialog(null)
+    if (typeof window !== "undefined") {
+      window.location.reload()
+    }
+  }, [coordinator, dataDirectoryDialog, refreshDataDirectoryStatus, runDataDirectoryTask])
+
+  const inspectRestoreBackup = React.useCallback(
+    async (entry: DataDirectoryBackupEntry) => {
+      await runDataDirectoryTask("inspect-restore-backup", async () => {
+        const inspection = await inspectConfiguredBackup(entry)
+        setDataDirectoryDialog({
+          kind: "restore-confirm",
+          entry,
+          inspection,
+        })
+      })
+    },
+    [runDataDirectoryTask]
+  )
+
+  const confirmRestoreBackup = React.useCallback(async () => {
+    if (dataDirectoryDialog?.kind !== "restore-confirm") {
+      return
+    }
+    const result = await runDataDirectoryTask("restore-backup", async () => {
+      await restoreConfiguredBackup({
+        coordinator,
+        entry: dataDirectoryDialog.entry,
+        snapshot: dataDirectoryDialog.inspection.snapshot,
+      })
+      await refreshDataDirectoryStatus()
+      return true
+    })
+    if (!result) {
+      return
+    }
+    setDataDirectoryDialog(null)
+    if (typeof window !== "undefined") {
+      window.location.reload()
+    }
+  }, [coordinator, dataDirectoryDialog, refreshDataDirectoryStatus, runDataDirectoryTask])
+
+  const takeOverDataDirectoryWrites = React.useCallback(() => {
+    coordinator.requestTakeover()
+    void refreshDataDirectoryStatus()
+  }, [coordinator, refreshDataDirectoryStatus])
+
   return {
     artifactData,
     browserDirectAvailable,
@@ -876,6 +1247,24 @@ export function useWorkbenchController({
     context,
     recordCanvasDraft,
     recordCanvasDimension,
+    dataDirectoryBusy,
+    dataDirectoryDialog,
+    dataDirectoryStatus,
+    chooseDataDirectory,
+    confirmDataDirectoryAttachment,
+    cancelDataDirectoryDialog,
+    requestDataDirectoryPermission,
+    syncDataDirectoryNow,
+    createManualDataBackup,
+    exportDataArchive,
+    inspectImportDataArchive,
+    confirmImportDataArchive,
+    inspectRestoreBackup,
+    confirmRestoreBackup,
+    takeOverDataDirectoryWrites,
+    directorySetupNudgeOpen,
+    dismissDirectorySetupNudge,
+    handleImportantUserDataSaved,
     error,
     hasServerPrinterFlow,
     preview,
@@ -892,6 +1281,7 @@ export function useWorkbenchController({
     refreshSetup,
     rememberPrinterSelection,
     renderOptions,
+    refreshDataDirectoryStatus,
     selectedPrinter,
     serverPrinterSelectionMode,
     serviceApiLive,
@@ -901,6 +1291,7 @@ export function useWorkbenchController({
     setPreviewPrintSource,
     setProbeResult,
     setRenderOptions,
+    updateRenderOptions,
     setRecentActivity,
     startupSyncReady,
     templates,
