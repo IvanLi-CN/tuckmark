@@ -868,56 +868,56 @@ output.
   PR: include
   ![System workspace](./assets/system-1600x1024.png)
 
-- `1600×1200` `/system` data-storage card in an unsupported browser state,
-  making the capability boundary explicit without blocking the rest of the
-  workbench shell.
+- `1600×1200` `/system` page in an unsupported browser state, making the data
+  directory capability boundary explicit while the rest of the system settings
+  page remains available.
 
   PR: include
-  ![System data storage unsupported](./assets/system-data-storage-unsupported-1600x1200.png)
+  ![System page unsupported](./assets/system-page-unsupported-1600x1200.png)
 
-- `1600×1200` `/system` data-storage card in the unconfigured-but-supported
-  state, with directory actions visible before any handle is attached.
-
-  PR: include
-  ![System data storage unconfigured](./assets/system-data-storage-unconfigured-1600x1200.png)
-
-- `1600×1200` `/system` data-storage card in the configured healthy state,
-  showing directory manifest counts, granted permission, and last-sync
-  metadata.
+- `1600×1200` `/system` page in the unconfigured-but-supported state, with the
+  directory actions visible before any handle is attached.
 
   PR: include
-  ![System data storage configured healthy](./assets/system-data-storage-configured-healthy-1600x1200.png)
+  ![System page unconfigured](./assets/system-page-unconfigured-1600x1200.png)
 
-- `1600×1200` `/system` directory-attach conflict dialog, requiring an explicit
-  choice between importing an existing directory dataset or overwriting it with
-  the current browser-local runtime snapshot.
-
-  PR: include
-  ![System data storage attach choice](./assets/system-data-storage-attach-choice-1600x1200.png)
-
-- `1600×1200` `/system` fixed-location backup list, combining manual backups
-  with restore-protection snapshots.
+- `1600×1200` `/system` page in the configured healthy state, showing directory
+  manifest counts, granted permission, and last-sync metadata in the full
+  settings layout.
 
   PR: include
-  ![System data storage backup list](./assets/system-data-storage-backup-list-1600x1200.png)
+  ![System page configured healthy](./assets/system-page-configured-healthy-1600x1200.png)
 
-- `1600×1200` `/system` whole-dataset ZIP import confirmation dialog, showing
-  the archive summary before replacement.
-
-  PR: include
-  ![System data storage import confirm](./assets/system-data-storage-import-confirm-1600x1200.png)
-
-- `1600×1200` `/system` backup-restore confirmation dialog, reusing the same
-  archive summary model before replacing runtime data.
+- `1600×1200` `/system` page with the directory-attach conflict dialog,
+  requiring an explicit choice between importing an existing directory dataset
+  or overwriting it with the current browser-local runtime snapshot.
 
   PR: include
-  ![System data storage restore confirm](./assets/system-data-storage-restore-confirm-1600x1200.png)
+  ![System page attach choice](./assets/system-page-attach-choice-1600x1200.png)
 
-- `1600×1200` `/system` permission-required state after the browser keeps the
-  directory handle but no longer grants read/write access.
+- `1600×1200` `/system` page with the fixed-location backup list, combining
+  manual backups with restore-protection snapshots.
 
   PR: include
-  ![System data storage permission denied](./assets/system-data-storage-permission-denied-1600x1200.png)
+  ![System page backup list](./assets/system-page-backup-list-1600x1200.png)
+
+- `1600×1200` `/system` page with the whole-dataset ZIP import confirmation
+  dialog, showing the archive summary before replacement.
+
+  PR: include
+  ![System page import confirm](./assets/system-page-import-confirm-1600x1200.png)
+
+- `1600×1200` `/system` page with the backup-restore confirmation dialog,
+  reusing the same archive summary model before replacing runtime data.
+
+  PR: include
+  ![System page restore confirm](./assets/system-page-restore-confirm-1600x1200.png)
+
+- `1600×1200` `/system` page in the permission-required state after the browser
+  keeps the directory handle but no longer grants read/write access.
+
+  PR: include
+  ![System page permission denied](./assets/system-page-permission-denied-1600x1200.png)
 
 - DimensionPicker autocomplete filters millimeter suggestions by width prefix
   while height is empty, and selecting a row applies width and height together.

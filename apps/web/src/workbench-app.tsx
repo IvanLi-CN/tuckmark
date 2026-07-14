@@ -100,7 +100,11 @@ import {
   readUserTemplateHistory,
   saveUserTemplate,
 } from "./user-template-store.js"
-import { createInitialTemplateRows, useWorkbenchController } from "./workbench-controller.js"
+import {
+  createInitialTemplateRows,
+  type WorkbenchStoryStateOverrides,
+  useWorkbenchController,
+} from "./workbench-controller.js"
 
 type AppProps = {
   client?: ApiClient
@@ -3331,10 +3335,12 @@ export function WorkbenchAppStory({
   canvasScenario,
   pwaUpdateSnapshot,
   initialEntries = ["/"],
+  storyStateOverrides,
 }: AppProps & {
   initialEntries?: string[]
+  storyStateOverrides?: WorkbenchStoryStateOverrides
 }) {
-  const controller = useWorkbenchController({ client, context })
+  const controller = useWorkbenchController({ client, context, storyStateOverrides })
   return (
     <MemoryRouter initialEntries={initialEntries}>
       <WorkbenchRouter

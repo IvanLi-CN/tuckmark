@@ -93,6 +93,12 @@ type DataDirectoryDialogState =
     }
 
 export type WorkbenchDataDirectoryDialogState = DataDirectoryDialogState
+export type WorkbenchStoryStateOverrides = {
+  dataDirectoryBusy?: string | null
+  dataDirectoryDialog?: DataDirectoryDialogState | null
+  dataDirectoryStatus?: DataDirectoryStatus
+  directorySetupNudgeOpen?: boolean
+}
 
 function createDefaultDataDirectoryStatus(): DataDirectoryStatus {
   return {
@@ -150,9 +156,11 @@ export type WorkbenchController = ReturnType<typeof useWorkbenchController>
 export function useWorkbenchController({
   client: providedClient,
   context: providedContext,
+  storyStateOverrides,
 }: {
   client?: ApiClient
   context?: AppContext
+  storyStateOverrides?: WorkbenchStoryStateOverrides
 } = {}) {
   const context = React.useMemo(
     () =>
@@ -195,12 +203,16 @@ export function useWorkbenchController({
   const [canvasDimensions, setCanvasDimensions] = React.useState(() => loadRecentCanvasDimensions())
   const [userTemplates, setUserTemplates] = React.useState<UserTemplateSummary[]>([])
   const [dataDirectoryStatus, setDataDirectoryStatus] = React.useState<DataDirectoryStatus>(() =>
-    createDefaultDataDirectoryStatus()
+    storyStateOverrides?.dataDirectoryStatus ?? createDefaultDataDirectoryStatus()
   )
-  const [dataDirectoryBusy, setDataDirectoryBusy] = React.useState<string | null>(null)
+  const [dataDirectoryBusy, setDataDirectoryBusy] = React.useState<string | null>(
+    storyStateOverrides?.dataDirectoryBusy ?? null
+  )
   const [dataDirectoryDialog, setDataDirectoryDialog] =
-    React.useState<DataDirectoryDialogState | null>(null)
-  const [directorySetupNudgeOpen, setDirectorySetupNudgeOpen] = React.useState(false)
+    React.useState<DataDirectoryDialogState | null>(storyStateOverrides?.dataDirectoryDialog ?? null)
+  const [directorySetupNudgeOpen, setDirectorySetupNudgeOpen] = React.useState(
+    storyStateOverrides?.directorySetupNudgeOpen ?? false
+  )
   const [startupSyncReady, setStartupSyncReady] = React.useState(
     !(context.surface === "server-http" && context.mode === "runtime")
   )
@@ -225,10 +237,32 @@ export function useWorkbenchController({
   )
 
   const refreshDataDirectoryStatus = React.useCallback(async () => {
+    if (storyStateOverrides?.dataDirectoryStatus) {
+      setDataDirectoryStatus(storyStateOverrides.dataDirectoryStatus)
+      return storyStateOverrides.dataDirectoryStatus
+    }
     const next = await getDataDirectoryStatus(coordinator.getState())
     setDataDirectoryStatus(next)
     return next
-  }, [coordinator])
+  }, [coordinator, storyStateOverrides?.dataDirectoryStatus])
+
+  React.useEffect(() => {
+    if (!storyStateOverrides) {
+      return
+    }
+    if (storyStateOverrides.dataDirectoryStatus) {
+      setDataDirectoryStatus(storyStateOverrides.dataDirectoryStatus)
+    }
+    if ("dataDirectoryBusy" in storyStateOverrides) {
+      setDataDirectoryBusy(storyStateOverrides.dataDirectoryBusy ?? null)
+    }
+    if ("dataDirectoryDialog" in storyStateOverrides) {
+      setDataDirectoryDialog(storyStateOverrides.dataDirectoryDialog ?? null)
+    }
+    if ("directorySetupNudgeOpen" in storyStateOverrides) {
+      setDirectorySetupNudgeOpen(Boolean(storyStateOverrides.directorySetupNudgeOpen))
+    }
+  }, [storyStateOverrides])
 
   const setRenderOptions = React.useCallback((next: React.SetStateAction<RenderOptions>) => {
     setRenderOptionsState(next)
