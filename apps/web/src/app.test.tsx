@@ -1802,11 +1802,15 @@ describe("web workbench app", () => {
       x: 76,
       y: 236,
     })
-    expect(normalizeCanvasWheelDeltas(0, 3, WheelEvent.DOM_DELTA_LINE, { width: 800, height: 600 })).toEqual({
+    expect(
+      normalizeCanvasWheelDeltas(0, 3, WheelEvent.DOM_DELTA_LINE, { width: 800, height: 600 })
+    ).toEqual({
       deltaX: 0,
       deltaY: 48,
     })
-    expect(normalizeCanvasWheelDeltas(1, -1, WheelEvent.DOM_DELTA_PAGE, { width: 800, height: 600 })).toEqual({
+    expect(
+      normalizeCanvasWheelDeltas(1, -1, WheelEvent.DOM_DELTA_PAGE, { width: 800, height: 600 })
+    ).toEqual({
       deltaX: 800,
       deltaY: -600,
     })
