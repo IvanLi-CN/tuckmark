@@ -202,14 +202,16 @@ export function useWorkbenchController({
   )
   const [canvasDimensions, setCanvasDimensions] = React.useState(() => loadRecentCanvasDimensions())
   const [userTemplates, setUserTemplates] = React.useState<UserTemplateSummary[]>([])
-  const [dataDirectoryStatus, setDataDirectoryStatus] = React.useState<DataDirectoryStatus>(() =>
-    storyStateOverrides?.dataDirectoryStatus ?? createDefaultDataDirectoryStatus()
+  const [dataDirectoryStatus, setDataDirectoryStatus] = React.useState<DataDirectoryStatus>(
+    () => storyStateOverrides?.dataDirectoryStatus ?? createDefaultDataDirectoryStatus()
   )
   const [dataDirectoryBusy, setDataDirectoryBusy] = React.useState<string | null>(
     storyStateOverrides?.dataDirectoryBusy ?? null
   )
   const [dataDirectoryDialog, setDataDirectoryDialog] =
-    React.useState<DataDirectoryDialogState | null>(storyStateOverrides?.dataDirectoryDialog ?? null)
+    React.useState<DataDirectoryDialogState | null>(
+      storyStateOverrides?.dataDirectoryDialog ?? null
+    )
   const [directorySetupNudgeOpen, setDirectorySetupNudgeOpen] = React.useState(
     storyStateOverrides?.directorySetupNudgeOpen ?? false
   )
