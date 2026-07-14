@@ -15,12 +15,15 @@ import {
 } from "./canvas-editor-model.js"
 import {
   cancelPendingPastePlacement,
+  classifyCanvasWheelIntent,
   confirmPendingPastePlacement,
   createCanvasStateFromDraft,
   createSelectionDragPreview,
   isTransformerInteractionTarget,
   movePendingPasteToPoint,
+  normalizeCanvasWheelDeltas,
   normalizeTransformedElementGeometry,
+  panViewportByWheel,
   projectCanvasTransformerBoxToStage,
   projectStageTransformerBoxToCanvas,
   startClipboardPastePlacement,
@@ -1767,7 +1770,7 @@ describe("web workbench app", () => {
     expect(isTransformerInteractionTarget(elementHitTarget as never)).toBe(false)
   })
 
-  it("zooms around the pointer without requiring a modifier key", () => {
+  it("zooms around the pointer", () => {
     const viewport = { x: 120, y: 56, scale: 2 }
     const pointer = { x: 360, y: 216 }
     const canvasPoint = {
@@ -1786,6 +1789,31 @@ describe("web workbench app", () => {
     )
     expect(zoomViewportAtPointer({ ...viewport, scale: 5 }, pointer, -1).scale).toBe(5)
     expect(zoomViewportAtPointer({ ...viewport, scale: 0.45 }, pointer, 1).scale).toBe(0.45)
+  })
+
+  it("separates fine pan gestures from coarse wheel zoom", () => {
+    expect(classifyCanvasWheelIntent(96, 0, 0, false, false)).toBe("pan")
+    expect(classifyCanvasWheelIntent(0, 8, 0, false, false)).toBe("defer")
+    expect(classifyCanvasWheelIntent(0, 64, 0, false, false)).toBe("zoom")
+    expect(classifyCanvasWheelIntent(0, 8, 8, false, false)).toBe("pan")
+    expect(classifyCanvasWheelIntent(96, 0, 8, true, false)).toBe("zoom")
+    expect(panViewportByWheel({ scale: 1.5, x: 100, y: 200 }, 24, -36)).toEqual({
+      scale: 1.5,
+      x: 76,
+      y: 236,
+    })
+    expect(
+      normalizeCanvasWheelDeltas(0, 3, WheelEvent.DOM_DELTA_LINE, { width: 800, height: 600 })
+    ).toEqual({
+      deltaX: 0,
+      deltaY: 48,
+    })
+    expect(
+      normalizeCanvasWheelDeltas(1, -1, WheelEvent.DOM_DELTA_PAGE, { width: 800, height: 600 })
+    ).toEqual({
+      deltaX: 800,
+      deltaY: -600,
+    })
   })
 
   it("converts Transformer boxes between stage and canvas coordinates before snapping", () => {

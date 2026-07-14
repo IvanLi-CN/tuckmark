@@ -338,6 +338,58 @@ export const CanvasWorkspaceWide: Story = {
   },
 }
 
+export const CanvasWorkspaceWheelNavigation: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "wide-default",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "Coarse wheel input zooms around the pointer; fine two-axis pan gestures, horizontal wheel input, and Space + drag pan the stage.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const paper = canvasElement.querySelector(".tm-stage-paper--base")
+    const stage = canvasElement.querySelector(".konvajs-content")
+    if (!(paper instanceof HTMLElement) || !stage) {
+      throw new Error("Missing canvas stage surface")
+    }
+
+    const before = paper.getBoundingClientRect()
+    await fireEvent.wheel(stage, { deltaY: -96 })
+    const afterZoom = paper.getBoundingClientRect()
+
+    await expect(afterZoom.width).toBeGreaterThan(before.width)
+
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    await fireEvent.wheel(stage, { deltaX: 96 })
+    const afterPan = paper.getBoundingClientRect()
+
+    await expect(afterPan.width).toBeCloseTo(afterZoom.width, 1)
+    await expect(afterPan.x).toBeLessThan(afterZoom.x - 80)
+
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    for (const deltaY of [5, 8, 5, 4, 2, 1]) {
+      await fireEvent.wheel(stage, { deltaY })
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    const afterFinePan = paper.getBoundingClientRect()
+
+    await expect(afterFinePan.width).toBeCloseTo(afterPan.width, 1)
+    await expect(afterFinePan.y).toBeLessThan(afterPan.y - 20)
+  },
+}
+
 export const CanvasWorkspaceMarqueeSelection: Story = {
   args: {
     context: runtimeContext,
