@@ -1658,6 +1658,28 @@ export type CanvasWheelIntent = "pan" | "zoom" | "defer"
 const CANVAS_WHEEL_ZOOM_DELTA_THRESHOLD = 24
 const CANVAS_WHEEL_INTENT_DELAY_MS = 40
 const CANVAS_WHEEL_BURST_IDLE_MS = 120
+const CANVAS_WHEEL_LINE_HEIGHT_PX = 16
+
+export function normalizeCanvasWheelDeltas(
+  deltaX: number,
+  deltaY: number,
+  deltaMode: number,
+  viewportSize: StageViewportSize
+): { deltaX: number; deltaY: number } {
+  if (deltaMode === WheelEvent.DOM_DELTA_LINE) {
+    return {
+      deltaX: deltaX * CANVAS_WHEEL_LINE_HEIGHT_PX,
+      deltaY: deltaY * CANVAS_WHEEL_LINE_HEIGHT_PX,
+    }
+  }
+  if (deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+    return {
+      deltaX: deltaX * viewportSize.width,
+      deltaY: deltaY * viewportSize.height,
+    }
+  }
+  return { deltaX, deltaY }
+}
 
 export function classifyCanvasWheelIntent(
   deltaX: number,
@@ -5351,8 +5373,16 @@ function CanvasStageView({
             if (!stage) {
               return
             }
-            const { buttons, ctrlKey, deltaX, deltaY, metaKey } = event.evt
-            if (!deltaX && !deltaY) {
+            const { buttons, ctrlKey, deltaMode, deltaX, deltaY, metaKey } = event.evt
+            const normalizedDelta = normalizeCanvasWheelDeltas(
+              deltaX,
+              deltaY,
+              deltaMode,
+              stageViewportSize
+            )
+            const normalizedDeltaX = normalizedDelta.deltaX
+            const normalizedDeltaY = normalizedDelta.deltaY
+            if (!normalizedDeltaX && !normalizedDeltaY) {
               return
             }
             const now = performance.now()
@@ -5369,8 +5399,8 @@ function CanvasStageView({
             burst.lastEventAt = now
 
             const detectedIntent = classifyCanvasWheelIntent(
-              deltaX,
-              deltaY,
+              normalizedDeltaX,
+              normalizedDeltaY,
               buttons,
               ctrlKey,
               metaKey
@@ -5380,13 +5410,13 @@ function CanvasStageView({
               burst.intent = "pan"
               onChange((current) => ({
                 ...current,
-                viewport: panViewportByWheel(current.viewport, deltaX, deltaY),
+                viewport: panViewportByWheel(current.viewport, normalizedDeltaX, normalizedDeltaY),
               }))
               return
             }
             if (intent === "defer") {
-              burst.pendingX += deltaX
-              burst.pendingY += deltaY
+              burst.pendingX += normalizedDeltaX
+              burst.pendingY += normalizedDeltaY
               if (!burst.timer) {
                 burst.timer = setTimeout(() => {
                   const pendingX = burst.pendingX
@@ -5408,7 +5438,8 @@ function CanvasStageView({
               clearTimeout(burst.timer)
               burst.timer = null
             }
-            const wheelDelta = burst.pendingY + deltaY || burst.pendingX + deltaX
+            const wheelDelta =
+              burst.pendingY + normalizedDeltaY || burst.pendingX + normalizedDeltaX
             burst.pendingX = 0
             burst.pendingY = 0
             const pointer = stage.getPointerPosition()
