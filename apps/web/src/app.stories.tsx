@@ -147,6 +147,32 @@ function seedDimensionFixtures() {
   recordRecentCanvasDimension({ width: 48, height: 20 })
 }
 
+function getCanvasInteractionSurface(canvasElement: HTMLElement) {
+  const paper = canvasElement.querySelector<HTMLElement>(".tm-stage-paper--base")
+  const stage = canvasElement.querySelector<HTMLElement>(".konvajs-content")
+  if (!paper || !stage) {
+    throw new Error("expected canvas paper and Konva stage")
+  }
+  const bounds = paper.getBoundingClientRect()
+  return {
+    stage,
+    left: bounds.left,
+    top: bounds.top,
+    scale: bounds.width / 384,
+  }
+}
+
+function toCanvasPointer(
+  surface: ReturnType<typeof getCanvasInteractionSurface>,
+  xMillimeters: number,
+  yMillimeters: number
+) {
+  return {
+    clientX: surface.left + xMillimeters * 8 * surface.scale,
+    clientY: surface.top + yMillimeters * 8 * surface.scale,
+  }
+}
+
 export const Home: Story = {
   args: {
     context: runtimeContext,
@@ -669,6 +695,140 @@ export const CanvasWorkspaceMagneticSnap: Story = {
 
     await fireEvent.mouseUp(window, target)
     await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "0")
+  },
+}
+
+export const CanvasWorkspaceTransformerBottomCenterSnap: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-bottom-center-snap",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "Dragging the selected text container through its `bottom-center` handle keeps snapping and guides on the active Y axis only, even when the reference text shares the same left edge.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const surface = getCanvasInteractionSurface(canvasElement)
+    const start = toCanvasPointer(surface, 24, 10.4)
+    const target = toCanvasPointer(surface, 24, 13.6)
+
+    await userEvent.pointer([
+      { target: surface.stage, coords: start },
+      { keys: "[MouseLeft>]", target: surface.stage, coords: start },
+      { target: surface.stage, coords: target },
+    ])
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "1")
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute(
+      "data-snap-guide-signature",
+      "y:13.2:element"
+    )
+
+    await fireEvent.mouseUp(window, target)
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "0")
+    await expect(canvas.getByTestId("canvas-stage-shell")).not.toHaveAttribute(
+      "data-snap-guide-signature"
+    )
+  },
+}
+
+export const CanvasWorkspaceLineEndpointCenterSnap: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "line-endpoint-center-snap",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "Line endpoints resolve direct-handle snapping per axis, so one endpoint can show two simultaneous guides while converging on center coordinates.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const surface = getCanvasInteractionSurface(canvasElement)
+    const start = toCanvasPointer(surface, 15.8, 9.4)
+    const target = toCanvasPointer(surface, 31.6, 9.6)
+
+    await userEvent.pointer([
+      { target: surface.stage, coords: start },
+      { keys: "[MouseLeft>]", target: surface.stage, coords: start },
+      { target: surface.stage, coords: target },
+    ])
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "2")
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute(
+      "data-snap-guide-signature",
+      "x:32:element|y:10:element"
+    )
+
+    await fireEvent.mouseUp(window, target)
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "0")
+    await expect(canvas.getByTestId("canvas-stage-shell")).not.toHaveAttribute(
+      "data-snap-guide-signature"
+    )
+  },
+}
+
+export const CanvasWorkspaceTransformerBottomCenterGuideState: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-bottom-center-guide-state",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "Stable capture state for the bottom-center resize contract: only the snapped bottom guide remains visible while the fixed left and right edges stay silent.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+}
+
+export const CanvasWorkspaceLineEndpointCenterGuideState: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "line-endpoint-center-guide-state",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "Stable capture state for point-handle snapping: the selected line endpoint lands on both element center axes and keeps one winner guide per axis.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
   },
 }
 

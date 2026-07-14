@@ -298,24 +298,34 @@ output.
     not paste or otherwise mutate the draft
 - `snapEnabled` governs one shared pointer magnetic-snap policy across ordinary
   and multi-selection dragging, pending clipboard placement, line endpoints,
-  and Transformer resize handles. Candidates are the `1mm` grid, the four
-  canvas edges, and the visible outer bounds of other elements; moving and
-  pending elements are excluded, while visible locked elements remain valid
-  references. Rotated elements use their visible axis-aligned outer bounds.
+  and Transformer resize handles. Ordinary and multi-selection dragging keep
+  using the `1mm` grid, the four canvas edges, and the visible outer bounds of
+  other elements; moving and pending elements are excluded, while visible
+  locked elements remain valid references. Rotated elements use their visible
+  axis-aligned outer bounds.
+- Direct handles resolve snapping from explicit active sources instead of
+  implicit box defaults:
+  - line endpoints use their active point on both axes
+  - Transformer resize handles declare only the active `min|center|max`
+    source on each axis, so inactive axes never snap or render guides
+  - direct-handle targets additionally include element and canvas centerlines,
+    while corner metadata may participate through the same axis projection
+    path without changing the guide rendering contract
 - Canvas and element edges use an `8px` screen-space threshold. The grid uses
   `min(8px, 40% of the current grid spacing)` so low zoom still leaves a free
   adjustment zone. X and Y resolve independently by screen distance; within
-  `0.5px`, element edges win over canvas edges, which win over grid targets.
+  `0.5px`, element targets win over canvas targets, which win over grid
+  targets.
 - Dragging a selection applies one rigid snapped translation. Line editing
   snaps only the active endpoint. Transformer resize snaps only the active
-  handle edge and keeps its opposite edge fixed; transform completion commits
+  handle source and keeps its opposite edge fixed; transform completion commits
   the current live geometry without a second rounding jump. Rotation remains
   freeform, square-element proportions and minimum sizes remain intact, and
   text resizing preserves saved font-size semantics.
-- Snapping to a canvas or element edge displays a temporary one-pixel guide;
-  grid-only hits do not add a guide. Guides disappear when the target is left,
-  the interaction ends, or snapping is disabled, and never persist, print, or
-  export.
+- Snapping to a canvas or element axis projection displays a temporary
+  one-pixel guide; grid-only hits do not add a guide. Guides disappear when
+  the target is left, the interaction ends, or snapping is disabled, and never
+  persist, print, or export.
 - The snap toolbar button controls and reports the persistent `snapEnabled`
   flag. No keyboard modifier temporarily overrides snapping; keyboard arrows
   remain exact `1mm` moves, or `10mm` with Shift, outside the pointer-magnetic
@@ -789,6 +799,20 @@ output.
 
   PR: include
   ![Canvas snap enabled](./assets/canvas-snap-enabled-1280x800.png)
+
+- `1280×800` Storybook stable capture for the `bottom-center` transformer
+  contract, showing that only the snapped bottom guide remains visible while
+  the shared left edge stays inactive.
+
+  PR: include
+  ![Canvas transformer bottom-center guide state](./assets/canvas-transformer-bottom-center-guide-state-1280x800.png)
+
+- `1280×800` Storybook stable capture for point-handle center snapping,
+  showing one selected line endpoint converging on the reference center with
+  one winner guide on each axis.
+
+  PR: include
+  ![Canvas line endpoint center guide state](./assets/canvas-line-endpoint-center-guide-state-1280x800.png)
 
 - `1280×800` canvas workspace Storybook `storybook_canvas` selected-state
   fallback showing a real square `ECC200` Data Matrix element, proportional

@@ -237,3 +237,11 @@ while the workbench was being productized:
     height, and compiles through the existing `8 dots/mm` output boundary
   - existing templates, drafts, and imported layers preserve their saved
     font-size values without migration
+- A later direct-handle snap pass narrowed guide ownership to editable degrees
+  of freedom:
+  - Transformer resize and line endpoints now declare active snap sources per
+    axis instead of inheriting implicit bounding-box edges
+  - direct-handle snapping may use element and canvas centers without changing
+    ordinary drag, which stays on the existing edge-only target set
+  - active-axis guide rendering now matches the actual interaction source, so
+    `bottom-center` text resize no longer emits unrelated side guides

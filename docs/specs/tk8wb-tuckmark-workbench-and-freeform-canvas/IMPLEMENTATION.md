@@ -105,17 +105,24 @@
   the persistent `snapEnabled` editor flag. It serves ordinary and multi-select
   dragging, pending clipboard placement, line endpoint adjustment, and
   Transformer resize; keyboard nudges remain exact fixed-distance moves.
-- The resolver compares grid lines, canvas edges, and visible static element
-  bounds independently on each axis. It excludes moving preview elements,
-  includes visible locked references, honors rotated visible bounds, and keeps
-  low-zoom grid snapping below forty percent of grid spacing.
+- Ordinary drag previews still compare grid lines, canvas edges, and visible
+  static element bounds independently on each axis. Direct handles now declare
+  their active `min|center|max` sources explicitly, so inactive axes never
+  participate in snap resolution or guide rendering.
+- Direct-handle target resolution now extends the same per-axis resolver with
+  canvas/element centerlines and corner metadata while preserving the existing
+  axis-line guide contract and `element > canvas > grid` tie-break order. It
+  excludes moving preview elements, includes visible locked references, honors
+  rotated visible bounds, and keeps low-zoom grid snapping below forty percent
+  of grid spacing.
 - Ordinary pointer dragging keeps the selected set rigid. Transformer bounds
-  snap live through their active edge before the draft update, then commit that
-  same geometry without a release-time rounding pass. Rotation stays freeform,
-  text transforms retain font size, and existing minimum-size and proportional
-  shape constraints continue to apply.
-- Stage-only guide lines render for canvas and element edge hits, clear at the
-  end of each interaction, and do not affect stored draft, printing, or export.
+  snap live through their active source before the draft update, then commit
+  that same geometry without a release-time rounding pass. Rotation stays
+  freeform, text transforms retain font size, and existing minimum-size and
+  proportional shape constraints continue to apply.
+- Stage-only guide lines render for canvas and element projection hits, clear
+  at the end of each interaction, and do not affect stored draft, printing, or
+  export.
 - Marquee selection overlay is now projected into stage space rather than
   rendered inside the scaled content group, so its dashed border stays `1
   logical px` across zoom levels while the stored selection box and inclusion

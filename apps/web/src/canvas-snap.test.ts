@@ -6,7 +6,8 @@ import {
   getPresetById,
 } from "./canvas-editor-model.js"
 import {
-  getTransformerSnapEdges,
+  getTransformerSnapSources,
+  resolveDirectHandleSnap,
   resolveCanvasSnap,
   resolveTransformerSnap,
 } from "./canvas-snap.js"
@@ -107,6 +108,23 @@ describe("canvas magnetic snapping", () => {
     expect(result.guides).toHaveLength(0)
   })
 
+  it("keeps ordinary box dragging on edge targets instead of centerlines", () => {
+    const draft = draftWith([rect("moving", 44.5, 18, 10, 8)])
+
+    expect(
+      resolveCanvasSnap(
+        {
+          draft,
+          movingIds: ["moving"],
+          displayScale: 8,
+          enabled: true,
+          gridSize: 1,
+        },
+        { x: 44.5, y: 18, width: 10, height: 8 }
+      )
+    ).toEqual({ deltaX: 0, deltaY: 0, guides: [] })
+  })
+
   it("keeps snapping disabled without returning guides", () => {
     const draft = draftWith([rect("moving", 29.5, 12, 10, 8), rect("reference", 40, 20, 8, 8)])
 
@@ -170,6 +188,24 @@ describe("canvas magnetic snapping", () => {
     )
   })
 
+  it("keeps a bottom-center transformer handle on its active axis only", () => {
+    const draft = draftWith([rect("moving", 30, 12.5, 10, 7), rect("reference", 30, 20, 8, 8)])
+    const result = resolveTransformerSnap(
+      {
+        draft,
+        movingIds: ["moving"],
+        displayScale: 8,
+        enabled: true,
+        gridSize: 1,
+      },
+      { x: 30, y: 12.5, width: 10, height: 7, rotation: 0 },
+      "bottom-center"
+    )
+
+    expect(result.box).toMatchObject({ x: 30, y: 12.5, width: 10, height: 7.5 })
+    expect(result.guides).toEqual([{ axis: "y", coordinate: 20, kind: "element" }])
+  })
+
   it("keeps proportional corner resize geometry when one magnetic axis wins", () => {
     const draft = draftWith([rect("moving", 30.25, 20.5, 10, 10), rect("reference", 30, 20, 8, 8)])
     const result = resolveTransformerSnap(
@@ -189,7 +225,48 @@ describe("canvas magnetic snapping", () => {
     expect(result.guides).toEqual([{ axis: "x", coordinate: 30, kind: "element" }])
   })
 
+  it("lets direct point handles snap independently to element and canvas centers", () => {
+    const draft = draftWith([rect("moving", 39.5, 29.5, 0, 0), rect("reference", 35, 15, 10, 10)])
+    const result = resolveDirectHandleSnap(
+      {
+        draft,
+        movingIds: ["moving"],
+        displayScale: 8,
+        enabled: true,
+        gridSize: 1,
+      },
+      { x: 39.5, y: 29.5, width: 0, height: 0 },
+      { x: ["center"], y: ["center"] }
+    )
+
+    expect(result.deltaX).toBeCloseTo(0.5)
+    expect(result.deltaY).toBeCloseTo(0.5)
+    expect(result.guides).toEqual(
+      expect.arrayContaining([
+        { axis: "x", coordinate: 40, kind: "element" },
+        { axis: "y", coordinate: 30, kind: "canvas" },
+      ])
+    )
+  })
+
+  it("keeps element center targets ahead of canvas centers and grid ties", () => {
+    const draft = draftWith([rect("moving", 49.5, 10, 0, 0), rect("reference", 45, 18, 10, 8)])
+    const result = resolveDirectHandleSnap(
+      {
+        draft,
+        movingIds: ["moving"],
+        displayScale: 8,
+        enabled: true,
+        gridSize: 1,
+      },
+      { x: 49.5, y: 10, width: 0, height: 0 },
+      { x: ["center"] }
+    )
+
+    expect(result.guides).toEqual([{ axis: "x", coordinate: 50, kind: "element" }])
+  })
+
   it("does not assign snap edges to the rotation handle", () => {
-    expect(getTransformerSnapEdges("rotater")).toBeNull()
+    expect(getTransformerSnapSources("rotater")).toBeNull()
   })
 })
