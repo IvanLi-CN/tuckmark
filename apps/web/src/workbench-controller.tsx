@@ -3,6 +3,7 @@ import React from "react"
 import { type ApiClient, createApiClient, loadSetup } from "./api-client.js"
 import { type BrowserPrintSource, materializeBrowserArtifactData } from "./browser-print-payload.js"
 import {
+  type BrowserPrintError,
   type BrowserPrinterSession,
   type BrowserPrintResult,
   connectBrowserPrinter,
@@ -75,6 +76,8 @@ import {
 type UiPrintResult = PrintResult | BrowserPrintResult
 const SYNC_PRESET_IDS = ["shipping-wide", "ops-tag", "compact-note"] as const
 const DATA_DIRECTORY_DEBOUNCE_MS = 900
+type DeviceDrawerAction = "connect-browser-printer" | "probe-printer" | "refresh-setup"
+type DeviceDrawerSection = "browser-direct" | "service-api"
 
 type DataDirectoryDialogState =
   | {
@@ -93,10 +96,19 @@ type DataDirectoryDialogState =
     }
 
 export type WorkbenchDataDirectoryDialogState = DataDirectoryDialogState
+export type WorkbenchDeviceDrawerFeedback = {
+  section: DeviceDrawerSection
+  action: DeviceDrawerAction
+  tone: "info" | "error"
+  title: string
+  message: string
+}
 export type WorkbenchStoryStateOverrides = {
   dataDirectoryBusy?: string | null
   dataDirectoryDialog?: DataDirectoryDialogState | null
   dataDirectoryStatus?: DataDirectoryStatus
+  deviceDrawerBusyAction?: DeviceDrawerAction | null
+  deviceDrawerFeedback?: WorkbenchDeviceDrawerFeedback | null
   directorySetupNudgeOpen?: boolean
 }
 
@@ -134,6 +146,33 @@ function sortPrinters(printers: Printer[]): Printer[] {
 function isPrinterUnavailableError(cause: unknown): boolean {
   const message = cause instanceof Error ? cause.message : String(cause)
   return message.includes("Printer is no longer available")
+}
+
+function describeDeviceDrawerFailure(
+  section: DeviceDrawerSection,
+  action: DeviceDrawerAction,
+  cause: unknown
+): WorkbenchDeviceDrawerFeedback {
+  const browserPrintError = cause as Partial<BrowserPrintError> | undefined
+  const message = cause instanceof Error ? cause.message : String(cause)
+  if (browserPrintError?.code === "cancelled") {
+    return {
+      section,
+      action,
+      tone: "info",
+      title: "已取消连接",
+      message: message.includes("重试") ? message : `${message} 可直接再次点击下方按钮重试。`,
+    }
+  }
+
+  switch (action) {
+    case "connect-browser-printer":
+      return { section, action, tone: "error", title: "连接失败", message }
+    case "probe-printer":
+      return { section, action, tone: "error", title: "探测失败", message }
+    case "refresh-setup":
+      return { section, action, tone: "error", title: "刷新设备失败", message }
+  }
 }
 
 function summarizeSourceTitle(source: BrowserPrintSource): string {
@@ -208,6 +247,12 @@ export function useWorkbenchController({
   const [dataDirectoryBusy, setDataDirectoryBusy] = React.useState<string | null>(
     storyStateOverrides?.dataDirectoryBusy ?? null
   )
+  const [deviceDrawerBusyAction, setDeviceDrawerBusyAction] =
+    React.useState<DeviceDrawerAction | null>(storyStateOverrides?.deviceDrawerBusyAction ?? null)
+  const [deviceDrawerFeedback, setDeviceDrawerFeedback] =
+    React.useState<WorkbenchDeviceDrawerFeedback | null>(
+      storyStateOverrides?.deviceDrawerFeedback ?? null
+    )
   const [dataDirectoryDialog, setDataDirectoryDialog] =
     React.useState<DataDirectoryDialogState | null>(
       storyStateOverrides?.dataDirectoryDialog ?? null
@@ -257,6 +302,12 @@ export function useWorkbenchController({
     }
     if ("dataDirectoryBusy" in storyStateOverrides) {
       setDataDirectoryBusy(storyStateOverrides.dataDirectoryBusy ?? null)
+    }
+    if ("deviceDrawerBusyAction" in storyStateOverrides) {
+      setDeviceDrawerBusyAction(storyStateOverrides.deviceDrawerBusyAction ?? null)
+    }
+    if ("deviceDrawerFeedback" in storyStateOverrides) {
+      setDeviceDrawerFeedback(storyStateOverrides.deviceDrawerFeedback ?? null)
     }
     if ("dataDirectoryDialog" in storyStateOverrides) {
       setDataDirectoryDialog(storyStateOverrides.dataDirectoryDialog ?? null)
@@ -448,6 +499,35 @@ export function useWorkbenchController({
       }
     },
     [refreshDataDirectoryStatus]
+  )
+
+  const clearDeviceDrawerFeedback = React.useCallback(() => {
+    setDeviceDrawerFeedback(null)
+  }, [])
+
+  const resetDeviceDrawerState = React.useCallback(() => {
+    setDeviceDrawerBusyAction(null)
+    setDeviceDrawerFeedback(null)
+  }, [])
+
+  const runDeviceDrawerTask = React.useCallback(
+    async <T,>(
+      section: DeviceDrawerSection,
+      action: DeviceDrawerAction,
+      task: () => Promise<T>
+    ): Promise<T | undefined> => {
+      setDeviceDrawerBusyAction(action)
+      setDeviceDrawerFeedback(null)
+      try {
+        return await task()
+      } catch (cause) {
+        setDeviceDrawerFeedback(describeDeviceDrawerFailure(section, action, cause))
+        return undefined
+      } finally {
+        setDeviceDrawerBusyAction(null)
+      }
+    },
+    []
   )
 
   const scheduleDataDirectorySync = React.useCallback(
@@ -1078,22 +1158,53 @@ export function useWorkbenchController({
 
   const connectPhysicalPrinter = React.useCallback(async () => {
     if (!browserDirectConfigured) {
-      setError("浏览器直连打印链路已被产品开关关闭。")
+      setDeviceDrawerFeedback({
+        section: "browser-direct",
+        action: "connect-browser-printer",
+        tone: "error",
+        title: "连接失败",
+        message: "浏览器直连打印链路已被产品开关关闭。",
+      })
       return
     }
     if (context.mode === "demo") {
-      setError("Demo mode 不触发真实硬件连接。")
+      setDeviceDrawerFeedback({
+        section: "browser-direct",
+        action: "connect-browser-printer",
+        tone: "error",
+        title: "连接失败",
+        message: "Demo mode 不触发真实硬件连接。",
+      })
       return
     }
     if (!browserPrintSupported) {
-      setError("当前浏览器不支持 Web Bluetooth。")
+      setDeviceDrawerFeedback({
+        section: "browser-direct",
+        action: "connect-browser-printer",
+        tone: "error",
+        title: "连接失败",
+        message: "当前浏览器不支持 Web Bluetooth。",
+      })
       return
     }
-    const result = await run("connect-browser-printer", () => connectBrowserPrinter())
+    const result = await runDeviceDrawerTask("browser-direct", "connect-browser-printer", () =>
+      connectBrowserPrinter()
+    )
     if (result) {
       setBrowserPrinter(result)
     }
-  }, [browserDirectConfigured, browserPrintSupported, context.mode, run])
+  }, [browserDirectConfigured, browserPrintSupported, context.mode, runDeviceDrawerTask])
+
+  const refreshDeviceDrawerSetup = React.useCallback(async () => {
+    const result = await runDeviceDrawerTask("service-api", "refresh-setup", async () => {
+      const setup = await refreshSetup()
+      setProbeResult(null)
+      return setup
+    })
+    if (result) {
+      setDeviceDrawerFeedback(null)
+    }
+  }, [refreshSetup, runDeviceDrawerTask])
 
   const probeSelectedPrinter = React.useCallback(async () => {
     if (!selectedPrinter) {
@@ -1110,6 +1221,29 @@ export function useWorkbenchController({
       setProbeResult(result)
     }
   }, [client, run, selectedPrinter])
+
+  const probeDeviceDrawerPrinter = React.useCallback(async () => {
+    if (!selectedPrinter) {
+      setDeviceDrawerFeedback({
+        section: "service-api",
+        action: "probe-printer",
+        tone: "error",
+        title: "探测失败",
+        message: "先选择一个 service-api 打印机。",
+      })
+      return
+    }
+    setProbeResult(null)
+    const result = await runDeviceDrawerTask("service-api", "probe-printer", () =>
+      client.probePrinter({
+        printerId: selectedPrinter.id,
+        printerName: selectedPrinter.name,
+      })
+    )
+    if (result) {
+      setProbeResult(result)
+    }
+  }, [client, runDeviceDrawerTask, selectedPrinter])
 
   const dismissDirectorySetupNudge = React.useCallback(() => {
     setDirectorySetupNudgeOpen(false)
@@ -1283,9 +1417,12 @@ export function useWorkbenchController({
     context,
     recordCanvasDraft,
     recordCanvasDimension,
+    clearDeviceDrawerFeedback,
     dataDirectoryBusy,
     dataDirectoryDialog,
     dataDirectoryStatus,
+    deviceDrawerBusyAction,
+    deviceDrawerFeedback,
     chooseDataDirectory,
     confirmDataDirectoryAttachment,
     cancelDataDirectoryDialog,
@@ -1312,12 +1449,15 @@ export function useWorkbenchController({
     printResult,
     printSourceDirect,
     probeResult,
+    probeDeviceDrawerPrinter,
     probeSelectedPrinter,
     recentActivity,
+    refreshDeviceDrawerSetup,
     refreshSetup,
     rememberPrinterSelection,
     renderOptions,
     refreshDataDirectoryStatus,
+    resetDeviceDrawerState,
     selectedPrinter,
     serverPrinterSelectionMode,
     serviceApiLive,

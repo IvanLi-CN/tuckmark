@@ -808,6 +808,16 @@ function queryButton(label: string): HTMLButtonElement {
   return button
 }
 
+async function openDeviceDrawer(): Promise<void> {
+  await act(async () => {
+    const deviceButtons = Array.from(document.querySelectorAll("button")).filter((item) =>
+      item.textContent?.includes("选择设备")
+    )
+    deviceButtons[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await flush()
+  })
+}
+
 function queryCanvasLayerNameInputs(): HTMLInputElement[] {
   return Array.from(
     document.querySelectorAll('.tm-layer-list--inspector input[aria-label$="图层名称"]')
@@ -2262,14 +2272,7 @@ describe("web workbench app", () => {
 
   it("opens the device drawer and connects browser direct printer", async () => {
     await renderApp(browserRuntimeContext)
-
-    await act(async () => {
-      const deviceButtons = Array.from(document.querySelectorAll("button")).filter((item) =>
-        item.textContent?.includes("选择设备")
-      )
-      deviceButtons[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await flush()
-    })
+    await openDeviceDrawer()
 
     expect(document.body.textContent).toContain("设备与打印路径")
 
@@ -2279,6 +2282,135 @@ describe("web workbench app", () => {
     })
 
     expect(browserPrinterMocks.connectBrowserPrinter).toHaveBeenCalledOnce()
+  })
+
+  it("keeps the device drawer open after chooser cancel and allows an immediate retry", async () => {
+    browserPrinterMocks.connectBrowserPrinter
+      .mockRejectedValueOnce(
+        Object.assign(new Error("已取消选择蓝牙打印机。"), { code: "cancelled" as const })
+      )
+      .mockResolvedValueOnce({
+        deviceId: "browser-printer-1",
+        name: "Browser P2",
+      })
+
+    await renderApp(browserRuntimeContext)
+    await openDeviceDrawer()
+
+    await act(async () => {
+      queryButton("连接浏览器直连打印机").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    expect(document.body.textContent).toContain("设备与打印路径")
+    expect(document.body.textContent).toContain("已取消连接")
+    expect(document.body.textContent).toContain("可直接再次点击下方按钮重试。")
+
+    await act(async () => {
+      queryButton("连接浏览器直连打印机").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    expect(browserPrinterMocks.connectBrowserPrinter).toHaveBeenCalledTimes(2)
+    expect(document.body.textContent).toContain("Browser P2")
+    expect(document.body.textContent).not.toContain("已取消连接")
+  })
+
+  it("keeps hard browser-direct failures inside the device drawer", async () => {
+    browserPrinterMocks.connectBrowserPrinter.mockRejectedValueOnce(new Error("GATT 连接失败。"))
+
+    await renderApp(browserRuntimeContext)
+    await openDeviceDrawer()
+
+    await act(async () => {
+      queryButton("连接浏览器直连打印机").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    expect(document.body.textContent).toContain("设备与打印路径")
+    expect(document.body.textContent).toContain("连接失败")
+    expect(document.body.textContent).toContain("GATT 连接失败。")
+
+    await act(async () => {
+      queryButton("关闭").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush()
+    })
+
+    expect(document.body.textContent).toContain("设备与打印路径")
+    expect(document.body.textContent).not.toContain("连接失败")
+  })
+
+  it("shows a busy state while browser-direct connection is in flight", async () => {
+    let resolveConnect: ((value: { deviceId: string; name: string }) => void) | null = null
+    browserPrinterMocks.connectBrowserPrinter.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveConnect = resolve
+        })
+    )
+
+    await renderApp(browserRuntimeContext)
+    await openDeviceDrawer()
+
+    await act(async () => {
+      queryButton("连接浏览器直连打印机").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(2)
+    })
+
+    expect(queryButton("连接中…").disabled).toBe(true)
+
+    await act(async () => {
+      resolveConnect?.({
+        deviceId: "browser-printer-1",
+        name: "Browser P2",
+      })
+      await flush(4)
+    })
+
+    expect(document.body.textContent).toContain("Browser P2")
+    expect(queryButton("重新连接浏览器直连打印机").disabled).toBe(false)
+  })
+
+  it("clears temporary drawer feedback after the drawer is closed and reopened", async () => {
+    browserPrinterMocks.connectBrowserPrinter.mockRejectedValueOnce(
+      Object.assign(new Error("已取消选择蓝牙打印机。"), { code: "cancelled" as const })
+    )
+
+    await renderApp(browserRuntimeContext)
+    await openDeviceDrawer()
+
+    await act(async () => {
+      queryButton("连接浏览器直连打印机").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    expect(document.body.textContent).toContain("已取消连接")
+
+    await act(async () => {
+      queryButton("Close").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush()
+    })
+
+    expect(document.body.textContent).not.toContain("设备与打印路径")
+
+    await openDeviceDrawer()
+
+    expect(document.body.textContent).toContain("设备与打印路径")
+    expect(document.body.textContent).not.toContain("已取消连接")
+  })
+
+  it("keeps service-api probe failures inside the device drawer", async () => {
+    await renderApp(browserRuntimeContext)
+    await openDeviceDrawer()
+
+    await act(async () => {
+      queryButton("探测设备").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    expect(document.body.textContent).toContain("设备与打印路径")
+    expect(document.body.textContent).toContain("探测失败")
+    expect(document.body.textContent).toContain("先选择一个 service-api 打印机。")
   })
 
   it("keeps demo mode on the formal app surface without touching hardware APIs", async () => {

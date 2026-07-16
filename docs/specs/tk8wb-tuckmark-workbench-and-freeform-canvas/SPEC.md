@@ -57,6 +57,9 @@ output.
   - left: product mark and primary navigation
   - right: device entry button
 - The device entry button opens a right-side `device drawer`.
+- Device-drawer actions keep their recoverable failure and cancellation
+  feedback inside the drawer instead of closing the drawer or escalating to a
+  separate blocking surface.
 - `StatusFooter` contains:
   - left: active surface, mode, and route path
   - right: GitHub repository link, owner-facing release/build metadata, site
@@ -554,6 +557,9 @@ output.
   `browser-static`.
 - The device drawer opens from any page, supports keyboard close, and restores
   focus to the trigger.
+- Browser-direct chooser cancellation and recoverable device-drawer action
+  failures keep the device drawer open, keep the primary retry action in place,
+  and clear temporary inline feedback after the drawer is closed.
 - `browser-static` supports deep-link refresh through `404.html`.
 - Template workspace supports `0`, `1`, and `20` rows without layout breakage.
 - Canvas workspace supports create, select, move, resize, rotate, duplicate,
@@ -686,6 +692,18 @@ output.
 
   PR: include
   ![Template large grid with add-template actions](./assets/templates-large-grid-add-button-1440x900.png)
+
+- `1440×900` homepage device drawer keeps inline browser-direct cancellation
+  feedback visible while preserving the primary reconnect action.
+
+  PR: include
+  ![Device drawer browser-direct cancelled state](./assets/device-drawer-browser-direct-cancelled-1440x900.png)
+
+- `1440×900` homepage device drawer shows the browser-direct connection busy
+  state in place without leaving the drawer context.
+
+  PR: include
+  ![Device drawer browser-direct busy state](./assets/device-drawer-browser-direct-busy-1440x900.png)
 
 - `1440×900` template list segmented tabs use matching outer, indicator, and button geometry
 

@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Copy,
   Eye,
+  Info,
   Layers3,
   LayoutGrid,
   LayoutList,
@@ -103,6 +104,7 @@ import {
 import {
   createInitialTemplateRows,
   useWorkbenchController,
+  type WorkbenchDeviceDrawerFeedback,
   type WorkbenchStoryStateOverrides,
 } from "./workbench-controller.js"
 
@@ -1341,6 +1343,15 @@ function WorkbenchLayout({
   const runtimePwaUpdate = usePwaUpdate(controller.context)
   const pwaUpdate = pwaUpdateSnapshot ?? runtimePwaUpdate
   const isCanvasRoute = location.pathname === "/canvas"
+  const handleDrawerOpenChange = React.useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        controller.resetDeviceDrawerState()
+      }
+      setDrawerOpen(nextOpen)
+    },
+    [controller]
+  )
 
   const surfaceLabel =
     controller.context.surface === "server-http" ? "Server HTTP" : "Browser static"
@@ -1444,8 +1455,37 @@ function WorkbenchLayout({
         }}
       />
 
-      <DeviceDrawer controller={controller} open={drawerOpen} onOpenChange={setDrawerOpen} />
+      <DeviceDrawer
+        controller={controller}
+        open={drawerOpen}
+        onOpenChange={handleDrawerOpenChange}
+      />
     </div>
+  )
+}
+
+function DeviceDrawerFeedbackAlert({
+  feedback,
+  onDismiss,
+}: {
+  feedback: WorkbenchDeviceDrawerFeedback
+  onDismiss: () => void
+}) {
+  const isError = feedback.tone === "error"
+
+  return (
+    <Alert variant={isError ? "destructive" : "default"}>
+      {isError ? <AlertCircle className="mt-0.5 size-4" /> : <Info className="mt-0.5 size-4" />}
+      <AlertTitle>{feedback.title}</AlertTitle>
+      <AlertDescription className="grid gap-3">
+        <span>{feedback.message}</span>
+        <div className="flex justify-end">
+          <Button type="button" variant="outline" size="sm" onClick={onDismiss}>
+            关闭
+          </Button>
+        </div>
+      </AlertDescription>
+    </Alert>
   )
 }
 
@@ -1458,6 +1498,19 @@ function DeviceDrawer({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const drawerBusy = controller.deviceDrawerBusyAction !== null
+  const serviceApiFeedback =
+    controller.deviceDrawerFeedback?.section === "service-api"
+      ? controller.deviceDrawerFeedback
+      : null
+  const browserDirectFeedback =
+    controller.deviceDrawerFeedback?.section === "browser-direct"
+      ? controller.deviceDrawerFeedback
+      : null
+  const refreshBusy = controller.deviceDrawerBusyAction === "refresh-setup"
+  const probeBusy = controller.deviceDrawerBusyAction === "probe-printer"
+  const connectBusy = controller.deviceDrawerBusyAction === "connect-browser-printer"
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="flex w-full max-w-[420px] flex-col">
@@ -1522,20 +1575,28 @@ function DeviceDrawer({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => void controller.refreshSetup()}
+                  disabled={drawerBusy}
+                  onClick={() => void controller.refreshDeviceDrawerSetup()}
                 >
-                  <RefreshCcw className="size-4" />
-                  <span>刷新设备</span>
+                  <RefreshCcw className={cn("size-4", refreshBusy && "animate-spin")} />
+                  <span>{refreshBusy ? "刷新中…" : "刷新设备"}</span>
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => void controller.probeSelectedPrinter()}
+                  disabled={drawerBusy}
+                  onClick={() => void controller.probeDeviceDrawerPrinter()}
                 >
-                  <ScanSearch className="size-4" />
-                  <span>探测设备</span>
+                  <ScanSearch className={cn("size-4", probeBusy && "animate-pulse")} />
+                  <span>{probeBusy ? "探测中…" : "探测设备"}</span>
                 </Button>
               </div>
+              {serviceApiFeedback ? (
+                <DeviceDrawerFeedbackAlert
+                  feedback={serviceApiFeedback}
+                  onDismiss={controller.clearDeviceDrawerFeedback}
+                />
+              ) : null}
             </CardContent>
           </Card>
 
@@ -1559,12 +1620,28 @@ function DeviceDrawer({
                   <div className="text-muted-foreground">当前没有浏览器直连打印机会话。</div>
                 )}
               </div>
-              <Button type="button" onClick={() => void controller.connectPhysicalPrinter()}>
+              <Button
+                type="button"
+                disabled={drawerBusy}
+                onClick={() => void controller.connectPhysicalPrinter()}
+              >
                 <Wifi className="size-4" />
                 <span>
-                  {controller.browserPrinter ? "重新连接浏览器直连打印机" : "连接浏览器直连打印机"}
+                  {connectBusy
+                    ? controller.browserPrinter
+                      ? "重新连接中…"
+                      : "连接中…"
+                    : controller.browserPrinter
+                      ? "重新连接浏览器直连打印机"
+                      : "连接浏览器直连打印机"}
                 </span>
               </Button>
+              {browserDirectFeedback ? (
+                <DeviceDrawerFeedbackAlert
+                  feedback={browserDirectFeedback}
+                  onDismiss={controller.clearDeviceDrawerFeedback}
+                />
+              ) : null}
             </CardContent>
           </Card>
 
