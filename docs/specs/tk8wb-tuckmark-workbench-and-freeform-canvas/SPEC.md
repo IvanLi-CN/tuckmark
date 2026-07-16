@@ -254,7 +254,7 @@ output.
 - New text elements default to `noto-sans-sc`.
 - New manually inserted text defaults to `stretchXShrink=true`,
   `stretchXGrow=false`, `stretchYGrow=false`, `stretchYShrink=false`, and
-  `adaptiveFontSize=false`.
+  `adaptiveFontSize=false`; `自动换行` defaults to off for newly inserted text.
 - The text inspector retains the `字号` field label and keeps `0.1 mm` editing
   precision with a `1.0 mm` lower bound.
 - When adaptive sizing is enabled, the inspector disables the `字号` input and
@@ -869,8 +869,8 @@ output.
   ![Canvas text container controls](./assets/canvas-text-container-controls-1280x800.png)
 
 - `1280×800` canvas workspace showing a newly created text layer with the
-  selected inspector explicitly displaying `字号` at `5.0` and the default
-  `水平挤压` state enabled.
+  selected inspector explicitly displaying `字号` at `5.0`, `自动换行` off,
+  and the default `水平挤压` state enabled.
 
   ![Canvas text default 5 millimeters](./assets/canvas-text-default-5mm-1280x800.png)
 

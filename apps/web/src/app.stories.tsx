@@ -966,6 +966,8 @@ export const CanvasWorkspaceTextReady: Story = {
     await canvas.findByText("已选 1 项")
     const fontSize = await canvas.findByLabelText("字号")
     await expect(fontSize).toHaveDisplayValue("5.0")
+    const wrapButton = await canvas.findByRole("button", { name: "自动换行" })
+    await expect(wrapButton).toHaveAttribute("aria-pressed", "false")
     const horizontalShrink = await canvas.findByRole("button", { name: "水平挤压" })
     await expect(horizontalShrink).toHaveAttribute("aria-pressed", "true")
     const verticalShrink = await canvas.findByRole("button", { name: "垂直挤压" })

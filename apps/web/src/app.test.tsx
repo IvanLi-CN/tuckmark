@@ -2191,6 +2191,23 @@ describe("web workbench app", () => {
     expect(fontSizeInput?.disabled).toBe(false)
   })
 
+  it("defaults new text elements to wrap off while keeping horizontal squeeze on", async () => {
+    await renderWorkbenchApp(browserRuntimeContext, "text-ready")
+    await flush(4)
+
+    const wrapButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("自动换行")
+    ) as HTMLButtonElement | null
+    const horizontalShrinkButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("水平挤压")
+    ) as HTMLButtonElement | null
+
+    expect(wrapButton).not.toBeNull()
+    expect(horizontalShrinkButton).not.toBeNull()
+    expect(wrapButton?.getAttribute("aria-pressed")).toBe("false")
+    expect(horizontalShrinkButton?.getAttribute("aria-pressed")).toBe("true")
+  })
+
   it("keeps justify inline editing aligned for middle anchored text", async () => {
     await renderWorkbenchApp(browserRuntimeContext, "text-justify-centered-selected")
     await flush(4)

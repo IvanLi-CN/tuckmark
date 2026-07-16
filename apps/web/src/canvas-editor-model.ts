@@ -389,7 +389,7 @@ export function createCanvasElement(
           stretchXShrink: true,
           stretchYGrow: false,
           stretchYShrink: false,
-          autoWrap: true,
+          autoWrap: false,
           adaptiveFontSize: false,
           verticalText: false,
           value: "可编辑文本",
@@ -508,6 +508,7 @@ function buildPresetElements(presetId: string): CanvasDraftElement[] {
     stretchXShrink: false,
     stretchYGrow: false,
     stretchYShrink: false,
+    autoWrap: true,
     adaptiveFontSize: false,
   } as const
   if (presetId === "ops-tag") {
@@ -805,7 +806,7 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
           stretchXShrink: physicalElement.stretchXShrink ?? physicalElement.stretchX ?? false,
           stretchYGrow: physicalElement.stretchYGrow ?? physicalElement.stretchY ?? false,
           stretchYShrink: physicalElement.stretchYShrink ?? physicalElement.stretchY ?? false,
-          autoWrap: physicalElement.autoWrap,
+          autoWrap: physicalElement.autoWrap ?? true,
           adaptiveFontSize: physicalElement.adaptiveFontSize ?? false,
           verticalText: physicalElement.verticalText ?? false,
           value: resolveInitialFieldValue(field) ?? physicalElement.value ?? "",

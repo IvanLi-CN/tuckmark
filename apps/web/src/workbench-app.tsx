@@ -420,7 +420,7 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         stretchXShrink: true,
         stretchYGrow: false,
         stretchYShrink: false,
-        autoWrap: true,
+        autoWrap: false,
         adaptiveFontSize: false,
         verticalText: false,
         value: "Editable text",
