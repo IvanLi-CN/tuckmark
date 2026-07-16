@@ -10,6 +10,17 @@ through the shared artifact seam.
 This spec also records the follow-up UI convergence decisions that happened
 while the workbench was being productized:
 
+- The browser-local durability model was later widened again so the installed
+  PWA can own durable data without a companion desktop helper:
+  - supported Chromium desktop surfaces now prefer `SQLite Wasm + OPFS` for the
+    runtime store instead of relying on scattered ad-hoc browser keys
+  - `/system` became the owner-facing surface for directory authorization,
+    JSON mirror health, manual backup, restore, and whole-dataset import /
+    export
+  - fixed-location backups and ad-hoc exports now share the same ZIP archive
+    contract, while restore / import create a protection snapshot first
+  - directory writes are coordinated by a single-writer cross-tab lease, and
+    first-save only nudges for directory setup once per profile
 - template browsing keeps two explicit modes, but compactness is controlled at
   the item level instead of shrinking the whole pane indiscriminately
 - list-mode thumbnails keep a readable minimum preview size instead of being

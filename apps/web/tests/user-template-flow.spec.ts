@@ -60,3 +60,25 @@ test("preset-template working copies survive reload before first save", async ({
   await expect(page.getByText("系统模板：Cable Tag")).toBeVisible()
   await expect(layerItems).toHaveCount(6)
 })
+
+test("first successful user-template save surfaces the data-directory setup nudge", async ({
+  page,
+}) => {
+  await page.goto("/canvas?source=preset-template&templateId=cable-tag")
+
+  await expect(page.getByText("系统模板：Cable Tag")).toBeVisible()
+  await page.getByRole("button", { name: "保存" }).click()
+  await expect(page.getByRole("dialog", { name: "保存为用户模板" })).toBeVisible()
+  await page.getByLabel("模板名称").fill("Nudge Ready Template")
+  await page
+    .getByRole("dialog", { name: "保存为用户模板" })
+    .getByRole("button", { name: "保存" })
+    .click()
+
+  await expect(page.getByText("建议授权数据目录")).toBeVisible()
+  await page.goto("/system")
+
+  await expect(page).toHaveURL(/\/system$/)
+  await expect(page.getByRole("heading", { name: "本地数据目录与备份" })).toBeVisible()
+  await expect(page.getByText("未配置").first()).toBeVisible()
+})

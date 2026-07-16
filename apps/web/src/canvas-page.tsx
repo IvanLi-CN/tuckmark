@@ -2705,7 +2705,10 @@ async function loadDraftForSource(source: CanvasDraftSource): Promise<{
     const workingCopy = await loadWorkingCopy(source)
     if (workingCopy?.draft) {
       return {
-        draft: workingCopy.draft,
+        draft: {
+          ...workingCopy.draft,
+          source,
+        },
         versionHistory: null,
       }
     }
@@ -2729,7 +2732,10 @@ async function loadDraftForSource(source: CanvasDraftSource): Promise<{
   const workingCopy = await loadWorkingCopy(source)
   if (workingCopy?.draft) {
     return {
-      draft: workingCopy.draft,
+      draft: {
+        ...workingCopy.draft,
+        source,
+      },
       versionHistory: null,
     }
   }
@@ -4353,7 +4359,7 @@ function CanvasOutput({
               value={String(controller.renderOptions.printWidthDots)}
               onChange={(event) => {
                 const rawValue = event.currentTarget.value
-                controller.setRenderOptions((current) => ({
+                controller.updateRenderOptions((current) => ({
                   ...current,
                   printWidthDots: Number(rawValue || current.printWidthDots),
                 }))
@@ -4365,7 +4371,7 @@ function CanvasOutput({
             <Select
               value={controller.renderOptions.paperType}
               onValueChange={(value: "continuous" | "gap") =>
-                controller.setRenderOptions((current) => ({ ...current, paperType: value }))
+                controller.updateRenderOptions((current) => ({ ...current, paperType: value }))
               }
             >
               <SelectTrigger id="paper-type">
@@ -4386,7 +4392,7 @@ function CanvasOutput({
               value={String(controller.renderOptions.threshold)}
               onChange={(event) => {
                 const rawValue = event.currentTarget.value
-                controller.setRenderOptions((current) => ({
+                controller.updateRenderOptions((current) => ({
                   ...current,
                   threshold: Number(rawValue || current.threshold),
                 }))
@@ -4404,7 +4410,7 @@ function CanvasOutput({
               value={String(controller.renderOptions.xOffsetDots)}
               onChange={(event) => {
                 const rawValue = event.currentTarget.value
-                controller.setRenderOptions((current) => ({
+                controller.updateRenderOptions((current) => ({
                   ...current,
                   xOffsetDots: Number(rawValue || current.xOffsetDots),
                 }))
@@ -6387,6 +6393,10 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       !startupSyncPending &&
       state.storageMode !== "reset-pending"
     ) {
+      void replaceUserTemplateWorkingCopy({
+        source: autosaveRouteSource,
+        document: autosaveDocument,
+      })
       persistDraftDocument(autosaveDocument)
     }
   }, [
@@ -6737,6 +6747,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
         height: result.workingCopy.draft.height,
       })
       await controller.refreshUserTemplates()
+      await controller.handleImportantUserDataSaved()
 
       const history = await readUserTemplateHistory(result.template.id)
       navigate(
@@ -6756,6 +6767,8 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       )
     },
     [
+      controller.handleImportantUserDataSaved,
+      controller.recordCanvasDimension,
       controller.refreshUserTemplates,
       draftWithCurrentRenderOptions,
       navigate,
@@ -6763,7 +6776,6 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
       state.liveDraft,
       state.readOnlyVersion,
       state.routeSource,
-      controller.recordCanvasDimension,
     ]
   )
 

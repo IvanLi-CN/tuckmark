@@ -76,6 +76,7 @@ import {
 } from "./components/ui/select.js"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
+import { DataDirectoryNudgeToast } from "./data-directory-nudge-toast.js"
 import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
 import { FooterBuildMeta } from "./footer-build-meta.js"
 import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
@@ -83,6 +84,7 @@ import { canvasDotsToMillimeters } from "./lib/canvas-units.js"
 import { cn } from "./lib/utils.js"
 import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import { applyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
+import { SystemDataStorageCard } from "./system-data-storage-card.js"
 import type {
   AppContext,
   CanvasDocumentPreset,
@@ -98,7 +100,11 @@ import {
   readUserTemplateHistory,
   saveUserTemplate,
 } from "./user-template-store.js"
-import { createInitialTemplateRows, useWorkbenchController } from "./workbench-controller.js"
+import {
+  createInitialTemplateRows,
+  useWorkbenchController,
+  type WorkbenchStoryStateOverrides,
+} from "./workbench-controller.js"
 
 type AppProps = {
   client?: ApiClient
@@ -1330,6 +1336,7 @@ function WorkbenchLayout({
   pwaUpdateSnapshot?: PwaUpdateSnapshot
 }) {
   const location = useLocation()
+  const navigate = useNavigate()
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const runtimePwaUpdate = usePwaUpdate(controller.context)
   const pwaUpdate = pwaUpdateSnapshot ?? runtimePwaUpdate
@@ -1425,6 +1432,15 @@ function WorkbenchLayout({
             return
           }
           applyPwaUpdate(pwaUpdate)
+        }}
+      />
+
+      <DataDirectoryNudgeToast
+        open={controller.directorySetupNudgeOpen}
+        onDismiss={controller.dismissDirectorySetupNudge}
+        onOpenSystem={() => {
+          controller.dismissDirectorySetupNudge()
+          navigate("/system")
         }}
       />
 
@@ -2322,6 +2338,24 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
   return (
     <section className="tm-system">
       <div className="tm-system__grid">
+        <SystemDataStorageCard
+          busy={controller.dataDirectoryBusy}
+          dialog={controller.dataDirectoryDialog}
+          status={controller.dataDirectoryStatus}
+          onCancelDialog={controller.cancelDataDirectoryDialog}
+          onChooseDirectory={() => void controller.chooseDataDirectory()}
+          onConfirmAttachment={(mode) => void controller.confirmDataDirectoryAttachment(mode)}
+          onConfirmImport={() => void controller.confirmImportDataArchive()}
+          onConfirmRestore={() => void controller.confirmRestoreBackup()}
+          onCreateBackup={() => void controller.createManualDataBackup()}
+          onExportArchive={() => void controller.exportDataArchive()}
+          onInspectImportArchive={(file) => void controller.inspectImportDataArchive(file)}
+          onInspectRestoreBackup={(entry) => void controller.inspectRestoreBackup(entry)}
+          onRequestPermission={() => void controller.requestDataDirectoryPermission()}
+          onSyncNow={() => void controller.syncDataDirectoryNow()}
+          onTakeOverWrites={controller.takeOverDataDirectoryWrites}
+        />
+
         <Card className="tm-panel">
           <CardHeader>
             <CardTitle as="h2">应用设置</CardTitle>
@@ -2668,7 +2702,7 @@ function RenderOptionsForm({
               onFocus={onFocusRight}
               onChange={(event) => {
                 const rawValue = event.currentTarget.value
-                controller.setRenderOptions((current) => ({
+                controller.updateRenderOptions((current) => ({
                   ...current,
                   printWidthDots: Number(rawValue || current.printWidthDots),
                 }))
@@ -2681,7 +2715,7 @@ function RenderOptionsForm({
               value={options.paperType}
               disabled={disabled}
               onValueChange={(value: "continuous" | "gap") =>
-                controller.setRenderOptions((current) => ({ ...current, paperType: value }))
+                controller.updateRenderOptions((current) => ({ ...current, paperType: value }))
               }
             >
               <SelectTrigger id="paper-type" disabled={disabled} onFocus={onFocusRight}>
@@ -2703,7 +2737,7 @@ function RenderOptionsForm({
               onFocus={onFocusRight}
               onChange={(event) => {
                 const rawValue = event.currentTarget.value
-                controller.setRenderOptions((current) => ({
+                controller.updateRenderOptions((current) => ({
                   ...current,
                   threshold: Number(rawValue || current.threshold),
                 }))
@@ -2720,7 +2754,7 @@ function RenderOptionsForm({
               onFocus={onFocusRight}
               onChange={(event) => {
                 const rawValue = event.currentTarget.value
-                controller.setRenderOptions((current) => ({
+                controller.updateRenderOptions((current) => ({
                   ...current,
                   xOffsetDots: Number(rawValue || current.xOffsetDots),
                 }))
@@ -3301,10 +3335,12 @@ export function WorkbenchAppStory({
   canvasScenario,
   pwaUpdateSnapshot,
   initialEntries = ["/"],
+  storyStateOverrides,
 }: AppProps & {
   initialEntries?: string[]
+  storyStateOverrides?: WorkbenchStoryStateOverrides
 }) {
-  const controller = useWorkbenchController({ client, context })
+  const controller = useWorkbenchController({ client, context, storyStateOverrides })
   return (
     <MemoryRouter initialEntries={initialEntries}>
       <WorkbenchRouter
