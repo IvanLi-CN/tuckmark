@@ -56,9 +56,14 @@ export type CanvasElement =
       align: TextHorizontalAlign
       justifyAlign?: Exclude<TextHorizontalAlign, "justify">
       verticalAlign: TextVerticalAlign
-      stretchX: boolean
-      stretchY: boolean
+      stretchXGrow: boolean
+      stretchXShrink: boolean
+      stretchYGrow: boolean
+      stretchYShrink: boolean
+      stretchX?: boolean
+      stretchY?: boolean
       autoWrap: boolean
+      adaptiveFontSize: boolean
       verticalText: boolean
       value: string
       maxLines?: number

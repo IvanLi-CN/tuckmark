@@ -185,7 +185,11 @@ output.
     class print contract
   - `text` uses top-left `x/y` container geometry with persisted `width`,
     `height`, `fontSize`, `fontFamily`, `lineHeight`, horizontal `align`,
-    `verticalAlign`, `stretchX`, `stretchY`, `autoWrap`, and `verticalText`
+    `verticalAlign`, `stretchXGrow`, `stretchXShrink`, `stretchYGrow`,
+    `stretchYShrink`, `autoWrap`, `adaptiveFontSize`, and `verticalText`
+  - legacy serialized text values `stretchX` and `stretchY` remain readable:
+    `true` maps to both grow and shrink on that axis, while `false` or missing
+    leaves both axis-fit flags disabled
   - canvas-draft `fontSize` is the font design size in millimeters, not CSS
     pixels, typographic points, or a normalized visible-ink height; new text
     and plain-text paste start at `5.0 mm`, which compiles to `40 dots` at the
@@ -205,7 +209,7 @@ output.
     batch transforms
 - Text transform semantics match a fixed-container text model:
   - resizing a text element changes only the container `width` and `height`
-  - resizing never writes back a changed `fontSize`
+  - resizing alone never writes back a changed `fontSize`
   - without stretch enabled, text keeps its natural glyph size and is laid out
     inside the container according to horizontal and vertical alignment
   - line height is an explicit text property that controls the distance between
@@ -213,15 +217,25 @@ output.
   - automatic wrapping is an explicit text property; when enabled, text wraps
     within the container width, including long-token character breaks; when
     disabled, explicit lines stay unwrapped and are clipped by the container
+  - adaptive font sizing forces layout through the effective no-wrap path while
+    keeping `autoWrap` persisted as the user preference; when adaptive sizing
+    is later turned off, the saved `autoWrap` preference becomes effective
+    again
   - horizontal `align` supports `justify`; justified text distributes extra
     spacing between visible characters so the line fills the text container
     width without changing `fontSize`
+  - `justify` and horizontal grow are mutually exclusive in the inspector:
+    enabling either one clears the other, while horizontal shrink remains
+    compatible with both
   - vertical text lays out glyphs top-to-bottom in columns and uses the same
     container clipping, BBOX alignment, wrapping, and stretch contracts as
     horizontal text
-  - with horizontal or vertical stretch enabled, rendered text content is scaled
-    in that axis to fill the container while the saved `fontSize` remains
-    unchanged
+  - grow and shrink are tracked independently on each axis:
+    grow expands natural content only when the container has extra room, and
+    shrink compresses it only when the natural content would overflow
+  - adaptive font sizing uses the shared measured natural height to write back
+    a corrected `fontSize` so the rendered text height matches the element
+    height across stage editing, inline editing, preview, and print
 - Preview and print normalize editor state into `DirectCanvasDefinition` and
   then flow through shared renderer, preview, and print seams.
 - Rotated multiline text in preview and print must rotate around the rendered
@@ -232,13 +246,20 @@ output.
   looser browser line box. Without stretch, the BBOX keeps the saved font size
   and line height, then moves inside the element container according to the
   selected horizontal and vertical alignment so the BBOX edge can touch the
-  matching container edge. Stretch changes rendered scale only; it does not
-  write scale back into `fontSize`.
+  matching container edge. Axis grow/shrink changes rendered scale only; it
+  does not write scale back into `fontSize`. Adaptive sizing is the only text
+  fit mode that intentionally updates the saved `fontSize`.
 - Text rendering is clipped to the text element container on the stage and in
   SVG / print output. Text ink must not render outside the element bounds.
 - New text elements default to `noto-sans-sc`.
+- New manually inserted text defaults to `stretchXShrink=true`,
+  `stretchXGrow=false`, `stretchYGrow=false`, `stretchYShrink=false`, and
+  `adaptiveFontSize=false`.
 - The text inspector retains the `字号` field label and keeps `0.1 mm` editing
   precision with a `1.0 mm` lower bound.
+- When adaptive sizing is enabled, the inspector disables the `字号` input and
+  shows `自动换行` as disabled and off while preserving the saved wrap
+  preference under the hood.
 - Existing templates, saved drafts, and imported elements retain their stored
   font sizes; the new-text default does not migrate or reflow them.
 - Text font families resolve through one deterministic contract shared by:
@@ -848,7 +869,8 @@ output.
   ![Canvas text container controls](./assets/canvas-text-container-controls-1280x800.png)
 
 - `1280×800` canvas workspace showing a newly created text layer with the
-  selected inspector explicitly displaying `字号` at `5.0`.
+  selected inspector explicitly displaying `字号` at `5.0` and the default
+  `水平挤压` state enabled.
 
   ![Canvas text default 5 millimeters](./assets/canvas-text-default-5mm-1280x800.png)
 
@@ -859,11 +881,19 @@ output.
   ![Canvas flat font selector](./assets/canvas-text-font-family-select-flat-20260708.png)
 
 - `1280×800` canvas workspace text flow controls showing two-end
-  justification, vertical text, wrapping, stretch toggles, and rotation split
-  into two inspector columns
+  justification, wrapping, horizontal grow/shrink, vertical grow/shrink,
+  adaptive sizing, vertical text, and rotation split into two inspector
+  columns
 
   PR: include
   ![Canvas text flow controls](./assets/canvas-text-flow-justify-vertical.png)
+
+- `1280×800` canvas workspace text adaptive-sizing state showing `自适应`
+  enabled, `自动换行` disabled in the off state, and `字号` locked while the
+  shared layout shrinks text to the selected container height.
+
+  PR: include
+  ![Canvas adaptive font sizing](./assets/canvas-text-adaptive-font-size-1280x800.png)
 
 - Canvas text rotation controls showing integer-only rotation input and
   adjacent 45-degree counterclockwise / clockwise increment buttons

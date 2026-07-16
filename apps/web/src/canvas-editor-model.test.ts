@@ -128,9 +128,12 @@ describe("canvas-editor-model monochrome contract", () => {
       fontFamily: DEFAULT_TEXT_FONT_FAMILY,
       lineHeight: 1.2,
       verticalAlign: "top",
-      stretchX: false,
-      stretchY: false,
+      stretchXGrow: false,
+      stretchXShrink: true,
+      stretchYGrow: false,
+      stretchYShrink: false,
       autoWrap: true,
+      adaptiveFontSize: false,
       verticalText: false,
     })
     expect(text.kind === "text" ? text.height : 0).toBeGreaterThan(0)
@@ -258,8 +261,18 @@ describe("canvas-editor-model monochrome contract", () => {
     }
 
     const legacyText = {
-      ...text,
+      id: text.id,
+      kind: text.kind,
+      x: text.x,
       y: 18,
+      width: text.width,
+      fontSize: text.fontSize,
+      fontWeight: text.fontWeight,
+      align: text.align,
+      value: text.value,
+      maxLines: text.maxLines,
+      rotation: text.rotation,
+      meta: text.meta,
       height: undefined,
       fontFamily: undefined,
       verticalAlign: undefined,
@@ -285,10 +298,96 @@ describe("canvas-editor-model monochrome contract", () => {
       expect(restoredText.fontFamily).toBe(DEFAULT_TEXT_FONT_FAMILY)
       expect(restoredText.lineHeight).toBe(1.2)
       expect(restoredText.verticalAlign).toBe("top")
-      expect(restoredText.stretchX).toBe(false)
-      expect(restoredText.stretchY).toBe(false)
+      expect(restoredText.stretchXGrow).toBe(false)
+      expect(restoredText.stretchXShrink).toBe(false)
+      expect(restoredText.stretchYGrow).toBe(false)
+      expect(restoredText.stretchYShrink).toBe(false)
       expect(restoredText.autoWrap).toBe(true)
+      expect(restoredText.adaptiveFontSize).toBe(false)
       expect(restoredText.verticalText).toBe(false)
+    }
+  })
+
+  it("maps legacy stretch flags onto grow and shrink flags when restoring text", () => {
+    const preset = getPresetById("shipping-wide")
+    const draft = createDraftFromPreset(preset)
+    const text = draft.elements.find((element) => element.kind === "text")
+    if (text?.kind !== "text") {
+      throw new Error("expected text element")
+    }
+
+    storage.setItem(
+      `tuckmark:canvas-draft:v1:${preset.id}`,
+      JSON.stringify({
+        ...draft,
+        elements: [
+          {
+            id: text.id,
+            kind: text.kind,
+            x: text.x,
+            y: text.y,
+            width: text.width,
+            height: text.height,
+            fontSize: text.fontSize,
+            fontFamily: text.fontFamily,
+            lineHeight: text.lineHeight,
+            fontWeight: text.fontWeight,
+            align: text.align,
+            verticalAlign: text.verticalAlign,
+            autoWrap: text.autoWrap,
+            verticalText: text.verticalText,
+            value: text.value,
+            maxLines: text.maxLines,
+            rotation: text.rotation,
+            meta: text.meta,
+            stretchX: true,
+            stretchY: true,
+          },
+        ],
+      })
+    )
+
+    const restored = loadStoredDraftDocument(preset.id)
+    const restoredText = restored?.elements[0]
+    expect(restoredText?.kind).toBe("text")
+    if (restoredText?.kind === "text") {
+      expect(restoredText.stretchXGrow).toBe(true)
+      expect(restoredText.stretchXShrink).toBe(true)
+      expect(restoredText.stretchYGrow).toBe(true)
+      expect(restoredText.stretchYShrink).toBe(true)
+    }
+  })
+
+  it("rewrites font size when adaptive text fitting is enabled", () => {
+    const draft = createDraftFromPreset(getPresetById("ops-tag"))
+    const text = draft.elements.find((element) => element.kind === "text")
+    if (text?.kind !== "text") {
+      throw new Error("expected text element")
+    }
+
+    draft.elements = [
+      {
+        ...text,
+        width: 24,
+        height: 10,
+        fontSize: 5,
+        autoWrap: true,
+        adaptiveFontSize: true,
+        stretchXGrow: false,
+        stretchXShrink: true,
+        stretchYGrow: false,
+        stretchYShrink: false,
+        value: "50VX7R 0402",
+      },
+    ]
+
+    const compiled = compileDraftToCanvasDefinition(draft)
+    const compiledText = compiled.elements[0]
+    expect(compiledText?.kind).toBe("text")
+    if (compiledText?.kind === "text") {
+      expect(compiledText.fontSize).not.toBe(40)
+      expect(compiledText.autoWrap).toBe(true)
+      expect(compiledText.adaptiveFontSize).toBe(true)
     }
   })
 
@@ -564,9 +663,12 @@ describe("canvas-editor-model monochrome contract", () => {
         lineHeight: 1.5,
         align: "right",
         verticalAlign: "bottom",
-        stretchX: true,
-        stretchY: true,
+        stretchXGrow: true,
+        stretchXShrink: true,
+        stretchYGrow: true,
+        stretchYShrink: true,
         autoWrap: false,
+        adaptiveFontSize: false,
         verticalText: true,
       },
     ]
@@ -582,9 +684,12 @@ describe("canvas-editor-model monochrome contract", () => {
       lineHeight: 1.5,
       align: "right",
       verticalAlign: "bottom",
-      stretchX: true,
-      stretchY: true,
+      stretchXGrow: true,
+      stretchXShrink: true,
+      stretchYGrow: true,
+      stretchYShrink: true,
       autoWrap: false,
+      adaptiveFontSize: false,
       verticalText: true,
     })
   })

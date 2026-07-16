@@ -177,6 +177,18 @@ while the workbench was being productized:
     `build <shortsha>` only
   - Service API and browser-direct readiness stay visible beside the support
     metadata
+- The text-fitting contract was later split from one coarse stretch toggle into
+  axis-specific grow, shrink, and adaptive behaviors:
+  - canonical text state now persists `stretchXGrow`, `stretchXShrink`,
+    `stretchYGrow`, `stretchYShrink`, and `adaptiveFontSize`
+  - legacy drafts that only carry `stretchX` / `stretchY` still restore by
+    mapping `true` to grow-plus-shrink on that axis
+  - new manually inserted text defaults only `水平挤压` on, while preset and
+    imported content preserves its stored fit state
+  - `两端对齐` now clears `水平拉升`, but remains compatible with `水平挤压`
+  - adaptive sizing disables effective auto-wrap, locks the `字号` field in the
+    inspector, and writes back corrected font sizes through one shared layout
+    path used by the stage, inline editor, preview, and print
 - The marquee-selection affordance was later tightened to match screen-space
   editor chrome expectations:
   - the drag-selection rectangle is projected into stage space instead of

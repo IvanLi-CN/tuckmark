@@ -23,7 +23,8 @@ function renderTextElement(element, input) {
     const resolved = element.value ?? input[element.key] ?? "";
     const hasExplicitWidth = element.width !== undefined;
     const legacyLines = wrapTextByWidth(resolved, element.fontSize, element.width, element.maxLines, element.autoWrap ?? true, element.fontFamily);
-    const width = element.width ?? Math.max(...legacyLines.map((line) => estimateTextLineWidth(line, element.fontSize, element.fontFamily)), 0.0001);
+    const width = element.width ??
+        Math.max(...legacyLines.map((line) => estimateTextLineWidth(line, element.fontSize, element.fontFamily)), 0.0001);
     const legacyLineCount = Math.max(hasExplicitWidth
         ? wrapTextByWidth(resolved, element.fontSize, width, element.maxLines, element.autoWrap ?? true, element.fontFamily).length
         : legacyLines.length, 1);
@@ -52,15 +53,20 @@ function renderTextElement(element, input) {
         align: element.align,
         maxLines: element.maxLines,
         verticalAlign: element.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN,
+        stretchXGrow: element.stretchXGrow,
+        stretchXShrink: element.stretchXShrink,
+        stretchYGrow: element.stretchYGrow,
+        stretchYShrink: element.stretchYShrink,
         stretchX: element.stretchX ?? false,
         stretchY: element.stretchY ?? false,
         autoWrap: element.autoWrap ?? true,
+        adaptiveFontSize: element.adaptiveFontSize ?? false,
         verticalText: element.verticalText ?? false,
     });
     const containerY = element.height === undefined && !layout.verticalText
         ? element.y - layout.baselineOffsetY
         : element.height === undefined
-            ? element.y - element.fontSize
+            ? element.y - layout.resolvedFontSize
             : element.y;
     const transform = [
         `translate(${formatNumber(layout.contentX)} ${formatNumber(layout.contentY)})`,
@@ -73,14 +79,14 @@ function renderTextElement(element, input) {
     const fontFamily = escapeXml(getTextFontFamilyStack(element.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY));
     const textMarkup = layout.verticalText
         ? layout.glyphs
-            .map((glyph) => `<text x="${formatNumber(glyph.x)}" y="${formatNumber(glyph.y + layout.baselineOffsetY)}" font-size="${formatNumber(element.fontSize)}" font-weight="${element.fontWeight}" text-anchor="middle" font-family="${fontFamily}" fill="#111111">${escapeXml(glyph.text)}</text>`)
+            .map((glyph) => `<text x="${formatNumber(glyph.x)}" y="${formatNumber(glyph.y + layout.baselineOffsetY)}" font-size="${formatNumber(layout.resolvedFontSize)}" font-weight="${element.fontWeight}" text-anchor="middle" font-family="${fontFamily}" fill="#111111">${escapeXml(glyph.text)}</text>`)
             .join("")
         : layout.lineLayouts
             .map((line) => {
             const justifyAttrs = line.letterSpacing > 0
                 ? ` textLength="${formatNumber(width)}" lengthAdjust="spacing"`
                 : "";
-            return `<text x="${formatNumber(line.x)}" y="${formatNumber(line.y)}" font-size="${formatNumber(element.fontSize)}" font-weight="${element.fontWeight}" text-anchor="start" font-family="${fontFamily}" fill="#111111"${justifyAttrs}>${escapeXml(line.text)}</text>`;
+            return `<text x="${formatNumber(line.x)}" y="${formatNumber(line.y)}" font-size="${formatNumber(layout.resolvedFontSize)}" font-weight="${element.fontWeight}" text-anchor="start" font-family="${fontFamily}" fill="#111111"${justifyAttrs}>${escapeXml(line.text)}</text>`;
         })
             .join("");
     const contentMarkup = `<g transform="${transform}">${textMarkup}</g>`;

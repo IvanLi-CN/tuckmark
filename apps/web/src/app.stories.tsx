@@ -966,6 +966,10 @@ export const CanvasWorkspaceTextReady: Story = {
     await canvas.findByText("已选 1 项")
     const fontSize = await canvas.findByLabelText("字号")
     await expect(fontSize).toHaveDisplayValue("5.0")
+    const horizontalShrink = await canvas.findByRole("button", { name: "水平挤压" })
+    await expect(horizontalShrink).toHaveAttribute("aria-pressed", "true")
+    const verticalShrink = await canvas.findByRole("button", { name: "垂直挤压" })
+    await expect(verticalShrink).toHaveAttribute("aria-pressed", "false")
   },
 }
 
@@ -1003,23 +1007,28 @@ export const CanvasWorkspaceTextSelected: Story = {
     await userEvent.keyboard("{Escape}")
     await canvas.findByRole("group", { name: "文本九宫格对齐" })
     await canvas.findByLabelText("文本左上对齐")
-    const horizontalStretch = await canvas.findByRole("button", { name: "水平拉升" })
-    await expect(horizontalStretch).toHaveAttribute("aria-pressed", "false")
-    await userEvent.click(horizontalStretch)
-    await expect(horizontalStretch).toHaveAttribute("aria-pressed", "true")
-    await userEvent.click(horizontalStretch)
-    await expect(horizontalStretch).toHaveAttribute("aria-pressed", "false")
+    const horizontalGrow = await canvas.findByRole("button", { name: "水平拉升" })
+    await expect(horizontalGrow).toHaveAttribute("aria-pressed", "false")
+    const horizontalShrink = await canvas.findByRole("button", { name: "水平挤压" })
+    await expect(horizontalShrink).toHaveAttribute("aria-pressed", "false")
     const justifyText = await canvas.findByRole("button", { name: "两端对齐" })
     await expect(justifyText).toHaveAttribute("aria-pressed", "false")
     await userEvent.click(justifyText)
     await expect(justifyText).toHaveAttribute("aria-pressed", "true")
-    await userEvent.click(justifyText)
+    await userEvent.click(horizontalGrow)
+    await expect(horizontalGrow).toHaveAttribute("aria-pressed", "true")
     await expect(justifyText).toHaveAttribute("aria-pressed", "false")
-    const verticalStretch = await canvas.findByRole("button", { name: "垂直拉升" })
-    await userEvent.click(verticalStretch)
-    await expect(verticalStretch).toHaveAttribute("aria-pressed", "true")
-    await userEvent.click(verticalStretch)
-    await expect(verticalStretch).toHaveAttribute("aria-pressed", "false")
+    await userEvent.click(horizontalShrink)
+    await expect(horizontalGrow).toHaveAttribute("aria-pressed", "true")
+    await expect(horizontalShrink).toHaveAttribute("aria-pressed", "true")
+    const verticalGrow = await canvas.findByRole("button", { name: "垂直拉升" })
+    await expect(verticalGrow).toHaveAttribute("aria-pressed", "false")
+    await userEvent.click(verticalGrow)
+    await expect(verticalGrow).toHaveAttribute("aria-pressed", "true")
+    const verticalShrink = await canvas.findByRole("button", { name: "垂直挤压" })
+    await expect(verticalShrink).toHaveAttribute("aria-pressed", "false")
+    await userEvent.click(verticalShrink)
+    await expect(verticalShrink).toHaveAttribute("aria-pressed", "true")
     const verticalText = await canvas.findByRole("button", { name: "纵向文本" })
     await expect(verticalText).toHaveAttribute("aria-pressed", "false")
     await userEvent.click(verticalText)
@@ -1032,6 +1041,39 @@ export const CanvasWorkspaceTextSelected: Story = {
     const rotateClockwise = await canvas.findByRole("button", { name: "顺时针旋转 45 度" })
     await userEvent.click(rotateClockwise)
     await expect(rotationInput).toHaveDisplayValue("45")
+  },
+}
+
+export const CanvasWorkspaceTextAdaptiveSizing: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-selected",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const adaptiveButton = await canvas.findByRole("button", { name: "自适应" })
+    const wrapButton = await canvas.findByRole("button", { name: "自动换行" })
+    const fontSize = await canvas.findByLabelText("字号")
+
+    await expect(adaptiveButton).toHaveAttribute("aria-pressed", "false")
+    await expect(wrapButton).toHaveAttribute("aria-pressed", "true")
+    await expect(fontSize).not.toBeDisabled()
+
+    await userEvent.click(adaptiveButton)
+
+    await expect(adaptiveButton).toHaveAttribute("aria-pressed", "true")
+    await expect(wrapButton).toHaveAttribute("aria-pressed", "false")
+    await expect(wrapButton).toBeDisabled()
+    await expect(fontSize).toBeDisabled()
   },
 }
 

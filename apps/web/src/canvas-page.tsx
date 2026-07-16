@@ -50,6 +50,7 @@ import {
   encodeDataMatrix,
   getTextFontFamilyStack,
   normalizeTextLineHeight,
+  resolveTextAxisFit,
   resolveTextLayout,
   stableStringify,
   type TextFontFamily,
@@ -254,6 +255,13 @@ function resolveTextGridAlign(element: Extract<CanvasDraftElement, { kind: "text
   }
   return element.align === "center" || element.align === "right" ? element.align : "left"
 }
+
+function resolveCanvasTextFitState(element: Extract<CanvasDraftElement, { kind: "text" }>) {
+  return {
+    ...resolveTextAxisFit(element),
+    adaptiveFontSize: element.adaptiveFontSize,
+  }
+}
 const TRANSFORMER_ALL_ANCHORS = [
   "top-left",
   "top-center",
@@ -360,6 +368,13 @@ function isClipboardCanvasElement(value: unknown): value is CanvasDraftElement {
 
   switch (value.kind) {
     case "text":
+      const hasLegacyStretchFlags =
+        typeof value.stretchX === "boolean" && typeof value.stretchY === "boolean"
+      const hasAxisFitFlags =
+        typeof value.stretchXGrow === "boolean" &&
+        typeof value.stretchXShrink === "boolean" &&
+        typeof value.stretchYGrow === "boolean" &&
+        typeof value.stretchYShrink === "boolean"
       return (
         isFiniteNumber(value.x) &&
         isFiniteNumber(value.y) &&
@@ -372,9 +387,9 @@ function isClipboardCanvasElement(value: unknown): value is CanvasDraftElement {
         typeof value.align === "string" &&
         (value.justifyAlign === undefined || typeof value.justifyAlign === "string") &&
         typeof value.verticalAlign === "string" &&
-        typeof value.stretchX === "boolean" &&
-        typeof value.stretchY === "boolean" &&
+        (hasAxisFitFlags || hasLegacyStretchFlags) &&
         typeof value.autoWrap === "boolean" &&
+        (value.adaptiveFontSize === undefined || typeof value.adaptiveFontSize === "boolean") &&
         typeof value.verticalText === "boolean" &&
         typeof value.value === "string" &&
         (value.maxLines === undefined || isFiniteNumber(value.maxLines)) &&
@@ -839,9 +854,14 @@ function createClipboardTextElement(
     align: seeded.align,
     maxLines: seeded.maxLines,
     verticalAlign: seeded.verticalAlign,
+    stretchXGrow: seeded.stretchXGrow,
+    stretchXShrink: seeded.stretchXShrink,
+    stretchYGrow: seeded.stretchYGrow,
+    stretchYShrink: seeded.stretchYShrink,
     stretchX: seeded.stretchX,
     stretchY: seeded.stretchY,
     autoWrap: seeded.autoWrap,
+    adaptiveFontSize: seeded.adaptiveFontSize,
     verticalText: seeded.verticalText,
     measureText: measureCanvasTextLine,
   })
@@ -2824,49 +2844,31 @@ function TextInlineEditor({
     align: element.align,
     maxLines: element.maxLines,
     verticalAlign: element.verticalAlign,
+    stretchXGrow: element.stretchXGrow,
+    stretchXShrink: element.stretchXShrink,
+    stretchYGrow: element.stretchYGrow,
+    stretchYShrink: element.stretchYShrink,
     stretchX: element.stretchX,
     stretchY: element.stretchY,
     autoWrap: element.autoWrap,
+    adaptiveFontSize: element.adaptiveFontSize,
     verticalText: element.verticalText,
     measureText: measureCanvasTextLine,
   })
-  const usesCustomTextLayout = element.align === "justify" || element.verticalText
-  const contentWidth = Math.max(layout.contentWidth, element.fontSize)
-  const contentHeight = Math.max(layout.contentHeight, element.fontSize)
-  const stretchScaleX = element.stretchX ? element.width / Math.max(contentWidth, 0.0001) : 1
-  const stretchScaleY = element.stretchY ? element.height / Math.max(contentHeight, 0.0001) : 1
-  const contentX = usesCustomTextLayout
-    ? layout.contentX
-    : element.stretchX
-      ? 0
-      : alignOffset(
-          element.width,
-          contentWidth,
-          element.align === "center" ? "middle" : element.align === "right" ? "end" : "start"
-        )
-  const contentY = element.verticalText
-    ? layout.contentY
-    : element.stretchY
-      ? 0
-      : alignOffset(
-          element.height,
-          contentHeight,
-          element.verticalAlign === "middle"
-            ? "middle"
-            : element.verticalAlign === "bottom"
-              ? "end"
-              : "start"
-        )
-  const usesBoxWrapWidth = element.autoWrap && !element.verticalText && !element.stretchX
+  const contentWidth = Math.max(layout.contentWidth, layout.resolvedFontSize)
+  const contentHeight = Math.max(layout.contentHeight, layout.resolvedFontSize)
+  const contentX = layout.contentX
+  const contentY = layout.contentY
+  const usesBoxWrapWidth = layout.effectiveAutoWrap && !element.verticalText && layout.scaleX === 1
   const editorX = (usesBoxWrapWidth ? 0 : contentX) * scale
   const editorTextOffsetY =
     element.align === "justify" && element.verticalAlign !== "top" ? 0 : layout.textOffsetY
   const editorY = (contentY + editorTextOffsetY) * scale
   const editorWidth = Math.max((usesBoxWrapWidth ? element.width : contentWidth) * scale, 1)
-  const editorHeight = Math.max((element.height - contentY) * scale, element.fontSize * scale)
+  const editorHeight = Math.max((element.height - contentY) * scale, layout.resolvedFontSize * scale)
   const editorTransform =
-    stretchScaleX !== 1 || stretchScaleY !== 1
-      ? `scale(${stretchScaleX}, ${stretchScaleY})`
+    layout.scaleX !== 1 || layout.scaleY !== 1
+      ? `scale(${layout.scaleX}, ${layout.scaleY})`
       : undefined
 
   React.useEffect(() => {
@@ -2912,7 +2914,7 @@ function TextInlineEditor({
         aria-label="画布文本内联编辑"
         data-tm-inline-text-editor="true"
         value={value}
-        wrap={element.autoWrap ? "soft" : "off"}
+        wrap={layout.effectiveAutoWrap ? "soft" : "off"}
         className="tm-selectable-text absolute min-h-0 resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 text-black shadow-none outline-none transition-none focus-visible:ring-0"
         style={{
           left: editorX,
@@ -2920,7 +2922,7 @@ function TextInlineEditor({
           width: editorWidth,
           height: editorHeight,
           fontFamily: getTextFontFamilyStack(element.fontFamily),
-          fontSize: `${Math.max(8, element.fontSize * scale)}px`,
+          fontSize: `${Math.max(8, layout.resolvedFontSize * scale)}px`,
           fontWeight: element.fontWeight,
           lineHeight: getCanvasTextLineHeight(element.lineHeight),
           minHeight: 0,
@@ -2930,7 +2932,7 @@ function TextInlineEditor({
           textAlign: element.align,
           textAlignLast: element.align === "justify" ? "justify" : "auto",
           textJustify: element.align === "justify" ? "inter-character" : "auto",
-          whiteSpace: element.autoWrap ? "pre-wrap" : "pre",
+          whiteSpace: layout.effectiveAutoWrap ? "pre-wrap" : "pre",
           writingMode: element.verticalText ? "vertical-rl" : "horizontal-tb",
           transform: editorTransform,
           transformOrigin: "top left",
@@ -3614,10 +3616,11 @@ function CanvasInspector({
     onValueChange: (next: number) => void,
     id: string,
     step = 0.1,
-    precision = 1
+    precision = 1,
+    disabled = readOnly
   ) => (
     <InspectorNumberField
-      disabled={readOnly}
+      disabled={disabled}
       id={id}
       label={label}
       precision={precision}
@@ -3632,6 +3635,9 @@ function CanvasInspector({
   const hasEncodedContentIssue =
     issue != null &&
     (element.kind === "barcode" || element.kind === "qr" || element.kind === "datamatrix")
+  const textFitState = element.kind === "text" ? resolveCanvasTextFitState(element) : null
+  const effectiveAutoWrap =
+    element.kind === "text" ? !element.adaptiveFontSize && element.autoWrap : false
 
   const rotateSelectedElementBy = (delta: number) => {
     updateElement((item) =>
@@ -3925,7 +3931,10 @@ function CanvasInspector({
                         } as CanvasDraftElement)
                       : item
                   ),
-                "text-font-size"
+                "text-font-size",
+                0.1,
+                1,
+                readOnly || (element.kind === "text" && element.adaptiveFontSize)
               )
             : null}
           {element.kind === "text"
@@ -4017,10 +4026,10 @@ function CanvasInspector({
                   <Button
                     type="button"
                     size="sm"
-                    variant={element.autoWrap ? "default" : "outline"}
+                    variant={effectiveAutoWrap ? "default" : "outline"}
                     className="tm-inspector-toggle"
-                    aria-pressed={element.autoWrap}
-                    disabled={readOnly}
+                    aria-pressed={effectiveAutoWrap}
+                    disabled={readOnly || element.adaptiveFontSize}
                     onClick={() =>
                       updateElement((item) =>
                         item.kind === "text" ? { ...item, autoWrap: !item.autoWrap } : item
@@ -4046,6 +4055,7 @@ function CanvasInspector({
                                 ...item,
                                 align: "justify",
                                 justifyAlign: resolveTextGridAlign(item),
+                                stretchXGrow: false,
                               }
                           : item
                       )
@@ -4057,13 +4067,22 @@ function CanvasInspector({
                   <Button
                     type="button"
                     size="sm"
-                    variant={element.stretchX ? "default" : "outline"}
+                    variant={textFitState?.stretchXGrow ? "default" : "outline"}
                     className="tm-inspector-toggle"
-                    aria-pressed={element.stretchX}
+                    aria-pressed={textFitState?.stretchXGrow}
                     disabled={readOnly}
                     onClick={() =>
                       updateElement((item) =>
-                        item.kind === "text" ? { ...item, stretchX: !item.stretchX } : item
+                        item.kind === "text"
+                          ? {
+                              ...item,
+                              align:
+                                !item.stretchXGrow && item.align === "justify"
+                                  ? (item.justifyAlign ?? "left")
+                                  : item.align,
+                              stretchXGrow: !item.stretchXGrow,
+                            }
+                          : item
                       )
                     }
                   >
@@ -4073,18 +4092,72 @@ function CanvasInspector({
                   <Button
                     type="button"
                     size="sm"
-                    variant={element.stretchY ? "default" : "outline"}
+                    variant={textFitState?.stretchXShrink ? "default" : "outline"}
                     className="tm-inspector-toggle"
-                    aria-pressed={element.stretchY}
+                    aria-pressed={textFitState?.stretchXShrink}
                     disabled={readOnly}
                     onClick={() =>
                       updateElement((item) =>
-                        item.kind === "text" ? { ...item, stretchY: !item.stretchY } : item
+                        item.kind === "text"
+                          ? { ...item, stretchXShrink: !item.stretchXShrink }
+                          : item
+                      )
+                    }
+                  >
+                    <StretchHorizontal className="size-3.5" />
+                    水平挤压
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={textFitState?.stretchYGrow ? "default" : "outline"}
+                    className="tm-inspector-toggle"
+                    aria-pressed={textFitState?.stretchYGrow}
+                    disabled={readOnly}
+                    onClick={() =>
+                      updateElement((item) =>
+                        item.kind === "text" ? { ...item, stretchYGrow: !item.stretchYGrow } : item
                       )
                     }
                   >
                     <StretchVertical className="size-3.5" />
                     垂直拉升
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={textFitState?.stretchYShrink ? "default" : "outline"}
+                    className="tm-inspector-toggle"
+                    aria-pressed={textFitState?.stretchYShrink}
+                    disabled={readOnly}
+                    onClick={() =>
+                      updateElement((item) =>
+                        item.kind === "text"
+                          ? { ...item, stretchYShrink: !item.stretchYShrink }
+                          : item
+                      )
+                    }
+                  >
+                    <StretchVertical className="size-3.5" />
+                    垂直挤压
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={element.adaptiveFontSize ? "default" : "outline"}
+                    className="tm-inspector-toggle"
+                    aria-pressed={element.adaptiveFontSize}
+                    disabled={readOnly}
+                    onClick={() =>
+                      updateElement((item) =>
+                        item.kind === "text"
+                          ? { ...item, adaptiveFontSize: !item.adaptiveFontSize }
+                          : item
+                      )
+                    }
+                  >
+                    <Focus className="size-3.5" />
+                    自适应
                   </Button>
                   <Button
                     type="button"
@@ -4641,39 +4714,23 @@ function CanvasTextElementNode({
     align: element.align,
     maxLines: element.maxLines,
     verticalAlign: element.verticalAlign,
+    stretchXGrow: element.stretchXGrow,
+    stretchXShrink: element.stretchXShrink,
+    stretchYGrow: element.stretchYGrow,
+    stretchYShrink: element.stretchYShrink,
     stretchX: element.stretchX,
     stretchY: element.stretchY,
     autoWrap: element.autoWrap,
+    adaptiveFontSize: element.adaptiveFontSize,
     verticalText: element.verticalText,
     measureText: measureCanvasTextLine,
   })
-  const usesCustomTextLayout = element.align === "justify" || element.verticalText
   const contentWidth = layout.contentWidth
   const contentHeight = layout.contentHeight
-  const scaleX = element.stretchX ? element.width / Math.max(contentWidth, 0.0001) : 1
-  const scaleY = element.stretchY ? element.height / Math.max(contentHeight, 0.0001) : 1
-  const contentX = usesCustomTextLayout
-    ? layout.contentX
-    : element.stretchX
-      ? 0
-      : alignOffset(
-          element.width,
-          contentWidth,
-          element.align === "center" ? "middle" : element.align === "right" ? "end" : "start"
-        )
-  const contentY = element.verticalText
-    ? layout.contentY
-    : element.stretchY
-      ? 0
-      : alignOffset(
-          element.height,
-          contentHeight,
-          element.verticalAlign === "middle"
-            ? "middle"
-            : element.verticalAlign === "bottom"
-              ? "end"
-              : "start"
-        )
+  const scaleX = layout.scaleX
+  const scaleY = layout.scaleY
+  const contentX = layout.contentX
+  const contentY = layout.contentY
   const textY = layout.textOffsetY
   const visibleContentLeft = clamp(contentX, 0, element.width)
   const visibleContentTop = clamp(contentY, 0, element.height)
@@ -4700,11 +4757,11 @@ function CanvasTextElementNode({
           ? layout.glyphs.map((glyph) => (
               <KonvaText
                 key={`${glyph.x}-${glyph.y}-${glyph.text}`}
-                x={glyph.x - element.fontSize / 2}
+                x={glyph.x - layout.resolvedFontSize / 2}
                 y={glyph.y + textY}
-                width={element.fontSize}
+                width={layout.resolvedFontSize}
                 text={glyph.text}
-                fontSize={element.fontSize}
+                fontSize={layout.resolvedFontSize}
                 fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
                 fontFamily={getTextFontFamilyStack(element.fontFamily)}
                 wrap="none"
@@ -4719,7 +4776,7 @@ function CanvasTextElementNode({
                 x={line.x}
                 y={index * layout.lineHeight + textY}
                 text={line.text}
-                fontSize={element.fontSize}
+                fontSize={layout.resolvedFontSize}
                 fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
                 fontFamily={getTextFontFamilyStack(element.fontFamily)}
                 lineHeight={getCanvasTextLineHeight(element.lineHeight)}
