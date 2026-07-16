@@ -367,7 +367,7 @@ function isClipboardCanvasElement(value: unknown): value is CanvasDraftElement {
   }
 
   switch (value.kind) {
-    case "text":
+    case "text": {
       const hasLegacyStretchFlags =
         typeof value.stretchX === "boolean" && typeof value.stretchY === "boolean"
       const hasAxisFitFlags =
@@ -395,6 +395,7 @@ function isClipboardCanvasElement(value: unknown): value is CanvasDraftElement {
         (value.maxLines === undefined || isFiniteNumber(value.maxLines)) &&
         hasOptionalRotation(value.rotation)
       )
+    }
     case "rect":
       return (
         isFiniteNumber(value.x) &&
@@ -2865,7 +2866,10 @@ function TextInlineEditor({
     element.align === "justify" && element.verticalAlign !== "top" ? 0 : layout.textOffsetY
   const editorY = (contentY + editorTextOffsetY) * scale
   const editorWidth = Math.max((usesBoxWrapWidth ? element.width : contentWidth) * scale, 1)
-  const editorHeight = Math.max((element.height - contentY) * scale, layout.resolvedFontSize * scale)
+  const editorHeight = Math.max(
+    (element.height - contentY) * scale,
+    layout.resolvedFontSize * scale
+  )
   const editorTransform =
     layout.scaleX !== 1 || layout.scaleY !== 1
       ? `scale(${layout.scaleX}, ${layout.scaleY})`

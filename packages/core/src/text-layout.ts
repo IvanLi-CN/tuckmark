@@ -127,15 +127,12 @@ function roundResolvedFontSize(value: number): number {
   return Math.round(value * 1000) / 1000
 }
 
-export function resolveTextAxisFit(input: Pick<
-  TextLayoutInput,
-  | "stretchXGrow"
-  | "stretchXShrink"
-  | "stretchYGrow"
-  | "stretchYShrink"
-  | "stretchX"
-  | "stretchY"
->): ResolvedTextAxisFit {
+export function resolveTextAxisFit(
+  input: Pick<
+    TextLayoutInput,
+    "stretchXGrow" | "stretchXShrink" | "stretchYGrow" | "stretchYShrink" | "stretchX" | "stretchY"
+  >
+): ResolvedTextAxisFit {
   const legacyStretchX = input.stretchX ?? false
   const legacyStretchY = input.stretchY ?? false
 
@@ -622,7 +619,7 @@ function resolveTextLayoutForFontSize(
   const lineLayouts: TextLayoutLine[] = verticalText
     ? []
     : renderedLines.map((line, index) => {
-      const metrics =
+        const metrics =
           lineMetrics[index] ??
           getFallbackTextLineMetrics(line, resolvedFontSize, sizedInput.fontFamily)
         const width = metrics.advanceWidth
