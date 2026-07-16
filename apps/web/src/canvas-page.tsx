@@ -4026,202 +4026,227 @@ function CanvasInspector({
               </div>
               <div className="tm-inspector-field">
                 <Label className="tm-inspector-label">排版</Label>
-                <div className="tm-inspector-toggle-row tm-inspector-toggle-row--text-flow">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={effectiveAutoWrap ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={effectiveAutoWrap}
-                    disabled={readOnly || element.adaptiveFontSize}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text" ? { ...item, autoWrap: !item.autoWrap } : item
-                      )
-                    }
-                  >
-                    <TextWrap className="size-3.5" />
-                    自动换行
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={element.align === "justify" ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={element.align === "justify"}
-                    disabled={readOnly}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text"
-                          ? item.align === "justify"
-                            ? { ...item, align: item.justifyAlign ?? "left" }
-                            : {
-                                ...item,
-                                align: "justify",
-                                justifyAlign: resolveTextGridAlign(item),
-                                stretchXGrow: false,
-                              }
-                          : item
-                      )
-                    }
-                  >
-                    <TextAlignJustify className="size-3.5" />
-                    两端对齐
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={textFitState?.stretchXGrow ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={textFitState?.stretchXGrow}
-                    disabled={readOnly}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text"
-                          ? {
-                              ...item,
-                              align:
-                                !item.stretchXGrow && item.align === "justify"
-                                  ? (item.justifyAlign ?? "left")
-                                  : item.align,
-                              stretchXGrow: !item.stretchXGrow,
-                            }
-                          : item
-                      )
-                    }
-                  >
-                    <StretchHorizontal className="size-3.5" />
-                    水平拉升
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={textFitState?.stretchXShrink ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={textFitState?.stretchXShrink}
-                    disabled={readOnly}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text"
-                          ? { ...item, stretchXShrink: !item.stretchXShrink }
-                          : item
-                      )
-                    }
-                  >
-                    <StretchHorizontal className="size-3.5" />
-                    水平挤压
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={textFitState?.stretchYGrow ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={textFitState?.stretchYGrow}
-                    disabled={readOnly}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text" ? { ...item, stretchYGrow: !item.stretchYGrow } : item
-                      )
-                    }
-                  >
-                    <StretchVertical className="size-3.5" />
-                    垂直拉升
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={textFitState?.stretchYShrink ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={textFitState?.stretchYShrink}
-                    disabled={readOnly}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text"
-                          ? { ...item, stretchYShrink: !item.stretchYShrink }
-                          : item
-                      )
-                    }
-                  >
-                    <StretchVertical className="size-3.5" />
-                    垂直挤压
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={element.adaptiveFontSize ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={element.adaptiveFontSize}
-                    disabled={readOnly}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text"
-                          ? { ...item, adaptiveFontSize: !item.adaptiveFontSize }
-                          : item
-                      )
-                    }
-                  >
-                    <Focus className="size-3.5" />
-                    自适应
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={element.verticalText ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={element.verticalText}
-                    disabled={readOnly}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text" ? { ...item, verticalText: !item.verticalText } : item
-                      )
-                    }
-                  >
-                    <Columns3 className="size-3.5" />
-                    纵向文本
-                  </Button>
-                  {"rotation" in element ? (
-                    <InspectorNumberField
-                      actions={
-                        <>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="tm-inspector-stepper-button h-8 w-8 p-0"
-                            aria-label="逆时针旋转 45 度"
-                            disabled={readOnly}
-                            onClick={() => rotateSelectedElementBy(-45)}
-                          >
-                            <RotateCcw className="size-3.5" />
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="tm-inspector-stepper-button h-8 w-8 p-0"
-                            aria-label="顺时针旋转 45 度"
-                            disabled={readOnly}
-                            onClick={() => rotateSelectedElementBy(45)}
-                          >
-                            <RotateCw className="size-3.5" />
-                          </Button>
-                        </>
-                      }
-                      className="tm-inspector-rotation-field"
+                <div className="tm-text-flow-layout">
+                  <section className="tm-text-flow-panel tm-text-flow-panel--full">
+                    <span className="tm-text-flow-panel__title">文本布局</span>
+                    <div className="tm-text-flow-panel__grid tm-text-flow-panel__grid--layout">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={effectiveAutoWrap ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={effectiveAutoWrap}
+                        disabled={readOnly || element.adaptiveFontSize}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text" ? { ...item, autoWrap: !item.autoWrap } : item
+                          )
+                        }
+                      >
+                        <TextWrap className="size-3.5" />
+                        自动换行
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={element.align === "justify" ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={element.align === "justify"}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? item.align === "justify"
+                                ? { ...item, align: item.justifyAlign ?? "left" }
+                                : {
+                                    ...item,
+                                    align: "justify",
+                                    justifyAlign: resolveTextGridAlign(item),
+                                    stretchXGrow: false,
+                                  }
+                              : item
+                          )
+                        }
+                      >
+                        <TextAlignJustify className="size-3.5" />
+                        两端对齐
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={element.verticalText ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={element.verticalText}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? { ...item, verticalText: !item.verticalText }
+                              : item
+                          )
+                        }
+                      >
+                        <Columns3 className="size-3.5" />
+                        纵向文本
+                      </Button>
+                    </div>
+                  </section>
+                  <section className="tm-text-flow-panel">
+                    <span className="tm-text-flow-panel__title">横向适配</span>
+                    <div className="tm-text-flow-panel__stack">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={textFitState?.stretchXGrow ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={textFitState?.stretchXGrow}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? {
+                                  ...item,
+                                  align:
+                                    !item.stretchXGrow && item.align === "justify"
+                                      ? (item.justifyAlign ?? "left")
+                                      : item.align,
+                                  stretchXGrow: !item.stretchXGrow,
+                                }
+                              : item
+                          )
+                        }
+                      >
+                        <StretchHorizontal className="size-3.5" />
+                        水平拉升
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={textFitState?.stretchXShrink ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={textFitState?.stretchXShrink}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? { ...item, stretchXShrink: !item.stretchXShrink }
+                              : item
+                          )
+                        }
+                      >
+                        <StretchHorizontal className="size-3.5" />
+                        水平挤压
+                      </Button>
+                    </div>
+                  </section>
+                  <section className="tm-text-flow-panel">
+                    <span className="tm-text-flow-panel__title">纵向适配</span>
+                    <div className="tm-text-flow-panel__stack">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={textFitState?.stretchYGrow ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={textFitState?.stretchYGrow}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? { ...item, stretchYGrow: !item.stretchYGrow }
+                              : item
+                          )
+                        }
+                      >
+                        <StretchVertical className="size-3.5" />
+                        垂直拉升
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={textFitState?.stretchYShrink ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={textFitState?.stretchYShrink}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? { ...item, stretchYShrink: !item.stretchYShrink }
+                              : item
+                          )
+                        }
+                      >
+                        <StretchVertical className="size-3.5" />
+                        垂直挤压
+                      </Button>
+                    </div>
+                  </section>
+                  <section className="tm-text-flow-panel tm-text-flow-panel--full">
+                    <span className="tm-text-flow-panel__title">字号模式</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={element.adaptiveFontSize ? "default" : "outline"}
+                      className="tm-inspector-toggle tm-inspector-toggle--full"
+                      aria-pressed={element.adaptiveFontSize}
                       disabled={readOnly}
-                      id="element-rotation"
-                      label="旋转"
-                      precision={0}
-                      step={1}
-                      value={element.rotation ?? 0}
-                      onValueChange={(value) =>
+                      onClick={() =>
                         updateElement((item) =>
-                          "rotation" in item
-                            ? ({ ...item, rotation: value } as CanvasDraftElement)
+                          item.kind === "text"
+                            ? { ...item, adaptiveFontSize: !item.adaptiveFontSize }
                             : item
                         )
                       }
-                    />
+                    >
+                      <Focus className="size-3.5" />
+                      自适应
+                    </Button>
+                  </section>
+                  {"rotation" in element ? (
+                    <section className="tm-text-flow-panel tm-text-flow-panel--full">
+                      <span className="tm-text-flow-panel__title">旋转</span>
+                      <InspectorNumberField
+                        actions={
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="tm-inspector-stepper-button h-8 w-8 p-0"
+                              aria-label="逆时针旋转 45 度"
+                              disabled={readOnly}
+                              onClick={() => rotateSelectedElementBy(-45)}
+                            >
+                              <RotateCcw className="size-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="tm-inspector-stepper-button h-8 w-8 p-0"
+                              aria-label="顺时针旋转 45 度"
+                              disabled={readOnly}
+                              onClick={() => rotateSelectedElementBy(45)}
+                            >
+                              <RotateCw className="size-3.5" />
+                            </Button>
+                          </>
+                        }
+                        className="tm-inspector-rotation-field"
+                        disabled={readOnly}
+                        id="element-rotation"
+                        label="旋转"
+                        precision={0}
+                        step={1}
+                        value={element.rotation ?? 0}
+                        onValueChange={(value) =>
+                          updateElement((item) =>
+                            "rotation" in item
+                              ? ({ ...item, rotation: value } as CanvasDraftElement)
+                              : item
+                          )
+                        }
+                      />
+                    </section>
                   ) : null}
                 </div>
               </div>
