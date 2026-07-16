@@ -391,7 +391,7 @@ export const CanvasWorkspaceWide: Story = {
     docs: {
       description: {
         story:
-          "New canvas text defaults to a 5.0 mm font design size; the inspector keeps the established 字号 label.",
+          "New canvas text seeds from a 5.0 mm design size, then adaptive sizing writes back the resolved 字号 while preserving the established inspector label.",
       },
     },
   },
@@ -965,11 +965,15 @@ export const CanvasWorkspaceTextReady: Story = {
     const canvas = within(canvasElement)
     await canvas.findByText("已选 1 项")
     const fontSize = await canvas.findByLabelText("字号")
-    await expect(fontSize).toHaveDisplayValue("5.0")
+    await expect(fontSize).toHaveDisplayValue("11.0")
+    await expect(fontSize).toBeDisabled()
     const wrapButton = await canvas.findByRole("button", { name: "自动换行" })
     await expect(wrapButton).toHaveAttribute("aria-pressed", "false")
+    await expect(wrapButton).toBeDisabled()
     const horizontalShrink = await canvas.findByRole("button", { name: "水平挤压" })
     await expect(horizontalShrink).toHaveAttribute("aria-pressed", "true")
+    const adaptive = await canvas.findByRole("button", { name: "自适应" })
+    await expect(adaptive).toHaveAttribute("aria-pressed", "true")
     const verticalShrink = await canvas.findByRole("button", { name: "垂直挤压" })
     await expect(verticalShrink).toHaveAttribute("aria-pressed", "false")
   },

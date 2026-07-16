@@ -192,8 +192,9 @@ output.
     leaves both axis-fit flags disabled
   - canvas-draft `fontSize` is the font design size in millimeters, not CSS
     pixels, typographic points, or a normalized visible-ink height; new text
-    and plain-text paste start at `5.0 mm`, which compiles to `40 dots` at the
-    `8 dots/mm` print boundary
+    and plain-text paste seed from `5.0 mm`, after which adaptive sizing may
+    immediately write back a different stored `fontSize` to match the text
+    container height before print compilation
 - Stage transform semantics match the element geometry model:
   - new freeform `rect` elements default to square corners; existing templates
     and stored drafts preserve their explicit `radius`
@@ -254,7 +255,7 @@ output.
 - New text elements default to `noto-sans-sc`.
 - New manually inserted text defaults to `stretchXShrink=true`,
   `stretchXGrow=false`, `stretchYGrow=false`, `stretchYShrink=false`, and
-  `adaptiveFontSize=false`; `自动换行` defaults to off for newly inserted text.
+  `adaptiveFontSize=true`; `自动换行` defaults to off for newly inserted text.
 - The text inspector retains the `字号` field label and keeps `0.1 mm` editing
   precision with a `1.0 mm` lower bound.
 - When adaptive sizing is enabled, the inspector disables the `字号` input and
@@ -594,8 +595,8 @@ output.
   automatic wrapping, two-end justification, horizontal stretch, vertical
   stretch, vertical text, and rotation controls in the property inspector.
 - New text defaults to `noto-sans-sc` instead of a system fallback family.
-- New text and external plain-text paste default to `5.0 mm` design size, and
-  the selected-text inspector labels that value as `字号`.
+- New text and external plain-text paste seed from a `5.0 mm` design size, but
+  adaptive sizing may immediately write back a different displayed `字号`.
 - Existing template, draft, and imported text font sizes remain unchanged.
 - The font selector shows a flat list of explicit named fonts, exposes more
   than `20` bundled choices, and previews each option using the selected font
@@ -869,10 +870,10 @@ output.
   ![Canvas text container controls](./assets/canvas-text-container-controls-1280x800.png)
 
 - `1280×800` canvas workspace showing a newly created text layer with the
-  selected inspector explicitly displaying `字号` at `5.0`, `自动换行` off,
-  and the default `水平挤压` state enabled.
+  selected inspector explicitly displaying `字号` at `11.0`, `自动换行` disabled
+  and off, plus the default `水平挤压` and `自适应` states enabled.
 
-  ![Canvas text default 5 millimeters](./assets/canvas-text-default-5mm-1280x800.png)
+  ![Canvas text adaptive default](./assets/canvas-text-default-5mm-1280x800.png)
 
 - Storybook canvas flat font-selector state showing a long explicit named-font
   list with each option rendered in its own font stack

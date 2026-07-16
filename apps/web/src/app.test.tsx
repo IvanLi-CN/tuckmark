@@ -1669,9 +1669,22 @@ describe("web workbench app", () => {
     dispatchClipboardEvent("paste", clipboardData)
     await flush(4)
 
+    const fontSizeInput = document.querySelector<HTMLInputElement>("#text-font-size")
+    const wrapButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("自动换行")
+    ) as HTMLButtonElement | null
+    const adaptiveButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("自适应")
+    ) as HTMLButtonElement | null
+
     expect(document.body.textContent).toContain("移动鼠标以放置，单击确认，按 Esc 取消。")
     expect(document.querySelector('label[for="text-font-size"]')?.textContent).toBe("字号")
-    expect(document.querySelector<HTMLInputElement>("#text-font-size")?.value).toBe("5.0")
+    expect(fontSizeInput).not.toBeNull()
+    expect(Number.parseFloat(fontSizeInput?.value ?? "0")).toBeGreaterThan(0)
+    expect(fontSizeInput?.disabled).toBe(true)
+    expect(wrapButton?.getAttribute("aria-pressed")).toBe("false")
+    expect(wrapButton?.disabled).toBe(true)
+    expect(adaptiveButton?.getAttribute("aria-pressed")).toBe("true")
 
     await act(async () => {
       dispatchWindowKey("Enter")
@@ -2191,7 +2204,7 @@ describe("web workbench app", () => {
     expect(fontSizeInput?.disabled).toBe(false)
   })
 
-  it("defaults new text elements to wrap off while keeping horizontal squeeze on", async () => {
+  it("defaults new text elements to adaptive sizing with wrap off", async () => {
     await renderWorkbenchApp(browserRuntimeContext, "text-ready")
     await flush(4)
 
@@ -2201,11 +2214,17 @@ describe("web workbench app", () => {
     const horizontalShrinkButton = Array.from(document.querySelectorAll("button")).find((button) =>
       button.textContent?.includes("水平挤压")
     ) as HTMLButtonElement | null
+    const adaptiveButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("自适应")
+    ) as HTMLButtonElement | null
 
     expect(wrapButton).not.toBeNull()
     expect(horizontalShrinkButton).not.toBeNull()
+    expect(adaptiveButton).not.toBeNull()
     expect(wrapButton?.getAttribute("aria-pressed")).toBe("false")
+    expect(wrapButton?.disabled).toBe(true)
     expect(horizontalShrinkButton?.getAttribute("aria-pressed")).toBe("true")
+    expect(adaptiveButton?.getAttribute("aria-pressed")).toBe("true")
   })
 
   it("keeps justify inline editing aligned for middle anchored text", async () => {

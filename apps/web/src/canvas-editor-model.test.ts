@@ -2,7 +2,9 @@
 
 import { beforeEach, describe, expect, it } from "vitest"
 
-import { DEFAULT_TEXT_FONT_FAMILY } from "../../../packages/core/src/web.js"
+import { DEFAULT_TEXT_FONT_FAMILY, getTextNaturalHeight } from "../../../packages/core/src/web.js"
+
+import { CANVAS_DOTS_PER_MILLIMETER } from "./lib/canvas-units.js"
 import {
   bindElementToExistingField,
   buildTemplateFieldsFromDraft,
@@ -124,7 +126,7 @@ describe("canvas-editor-model monochrome contract", () => {
 
     expect(text).toMatchObject({
       kind: "text",
-      fontSize: DEFAULT_CANVAS_TEXT_FONT_SIZE_MILLIMETERS,
+      fontSize: getTextNaturalHeight(DEFAULT_CANVAS_TEXT_FONT_SIZE_MILLIMETERS, 2),
       fontFamily: DEFAULT_TEXT_FONT_FAMILY,
       lineHeight: 1.2,
       verticalAlign: "top",
@@ -133,7 +135,7 @@ describe("canvas-editor-model monochrome contract", () => {
       stretchYGrow: false,
       stretchYShrink: false,
       autoWrap: false,
-      adaptiveFontSize: false,
+      adaptiveFontSize: true,
       verticalText: false,
     })
     expect(text.kind === "text" ? text.height : 0).toBeGreaterThan(0)
@@ -153,14 +155,16 @@ describe("canvas-editor-model monochrome contract", () => {
 
   it("compiles the new text design size from millimeters to printable dots", () => {
     const draft = createDraftFromPreset(getPresetById("ops-tag"))
-    draft.elements = [createCanvasElement("text", 0)]
+    const text = createCanvasElement("text", 0)
+    draft.elements = [text]
 
     const definition = compileDraftToCanvasDefinition(draft)
-    const text = definition.elements[0]
+    const compiledText = definition.elements[0]
 
-    expect(text).toMatchObject({
+    expect(compiledText).toMatchObject({
       kind: "text",
-      fontSize: 40,
+      fontSize:
+        text.kind === "text" ? text.fontSize * CANVAS_DOTS_PER_MILLIMETER : undefined,
     })
   })
 

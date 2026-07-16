@@ -390,7 +390,7 @@ export function createCanvasElement(
           stretchYGrow: false,
           stretchYShrink: false,
           autoWrap: false,
-          adaptiveFontSize: false,
+          adaptiveFontSize: true,
           verticalText: false,
           value: "可编辑文本",
           maxLines: 2,

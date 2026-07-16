@@ -183,11 +183,11 @@ while the workbench was being productized:
     `stretchYGrow`, `stretchYShrink`, and `adaptiveFontSize`
   - legacy drafts that only carry `stretchX` / `stretchY` still restore by
     mapping `true` to grow-plus-shrink on that axis
-  - new manually inserted text defaults only `水平挤压` on, while preset and
-    imported content preserves its stored fit state
-  - the same new-text default now keeps `自动换行` off unless the user
-    explicitly enables it, while preset and compatibility content keeps its
-    prior wrap behavior
+  - new manually inserted text defaults `水平挤压` and `自适应` on, while preset
+    and imported content preserves its stored fit state
+  - the same new-text default now keeps `自动换行` disabled in the off state
+    unless the user explicitly turns off `自适应`, while preset and
+    compatibility content keeps its prior wrap behavior
   - `两端对齐` now clears `水平拉升`, but remains compatible with `水平挤压`
   - adaptive sizing disables effective auto-wrap, locks the `字号` field in the
     inspector, and writes back corrected font sizes through one shared layout
