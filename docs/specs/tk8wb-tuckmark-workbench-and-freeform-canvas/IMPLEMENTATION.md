@@ -11,6 +11,9 @@
     readiness
   - one right-side device drawer reused across runtime, browser-static, and
     demo surfaces
+  - drawer-local feedback state for device actions so browser-direct
+    cancellation, browser-direct connection failures, and service-api probe /
+    refresh failures stay recoverable in-context without closing the drawer
 - The `/system` page now combines existing app / print settings with a route
   owned `SystemDataStorageCard` that surfaces:
   - browser capability state for `File System Access API` + `OPFS`

@@ -195,6 +195,42 @@ export const HomeSelectableContract: Story = {
   },
 }
 
+export const HomeDeviceDrawerBrowserDirectCancelled: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/"],
+    storyStateOverrides: {
+      deviceDrawerFeedback: {
+        section: "browser-direct",
+        action: "connect-browser-printer",
+        tone: "info",
+        title: "已取消连接",
+        message: "已取消选择蓝牙打印机。 可直接再次点击下方按钮重试。",
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: /选择设备/ }))
+    await canvas.findByText("已取消连接")
+  },
+}
+
+export const HomeDeviceDrawerBrowserDirectBusy: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/"],
+    storyStateOverrides: {
+      deviceDrawerBusyAction: "connect-browser-printer",
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: /选择设备/ }))
+    await canvas.findByRole("button", { name: "连接中…" })
+  },
+}
+
 export const TemplatesWorkspace: Story = {
   args: {
     context: runtimeContext,

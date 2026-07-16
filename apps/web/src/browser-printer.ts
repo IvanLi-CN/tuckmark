@@ -20,7 +20,8 @@ export type BrowserPrintResult = {
   totalBytes?: number
 }
 
-type PrintErrorCode =
+export type BrowserPrintErrorCode =
+  | "cancelled"
   | "permission_denied"
   | "device_not_found"
   | "service_not_found"
@@ -28,7 +29,7 @@ type PrintErrorCode =
   | "write_failed"
   | "unsupported"
 
-type PrintError = Error & { code: PrintErrorCode }
+export type BrowserPrintError = Error & { code: BrowserPrintErrorCode }
 
 const PRINTER_SERVICE_UUID = "49535343-fe7d-4ae5-8fa9-9fafd205e455"
 const PRINTER_WRITE_CHARACTERISTIC_UUID = "49535343-8841-43f4-a8d4-ecbe34729bb3"
@@ -38,10 +39,20 @@ let selectedPrinter: BrowserPrinterSession | null = null
 let connectedDevice: BluetoothDevice | undefined
 let connectedCharacteristic: BluetoothRemoteGATTCharacteristic | undefined
 
-function createPrintError(code: PrintErrorCode, message: string): PrintError {
-  const error = new Error(message) as PrintError
+function createPrintError(code: BrowserPrintErrorCode, message: string): BrowserPrintError {
+  const error = new Error(message) as BrowserPrintError
   error.code = code
   return error
+}
+
+function isBluetoothChooserCancelled(error: unknown): boolean {
+  const name = error instanceof Error ? error.name.toLowerCase() : ""
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
+  return (
+    (name === "notfounderror" && message.includes("requestdevice")) ||
+    ((message.includes("user cancelled") || message.includes("user canceled")) &&
+      message.includes("requestdevice"))
+  )
 }
 
 function ensureBrowserEnvironment(): void {
@@ -255,9 +266,12 @@ export async function connectBrowserPrinter(): Promise<BrowserPrinterSession> {
       optionalServices: [PRINTER_SERVICE_UUID],
     })
   } catch (error) {
+    if (isBluetoothChooserCancelled(error)) {
+      throw createPrintError("cancelled", "已取消选择蓝牙打印机。")
+    }
     throw createPrintError(
       "permission_denied",
-      `蓝牙授权被拒绝或取消：${error instanceof Error ? error.message : String(error)}`
+      `蓝牙权限被拒绝：${error instanceof Error ? error.message : String(error)}`
     )
   }
 
