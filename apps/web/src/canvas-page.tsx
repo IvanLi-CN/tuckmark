@@ -90,6 +90,7 @@ import {
   type CanvasSnapGuide,
   type CanvasTransformBox,
   resolveCanvasSnap,
+  resolveDirectHandleSnap,
   resolveTransformerSnap,
   translateCanvasSnapBounds,
 } from "./canvas-snap.js"
@@ -1202,6 +1203,8 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
   if (
     scenario === "draft-restore" ||
     scenario === "text-selected" ||
+    scenario === "text-bottom-center-snap" ||
+    scenario === "text-bottom-center-guide-state" ||
     scenario === "text-font-metrics" ||
     scenario === "text-justify-selected" ||
     scenario === "text-justify-multiline-selected" ||
@@ -1216,7 +1219,9 @@ function createScenarioDraft(scenario: CanvasStoryScenario): CanvasDraftDocument
     scenario === "magnetic-snap" ||
     scenario === "circle-selected" ||
     scenario === "triangle-selected" ||
-    scenario === "line-selected"
+    scenario === "line-selected" ||
+    scenario === "line-endpoint-center-snap" ||
+    scenario === "line-endpoint-center-guide-state"
   ) {
     return buildStoryScenarioDocument(scenario)
   }
@@ -1236,6 +1241,8 @@ function shouldUseScenarioDraft(scenario: CanvasStoryScenario): boolean {
   return (
     scenario === "draft-restore" ||
     scenario === "text-selected" ||
+    scenario === "text-bottom-center-snap" ||
+    scenario === "text-bottom-center-guide-state" ||
     scenario === "text-font-metrics" ||
     scenario === "text-justify-selected" ||
     scenario === "text-justify-multiline-selected" ||
@@ -1250,7 +1257,9 @@ function shouldUseScenarioDraft(scenario: CanvasStoryScenario): boolean {
     scenario === "magnetic-snap" ||
     scenario === "circle-selected" ||
     scenario === "triangle-selected" ||
-    scenario === "line-selected"
+    scenario === "line-selected" ||
+    scenario === "line-endpoint-center-snap" ||
+    scenario === "line-endpoint-center-guide-state"
   )
 }
 
@@ -1307,6 +1316,8 @@ function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryS
   }
   if (
     scenario === "text-selected" ||
+    scenario === "text-bottom-center-snap" ||
+    scenario === "text-bottom-center-guide-state" ||
     scenario === "text-font-metrics" ||
     scenario === "text-justify-selected" ||
     scenario === "text-justify-multiline-selected" ||
@@ -1334,6 +1345,23 @@ function getScenarioSelection(draft: CanvasDraftDocument, scenario: CanvasStoryS
   if (scenario === "line-selected") {
     const line = draft.elements.find((element) => element.kind === "line")
     return line ? [line.id] : []
+  }
+  if (scenario === "line-endpoint-center-snap" || scenario === "line-endpoint-center-guide-state") {
+    const line = draft.elements.find((element) => element.kind === "line")
+    return line ? [line.id] : []
+  }
+  return []
+}
+
+function getScenarioSnapGuides(scenario: CanvasStoryScenario): CanvasSnapGuide[] {
+  if (scenario === "text-bottom-center-guide-state") {
+    return [{ axis: "y", coordinate: 13.2, kind: "element" }]
+  }
+  if (scenario === "line-endpoint-center-guide-state") {
+    return [
+      { axis: "x", coordinate: 32, kind: "element" },
+      { axis: "y", coordinate: 10, kind: "element" },
+    ]
   }
   return []
 }
@@ -1588,12 +1616,19 @@ function resolveLineEndpointSnap(
   viewport: StageViewport,
   snapEnabled: boolean
 ) {
-  const snap = resolveCanvasSnap(createCanvasSnapContext(draft, [lineId], viewport, snapEnabled), {
-    x: point.x,
-    y: point.y,
-    width: 0,
-    height: 0,
-  })
+  const snap = resolveDirectHandleSnap(
+    createCanvasSnapContext(draft, [lineId], viewport, snapEnabled),
+    {
+      x: point.x,
+      y: point.y,
+      width: 0,
+      height: 0,
+    },
+    {
+      x: ["center"],
+      y: ["center"],
+    }
+  )
   return {
     point: {
       x: point.x + snap.deltaX,
@@ -4913,12 +4948,14 @@ function renderElementNode(element: CanvasDraftElement): React.ReactNode {
 function CanvasStageView({
   state,
   readOnly,
+  initialSnapGuides,
   onChange,
   onViewportSizeChange,
   onPointerChange,
 }: {
   state: CanvasPageState
   readOnly: boolean
+  initialSnapGuides: CanvasSnapGuide[]
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
   onViewportSizeChange: (size: StageViewportSize) => void
   onPointerChange: (point: { x: number; y: number } | null) => void
@@ -4928,7 +4965,7 @@ function CanvasStageView({
   const nodeRefs = React.useRef<Record<string, Konva.Group | null>>({})
   const transformerSnapGuidesRef = React.useRef<CanvasSnapGuide[]>([])
   const hadPendingPasteRef = React.useRef(Boolean(state.pendingPaste))
-  const [snapGuides, setSnapGuides] = React.useState<CanvasSnapGuide[]>([])
+  const [snapGuides, setSnapGuides] = React.useState<CanvasSnapGuide[]>(() => initialSnapGuides)
   const [stageHostElement, setStageHostElement] = React.useState<HTMLDivElement | null>(null)
   const isPanningRef = React.useRef(false)
   const wheelBurstRef = React.useRef<{
@@ -5335,6 +5372,11 @@ function CanvasStageView({
     <div
       className="tm-stage-shell"
       data-snap-guides={snapGuides.length}
+      data-snap-guide-signature={
+        snapGuides.length > 0
+          ? snapGuides.map((guide) => `${guide.axis}:${guide.coordinate}:${guide.kind}`).join("|")
+          : undefined
+      }
       data-testid="canvas-stage-shell"
     >
       <div className="tm-stage-wrap tm-stage-wrap--editor">
@@ -6129,6 +6171,10 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
   const routeSource = React.useMemo(() => resolveCanvasSource(searchParams), [searchParams])
   const initialPanel = React.useMemo(() => resolveInitialCanvasPanel(searchParams), [searchParams])
   const initialStatus = React.useMemo(() => resolveCanvasStatus(searchParams), [searchParams])
+  const initialSnapGuides = React.useMemo(
+    () => (initialScenario ? getScenarioSnapGuides(initialScenario) : []),
+    [initialScenario]
+  )
   const startupSyncPending =
     routeSource.kind === "scratch" &&
     controller.context.surface === "server-http" &&
@@ -6931,6 +6977,7 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
               <CanvasStageView
                 state={state}
                 readOnly={interactionLocked}
+                initialSnapGuides={initialSnapGuides}
                 onChange={setState}
                 onViewportSizeChange={setStageViewportSize}
                 onPointerChange={handleStagePointerChange}

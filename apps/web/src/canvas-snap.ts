@@ -30,18 +30,30 @@ export type CanvasSnapContext = {
   gridSize: number
 }
 
-export type CanvasSnapEdges = {
-  x?: Array<"left" | "right">
-  y?: Array<"top" | "bottom">
+export type CanvasSnapAxisSource = "min" | "center" | "max"
+
+export type CanvasSnapSources = {
+  x?: CanvasSnapAxisSource[]
+  y?: CanvasSnapAxisSource[]
 }
 
 export type CanvasTransformBox = CanvasSnapBounds & {
   rotation: number
 }
 
+export type CanvasSnapTargetScope = "bounds" | "direct-handle"
+
+export type CanvasSnapRequest = {
+  sources?: CanvasSnapSources
+  targetScope?: CanvasSnapTargetScope
+}
+
+type CanvasSnapTargetFeature = "edge" | "center" | "corner"
+
 type CanvasSnapCandidate = {
   coordinate: number
   kind: CanvasSnapTargetKind
+  feature: CanvasSnapTargetFeature
   index: number
 }
 
@@ -53,49 +65,99 @@ type AxisSnapResult = {
 const SNAP_TOLERANCE_PIXELS = 8
 const GRID_TOLERANCE_RATIO = 0.4
 const TIE_TOLERANCE_PIXELS = 0.5
+const DEFAULT_BOUND_SOURCES: Record<"x" | "y", CanvasSnapAxisSource[]> = {
+  x: ["min", "max"],
+  y: ["min", "max"],
+}
 const TARGET_PRIORITY: Record<CanvasSnapTargetKind, number> = {
   element: 0,
   canvas: 1,
   grid: 2,
 }
 
-function getAxisCandidates(context: CanvasSnapContext, axis: "x" | "y") {
-  const movingIds = new Set(context.movingIds)
-  const canvasEdge = axis === "x" ? context.draft.width : context.draft.height
-  const candidates: CanvasSnapCandidate[] = [
-    { coordinate: 0, kind: "canvas", index: 0 },
-    { coordinate: canvasEdge, kind: "canvas", index: 1 },
-  ]
+function pushAxisCandidates(
+  candidates: CanvasSnapCandidate[],
+  axis: "x" | "y",
+  bounds: CanvasSnapBounds,
+  kind: Exclude<CanvasSnapTargetKind, "grid">,
+  nextIndex: number,
+  targetScope: CanvasSnapTargetScope
+) {
+  const min = axis === "x" ? bounds.x : bounds.y
+  const span = axis === "x" ? bounds.width : bounds.height
+  const max = min + span
+  candidates.push(
+    { coordinate: min, kind, feature: "edge", index: nextIndex },
+    { coordinate: max, kind, feature: "edge", index: nextIndex + 1 }
+  )
+  if (targetScope !== "direct-handle") {
+    return nextIndex + 2
+  }
+  candidates.push(
+    { coordinate: min + span / 2, kind, feature: "center", index: nextIndex + 2 },
+    { coordinate: min, kind, feature: "corner", index: nextIndex + 3 },
+    { coordinate: max, kind, feature: "corner", index: nextIndex + 4 }
+  )
+  return nextIndex + 5
+}
 
-  context.draft.elements.forEach((element, index) => {
+function getAxisCandidates(
+  context: CanvasSnapContext,
+  axis: "x" | "y",
+  targetScope: CanvasSnapTargetScope
+) {
+  const movingIds = new Set(context.movingIds)
+  const candidates: CanvasSnapCandidate[] = []
+  let nextIndex = 0
+  nextIndex = pushAxisCandidates(
+    candidates,
+    axis,
+    {
+      x: 0,
+      y: 0,
+      width: context.draft.width,
+      height: context.draft.height,
+    },
+    "canvas",
+    nextIndex,
+    targetScope
+  )
+
+  context.draft.elements.forEach((element) => {
     if (!element.meta.visible || movingIds.has(element.id)) {
       return
     }
     const bounds = getElementSelectionBounds(element)
-    const start = axis === "x" ? bounds.x : bounds.y
-    const end = start + (axis === "x" ? bounds.width : bounds.height)
-    candidates.push(
-      { coordinate: start, kind: "element", index: index * 2 },
-      { coordinate: end, kind: "element", index: index * 2 + 1 }
-    )
+    nextIndex = pushAxisCandidates(candidates, axis, bounds, "element", nextIndex, targetScope)
   })
 
   return candidates
 }
 
-function getAxisEdges(bounds: CanvasSnapBounds, axis: "x" | "y", requestedEdges: CanvasSnapEdges) {
-  if (axis === "x") {
-    const edges = requestedEdges.x ?? ["left", "right"]
-    return edges.map((edge, index) => ({
-      coordinate: edge === "left" ? bounds.x : bounds.x + bounds.width,
-      index,
-    }))
+function getSourceCoordinate(
+  bounds: CanvasSnapBounds,
+  axis: "x" | "y",
+  source: CanvasSnapAxisSource
+) {
+  const min = axis === "x" ? bounds.x : bounds.y
+  const span = axis === "x" ? bounds.width : bounds.height
+  if (source === "center") {
+    return min + span / 2
   }
+  return source === "min" ? min : min + span
+}
 
-  const edges = requestedEdges.y ?? ["top", "bottom"]
-  return edges.map((edge, index) => ({
-    coordinate: edge === "top" ? bounds.y : bounds.y + bounds.height,
+function getAxisSources(
+  bounds: CanvasSnapBounds,
+  axis: "x" | "y",
+  sources: CanvasSnapSources,
+  explicitSources: boolean
+) {
+  const requestedSources = sources[axis] ?? (explicitSources ? [] : DEFAULT_BOUND_SOURCES[axis])
+  return requestedSources.map((source, index) => ({
+    coordinate: getSourceCoordinate(bounds, axis, source),
     index,
+    source,
   }))
 }
 
@@ -137,33 +199,40 @@ function resolveAxisSnap(
   context: CanvasSnapContext,
   bounds: CanvasSnapBounds,
   axis: "x" | "y",
-  requestedEdges: CanvasSnapEdges
+  request: CanvasSnapRequest,
+  explicitSources: boolean
 ): AxisSnapResult {
   if (!context.enabled || context.displayScale <= 0 || context.gridSize <= 0) {
     return { delta: 0, guide: null }
   }
 
-  const candidates = getAxisCandidates(context, axis)
-  const edges = getAxisEdges(bounds, axis, requestedEdges)
+  const targetScope = request.targetScope ?? "bounds"
+  const candidates = getAxisCandidates(context, axis, targetScope)
+  const sources = getAxisSources(bounds, axis, request.sources ?? {}, explicitSources)
+  if (sources.length === 0) {
+    return { delta: 0, guide: null }
+  }
   let best: (CanvasSnapCandidate & { distancePixels: number; edgeIndex: number }) | null = null
 
-  for (const edge of edges) {
-    const gridCoordinate = Math.round(edge.coordinate / context.gridSize) * context.gridSize
+  for (const source of sources) {
+    const gridCoordinate = Math.round(source.coordinate / context.gridSize) * context.gridSize
     const possibleCandidates = [
       ...candidates,
       {
         coordinate: gridCoordinate,
         kind: "grid" as const,
+        feature: "edge" as const,
         index: 0,
       },
     ]
 
     for (const candidate of possibleCandidates) {
-      const distancePixels = Math.abs(candidate.coordinate - edge.coordinate) * context.displayScale
+      const distancePixels =
+        Math.abs(candidate.coordinate - source.coordinate) * context.displayScale
       if (distancePixels > getTolerancePixels(candidate.kind, context)) {
         continue
       }
-      const resolved = { ...candidate, distancePixels, edgeIndex: edge.index }
+      const resolved = { ...candidate, distancePixels, edgeIndex: source.index }
       if (isBetterCandidate(resolved, best)) {
         best = resolved
       }
@@ -174,13 +243,13 @@ function resolveAxisSnap(
     return { delta: 0, guide: null }
   }
 
-  const snappedEdge = edges[best.edgeIndex]
-  if (!snappedEdge) {
+  const snappedSource = sources[best.edgeIndex]
+  if (!snappedSource) {
     return { delta: 0, guide: null }
   }
 
   return {
-    delta: best.coordinate - snappedEdge.coordinate,
+    delta: best.coordinate - snappedSource.coordinate,
     guide:
       best.kind === "grid"
         ? null
@@ -195,15 +264,27 @@ function resolveAxisSnap(
 export function resolveCanvasSnap(
   context: CanvasSnapContext,
   bounds: CanvasSnapBounds,
-  edges: CanvasSnapEdges = {}
+  request: CanvasSnapRequest = {}
 ): CanvasSnapResult {
-  const x = resolveAxisSnap(context, bounds, "x", edges)
-  const y = resolveAxisSnap(context, bounds, "y", edges)
+  const explicitSources = Boolean(request.sources)
+  const x = resolveAxisSnap(context, bounds, "x", request, explicitSources)
+  const y = resolveAxisSnap(context, bounds, "y", request, explicitSources)
   return {
     deltaX: x.delta,
     deltaY: y.delta,
     guides: [x.guide, y.guide].filter((guide): guide is CanvasSnapGuide => guide !== null),
   }
+}
+
+export function resolveDirectHandleSnap(
+  context: CanvasSnapContext,
+  bounds: CanvasSnapBounds,
+  sources: CanvasSnapSources
+): CanvasSnapResult {
+  return resolveCanvasSnap(context, bounds, {
+    sources,
+    targetScope: "direct-handle",
+  })
 }
 
 export function translateCanvasSnapBounds(
@@ -218,24 +299,24 @@ export function translateCanvasSnapBounds(
   }
 }
 
-export function getTransformerSnapEdges(anchor: string | null): CanvasSnapEdges | null {
+export function getTransformerSnapSources(anchor: string | null): CanvasSnapSources | null {
   switch (anchor) {
     case "top-left":
-      return { x: ["left"], y: ["top"] }
+      return { x: ["min"], y: ["min"] }
     case "top-center":
-      return { y: ["top"] }
+      return { y: ["min"] }
     case "top-right":
-      return { x: ["right"], y: ["top"] }
+      return { x: ["max"], y: ["min"] }
     case "middle-right":
-      return { x: ["right"] }
+      return { x: ["max"] }
     case "bottom-right":
-      return { x: ["right"], y: ["bottom"] }
+      return { x: ["max"], y: ["max"] }
     case "bottom-center":
-      return { y: ["bottom"] }
+      return { y: ["max"] }
     case "bottom-left":
-      return { x: ["left"], y: ["bottom"] }
+      return { x: ["min"], y: ["max"] }
     case "middle-left":
-      return { x: ["left"] }
+      return { x: ["min"] }
     default:
       return null
   }
@@ -247,18 +328,18 @@ export function resolveTransformerSnap(
   anchor: string | null,
   options?: { preserveAspectRatio?: boolean }
 ): { box: CanvasTransformBox; guides: CanvasSnapGuide[] } {
-  const edges = getTransformerSnapEdges(anchor)
-  if (!edges) {
+  const sources = getTransformerSnapSources(anchor)
+  if (!sources) {
     return { box, guides: [] }
   }
 
-  const snap = resolveCanvasSnap(context, box, edges)
+  const snap = resolveDirectHandleSnap(context, box, sources)
   const nextBox = { ...box }
 
   if (
     options?.preserveAspectRatio &&
-    edges.x?.length &&
-    edges.y?.length &&
+    sources.x?.length &&
+    sources.y?.length &&
     box.width > 0 &&
     box.height > 0
   ) {
@@ -268,14 +349,14 @@ export function resolveTransformerSnap(
     const aspectRatio = box.width / box.height
 
     if (useX) {
-      const width = edges.x.includes("left") ? box.width - snap.deltaX : box.width + snap.deltaX
+      const width = sources.x.includes("min") ? box.width - snap.deltaX : box.width + snap.deltaX
       const height = width / aspectRatio
       nextBox.width = width
       nextBox.height = height
-      if (edges.x.includes("left")) {
+      if (sources.x.includes("min")) {
         nextBox.x = box.x + snap.deltaX
       }
-      if (edges.y.includes("top")) {
+      if (sources.y.includes("min")) {
         nextBox.y = box.y + box.height - height
       }
       return {
@@ -285,14 +366,14 @@ export function resolveTransformerSnap(
     }
 
     if (yDistance > 0) {
-      const height = edges.y.includes("top") ? box.height - snap.deltaY : box.height + snap.deltaY
+      const height = sources.y.includes("min") ? box.height - snap.deltaY : box.height + snap.deltaY
       const width = height * aspectRatio
       nextBox.width = width
       nextBox.height = height
-      if (edges.y.includes("top")) {
+      if (sources.y.includes("min")) {
         nextBox.y = box.y + snap.deltaY
       }
-      if (edges.x.includes("left")) {
+      if (sources.x.includes("min")) {
         nextBox.x = box.x + box.width - width
       }
       return {
@@ -302,17 +383,17 @@ export function resolveTransformerSnap(
     }
   }
 
-  if (edges.x?.includes("left")) {
+  if (sources.x?.includes("min")) {
     nextBox.x += snap.deltaX
     nextBox.width -= snap.deltaX
-  } else if (edges.x?.includes("right")) {
+  } else if (sources.x?.includes("max")) {
     nextBox.width += snap.deltaX
   }
 
-  if (edges.y?.includes("top")) {
+  if (sources.y?.includes("min")) {
     nextBox.y += snap.deltaY
     nextBox.height -= snap.deltaY
-  } else if (edges.y?.includes("bottom")) {
+  } else if (sources.y?.includes("max")) {
     nextBox.height += snap.deltaY
   }
 

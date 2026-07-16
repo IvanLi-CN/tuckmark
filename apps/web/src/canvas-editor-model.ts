@@ -1948,6 +1948,49 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
     return document
   }
 
+  if (scenario === "text-bottom-center-snap" || scenario === "text-bottom-center-guide-state") {
+    const document = createDraftFromPreset(getPresetById("ops-tag"))
+    const [primaryText, secondaryText] = document.elements.filter(
+      (element): element is Extract<CanvasDraftElement, { kind: "text" }> => element.kind === "text"
+    )
+    if (!primaryText || !secondaryText) {
+      return document
+    }
+    document.elements = [
+      {
+        ...primaryText,
+        x: 12,
+        y: 4,
+        width: 24,
+        height: scenario === "text-bottom-center-guide-state" ? 9.2 : 6.4,
+        fontSize: 5.2,
+        fontFamily: "arial",
+        value: "20kΩ",
+        maxLines: 1,
+        meta: { ...primaryText.meta, name: "上方文本" },
+      },
+      {
+        ...secondaryText,
+        x: 12,
+        y: 13.2,
+        width: 24,
+        height: 6.4,
+        fontSize: 4.6,
+        fontFamily: DEFAULT_TEXT_FONT_FAMILY,
+        fontWeight: "normal",
+        value: "可编辑文本",
+        maxLines: 1,
+        meta: { ...secondaryText.meta, name: "下方参考", locked: true },
+      },
+    ]
+    document.editor = {
+      ...document.editor,
+      gridEnabled: true,
+      snapEnabled: true,
+    }
+    return document
+  }
+
   if (scenario === "rect-selected") {
     const document = createDraftFromPreset(getPresetById("ops-tag"))
     document.elements = document.elements.map((element) =>
@@ -2012,6 +2055,35 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
     return document
   }
 
+  if (scenario === "line-endpoint-center-snap" || scenario === "line-endpoint-center-guide-state") {
+    const document = createDraftFromPreset(getPresetById("ops-tag"))
+    document.elements = [
+      createCanvasElement("line", 0, {
+        x: 8,
+        y: 7,
+        x2: scenario === "line-endpoint-center-guide-state" ? 32 : 15.8,
+        y2: scenario === "line-endpoint-center-guide-state" ? 10 : 9.4,
+        strokeWidth: 0.25,
+        meta: { name: "端点线段", visible: true, locked: false },
+      }),
+      createCanvasElement("rect", 1, {
+        x: 28,
+        y: 6,
+        width: 8,
+        height: 8,
+        radius: 0,
+        strokeWidth: 0.25,
+        meta: { name: "中心参考", visible: true, locked: true },
+      }),
+    ]
+    document.editor = {
+      ...document.editor,
+      gridEnabled: true,
+      snapEnabled: true,
+    }
+    return document
+  }
+
   if (scenario === "circle-selected" || scenario === "triangle-selected") {
     const document = createDraftFromPreset(getPresetById("ops-tag"))
     document.elements = [
@@ -2045,6 +2117,8 @@ export type CanvasStoryScenario =
   | "narrow-default"
   | "marquee-selection"
   | "text-selected"
+  | "text-bottom-center-snap"
+  | "text-bottom-center-guide-state"
   | "text-font-metrics"
   | "text-justify-selected"
   | "text-justify-multiline-selected"
@@ -2057,6 +2131,8 @@ export type CanvasStoryScenario =
   | "circle-selected"
   | "triangle-selected"
   | "line-selected"
+  | "line-endpoint-center-snap"
+  | "line-endpoint-center-guide-state"
   | "barcode-selected"
   | "barcode-invalid"
   | "datamatrix-selected"
