@@ -56,8 +56,11 @@ test("fine vertical wheel burst pans without changing zoom", async ({ page }) =>
   const paper = page.locator(".tm-stage-paper--base")
   const before = await paper.boundingBox()
   expect(before).not.toBeNull()
+  if (!before) {
+    throw new Error("Expected the canvas paper bounding box before wheel pan.")
+  }
 
-  await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2)
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2)
   for (const deltaY of [5, 8, 5, 4, 2, 1]) {
     await page.mouse.wheel(0, deltaY)
   }
@@ -65,9 +68,12 @@ test("fine vertical wheel burst pans without changing zoom", async ({ page }) =>
 
   const after = await paper.boundingBox()
   expect(after).not.toBeNull()
-  expect(after!.y).toBeLessThan(before!.y - 20)
-  expect(after!.width).toBeCloseTo(before!.width, 1)
-  expect(after!.height).toBeCloseTo(before!.height, 1)
+  if (!after) {
+    throw new Error("Expected the canvas paper bounding box after wheel pan.")
+  }
+  expect(after.y).toBeLessThan(before.y - 20)
+  expect(after.width).toBeCloseTo(before.width, 1)
+  expect(after.height).toBeCloseTo(before.height, 1)
 })
 
 test("Space + drag pans from label content without changing zoom", async ({ page }) => {

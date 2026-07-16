@@ -1,5 +1,17 @@
 import { stableStringify } from "../../../packages/core/src/web.js"
+import { listStoredDraftDocuments } from "./canvas-editor-model.js"
 import { normalizeCanvasDraftDocumentUnits } from "./lib/canvas-units.js"
+import {
+  createDefaultRuntimeAppSettings,
+  normalizeRuntimeAppSettings,
+  withUpdatedRuntimeAppSettings,
+} from "./runtime-app-settings.js"
+import type {
+  RuntimeStore,
+  RuntimeStoreAppSettings,
+  RuntimeStoreSnapshot,
+} from "./runtime-store-contract.js"
+import { emitRuntimeStoreMutation } from "./runtime-store-events.js"
 import type {
   CanvasDraftDocument,
   CanvasDraftSource,
@@ -10,15 +22,21 @@ import type {
   UserTemplateVersionKind,
   UserTemplateVersionSnapshot,
 } from "./types.js"
+import {
+  createSqliteRuntimeStore,
+  supportsSqliteRuntimeStore,
+} from "./user-template-sqlite-store.js"
 
 const DB_NAME = "tuckmark-user-template-store"
-const DB_VERSION = 1
+const DB_VERSION = 2
 const TEMPLATE_STORE = "templates"
 const VERSION_STORE = "versions"
 const WORKING_COPY_STORE = "workingCopies"
+const APP_SETTINGS_STORE = "appSettings"
 const MAX_SAVED_VERSIONS = 20
 const MAX_AUTOSAVE_VERSIONS = 10
 const AUTOSAVE_INTERVAL_MS = 5 * 60 * 1000
+const APP_SETTINGS_KEY = "global"
 
 function cloneValue<T>(value: T): T {
   if (typeof structuredClone === "function") {
@@ -134,10 +152,57 @@ function normalizeVersionSnapshot(
   }
 }
 
-class MemoryUserTemplateStore {
+function computeSnapshotUpdatedAt(snapshot: RuntimeStoreSnapshot): string | null {
+  const timestamps = [
+    snapshot.settings.updatedAt,
+    ...snapshot.templates.map((template) => template.updatedAt),
+    ...snapshot.versions.map((version) => version.createdAt),
+    ...snapshot.workingCopies.map((entry) => entry.updatedAt),
+  ].filter((value) => value.length > 0)
+
+  if (timestamps.length === 0) {
+    return null
+  }
+
+  return timestamps.reduce((latest, current) => (current > latest ? current : latest))
+}
+
+function buildSnapshot(args: {
+  settings: RuntimeStoreAppSettings
+  templates: UserTemplateRecord[]
+  versions: UserTemplateVersionSnapshot[]
+  workingCopies: CanvasWorkingCopyIndexEntry[]
+}): RuntimeStoreSnapshot {
+  const snapshot: RuntimeStoreSnapshot = {
+    schema: "tuckmark.runtime-export.v1",
+    exportedAt: new Date().toISOString(),
+    snapshotUpdatedAt: null,
+    settings: normalizeRuntimeAppSettings(args.settings),
+    templates: cloneValue(args.templates),
+    versions: args.versions.map((version) => normalizeVersionSnapshot(version)),
+    workingCopies: args.workingCopies.map((entry) => ({
+      ...cloneValue(entry),
+      draft: normalizeCanvasDraftDocumentUnits(entry.draft),
+    })),
+  }
+  snapshot.snapshotUpdatedAt = computeSnapshotUpdatedAt(snapshot)
+  return snapshot
+}
+
+function isSnapshotEmpty(snapshot: RuntimeStoreSnapshot): boolean {
+  return (
+    snapshot.templates.length === 0 &&
+    snapshot.versions.length === 0 &&
+    snapshot.workingCopies.length === 0 &&
+    snapshot.settings.updatedAt === createDefaultRuntimeAppSettings().updatedAt
+  )
+}
+
+class MemoryUserTemplateStore implements RuntimeStore {
   private readonly templates = new Map<string, UserTemplateRecord>()
   private readonly versions = new Map<string, UserTemplateVersionSnapshot>()
   private readonly workingCopies = new Map<string, CanvasWorkingCopyIndexEntry>()
+  private appSettings = createDefaultRuntimeAppSettings()
 
   async listTemplates(): Promise<UserTemplateSummary[]> {
     const templates = Array.from(this.templates.values()).sort((left, right) =>
@@ -376,10 +441,59 @@ class MemoryUserTemplateStore {
     this.clearVersions(templateId, "autosave")
   }
 
+  async loadAppSettings(): Promise<RuntimeStoreAppSettings> {
+    return cloneValue(this.appSettings)
+  }
+
+  async saveAppSettings(
+    updater:
+      | Partial<Omit<RuntimeStoreAppSettings, "version" | "updatedAt">>
+      | ((
+          current: RuntimeStoreAppSettings
+        ) => Partial<Omit<RuntimeStoreAppSettings, "version" | "updatedAt">>)
+  ): Promise<RuntimeStoreAppSettings> {
+    const next = typeof updater === "function" ? updater(this.appSettings) : updater
+    this.appSettings = withUpdatedRuntimeAppSettings(this.appSettings, next)
+    return cloneValue(this.appSettings)
+  }
+
+  async exportSnapshot(): Promise<RuntimeStoreSnapshot> {
+    return buildSnapshot({
+      settings: this.appSettings,
+      templates: Array.from(this.templates.values()),
+      versions: Array.from(this.versions.values()),
+      workingCopies: Array.from(this.workingCopies.values()),
+    })
+  }
+
+  async replaceSnapshot(snapshot: RuntimeStoreSnapshot): Promise<void> {
+    this.templates.clear()
+    this.versions.clear()
+    this.workingCopies.clear()
+    this.appSettings = normalizeRuntimeAppSettings(snapshot.settings)
+    for (const template of snapshot.templates) {
+      this.templates.set(template.id, cloneValue(template))
+    }
+    for (const version of snapshot.versions) {
+      this.versions.set(version.id, normalizeVersionSnapshot(version))
+    }
+    for (const entry of snapshot.workingCopies) {
+      this.workingCopies.set(entry.sourceKey, {
+        ...cloneValue(entry),
+        draft: normalizeCanvasDraftDocumentUnits(entry.draft),
+      })
+    }
+  }
+
+  async isEmpty(): Promise<boolean> {
+    return this.templates.size === 0 && this.versions.size === 0 && this.workingCopies.size === 0
+  }
+
   async resetForTest(): Promise<void> {
     this.templates.clear()
     this.versions.clear()
     this.workingCopies.clear()
+    this.appSettings = createDefaultRuntimeAppSettings()
   }
   private trimVersions(templateId: string, kind: UserTemplateVersionKind, limit: number): void {
     const versions = Array.from(this.versions.values())
@@ -419,6 +533,9 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
           }
           if (!hasStore(db, WORKING_COPY_STORE)) {
             db.createObjectStore(WORKING_COPY_STORE, { keyPath: "sourceKey" })
+          }
+          if (!hasStore(db, APP_SETTINGS_STORE)) {
+            db.createObjectStore(APP_SETTINGS_STORE, { keyPath: "key" })
           }
         }
         request.onerror = () => reject(request.error ?? new Error("IndexedDB open failed"))
@@ -741,14 +858,111 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
     })
   }
 
-  override async resetForTest(): Promise<void> {
+  override async loadAppSettings(): Promise<RuntimeStoreAppSettings> {
+    const settings = await this.transaction([APP_SETTINGS_STORE], "readonly", async (stores) => {
+      const record = await readOne<{ key: string; payload: RuntimeStoreAppSettings }>(
+        stores[APP_SETTINGS_STORE],
+        APP_SETTINGS_KEY
+      )
+      return normalizeRuntimeAppSettings(record?.payload)
+    })
+    return settings
+  }
+
+  override async saveAppSettings(
+    updater:
+      | Partial<Omit<RuntimeStoreAppSettings, "version" | "updatedAt">>
+      | ((
+          current: RuntimeStoreAppSettings
+        ) => Partial<Omit<RuntimeStoreAppSettings, "version" | "updatedAt">>)
+  ): Promise<RuntimeStoreAppSettings> {
+    const current = await this.loadAppSettings()
+    const next = typeof updater === "function" ? updater(current) : updater
+    const updated = withUpdatedRuntimeAppSettings(current, next)
+    await this.transaction([APP_SETTINGS_STORE], "readwrite", async (stores) => {
+      await put(stores[APP_SETTINGS_STORE], {
+        key: APP_SETTINGS_KEY,
+        payload: updated,
+      })
+    })
+    return cloneValue(updated)
+  }
+
+  override async exportSnapshot(): Promise<RuntimeStoreSnapshot> {
+    const snapshot = await this.transaction(
+      [TEMPLATE_STORE, VERSION_STORE, WORKING_COPY_STORE, APP_SETTINGS_STORE],
+      "readonly",
+      async (stores) => {
+        const templates = await readAll<UserTemplateRecord>(stores[TEMPLATE_STORE])
+        const versions = await readAll<UserTemplateVersionSnapshot>(stores[VERSION_STORE])
+        const workingCopies = await readAll<CanvasWorkingCopyIndexEntry>(stores[WORKING_COPY_STORE])
+        const settingsRecord = await readOne<{ key: string; payload: RuntimeStoreAppSettings }>(
+          stores[APP_SETTINGS_STORE],
+          APP_SETTINGS_KEY
+        )
+        return buildSnapshot({
+          settings: normalizeRuntimeAppSettings(settingsRecord?.payload),
+          templates,
+          versions,
+          workingCopies,
+        })
+      }
+    )
+    return snapshot
+  }
+
+  override async replaceSnapshot(snapshot: RuntimeStoreSnapshot): Promise<void> {
     await this.transaction(
-      [TEMPLATE_STORE, VERSION_STORE, WORKING_COPY_STORE],
+      [TEMPLATE_STORE, VERSION_STORE, WORKING_COPY_STORE, APP_SETTINGS_STORE],
       "readwrite",
       async (stores) => {
         await clearStore(stores[TEMPLATE_STORE])
         await clearStore(stores[VERSION_STORE])
         await clearStore(stores[WORKING_COPY_STORE])
+        await clearStore(stores[APP_SETTINGS_STORE])
+        for (const template of snapshot.templates) {
+          await put(stores[TEMPLATE_STORE], cloneValue(template))
+        }
+        for (const version of snapshot.versions) {
+          await put(stores[VERSION_STORE], normalizeVersionSnapshot(version))
+        }
+        for (const workingCopy of snapshot.workingCopies) {
+          await put(stores[WORKING_COPY_STORE], {
+            ...cloneValue(workingCopy),
+            draft: normalizeCanvasDraftDocumentUnits(workingCopy.draft),
+          })
+        }
+        await put(stores[APP_SETTINGS_STORE], {
+          key: APP_SETTINGS_KEY,
+          payload: normalizeRuntimeAppSettings(snapshot.settings),
+        })
+      }
+    )
+  }
+
+  override async isEmpty(): Promise<boolean> {
+    const counts = await this.transaction(
+      [TEMPLATE_STORE, VERSION_STORE, WORKING_COPY_STORE],
+      "readonly",
+      async (stores) => {
+        const templates = await countStore(stores[TEMPLATE_STORE])
+        const versions = await countStore(stores[VERSION_STORE])
+        const workingCopies = await countStore(stores[WORKING_COPY_STORE])
+        return { templates, versions, workingCopies }
+      }
+    )
+    return counts.templates === 0 && counts.versions === 0 && counts.workingCopies === 0
+  }
+
+  override async resetForTest(): Promise<void> {
+    await this.transaction(
+      [TEMPLATE_STORE, VERSION_STORE, WORKING_COPY_STORE, APP_SETTINGS_STORE],
+      "readwrite",
+      async (stores) => {
+        await clearStore(stores[TEMPLATE_STORE])
+        await clearStore(stores[VERSION_STORE])
+        await clearStore(stores[WORKING_COPY_STORE])
+        await clearStore(stores[APP_SETTINGS_STORE])
       }
     )
   }
@@ -786,6 +1000,10 @@ async function clearStore(store: IDBObjectStore): Promise<void> {
   await requestToPromise(store.clear())
 }
 
+async function countStore(store: IDBObjectStore): Promise<number> {
+  return await requestToPromise(store.count())
+}
+
 async function deleteByIndex(index: IDBIndex, query: IDBValidKey | IDBKeyRange): Promise<void> {
   const keys = await requestToPromise(index.getAllKeys(query))
   const objectStore = index.objectStore
@@ -807,45 +1025,33 @@ async function trimIndexedDbVersions(
   await Promise.all(versions.slice(limit).map((version) => remove(store, version.id)))
 }
 
-let storePromise:
-  | Promise<{
-      listTemplates(): Promise<UserTemplateSummary[]>
-      readTemplate(templateId: string): Promise<UserTemplateSummary | null>
-      readHistory(templateId: string): Promise<UserTemplateHistory | null>
-      readVersion(versionId: string): Promise<UserTemplateVersionSnapshot | null>
-      saveTemplate(args: {
-        name: string
-        description?: string
-        document: CanvasDraftDocument
-        templateId?: string
-        sourceVersionId?: string
-      }): Promise<{
-        template: UserTemplateSummary
-        version: UserTemplateVersionSnapshot
-        workingCopy: CanvasWorkingCopyIndexEntry
-      }>
-      saveAutosave(args: {
-        templateId?: string
-        source: CanvasDraftSource
-        document: CanvasDraftDocument
-        sourceVersionId?: string
-      }): Promise<CanvasWorkingCopyIndexEntry>
-      replaceWorkingCopy(args: {
-        templateId?: string
-        source: CanvasDraftSource
-        document: CanvasDraftDocument
-        sourceVersionId?: string
-      }): Promise<CanvasWorkingCopyIndexEntry>
-      loadWorkingCopy(source: CanvasDraftSource): Promise<CanvasWorkingCopyIndexEntry | null>
-      clearWorkingCopy(source: CanvasDraftSource): Promise<void>
-      clearTemplateAutosaves(templateId: string): Promise<void>
-      resetForTest(): Promise<void>
-    }>
-  | undefined
+let legacyStorePromise: Promise<RuntimeStore> | undefined
+let storePromise: Promise<RuntimeStore> | undefined
 
-async function resolveStore() {
-  if (!storePromise) {
-    storePromise = (async () => {
+async function migrateLegacyDraftsToRuntimeStore(store: RuntimeStore): Promise<void> {
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+    return
+  }
+
+  for (const item of listStoredDraftDocuments()) {
+    const source: CanvasDraftSource =
+      item.draft.source?.kind === "preset-template"
+        ? { kind: "preset-template", presetId: item.presetId }
+        : { kind: "scratch", presetId: item.presetId }
+    const existing = await store.loadWorkingCopy(source)
+    if (existing) {
+      continue
+    }
+    await store.replaceWorkingCopy({
+      source,
+      document: item.draft,
+    })
+  }
+}
+
+async function resolveLegacyStore(): Promise<RuntimeStore> {
+  if (!legacyStorePromise) {
+    legacyStorePromise = (async () => {
       if (!isIndexedDbAvailable()) {
         return new MemoryUserTemplateStore()
       }
@@ -855,6 +1061,33 @@ async function resolveStore() {
         return store
       } catch {
         return new MemoryUserTemplateStore()
+      }
+    })()
+  }
+  return await legacyStorePromise
+}
+
+async function resolveStore() {
+  if (!storePromise) {
+    storePromise = (async () => {
+      const legacyStore = await resolveLegacyStore()
+      if (!supportsSqliteRuntimeStore()) {
+        return legacyStore
+      }
+
+      try {
+        const sqliteStore = createSqliteRuntimeStore()
+        await sqliteStore.listTemplates()
+        if (await sqliteStore.isEmpty()) {
+          const legacySnapshot = await legacyStore.exportSnapshot()
+          if (!isSnapshotEmpty(legacySnapshot)) {
+            await sqliteStore.replaceSnapshot(legacySnapshot)
+          }
+        }
+        await migrateLegacyDraftsToRuntimeStore(sqliteStore)
+        return sqliteStore
+      } catch {
+        return legacyStore
       }
     })()
   }
@@ -901,7 +1134,9 @@ export async function saveUserTemplate(args: {
   sourceVersionId?: string
 }) {
   const store = await resolveStore()
-  return store.saveTemplate(args)
+  const result = await store.saveTemplate(args)
+  emitRuntimeStoreMutation("template-saved")
+  return result
 }
 
 export async function saveUserTemplateAutosave(args: {
@@ -911,7 +1146,9 @@ export async function saveUserTemplateAutosave(args: {
   sourceVersionId?: string
 }) {
   const store = await resolveStore()
-  return store.saveAutosave(args)
+  const result = await store.saveAutosave(args)
+  emitRuntimeStoreMutation("autosave-saved")
+  return result
 }
 
 export async function replaceUserTemplateWorkingCopy(args: {
@@ -921,7 +1158,9 @@ export async function replaceUserTemplateWorkingCopy(args: {
   sourceVersionId?: string
 }) {
   const store = await resolveStore()
-  return store.replaceWorkingCopy(args)
+  const result = await store.replaceWorkingCopy(args)
+  emitRuntimeStoreMutation("working-copy-replaced")
+  return result
 }
 
 export async function loadWorkingCopy(
@@ -934,15 +1173,54 @@ export async function loadWorkingCopy(
 export async function clearWorkingCopy(source: CanvasDraftSource): Promise<void> {
   const store = await resolveStore()
   await store.clearWorkingCopy(source)
+  emitRuntimeStoreMutation("working-copy-cleared")
 }
 
 export async function clearTemplateAutosaves(templateId: string): Promise<void> {
   const store = await resolveStore()
   await store.clearTemplateAutosaves(templateId)
+  emitRuntimeStoreMutation("template-autosaves-cleared")
+}
+
+export async function loadRuntimeAppSettings(): Promise<RuntimeStoreAppSettings> {
+  const store = await resolveStore()
+  return store.loadAppSettings()
+}
+
+export async function saveRuntimeAppSettings(
+  updater:
+    | Partial<Omit<RuntimeStoreAppSettings, "version" | "updatedAt">>
+    | ((
+        current: RuntimeStoreAppSettings
+      ) => Partial<Omit<RuntimeStoreAppSettings, "version" | "updatedAt">>)
+): Promise<RuntimeStoreAppSettings> {
+  const store = await resolveStore()
+  const result = await store.saveAppSettings(updater)
+  emitRuntimeStoreMutation("app-settings-saved")
+  return result
+}
+
+export async function exportRuntimeSnapshot(): Promise<RuntimeStoreSnapshot> {
+  const store = await resolveStore()
+  return store.exportSnapshot()
+}
+
+export async function replaceRuntimeSnapshot(snapshot: RuntimeStoreSnapshot): Promise<void> {
+  const store = await resolveStore()
+  await store.replaceSnapshot(snapshot)
+  emitRuntimeStoreMutation("snapshot-replaced")
 }
 
 export async function resetUserTemplateStoreForTest(): Promise<void> {
   const store = await resolveStore()
   await store.resetForTest()
   storePromise = undefined
+  legacyStorePromise = undefined
 }
+
+export { createDefaultRuntimeAppSettings } from "./runtime-app-settings.js"
+export type {
+  RuntimeStore,
+  RuntimeStoreAppSettings,
+  RuntimeStoreSnapshot,
+} from "./runtime-store-contract.js"

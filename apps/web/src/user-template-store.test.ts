@@ -9,12 +9,16 @@ import {
 } from "./canvas-editor-model.js"
 import {
   clearTemplateAutosaves,
+  exportRuntimeSnapshot,
   getAutosaveIntervalMs,
+  loadRuntimeAppSettings,
   loadWorkingCopy,
   readUserTemplate,
   readUserTemplateHistory,
+  replaceRuntimeSnapshot,
   replaceUserTemplateWorkingCopy,
   resetUserTemplateStoreForTest,
+  saveRuntimeAppSettings,
   saveUserTemplate,
   saveUserTemplateAutosave,
 } from "./user-template-store.js"
@@ -246,6 +250,59 @@ describe("user-template-store", () => {
 
     const template = await readUserTemplate(saved.template.id)
     expect(template?.fields[0]?.label).toBe("收件人（草稿）")
+  })
+
+  it("persists runtime app settings independently from document snapshots", async () => {
+    const initialSettings = await loadRuntimeAppSettings()
+    expect(initialSettings.permissionNudgeSeen).toBe(false)
+
+    const updatedSettings = await saveRuntimeAppSettings({
+      permissionNudgeSeen: true,
+      defaultRenderOptions: {
+        ...initialSettings.defaultRenderOptions,
+        threshold: 144,
+      },
+    })
+
+    expect(updatedSettings.permissionNudgeSeen).toBe(true)
+    expect(updatedSettings.defaultRenderOptions.threshold).toBe(144)
+
+    const reloaded = await loadRuntimeAppSettings()
+    expect(reloaded.permissionNudgeSeen).toBe(true)
+    expect(reloaded.defaultRenderOptions.threshold).toBe(144)
+  })
+
+  it("exports and restores the runtime snapshot as a whole dataset", async () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Archive Candidate",
+      document: draft,
+    })
+
+    await saveRuntimeAppSettings({
+      permissionNudgeSeen: true,
+    })
+
+    const snapshot = await exportRuntimeSnapshot()
+    expect(snapshot.templates).toHaveLength(1)
+    expect(snapshot.versions).toHaveLength(1)
+    expect(snapshot.workingCopies).toHaveLength(1)
+    expect(snapshot.settings.permissionNudgeSeen).toBe(true)
+
+    await resetUserTemplateStoreForTest()
+    await replaceRuntimeSnapshot(snapshot)
+
+    const restoredTemplate = await readUserTemplate(saved.template.id)
+    expect(restoredTemplate?.name).toBe("Archive Candidate")
+
+    const restoredWorkingCopy = await loadWorkingCopy({
+      kind: "user-template",
+      templateId: saved.template.id,
+    })
+    expect(restoredWorkingCopy?.draft.name).toBe("Archive Candidate")
+
+    const restoredSettings = await loadRuntimeAppSettings()
+    expect(restoredSettings.permissionNudgeSeen).toBe(true)
   })
 
   it("keeps saved version numbers monotonic after retention trimming", async () => {

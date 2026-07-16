@@ -119,3 +119,16 @@ Override ports or runtime wiring with:
 - Browser and service state merge on startup and after draft save, draft reset, and successful print activity.
 - Concurrent draft edits keep the merged winning draft plus conflict branch metadata instead of silently overwriting one side.
 - `browser-static` and demo-style Web surfaces remain local-first and continue to work without the service runtime.
+
+## Local Data Storage
+
+- Tuckmark Web now keeps durable user-template data behind one runtime storage boundary instead of scattering browser keys across page code.
+- Supported Chromium desktop / installed-PWA surfaces prefer `SQLite Wasm + OPFS` for browser-local runtime persistence.
+- `/system` owns local data-directory workflows:
+  - authorize or switch a user-chosen directory
+  - mirror runtime data into a versioned JSON tree
+  - create fixed-location backups inside that directory
+  - restore from a backup ZIP
+  - import or export the same whole-dataset ZIP archive format
+- The mirrored directory is an external backup surface, not a live online database file. Tuckmark does not read or write it after the browser process exits, and this round does not introduce a background desktop helper.
+- Unsupported browsers keep local editing available through the compatibility storage path, but directory sync, backup / restore, and whole-dataset import / export stay disabled with an explicit capability boundary.

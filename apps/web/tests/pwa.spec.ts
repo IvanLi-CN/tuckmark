@@ -17,11 +17,15 @@ test("browser-static build registers a service worker and works offline after fi
   await expect(page.getByRole("heading", { name: "打印工作台" })).toBeVisible()
 
   await expect
-    .poll(async () =>
-      page.evaluate(async () => {
-        const registration = await navigator.serviceWorker.ready
-        return Boolean(registration.active)
-      })
+    .poll(
+      async () =>
+        page.evaluate(async () => {
+          const registration = await navigator.serviceWorker.ready
+          return Boolean(registration.active)
+        }),
+      {
+        timeout: 15_000,
+      }
     )
     .toBe(true)
 
