@@ -3,8 +3,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
 import { DEFAULT_TEXT_FONT_FAMILY, getTextNaturalHeight } from "../../../packages/core/src/web.js"
-
-import { CANVAS_DOTS_PER_MILLIMETER } from "./lib/canvas-units.js"
 import {
   bindElementToExistingField,
   buildTemplateFieldsFromDraft,
@@ -27,6 +25,7 @@ import {
   toCanvasPrintSource,
   toggleElementBinding,
 } from "./canvas-editor-model.js"
+import { CANVAS_DOTS_PER_MILLIMETER } from "./lib/canvas-units.js"
 import type { CanvasDraftElement } from "./types.js"
 
 type CompiledCanvasElement = ReturnType<typeof compileDraftToCanvasDefinition>["elements"][number]
@@ -163,8 +162,7 @@ describe("canvas-editor-model monochrome contract", () => {
 
     expect(compiledText).toMatchObject({
       kind: "text",
-      fontSize:
-        text.kind === "text" ? text.fontSize * CANVAS_DOTS_PER_MILLIMETER : undefined,
+      fontSize: text.kind === "text" ? text.fontSize * CANVAS_DOTS_PER_MILLIMETER : undefined,
     })
   })
 
