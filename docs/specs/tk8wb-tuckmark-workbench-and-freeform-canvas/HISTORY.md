@@ -185,6 +185,8 @@ while the workbench was being productized:
     mapping `true` to grow-plus-shrink on that axis
   - new manually inserted text defaults `水平挤压` and `自适应` on, while preset
     and imported content preserves its stored fit state
+  - the same new-text default now seeds a single-line text container height so
+    the stock placeholder copy no longer blows up vertically on insertion
   - the same new-text default now keeps `自动换行` disabled in the off state
     unless the user explicitly turns off `自适应`, while preset and
     compatibility content keeps its prior wrap behavior

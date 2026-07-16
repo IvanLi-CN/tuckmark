@@ -965,7 +965,7 @@ export const CanvasWorkspaceTextReady: Story = {
     const canvas = within(canvasElement)
     await canvas.findByText("已选 1 项")
     const fontSize = await canvas.findByLabelText("字号")
-    await expect(fontSize).toHaveDisplayValue("11.0")
+    await expect(fontSize).toHaveDisplayValue("5.0")
     await expect(fontSize).toBeDisabled()
     const wrapButton = await canvas.findByRole("button", { name: "自动换行" })
     await expect(wrapButton).toHaveAttribute("aria-pressed", "false")

@@ -378,7 +378,7 @@ export function createCanvasElement(
           x: seedX,
           y: seedY,
           width: canvasDotsToMillimeters(180),
-          height: getTextNaturalHeight(fontSize, 2),
+          height: getTextNaturalHeight(fontSize, 1),
           fontSize,
           fontFamily: DEFAULT_TEXT_FONT_FAMILY,
           lineHeight: DEFAULT_TEXT_LINE_HEIGHT,

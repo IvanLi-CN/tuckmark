@@ -2208,6 +2208,7 @@ describe("web workbench app", () => {
     await renderWorkbenchApp(browserRuntimeContext, "text-ready")
     await flush(4)
 
+    const fontSizeInput = document.getElementById("text-font-size") as HTMLInputElement | null
     const wrapButton = Array.from(document.querySelectorAll("button")).find((button) =>
       button.textContent?.includes("自动换行")
     ) as HTMLButtonElement | null
@@ -2218,6 +2219,9 @@ describe("web workbench app", () => {
       button.textContent?.includes("自适应")
     ) as HTMLButtonElement | null
 
+    expect(fontSizeInput).not.toBeNull()
+    expect(fontSizeInput?.value).toBe("5.0")
+    expect(fontSizeInput?.disabled).toBe(true)
     expect(wrapButton).not.toBeNull()
     expect(horizontalShrinkButton).not.toBeNull()
     expect(adaptiveButton).not.toBeNull()

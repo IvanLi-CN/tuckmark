@@ -324,8 +324,10 @@
   - saved text carries `lineHeight`, which controls multiline baseline spacing
     without changing font size
   - newly inserted freeform text now defaults to `autoWrap=false` and
-    `adaptiveFontSize=true`, while preset-backed and legacy content keeps its
-    explicit or compatibility wrap and adaptive state
+    `adaptiveFontSize=true`; its seed container height now matches one text
+    line so the stock placeholder content renders at the intended starting
+    size, while preset-backed and legacy content keeps its explicit or
+    compatibility wrap and adaptive state
   - resizing a text element updates only the container `width` and `height`,
     leaving `fontSize` unchanged unless adaptive sizing is enabled
   - horizontal and vertical grow/shrink scale rendered content only on the

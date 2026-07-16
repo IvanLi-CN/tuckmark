@@ -125,7 +125,8 @@ describe("canvas-editor-model monochrome contract", () => {
 
     expect(text).toMatchObject({
       kind: "text",
-      fontSize: getTextNaturalHeight(DEFAULT_CANVAS_TEXT_FONT_SIZE_MILLIMETERS, 2),
+      fontSize: DEFAULT_CANVAS_TEXT_FONT_SIZE_MILLIMETERS,
+      height: getTextNaturalHeight(DEFAULT_CANVAS_TEXT_FONT_SIZE_MILLIMETERS, 1),
       fontFamily: DEFAULT_TEXT_FONT_FAMILY,
       lineHeight: 1.2,
       verticalAlign: "top",

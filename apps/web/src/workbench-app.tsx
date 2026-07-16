@@ -409,7 +409,7 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         x: seedX,
         y: seedY,
         width: 180,
-        height: 52,
+        height: 22,
         fontSize: 22,
         fontFamily: DEFAULT_TEXT_FONT_FAMILY,
         lineHeight: 1.2,
