@@ -1672,7 +1672,8 @@
   }
 
   .tm-text-geometry-grid .tm-inspector-inline-field {
-    grid-template-columns: 1.25rem minmax(0, 1fr);
+    gap: 0.375rem;
+    grid-template-columns: max-content minmax(0, 1fr);
   }
 
   .tm-text-flow-layout {
