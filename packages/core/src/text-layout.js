@@ -8,6 +8,35 @@ export const TEXT_VISUAL_DESCENT_RATIO = 1 - TEXT_VISUAL_ASCENT_RATIO;
 export const textVerticalAlignments = ["top", "middle", "bottom"];
 export const textHorizontalAlignments = ["left", "center", "right", "justify"];
 export const DEFAULT_TEXT_VERTICAL_ALIGN = "top";
+function roundResolvedFontSize(value) {
+    return Math.round(value * 1000) / 1000;
+}
+export function resolveTextAxisFit(input) {
+    const legacyStretchX = input.stretchX ?? false;
+    const legacyStretchY = input.stretchY ?? false;
+    return {
+        stretchXGrow: input.stretchXGrow ?? legacyStretchX,
+        stretchXShrink: input.stretchXShrink ?? legacyStretchX,
+        stretchYGrow: input.stretchYGrow ?? legacyStretchY,
+        stretchYShrink: input.stretchYShrink ?? legacyStretchY,
+    };
+}
+export function resolveEffectiveTextAutoWrap(autoWrap, adaptiveFontSize) {
+    return adaptiveFontSize ? false : (autoWrap ?? true);
+}
+function resolveAxisScale(containerSize, contentSize, grow, shrink) {
+    const ratio = containerSize / Math.max(contentSize, 0.0001);
+    if (!Number.isFinite(ratio) || ratio <= 0) {
+        return 1;
+    }
+    if (ratio > 1) {
+        return grow ? ratio : 1;
+    }
+    if (ratio < 1) {
+        return shrink ? ratio : 1;
+    }
+    return 1;
+}
 export function wrapText(text, maxCharsPerLine, maxLines) {
     const normalized = text.replaceAll("\r\n", "\n").split("\n");
     const lines = [];
@@ -242,26 +271,30 @@ function getVerticalTextColumns(text, fontSize, height, lineHeightRatio, maxLine
     const visibleColumns = maxLines ? columns.slice(0, maxLines) : columns;
     return visibleColumns.length > 0 ? visibleColumns : [""];
 }
-export function resolveTextLayout(input) {
-    const verticalText = input.verticalText ?? false;
+function resolveTextLayoutForFontSize(input, resolvedFontSize, axisFit, effectiveAutoWrap) {
+    const sizedInput = {
+        ...input,
+        fontSize: resolvedFontSize,
+    };
+    const verticalText = sizedInput.verticalText ?? false;
     const lineHeightRatio = normalizeTextLineHeight(input.lineHeight);
     const lines = verticalText
-        ? getVerticalTextColumns(input.text, input.fontSize, input.height, lineHeightRatio, input.maxLines, input.autoWrap ?? true)
-        : wrapTextByWidth(input.text, input.fontSize, input.width, input.maxLines, input.autoWrap ?? true, input.fontFamily, input.measureText, input.fontWeight);
+        ? getVerticalTextColumns(sizedInput.text, resolvedFontSize, sizedInput.height, lineHeightRatio, sizedInput.maxLines, effectiveAutoWrap)
+        : wrapTextByWidth(sizedInput.text, resolvedFontSize, sizedInput.width, sizedInput.maxLines, effectiveAutoWrap, sizedInput.fontFamily, sizedInput.measureText, sizedInput.fontWeight);
     const renderedLines = lines.length > 0 ? lines : [""];
-    const lineHeight = input.fontSize * lineHeightRatio;
+    const lineHeight = resolvedFontSize * lineHeightRatio;
     const renderHeight = verticalText
         ? Math.max(...renderedLines.map((line) => Array.from(line).length), 1) * lineHeight
         : lineHeight * renderedLines.length;
-    const lineMetrics = renderedLines.map((line) => resolveMeasuredTextLineMetrics(line, input));
-    const fontMetrics = resolveMeasuredTextLineMetrics("M", input);
+    const lineMetrics = renderedLines.map((line) => resolveMeasuredTextLineMetrics(line, sizedInput));
+    const fontMetrics = resolveMeasuredTextLineMetrics("M", sizedInput);
     const hasMeasuredMetrics = !verticalText && fontMetrics.measured && lineMetrics.every((metrics) => metrics.measured);
     const baselineOffset = getKonvaLineBaselineOffset(lineHeight, fontMetrics);
     const visualLeft = verticalText
         ? 0
         : Math.min(...lineMetrics.map((metrics) => metrics.visualLeft));
     const visualRight = verticalText
-        ? input.fontSize
+        ? resolvedFontSize
         : Math.max(...lineMetrics.map((metrics) => metrics.visualRight));
     const visualTop = verticalText
         ? 0
@@ -270,42 +303,44 @@ export function resolveTextLayout(input) {
         ? renderHeight
         : Math.max(...lineMetrics.map((metrics, index) => baselineOffset + index * lineHeight + metrics.actualDescent));
     const naturalWidth = verticalText
-        ? getTextNaturalHeight(input.fontSize, renderedLines.length, lineHeightRatio)
+        ? getTextNaturalHeight(resolvedFontSize, renderedLines.length, lineHeightRatio)
         : hasMeasuredMetrics
-            ? Math.max(visualRight - visualLeft, input.fontSize * 0.6)
-            : Math.max(...lineMetrics.map((metrics) => metrics.advanceWidth), input.fontSize * 0.6);
+            ? Math.max(visualRight - visualLeft, resolvedFontSize * 0.6)
+            : Math.max(...lineMetrics.map((metrics) => metrics.advanceWidth), resolvedFontSize * 0.6);
     const naturalHeight = verticalText
-        ? getTextNaturalHeight(input.fontSize, Math.max(...renderedLines.map((line) => Array.from(line).length), 1), lineHeightRatio)
+        ? getTextNaturalHeight(resolvedFontSize, Math.max(...renderedLines.map((line) => Array.from(line).length), 1), lineHeightRatio)
         : hasMeasuredMetrics
-            ? Math.max(visualBottom - visualTop, input.fontSize * 0.1)
-            : getTextNaturalHeight(input.fontSize, renderedLines.length, lineHeightRatio);
-    const contentWidth = (input.align ?? "left") === "justify" && !verticalText ? input.width : naturalWidth;
+            ? Math.max(visualBottom - visualTop, resolvedFontSize * 0.1)
+            : getTextNaturalHeight(resolvedFontSize, renderedLines.length, lineHeightRatio);
+    const contentWidth = (sizedInput.align ?? "left") === "justify" && !verticalText
+        ? Math.max(sizedInput.width, naturalWidth)
+        : naturalWidth;
     const contentHeight = naturalHeight;
-    const scaleX = input.stretchX ? input.width / Math.max(contentWidth, 0.0001) : 1;
-    const scaleY = input.stretchY ? input.height / Math.max(contentHeight, 0.0001) : 1;
+    const scaleX = resolveAxisScale(sizedInput.width, contentWidth, axisFit.stretchXGrow, axisFit.stretchXShrink);
+    const scaleY = resolveAxisScale(sizedInput.height, contentHeight, axisFit.stretchYGrow, axisFit.stretchYShrink);
     const alignedX = (() => {
-        if (input.stretchX || ((input.align ?? "left") === "justify" && !verticalText)) {
+        if (scaleX !== 1 || ((sizedInput.align ?? "left") === "justify" && !verticalText)) {
             return 0;
         }
-        switch (input.align ?? "left") {
+        switch (sizedInput.align ?? "left") {
             case "center":
-                return (input.width - naturalWidth) / 2;
+                return (sizedInput.width - naturalWidth) / 2;
             case "right":
-                return input.width - naturalWidth;
+                return sizedInput.width - naturalWidth;
             case "justify":
             case "left":
                 return 0;
         }
     })();
     const alignedY = (() => {
-        if (input.stretchY) {
+        if (scaleY !== 1) {
             return 0;
         }
-        switch (input.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN) {
+        switch (sizedInput.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN) {
             case "middle":
-                return (input.height - naturalHeight) / 2;
+                return (sizedInput.height - naturalHeight) / 2;
             case "bottom":
-                return input.height - naturalHeight;
+                return sizedInput.height - naturalHeight;
             case "top":
                 return 0;
         }
@@ -313,18 +348,19 @@ export function resolveTextLayout(input) {
     const lineLayouts = verticalText
         ? []
         : renderedLines.map((line, index) => {
-            const metrics = lineMetrics[index] ?? getFallbackTextLineMetrics(line, input.fontSize, input.fontFamily);
+            const metrics = lineMetrics[index] ??
+                getFallbackTextLineMetrics(line, resolvedFontSize, sizedInput.fontFamily);
             const width = metrics.advanceWidth;
             const glyphCount = Array.from(line).length;
-            const letterSpacing = (input.align ?? "left") === "justify" && glyphCount > 1 && width < input.width
-                ? (input.width - width) / (glyphCount - 1)
+            const letterSpacing = (sizedInput.align ?? "left") === "justify" && glyphCount > 1 && width < sizedInput.width
+                ? (sizedInput.width - width) / (glyphCount - 1)
                 : 0;
             return {
                 text: line,
                 x: hasMeasuredMetrics ? -visualLeft : 0,
                 y: hasMeasuredMetrics
                     ? baselineOffset - visualTop + index * lineHeight
-                    : input.fontSize * TEXT_VISUAL_ASCENT_RATIO + index * lineHeight,
+                    : resolvedFontSize * TEXT_VISUAL_ASCENT_RATIO + index * lineHeight,
                 width,
                 letterSpacing,
             };
@@ -332,7 +368,7 @@ export function resolveTextLayout(input) {
     const glyphs = verticalText
         ? renderedLines.flatMap((line, columnIndex) => Array.from(line).map((char, rowIndex) => ({
             text: char,
-            x: columnIndex * lineHeight + input.fontSize / 2,
+            x: columnIndex * lineHeight + resolvedFontSize / 2,
             y: rowIndex * lineHeight,
         })))
         : [];
@@ -341,6 +377,8 @@ export function resolveTextLayout(input) {
         lineLayouts,
         glyphs,
         verticalText,
+        effectiveAutoWrap,
+        resolvedFontSize,
         lineHeight,
         renderHeight,
         naturalWidth,
@@ -350,12 +388,42 @@ export function resolveTextLayout(input) {
         contentWidth,
         contentHeight,
         textOffsetX: hasMeasuredMetrics ? -visualLeft : 0,
-        textOffsetY: hasMeasuredMetrics ? -visualTop : -input.fontSize * TEXT_VISUAL_TOP_TRIM_RATIO,
+        textOffsetY: hasMeasuredMetrics ? -visualTop : -resolvedFontSize * TEXT_VISUAL_TOP_TRIM_RATIO,
         baselineOffsetY: hasMeasuredMetrics
             ? baselineOffset - visualTop
-            : input.fontSize * TEXT_VISUAL_ASCENT_RATIO,
+            : resolvedFontSize * TEXT_VISUAL_ASCENT_RATIO,
         scaleX,
         scaleY,
     };
+}
+export function resolveAdaptiveTextFontSize(input) {
+    const baseFontSize = roundResolvedFontSize(input.fontSize);
+    if (!input.adaptiveFontSize ||
+        !Number.isFinite(input.height) ||
+        input.height <= 0 ||
+        !Number.isFinite(baseFontSize) ||
+        baseFontSize <= 0) {
+        return baseFontSize;
+    }
+    const axisFit = resolveTextAxisFit(input);
+    const effectiveAutoWrap = resolveEffectiveTextAutoWrap(input.autoWrap, true);
+    const initialLayout = resolveTextLayoutForFontSize(input, baseFontSize, axisFit, effectiveAutoWrap);
+    if (!Number.isFinite(initialLayout.naturalHeight) || initialLayout.naturalHeight <= 0) {
+        return baseFontSize;
+    }
+    const primaryFontSize = roundResolvedFontSize(Math.max(0.1, (baseFontSize * input.height) / initialLayout.naturalHeight));
+    const correctedLayout = resolveTextLayoutForFontSize(input, primaryFontSize, axisFit, effectiveAutoWrap);
+    if (!Number.isFinite(correctedLayout.naturalHeight) || correctedLayout.naturalHeight <= 0) {
+        return primaryFontSize;
+    }
+    return roundResolvedFontSize(Math.max(0.1, (primaryFontSize * input.height) / correctedLayout.naturalHeight));
+}
+export function resolveTextLayout(input) {
+    const axisFit = resolveTextAxisFit(input);
+    const effectiveAutoWrap = resolveEffectiveTextAutoWrap(input.autoWrap, input.adaptiveFontSize);
+    const resolvedFontSize = input.adaptiveFontSize
+        ? resolveAdaptiveTextFontSize(input)
+        : roundResolvedFontSize(input.fontSize);
+    return resolveTextLayoutForFontSize(input, resolvedFontSize, axisFit, effectiveAutoWrap);
 }
 //# sourceMappingURL=text-layout.js.map

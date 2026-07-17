@@ -21,9 +21,14 @@ export type TextLayoutInput = {
     align?: TextHorizontalAlign | undefined;
     maxLines?: number | undefined;
     verticalAlign?: TextVerticalAlign | undefined;
+    stretchXGrow?: boolean | undefined;
+    stretchXShrink?: boolean | undefined;
+    stretchYGrow?: boolean | undefined;
+    stretchYShrink?: boolean | undefined;
     stretchX?: boolean | undefined;
     stretchY?: boolean | undefined;
     autoWrap?: boolean | undefined;
+    adaptiveFontSize?: boolean | undefined;
     verticalText?: boolean | undefined;
     measureText?: TextMeasureFunction | undefined;
 };
@@ -60,6 +65,8 @@ export type TextLayout = {
     lineLayouts: TextLayoutLine[];
     glyphs: TextLayoutGlyph[];
     verticalText: boolean;
+    effectiveAutoWrap: boolean;
+    resolvedFontSize: number;
     lineHeight: number;
     renderHeight: number;
     naturalWidth: number;
@@ -74,6 +81,14 @@ export type TextLayout = {
     scaleX: number;
     scaleY: number;
 };
+export type ResolvedTextAxisFit = {
+    stretchXGrow: boolean;
+    stretchXShrink: boolean;
+    stretchYGrow: boolean;
+    stretchYShrink: boolean;
+};
+export declare function resolveTextAxisFit(input: Pick<TextLayoutInput, "stretchXGrow" | "stretchXShrink" | "stretchYGrow" | "stretchYShrink" | "stretchX" | "stretchY">): ResolvedTextAxisFit;
+export declare function resolveEffectiveTextAutoWrap(autoWrap: boolean | undefined, adaptiveFontSize: boolean | undefined): boolean;
 export declare function wrapText(text: string, maxCharsPerLine: number, maxLines?: number): string[];
 export declare function wrapTextByWidth(text: string, fontSize: number, width?: number, maxLines?: number, autoWrap?: boolean, fontFamily?: TextFontFamily, measureText?: TextMeasureFunction, fontWeight?: "normal" | "bold"): string[];
 export declare function estimateCharsPerLine(fontSize: number, width?: number, fontFamily?: TextFontFamily): number;
@@ -81,4 +96,5 @@ export declare function estimateTextLineWidth(line: string, fontSize: number, fo
 export declare function normalizeTextLineHeight(lineHeight?: number): number;
 export declare function getTextNaturalHeight(fontSize: number, lineCount: number, lineHeight?: number): number;
 export declare function getTextFontFamilyStack(fontFamily?: TextFontFamily): string;
+export declare function resolveAdaptiveTextFontSize(input: TextLayoutInput): number;
 export declare function resolveTextLayout(input: TextLayoutInput): TextLayout;

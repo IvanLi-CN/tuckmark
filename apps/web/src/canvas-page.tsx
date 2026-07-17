@@ -50,6 +50,7 @@ import {
   encodeDataMatrix,
   getTextFontFamilyStack,
   normalizeTextLineHeight,
+  resolveTextAxisFit,
   resolveTextLayout,
   stableStringify,
   type TextFontFamily,
@@ -254,6 +255,13 @@ function resolveTextGridAlign(element: Extract<CanvasDraftElement, { kind: "text
   }
   return element.align === "center" || element.align === "right" ? element.align : "left"
 }
+
+function resolveCanvasTextFitState(element: Extract<CanvasDraftElement, { kind: "text" }>) {
+  return {
+    ...resolveTextAxisFit(element),
+    adaptiveFontSize: element.adaptiveFontSize,
+  }
+}
 const TRANSFORMER_ALL_ANCHORS = [
   "top-left",
   "top-center",
@@ -359,7 +367,14 @@ function isClipboardCanvasElement(value: unknown): value is CanvasDraftElement {
   }
 
   switch (value.kind) {
-    case "text":
+    case "text": {
+      const hasLegacyStretchFlags =
+        typeof value.stretchX === "boolean" && typeof value.stretchY === "boolean"
+      const hasAxisFitFlags =
+        typeof value.stretchXGrow === "boolean" &&
+        typeof value.stretchXShrink === "boolean" &&
+        typeof value.stretchYGrow === "boolean" &&
+        typeof value.stretchYShrink === "boolean"
       return (
         isFiniteNumber(value.x) &&
         isFiniteNumber(value.y) &&
@@ -372,14 +387,15 @@ function isClipboardCanvasElement(value: unknown): value is CanvasDraftElement {
         typeof value.align === "string" &&
         (value.justifyAlign === undefined || typeof value.justifyAlign === "string") &&
         typeof value.verticalAlign === "string" &&
-        typeof value.stretchX === "boolean" &&
-        typeof value.stretchY === "boolean" &&
+        (hasAxisFitFlags || hasLegacyStretchFlags) &&
         typeof value.autoWrap === "boolean" &&
+        (value.adaptiveFontSize === undefined || typeof value.adaptiveFontSize === "boolean") &&
         typeof value.verticalText === "boolean" &&
         typeof value.value === "string" &&
         (value.maxLines === undefined || isFiniteNumber(value.maxLines)) &&
         hasOptionalRotation(value.rotation)
       )
+    }
     case "rect":
       return (
         isFiniteNumber(value.x) &&
@@ -839,9 +855,14 @@ function createClipboardTextElement(
     align: seeded.align,
     maxLines: seeded.maxLines,
     verticalAlign: seeded.verticalAlign,
+    stretchXGrow: seeded.stretchXGrow,
+    stretchXShrink: seeded.stretchXShrink,
+    stretchYGrow: seeded.stretchYGrow,
+    stretchYShrink: seeded.stretchYShrink,
     stretchX: seeded.stretchX,
     stretchY: seeded.stretchY,
     autoWrap: seeded.autoWrap,
+    adaptiveFontSize: seeded.adaptiveFontSize,
     verticalText: seeded.verticalText,
     measureText: measureCanvasTextLine,
   })
@@ -2824,49 +2845,34 @@ function TextInlineEditor({
     align: element.align,
     maxLines: element.maxLines,
     verticalAlign: element.verticalAlign,
+    stretchXGrow: element.stretchXGrow,
+    stretchXShrink: element.stretchXShrink,
+    stretchYGrow: element.stretchYGrow,
+    stretchYShrink: element.stretchYShrink,
     stretchX: element.stretchX,
     stretchY: element.stretchY,
     autoWrap: element.autoWrap,
+    adaptiveFontSize: element.adaptiveFontSize,
     verticalText: element.verticalText,
     measureText: measureCanvasTextLine,
   })
-  const usesCustomTextLayout = element.align === "justify" || element.verticalText
-  const contentWidth = Math.max(layout.contentWidth, element.fontSize)
-  const contentHeight = Math.max(layout.contentHeight, element.fontSize)
-  const stretchScaleX = element.stretchX ? element.width / Math.max(contentWidth, 0.0001) : 1
-  const stretchScaleY = element.stretchY ? element.height / Math.max(contentHeight, 0.0001) : 1
-  const contentX = usesCustomTextLayout
-    ? layout.contentX
-    : element.stretchX
-      ? 0
-      : alignOffset(
-          element.width,
-          contentWidth,
-          element.align === "center" ? "middle" : element.align === "right" ? "end" : "start"
-        )
-  const contentY = element.verticalText
-    ? layout.contentY
-    : element.stretchY
-      ? 0
-      : alignOffset(
-          element.height,
-          contentHeight,
-          element.verticalAlign === "middle"
-            ? "middle"
-            : element.verticalAlign === "bottom"
-              ? "end"
-              : "start"
-        )
-  const usesBoxWrapWidth = element.autoWrap && !element.verticalText && !element.stretchX
+  const contentWidth = Math.max(layout.contentWidth, layout.resolvedFontSize)
+  const contentHeight = Math.max(layout.contentHeight, layout.resolvedFontSize)
+  const contentX = layout.contentX
+  const contentY = layout.contentY
+  const usesBoxWrapWidth = layout.effectiveAutoWrap && !element.verticalText && layout.scaleX === 1
   const editorX = (usesBoxWrapWidth ? 0 : contentX) * scale
   const editorTextOffsetY =
     element.align === "justify" && element.verticalAlign !== "top" ? 0 : layout.textOffsetY
   const editorY = (contentY + editorTextOffsetY) * scale
   const editorWidth = Math.max((usesBoxWrapWidth ? element.width : contentWidth) * scale, 1)
-  const editorHeight = Math.max((element.height - contentY) * scale, element.fontSize * scale)
+  const editorHeight = Math.max(
+    (element.height - contentY) * scale,
+    layout.resolvedFontSize * scale
+  )
   const editorTransform =
-    stretchScaleX !== 1 || stretchScaleY !== 1
-      ? `scale(${stretchScaleX}, ${stretchScaleY})`
+    layout.scaleX !== 1 || layout.scaleY !== 1
+      ? `scale(${layout.scaleX}, ${layout.scaleY})`
       : undefined
 
   React.useEffect(() => {
@@ -2912,7 +2918,7 @@ function TextInlineEditor({
         aria-label="画布文本内联编辑"
         data-tm-inline-text-editor="true"
         value={value}
-        wrap={element.autoWrap ? "soft" : "off"}
+        wrap={layout.effectiveAutoWrap ? "soft" : "off"}
         className="tm-selectable-text absolute min-h-0 resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 text-black shadow-none outline-none transition-none focus-visible:ring-0"
         style={{
           left: editorX,
@@ -2920,7 +2926,7 @@ function TextInlineEditor({
           width: editorWidth,
           height: editorHeight,
           fontFamily: getTextFontFamilyStack(element.fontFamily),
-          fontSize: `${Math.max(8, element.fontSize * scale)}px`,
+          fontSize: `${Math.max(8, layout.resolvedFontSize * scale)}px`,
           fontWeight: element.fontWeight,
           lineHeight: getCanvasTextLineHeight(element.lineHeight),
           minHeight: 0,
@@ -2930,7 +2936,7 @@ function TextInlineEditor({
           textAlign: element.align,
           textAlignLast: element.align === "justify" ? "justify" : "auto",
           textJustify: element.align === "justify" ? "inter-character" : "auto",
-          whiteSpace: element.autoWrap ? "pre-wrap" : "pre",
+          whiteSpace: layout.effectiveAutoWrap ? "pre-wrap" : "pre",
           writingMode: element.verticalText ? "vertical-rl" : "horizontal-tb",
           transform: editorTransform,
           transformOrigin: "top left",
@@ -3614,10 +3620,11 @@ function CanvasInspector({
     onValueChange: (next: number) => void,
     id: string,
     step = 0.1,
-    precision = 1
+    precision = 1,
+    disabled = readOnly
   ) => (
     <InspectorNumberField
-      disabled={readOnly}
+      disabled={disabled}
       id={id}
       label={label}
       precision={precision}
@@ -3632,6 +3639,99 @@ function CanvasInspector({
   const hasEncodedContentIssue =
     issue != null &&
     (element.kind === "barcode" || element.kind === "qr" || element.kind === "datamatrix")
+  const xField = renderNumberField(
+    "X",
+    element.x,
+    (value) => updateElement((item) => ({ ...item, x: value })),
+    "pos-x"
+  )
+  const yField = renderNumberField(
+    "Y",
+    element.y,
+    (value) => updateElement((item) => ({ ...item, y: value })),
+    "pos-y"
+  )
+  const widthField =
+    "width" in element
+      ? renderNumberField(
+          "宽",
+          element.width,
+          (value) =>
+            updateElement((item) =>
+              item.kind === "rect"
+                ? {
+                    ...item,
+                    width: Math.max(16, value),
+                    radius: clampRectRadius(item.radius, Math.max(16, value), item.height),
+                  }
+                : "width" in item
+                  ? ({ ...item, width: Math.max(16, value) } as CanvasDraftElement)
+                  : item
+            ),
+          "size-width"
+        )
+      : null
+  const heightField =
+    "height" in element
+      ? renderNumberField(
+          "高",
+          element.height,
+          (value) =>
+            updateElement((item) =>
+              item.kind === "rect"
+                ? {
+                    ...item,
+                    height: Math.max(12, value),
+                    radius: clampRectRadius(item.radius, item.width, Math.max(12, value)),
+                  }
+                : "height" in item
+                  ? ({ ...item, height: Math.max(12, value) } as CanvasDraftElement)
+                  : item
+            ),
+          "size-height"
+        )
+      : null
+  const fontSizeField =
+    "fontSize" in element
+      ? renderNumberField(
+          "字号",
+          element.fontSize,
+          (value) =>
+            updateElement((item) =>
+              "fontSize" in item
+                ? ({
+                    ...item,
+                    fontSize: Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, value),
+                  } as CanvasDraftElement)
+                : item
+            ),
+          "text-font-size",
+          0.1,
+          1,
+          readOnly || (element.kind === "text" && element.adaptiveFontSize)
+        )
+      : null
+  const textLineHeightField =
+    element.kind === "text"
+      ? renderNumberField(
+          "行高",
+          element.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
+          (value) =>
+            updateElement((item) =>
+              item.kind === "text"
+                ? {
+                    ...item,
+                    lineHeight: normalizeTextLineHeight(value),
+                  }
+                : item
+            ),
+          "text-line-height",
+          0.1
+        )
+      : null
+  const textFitState = element.kind === "text" ? resolveCanvasTextFitState(element) : null
+  const effectiveAutoWrap =
+    element.kind === "text" ? !element.adaptiveFontSize && element.autoWrap : false
 
   const rotateSelectedElementBy = (delta: number) => {
     updateElement((item) =>
@@ -3815,56 +3915,24 @@ function CanvasInspector({
 
       <CanvasSection title="几何与样式" className="tm-inspector-section">
         <div className="tm-form-grid">
-          {renderNumberField(
-            "X",
-            element.x,
-            (value) => updateElement((item) => ({ ...item, x: value })),
-            "pos-x"
+          {element.kind === "text" ? (
+            <div className="tm-text-geometry-grid tm-inspector-field--full">
+              {xField}
+              {widthField}
+              {fontSizeField}
+              {yField}
+              {heightField}
+              {textLineHeightField}
+            </div>
+          ) : (
+            <>
+              {xField}
+              {yField}
+              {widthField}
+              {heightField}
+              {fontSizeField}
+            </>
           )}
-          {renderNumberField(
-            "Y",
-            element.y,
-            (value) => updateElement((item) => ({ ...item, y: value })),
-            "pos-y"
-          )}
-          {"width" in element
-            ? renderNumberField(
-                "宽",
-                element.width,
-                (value) =>
-                  updateElement((item) =>
-                    item.kind === "rect"
-                      ? {
-                          ...item,
-                          width: Math.max(16, value),
-                          radius: clampRectRadius(item.radius, Math.max(16, value), item.height),
-                        }
-                      : "width" in item
-                        ? ({ ...item, width: Math.max(16, value) } as CanvasDraftElement)
-                        : item
-                  ),
-                "size-width"
-              )
-            : null}
-          {"height" in element
-            ? renderNumberField(
-                "高",
-                element.height,
-                (value) =>
-                  updateElement((item) =>
-                    item.kind === "rect"
-                      ? {
-                          ...item,
-                          height: Math.max(12, value),
-                          radius: clampRectRadius(item.radius, item.width, Math.max(12, value)),
-                        }
-                      : "height" in item
-                        ? ({ ...item, height: Math.max(12, value) } as CanvasDraftElement)
-                        : item
-                  ),
-                "size-height"
-              )
-            : null}
           {element.kind === "rect"
             ? renderNumberField(
                 "圆角",
@@ -3910,39 +3978,6 @@ function CanvasInspector({
                 (value) =>
                   updateElement((item) => (item.kind === "line" ? { ...item, y2: value } : item)),
                 "line-y2"
-              )
-            : null}
-          {"fontSize" in element
-            ? renderNumberField(
-                "字号",
-                element.fontSize,
-                (value) =>
-                  updateElement((item) =>
-                    "fontSize" in item
-                      ? ({
-                          ...item,
-                          fontSize: Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, value),
-                        } as CanvasDraftElement)
-                      : item
-                  ),
-                "text-font-size"
-              )
-            : null}
-          {element.kind === "text"
-            ? renderNumberField(
-                "行高",
-                element.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
-                (value) =>
-                  updateElement((item) =>
-                    item.kind === "text"
-                      ? {
-                          ...item,
-                          lineHeight: normalizeTextLineHeight(value),
-                        }
-                      : item
-                  ),
-                "text-line-height",
-                0.1
               )
             : null}
           {element.kind === "text" ? (
@@ -4013,138 +4048,227 @@ function CanvasInspector({
               </div>
               <div className="tm-inspector-field">
                 <Label className="tm-inspector-label">排版</Label>
-                <div className="tm-inspector-toggle-row tm-inspector-toggle-row--text-flow">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={element.autoWrap ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={element.autoWrap}
-                    disabled={readOnly}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text" ? { ...item, autoWrap: !item.autoWrap } : item
-                      )
-                    }
-                  >
-                    <TextWrap className="size-3.5" />
-                    自动换行
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={element.align === "justify" ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={element.align === "justify"}
-                    disabled={readOnly}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text"
-                          ? item.align === "justify"
-                            ? { ...item, align: item.justifyAlign ?? "left" }
-                            : {
-                                ...item,
-                                align: "justify",
-                                justifyAlign: resolveTextGridAlign(item),
-                              }
-                          : item
-                      )
-                    }
-                  >
-                    <TextAlignJustify className="size-3.5" />
-                    两端对齐
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={element.stretchX ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={element.stretchX}
-                    disabled={readOnly}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text" ? { ...item, stretchX: !item.stretchX } : item
-                      )
-                    }
-                  >
-                    <StretchHorizontal className="size-3.5" />
-                    水平拉升
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={element.stretchY ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={element.stretchY}
-                    disabled={readOnly}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text" ? { ...item, stretchY: !item.stretchY } : item
-                      )
-                    }
-                  >
-                    <StretchVertical className="size-3.5" />
-                    垂直拉升
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={element.verticalText ? "default" : "outline"}
-                    className="tm-inspector-toggle"
-                    aria-pressed={element.verticalText}
-                    disabled={readOnly}
-                    onClick={() =>
-                      updateElement((item) =>
-                        item.kind === "text" ? { ...item, verticalText: !item.verticalText } : item
-                      )
-                    }
-                  >
-                    <Columns3 className="size-3.5" />
-                    纵向文本
-                  </Button>
-                  {"rotation" in element ? (
-                    <InspectorNumberField
-                      actions={
-                        <>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="tm-inspector-stepper-button h-8 w-8 p-0"
-                            aria-label="逆时针旋转 45 度"
-                            disabled={readOnly}
-                            onClick={() => rotateSelectedElementBy(-45)}
-                          >
-                            <RotateCcw className="size-3.5" />
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="tm-inspector-stepper-button h-8 w-8 p-0"
-                            aria-label="顺时针旋转 45 度"
-                            disabled={readOnly}
-                            onClick={() => rotateSelectedElementBy(45)}
-                          >
-                            <RotateCw className="size-3.5" />
-                          </Button>
-                        </>
-                      }
-                      className="tm-inspector-rotation-field"
+                <div className="tm-text-flow-layout">
+                  <section className="tm-text-flow-panel tm-text-flow-panel--full">
+                    <span className="tm-text-flow-panel__title">文本布局</span>
+                    <div className="tm-text-flow-panel__grid tm-text-flow-panel__grid--layout">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={effectiveAutoWrap ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={effectiveAutoWrap}
+                        disabled={readOnly || element.adaptiveFontSize}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text" ? { ...item, autoWrap: !item.autoWrap } : item
+                          )
+                        }
+                      >
+                        <TextWrap className="size-3.5" />
+                        自动换行
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={element.align === "justify" ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={element.align === "justify"}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? item.align === "justify"
+                                ? { ...item, align: item.justifyAlign ?? "left" }
+                                : {
+                                    ...item,
+                                    align: "justify",
+                                    justifyAlign: resolveTextGridAlign(item),
+                                    stretchXGrow: false,
+                                  }
+                              : item
+                          )
+                        }
+                      >
+                        <TextAlignJustify className="size-3.5" />
+                        两端对齐
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={element.verticalText ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={element.verticalText}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? { ...item, verticalText: !item.verticalText }
+                              : item
+                          )
+                        }
+                      >
+                        <Columns3 className="size-3.5" />
+                        纵向文本
+                      </Button>
+                    </div>
+                  </section>
+                  <section className="tm-text-flow-panel">
+                    <span className="tm-text-flow-panel__title">横向适配</span>
+                    <div className="tm-text-flow-panel__stack">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={textFitState?.stretchXGrow ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={textFitState?.stretchXGrow}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? {
+                                  ...item,
+                                  align:
+                                    !item.stretchXGrow && item.align === "justify"
+                                      ? (item.justifyAlign ?? "left")
+                                      : item.align,
+                                  stretchXGrow: !item.stretchXGrow,
+                                }
+                              : item
+                          )
+                        }
+                      >
+                        <StretchHorizontal className="size-3.5" />
+                        水平拉升
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={textFitState?.stretchXShrink ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={textFitState?.stretchXShrink}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? { ...item, stretchXShrink: !item.stretchXShrink }
+                              : item
+                          )
+                        }
+                      >
+                        <StretchHorizontal className="size-3.5" />
+                        水平挤压
+                      </Button>
+                    </div>
+                  </section>
+                  <section className="tm-text-flow-panel">
+                    <span className="tm-text-flow-panel__title">纵向适配</span>
+                    <div className="tm-text-flow-panel__stack">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={textFitState?.stretchYGrow ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={textFitState?.stretchYGrow}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? { ...item, stretchYGrow: !item.stretchYGrow }
+                              : item
+                          )
+                        }
+                      >
+                        <StretchVertical className="size-3.5" />
+                        垂直拉升
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={textFitState?.stretchYShrink ? "default" : "outline"}
+                        className="tm-inspector-toggle"
+                        aria-pressed={textFitState?.stretchYShrink}
+                        disabled={readOnly}
+                        onClick={() =>
+                          updateElement((item) =>
+                            item.kind === "text"
+                              ? { ...item, stretchYShrink: !item.stretchYShrink }
+                              : item
+                          )
+                        }
+                      >
+                        <StretchVertical className="size-3.5" />
+                        垂直挤压
+                      </Button>
+                    </div>
+                  </section>
+                  <section className="tm-text-flow-panel tm-text-flow-panel--full">
+                    <span className="tm-text-flow-panel__title">字号模式</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={element.adaptiveFontSize ? "default" : "outline"}
+                      className="tm-inspector-toggle tm-inspector-toggle--full"
+                      aria-pressed={element.adaptiveFontSize}
                       disabled={readOnly}
-                      id="element-rotation"
-                      label="旋转"
-                      precision={0}
-                      step={1}
-                      value={element.rotation ?? 0}
-                      onValueChange={(value) =>
+                      onClick={() =>
                         updateElement((item) =>
-                          "rotation" in item
-                            ? ({ ...item, rotation: value } as CanvasDraftElement)
+                          item.kind === "text"
+                            ? { ...item, adaptiveFontSize: !item.adaptiveFontSize }
                             : item
                         )
                       }
-                    />
+                    >
+                      <Focus className="size-3.5" />
+                      自适应
+                    </Button>
+                  </section>
+                  {"rotation" in element ? (
+                    <section className="tm-text-flow-panel tm-text-flow-panel--full">
+                      <span className="tm-text-flow-panel__title">旋转</span>
+                      <InspectorNumberField
+                        actions={
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="tm-inspector-stepper-button h-8 w-8 p-0"
+                              aria-label="逆时针旋转 45 度"
+                              disabled={readOnly}
+                              onClick={() => rotateSelectedElementBy(-45)}
+                            >
+                              <RotateCcw className="size-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="tm-inspector-stepper-button h-8 w-8 p-0"
+                              aria-label="顺时针旋转 45 度"
+                              disabled={readOnly}
+                              onClick={() => rotateSelectedElementBy(45)}
+                            >
+                              <RotateCw className="size-3.5" />
+                            </Button>
+                          </>
+                        }
+                        className="tm-inspector-rotation-field"
+                        disabled={readOnly}
+                        id="element-rotation"
+                        label="旋转"
+                        precision={0}
+                        step={1}
+                        value={element.rotation ?? 0}
+                        onValueChange={(value) =>
+                          updateElement((item) =>
+                            "rotation" in item
+                              ? ({ ...item, rotation: value } as CanvasDraftElement)
+                              : item
+                          )
+                        }
+                      />
+                    </section>
                   ) : null}
                 </div>
               </div>
@@ -4641,39 +4765,23 @@ function CanvasTextElementNode({
     align: element.align,
     maxLines: element.maxLines,
     verticalAlign: element.verticalAlign,
+    stretchXGrow: element.stretchXGrow,
+    stretchXShrink: element.stretchXShrink,
+    stretchYGrow: element.stretchYGrow,
+    stretchYShrink: element.stretchYShrink,
     stretchX: element.stretchX,
     stretchY: element.stretchY,
     autoWrap: element.autoWrap,
+    adaptiveFontSize: element.adaptiveFontSize,
     verticalText: element.verticalText,
     measureText: measureCanvasTextLine,
   })
-  const usesCustomTextLayout = element.align === "justify" || element.verticalText
   const contentWidth = layout.contentWidth
   const contentHeight = layout.contentHeight
-  const scaleX = element.stretchX ? element.width / Math.max(contentWidth, 0.0001) : 1
-  const scaleY = element.stretchY ? element.height / Math.max(contentHeight, 0.0001) : 1
-  const contentX = usesCustomTextLayout
-    ? layout.contentX
-    : element.stretchX
-      ? 0
-      : alignOffset(
-          element.width,
-          contentWidth,
-          element.align === "center" ? "middle" : element.align === "right" ? "end" : "start"
-        )
-  const contentY = element.verticalText
-    ? layout.contentY
-    : element.stretchY
-      ? 0
-      : alignOffset(
-          element.height,
-          contentHeight,
-          element.verticalAlign === "middle"
-            ? "middle"
-            : element.verticalAlign === "bottom"
-              ? "end"
-              : "start"
-        )
+  const scaleX = layout.scaleX
+  const scaleY = layout.scaleY
+  const contentX = layout.contentX
+  const contentY = layout.contentY
   const textY = layout.textOffsetY
   const visibleContentLeft = clamp(contentX, 0, element.width)
   const visibleContentTop = clamp(contentY, 0, element.height)
@@ -4700,11 +4808,11 @@ function CanvasTextElementNode({
           ? layout.glyphs.map((glyph) => (
               <KonvaText
                 key={`${glyph.x}-${glyph.y}-${glyph.text}`}
-                x={glyph.x - element.fontSize / 2}
+                x={glyph.x - layout.resolvedFontSize / 2}
                 y={glyph.y + textY}
-                width={element.fontSize}
+                width={layout.resolvedFontSize}
                 text={glyph.text}
-                fontSize={element.fontSize}
+                fontSize={layout.resolvedFontSize}
                 fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
                 fontFamily={getTextFontFamilyStack(element.fontFamily)}
                 wrap="none"
@@ -4719,7 +4827,7 @@ function CanvasTextElementNode({
                 x={line.x}
                 y={index * layout.lineHeight + textY}
                 text={line.text}
-                fontSize={element.fontSize}
+                fontSize={layout.resolvedFontSize}
                 fontStyle={element.fontWeight === "bold" ? "bold" : "normal"}
                 fontFamily={getTextFontFamilyStack(element.fontFamily)}
                 lineHeight={getCanvasTextLineHeight(element.lineHeight)}

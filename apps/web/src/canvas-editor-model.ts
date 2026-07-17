@@ -6,6 +6,7 @@ import {
   getTextNaturalHeight,
   normalizeTextLineHeight,
   presetTemplateData,
+  resolveTextAxisFit,
   resolveTextLayout,
   type TemplateDefinition,
   type UserTemplatePackage,
@@ -153,9 +154,28 @@ function normalizeMonochromeFill(fill: string | undefined): string {
   return "none"
 }
 
+function resolveCanvasTextFitState(
+  element: Pick<
+    Extract<CanvasDraftElement, { kind: "text" }>,
+    | "stretchXGrow"
+    | "stretchXShrink"
+    | "stretchYGrow"
+    | "stretchYShrink"
+    | "stretchX"
+    | "stretchY"
+    | "adaptiveFontSize"
+  >
+) {
+  return {
+    ...resolveTextAxisFit(element),
+    adaptiveFontSize: element.adaptiveFontSize ?? false,
+  }
+}
+
 function normalizeMonochromeElement(element: CanvasDraftElement): CanvasDraftElement {
   switch (element.kind) {
     case "text": {
+      const fitState = resolveCanvasTextFitState(element)
       const width = element.width ?? canvasDotsToMillimeters(180)
       const fallbackLayout = resolveTextLayout({
         text: element.value,
@@ -168,24 +188,34 @@ function normalizeMonochromeElement(element: CanvasDraftElement): CanvasDraftEle
         align: element.align,
         maxLines: element.maxLines,
         verticalAlign: element.verticalAlign,
+        stretchXGrow: fitState.stretchXGrow,
+        stretchXShrink: fitState.stretchXShrink,
+        stretchYGrow: fitState.stretchYGrow,
+        stretchYShrink: fitState.stretchYShrink,
         stretchX: element.stretchX,
         stretchY: element.stretchY,
         autoWrap: element.autoWrap ?? true,
+        adaptiveFontSize: fitState.adaptiveFontSize,
         verticalText: element.verticalText ?? false,
       })
       const hasExplicitHeight = Number.isFinite(element.height)
       const height = hasExplicitHeight ? element.height : fallbackLayout.naturalHeight
+      const { stretchX: _legacyStretchX, stretchY: _legacyStretchY, ...rest } = element
       return {
-        ...element,
+        ...rest,
         y: hasExplicitHeight ? element.y : element.y - element.fontSize,
         width,
         height,
+        fontSize: fallbackLayout.resolvedFontSize,
         fontFamily: element.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY,
         lineHeight: normalizeTextLineHeight(element.lineHeight),
         verticalAlign: element.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN,
-        stretchX: element.stretchX ?? false,
-        stretchY: element.stretchY ?? false,
+        stretchXGrow: fitState.stretchXGrow,
+        stretchXShrink: fitState.stretchXShrink,
+        stretchYGrow: fitState.stretchYGrow,
+        stretchYShrink: fitState.stretchYShrink,
         autoWrap: element.autoWrap ?? true,
+        adaptiveFontSize: fitState.adaptiveFontSize,
         verticalText: element.verticalText ?? false,
       }
     }
@@ -348,16 +378,19 @@ export function createCanvasElement(
           x: seedX,
           y: seedY,
           width: canvasDotsToMillimeters(180),
-          height: getTextNaturalHeight(fontSize, 2),
+          height: getTextNaturalHeight(fontSize, 1),
           fontSize,
           fontFamily: DEFAULT_TEXT_FONT_FAMILY,
           lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
           fontWeight: "bold" as const,
           align: "left" as const,
           verticalAlign: DEFAULT_TEXT_VERTICAL_ALIGN,
-          stretchX: false,
-          stretchY: false,
-          autoWrap: true,
+          stretchXGrow: false,
+          stretchXShrink: true,
+          stretchYGrow: false,
+          stretchYShrink: false,
+          autoWrap: false,
+          adaptiveFontSize: true,
           verticalText: false,
           value: "可编辑文本",
           maxLines: 2,
@@ -470,6 +503,14 @@ export function createCanvasElement(
 
 function buildPresetElements(presetId: string): CanvasDraftElement[] {
   const d = canvasDotsToMillimeters
+  const presetTextDefaults = {
+    stretchXGrow: false,
+    stretchXShrink: false,
+    stretchYGrow: false,
+    stretchYShrink: false,
+    autoWrap: true,
+    adaptiveFontSize: false,
+  } as const
   if (presetId === "ops-tag") {
     return [
       createCanvasElement("rect", 0, {
@@ -485,6 +526,7 @@ function buildPresetElements(presetId: string): CanvasDraftElement[] {
         y: d(52),
         width: d(180),
         fontSize: d(28),
+        ...presetTextDefaults,
         value: "LAN-01",
         meta: { name: "设备名称", visible: true, locked: false },
       }),
@@ -494,6 +536,7 @@ function buildPresetElements(presetId: string): CanvasDraftElement[] {
         width: d(180),
         fontSize: d(18),
         fontWeight: "normal",
+        ...presetTextDefaults,
         value: "Rack A / Gi1/0/1",
         meta: { name: "说明", visible: true, locked: false },
       }),
@@ -514,6 +557,7 @@ function buildPresetElements(presetId: string): CanvasDraftElement[] {
         y: d(38),
         width: d(220),
         fontSize: d(24),
+        ...presetTextDefaults,
         value: "维护窗口",
         meta: { name: "标题", visible: true, locked: false },
       }),
@@ -530,6 +574,7 @@ function buildPresetElements(presetId: string): CanvasDraftElement[] {
         width: d(270),
         fontSize: d(17),
         fontWeight: "normal",
+        ...presetTextDefaults,
         value: "生成预览后，再执行直接打印。",
         maxLines: 3,
         meta: { name: "正文", visible: true, locked: false },
@@ -551,6 +596,7 @@ function buildPresetElements(presetId: string): CanvasDraftElement[] {
       y: d(48),
       width: d(170),
       fontSize: d(28),
+      ...presetTextDefaults,
       value: "Koha Cat",
       meta: { name: "收件人", visible: true, locked: false },
     }),
@@ -560,6 +606,7 @@ function buildPresetElements(presetId: string): CanvasDraftElement[] {
       width: d(214),
       fontSize: d(16),
       fontWeight: "normal",
+      ...presetTextDefaults,
       value: "Moon St 42\nBrowser City",
       maxLines: 3,
       meta: { name: "地址", visible: true, locked: false },
@@ -672,9 +719,14 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
       align: element.align,
       maxLines: element.maxLines,
       verticalAlign: element.verticalAlign,
+      stretchXGrow: element.stretchXGrow,
+      stretchXShrink: element.stretchXShrink,
+      stretchYGrow: element.stretchYGrow,
+      stretchYShrink: element.stretchYShrink,
       stretchX: element.stretchX,
       stretchY: element.stretchY,
       autoWrap: element.autoWrap ?? true,
+      adaptiveFontSize: element.adaptiveFontSize ?? false,
       verticalText: element.verticalText ?? false,
     })
     return layout.naturalHeight
@@ -750,9 +802,12 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
           align: physicalElement.align,
           justifyAlign: physicalElement.justifyAlign,
           verticalAlign: physicalElement.verticalAlign,
-          stretchX: physicalElement.stretchX,
-          stretchY: physicalElement.stretchY,
-          autoWrap: physicalElement.autoWrap,
+          stretchXGrow: physicalElement.stretchXGrow ?? physicalElement.stretchX ?? false,
+          stretchXShrink: physicalElement.stretchXShrink ?? physicalElement.stretchX ?? false,
+          stretchYGrow: physicalElement.stretchYGrow ?? physicalElement.stretchY ?? false,
+          stretchYShrink: physicalElement.stretchYShrink ?? physicalElement.stretchY ?? false,
+          autoWrap: physicalElement.autoWrap ?? true,
+          adaptiveFontSize: physicalElement.adaptiveFontSize ?? false,
           verticalText: physicalElement.verticalText ?? false,
           value: resolveInitialFieldValue(field) ?? physicalElement.value ?? "",
           maxLines: physicalElement.maxLines,
@@ -1503,9 +1558,12 @@ export function compileDraftElement(
         align: normalized.align,
         justifyAlign: normalized.justifyAlign,
         verticalAlign: normalized.verticalAlign,
-        stretchX: normalized.stretchX,
-        stretchY: normalized.stretchY,
+        stretchXGrow: normalized.stretchXGrow,
+        stretchXShrink: normalized.stretchXShrink,
+        stretchYGrow: normalized.stretchYGrow,
+        stretchYShrink: normalized.stretchYShrink,
         autoWrap: normalized.autoWrap,
+        adaptiveFontSize: normalized.adaptiveFontSize,
         verticalText: normalized.verticalText,
         value: normalized.value,
         maxLines: normalized.maxLines,
@@ -1802,9 +1860,12 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
         lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
         align: "left" as const,
         verticalAlign: "top" as const,
-        stretchX: false,
-        stretchY: false,
+        stretchXGrow: false,
+        stretchXShrink: false,
+        stretchYGrow: false,
+        stretchYShrink: false,
         autoWrap: false,
+        adaptiveFontSize: false,
         verticalText: false,
         maxLines: undefined,
         meta: { ...selectedText.meta, name: "Noto Sans SC BBOX" },
@@ -1928,9 +1989,12 @@ export function buildStoryScenarioDocument(scenario: CanvasStoryScenario): Canva
                   : scenario === "text-justify-top-selected"
                     ? "top"
                     : "top",
-              stretchX: false,
-              stretchY: false,
+              stretchXGrow: false,
+              stretchXShrink: false,
+              stretchYGrow: false,
+              stretchYShrink: false,
               autoWrap: scenario !== "text-centered-selected",
+              adaptiveFontSize: false,
               verticalText: false,
               maxLines:
                 scenario === "text-justify-selected" ||

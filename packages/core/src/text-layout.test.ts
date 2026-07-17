@@ -31,14 +31,14 @@ describe("text layout", () => {
     expect(getTextNaturalHeight(10, 2, 1.5)).toBe(25)
   })
 
-  it("scales visible text block to the container when vertical stretch is enabled", () => {
+  it("scales visible text block to the container when vertical grow is enabled", () => {
     const layout = resolveTextLayout({
       text: "A\nB",
       fontSize: 10,
       width: 80,
       height: 40,
       lineHeight: 1.5,
-      stretchY: true,
+      stretchYGrow: true,
     })
 
     expect(layout.naturalHeight).toBe(25)
@@ -47,6 +47,21 @@ describe("text layout", () => {
     expect(layout.scaleY).toBeCloseTo(1.6)
     expect(layout.baselineOffsetY).toBeCloseTo(8.2)
     expect(layout.textOffsetY).toBeCloseTo(-1.8)
+  })
+
+  it("shrinks visible text block only when vertical shrink is enabled", () => {
+    const layout = resolveTextLayout({
+      text: "A\nB\nC\nD",
+      fontSize: 10,
+      width: 80,
+      height: 20,
+      lineHeight: 1.2,
+      stretchYShrink: true,
+    })
+
+    expect(layout.naturalHeight).toBeGreaterThan(20)
+    expect(layout.scaleY).toBeLessThan(1)
+    expect(layout.contentY).toBe(0)
   })
 
   it("aligns the natural text bbox inside the element container", () => {
@@ -211,18 +226,51 @@ describe("text layout", () => {
     expect(layout.lineLayouts[0]?.letterSpacing).toBeCloseTo(66)
   })
 
-  it("does not double-scale justified text when horizontal stretch is enabled", () => {
+  it("does not double-scale justified text when horizontal grow is enabled", () => {
     const layout = resolveTextLayout({
       text: "AB",
       fontSize: 10,
       width: 80,
       height: 20,
       align: "justify",
-      stretchX: true,
+      stretchXGrow: true,
     })
 
     expect(layout.contentWidth).toBe(80)
     expect(layout.scaleX).toBe(1)
+  })
+
+  it("shrinks justified text when its natural width still exceeds the container", () => {
+    const layout = resolveTextLayout({
+      text: "ABCDEFGHIJ",
+      fontSize: 10,
+      width: 20,
+      height: 20,
+      align: "justify",
+      stretchXShrink: true,
+      autoWrap: false,
+    })
+
+    expect(layout.naturalWidth).toBeGreaterThan(20)
+    expect(layout.contentWidth).toBeGreaterThan(20)
+    expect(layout.scaleX).toBeLessThan(1)
+  })
+
+  it("disables wrapping and resolves a fitted font size when adaptive sizing is enabled", () => {
+    const layout = resolveTextLayout({
+      text: "Koha Cat Warehouse",
+      fontSize: 5,
+      width: 18,
+      height: 8,
+      lineHeight: 1.2,
+      autoWrap: true,
+      adaptiveFontSize: true,
+    })
+
+    expect(layout.effectiveAutoWrap).toBe(false)
+    expect(layout.lines).toEqual(["Koha Cat Warehouse"])
+    expect(layout.resolvedFontSize).not.toBe(5)
+    expect(layout.naturalHeight).toBeCloseTo(8, 2)
   })
 
   it("lays out vertical text as top-to-bottom glyph columns", () => {

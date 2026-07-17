@@ -149,14 +149,24 @@ export declare const textElementSchema: z.ZodObject<{
         right: "right";
         justify: "justify";
     }>>;
+    justifyAlign: z.ZodOptional<z.ZodEnum<{
+        left: "left";
+        center: "center";
+        right: "right";
+    }>>;
     verticalAlign: z.ZodOptional<z.ZodEnum<{
         top: "top";
         middle: "middle";
         bottom: "bottom";
     }>>;
+    stretchXGrow: z.ZodOptional<z.ZodBoolean>;
+    stretchXShrink: z.ZodOptional<z.ZodBoolean>;
+    stretchYGrow: z.ZodOptional<z.ZodBoolean>;
+    stretchYShrink: z.ZodOptional<z.ZodBoolean>;
     stretchX: z.ZodOptional<z.ZodBoolean>;
     stretchY: z.ZodOptional<z.ZodBoolean>;
     autoWrap: z.ZodOptional<z.ZodBoolean>;
+    adaptiveFontSize: z.ZodOptional<z.ZodBoolean>;
     verticalText: z.ZodOptional<z.ZodBoolean>;
     value: z.ZodOptional<z.ZodString>;
     maxLines: z.ZodOptional<z.ZodNumber>;
@@ -230,6 +240,15 @@ export declare const qrElementSchema: z.ZodObject<{
     }>>;
     rotation: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>;
+export declare const dataMatrixElementSchema: z.ZodObject<{
+    kind: z.ZodLiteral<"datamatrix">;
+    key: z.ZodString;
+    x: z.ZodNumber;
+    y: z.ZodNumber;
+    size: z.ZodNumber;
+    value: z.ZodOptional<z.ZodString>;
+    rotation: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strip>;
 export declare const templateElementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     kind: z.ZodLiteral<"text">;
     key: z.ZodString;
@@ -288,14 +307,24 @@ export declare const templateElementSchema: z.ZodDiscriminatedUnion<[z.ZodObject
         right: "right";
         justify: "justify";
     }>>;
+    justifyAlign: z.ZodOptional<z.ZodEnum<{
+        left: "left";
+        center: "center";
+        right: "right";
+    }>>;
     verticalAlign: z.ZodOptional<z.ZodEnum<{
         top: "top";
         middle: "middle";
         bottom: "bottom";
     }>>;
+    stretchXGrow: z.ZodOptional<z.ZodBoolean>;
+    stretchXShrink: z.ZodOptional<z.ZodBoolean>;
+    stretchYGrow: z.ZodOptional<z.ZodBoolean>;
+    stretchYShrink: z.ZodOptional<z.ZodBoolean>;
     stretchX: z.ZodOptional<z.ZodBoolean>;
     stretchY: z.ZodOptional<z.ZodBoolean>;
     autoWrap: z.ZodOptional<z.ZodBoolean>;
+    adaptiveFontSize: z.ZodOptional<z.ZodBoolean>;
     verticalText: z.ZodOptional<z.ZodBoolean>;
     value: z.ZodOptional<z.ZodString>;
     maxLines: z.ZodOptional<z.ZodNumber>;
@@ -361,6 +390,14 @@ export declare const templateElementSchema: z.ZodDiscriminatedUnion<[z.ZodObject
         Q: "Q";
         H: "H";
     }>>;
+    rotation: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strip>, z.ZodObject<{
+    kind: z.ZodLiteral<"datamatrix">;
+    key: z.ZodString;
+    x: z.ZodNumber;
+    y: z.ZodNumber;
+    size: z.ZodNumber;
+    value: z.ZodOptional<z.ZodString>;
     rotation: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strip>], "kind">;
 export type TemplateElement = z.infer<typeof templateElementSchema>;
@@ -436,14 +473,24 @@ export declare const templateSchema: z.ZodObject<{
             right: "right";
             justify: "justify";
         }>>;
+        justifyAlign: z.ZodOptional<z.ZodEnum<{
+            left: "left";
+            center: "center";
+            right: "right";
+        }>>;
         verticalAlign: z.ZodOptional<z.ZodEnum<{
             top: "top";
             middle: "middle";
             bottom: "bottom";
         }>>;
+        stretchXGrow: z.ZodOptional<z.ZodBoolean>;
+        stretchXShrink: z.ZodOptional<z.ZodBoolean>;
+        stretchYGrow: z.ZodOptional<z.ZodBoolean>;
+        stretchYShrink: z.ZodOptional<z.ZodBoolean>;
         stretchX: z.ZodOptional<z.ZodBoolean>;
         stretchY: z.ZodOptional<z.ZodBoolean>;
         autoWrap: z.ZodOptional<z.ZodBoolean>;
+        adaptiveFontSize: z.ZodOptional<z.ZodBoolean>;
         verticalText: z.ZodOptional<z.ZodBoolean>;
         value: z.ZodOptional<z.ZodString>;
         maxLines: z.ZodOptional<z.ZodNumber>;
@@ -509,6 +556,14 @@ export declare const templateSchema: z.ZodObject<{
             Q: "Q";
             H: "H";
         }>>;
+        rotation: z.ZodDefault<z.ZodNumber>;
+    }, z.core.$strip>, z.ZodObject<{
+        kind: z.ZodLiteral<"datamatrix">;
+        key: z.ZodString;
+        x: z.ZodNumber;
+        y: z.ZodNumber;
+        size: z.ZodNumber;
+        value: z.ZodOptional<z.ZodString>;
         rotation: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>], "kind">>;
     tags: z.ZodDefault<z.ZodArray<z.ZodString>>;
@@ -577,14 +632,24 @@ export declare const directCanvasSchema: z.ZodObject<{
             right: "right";
             justify: "justify";
         }>>;
+        justifyAlign: z.ZodOptional<z.ZodEnum<{
+            left: "left";
+            center: "center";
+            right: "right";
+        }>>;
         verticalAlign: z.ZodOptional<z.ZodEnum<{
             top: "top";
             middle: "middle";
             bottom: "bottom";
         }>>;
+        stretchXGrow: z.ZodOptional<z.ZodBoolean>;
+        stretchXShrink: z.ZodOptional<z.ZodBoolean>;
+        stretchYGrow: z.ZodOptional<z.ZodBoolean>;
+        stretchYShrink: z.ZodOptional<z.ZodBoolean>;
         stretchX: z.ZodOptional<z.ZodBoolean>;
         stretchY: z.ZodOptional<z.ZodBoolean>;
         autoWrap: z.ZodOptional<z.ZodBoolean>;
+        adaptiveFontSize: z.ZodOptional<z.ZodBoolean>;
         verticalText: z.ZodOptional<z.ZodBoolean>;
         value: z.ZodOptional<z.ZodString>;
         maxLines: z.ZodOptional<z.ZodNumber>;
@@ -650,6 +715,14 @@ export declare const directCanvasSchema: z.ZodObject<{
             Q: "Q";
             H: "H";
         }>>;
+        rotation: z.ZodDefault<z.ZodNumber>;
+    }, z.core.$strip>, z.ZodObject<{
+        kind: z.ZodLiteral<"datamatrix">;
+        key: z.ZodString;
+        x: z.ZodNumber;
+        y: z.ZodNumber;
+        size: z.ZodNumber;
+        value: z.ZodOptional<z.ZodString>;
         rotation: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>], "kind">>;
 }, z.core.$strip>;
@@ -926,14 +999,24 @@ export declare const directCanvasPreviewRequestSchema: z.ZodObject<{
                 right: "right";
                 justify: "justify";
             }>>;
+            justifyAlign: z.ZodOptional<z.ZodEnum<{
+                left: "left";
+                center: "center";
+                right: "right";
+            }>>;
             verticalAlign: z.ZodOptional<z.ZodEnum<{
                 top: "top";
                 middle: "middle";
                 bottom: "bottom";
             }>>;
+            stretchXGrow: z.ZodOptional<z.ZodBoolean>;
+            stretchXShrink: z.ZodOptional<z.ZodBoolean>;
+            stretchYGrow: z.ZodOptional<z.ZodBoolean>;
+            stretchYShrink: z.ZodOptional<z.ZodBoolean>;
             stretchX: z.ZodOptional<z.ZodBoolean>;
             stretchY: z.ZodOptional<z.ZodBoolean>;
             autoWrap: z.ZodOptional<z.ZodBoolean>;
+            adaptiveFontSize: z.ZodOptional<z.ZodBoolean>;
             verticalText: z.ZodOptional<z.ZodBoolean>;
             value: z.ZodOptional<z.ZodString>;
             maxLines: z.ZodOptional<z.ZodNumber>;
@@ -999,6 +1082,14 @@ export declare const directCanvasPreviewRequestSchema: z.ZodObject<{
                 Q: "Q";
                 H: "H";
             }>>;
+            rotation: z.ZodDefault<z.ZodNumber>;
+        }, z.core.$strip>, z.ZodObject<{
+            kind: z.ZodLiteral<"datamatrix">;
+            key: z.ZodString;
+            x: z.ZodNumber;
+            y: z.ZodNumber;
+            size: z.ZodNumber;
+            value: z.ZodOptional<z.ZodString>;
             rotation: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>], "kind">>;
     }, z.core.$strip>;
@@ -1109,14 +1200,24 @@ export declare const printCanvasRequestSchema: z.ZodObject<{
                 right: "right";
                 justify: "justify";
             }>>;
+            justifyAlign: z.ZodOptional<z.ZodEnum<{
+                left: "left";
+                center: "center";
+                right: "right";
+            }>>;
             verticalAlign: z.ZodOptional<z.ZodEnum<{
                 top: "top";
                 middle: "middle";
                 bottom: "bottom";
             }>>;
+            stretchXGrow: z.ZodOptional<z.ZodBoolean>;
+            stretchXShrink: z.ZodOptional<z.ZodBoolean>;
+            stretchYGrow: z.ZodOptional<z.ZodBoolean>;
+            stretchYShrink: z.ZodOptional<z.ZodBoolean>;
             stretchX: z.ZodOptional<z.ZodBoolean>;
             stretchY: z.ZodOptional<z.ZodBoolean>;
             autoWrap: z.ZodOptional<z.ZodBoolean>;
+            adaptiveFontSize: z.ZodOptional<z.ZodBoolean>;
             verticalText: z.ZodOptional<z.ZodBoolean>;
             value: z.ZodOptional<z.ZodString>;
             maxLines: z.ZodOptional<z.ZodNumber>;
@@ -1182,6 +1283,14 @@ export declare const printCanvasRequestSchema: z.ZodObject<{
                 Q: "Q";
                 H: "H";
             }>>;
+            rotation: z.ZodDefault<z.ZodNumber>;
+        }, z.core.$strip>, z.ZodObject<{
+            kind: z.ZodLiteral<"datamatrix">;
+            key: z.ZodString;
+            x: z.ZodNumber;
+            y: z.ZodNumber;
+            size: z.ZodNumber;
+            value: z.ZodOptional<z.ZodString>;
             rotation: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>], "kind">>;
     }, z.core.$strip>;

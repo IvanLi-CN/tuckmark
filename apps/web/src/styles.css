@@ -1652,20 +1652,8 @@
     @apply grid grid-cols-2 gap-1;
   }
 
-  .tm-inspector-toggle-row--text-flow {
-    @apply grid-cols-2 gap-1.5;
-  }
-
-  .tm-inspector-toggle-row--text-flow .tm-inspector-toggle--full {
-    grid-column: 1 / -1;
-  }
-
-  .tm-inspector-toggle-row--text-flow .tm-inspector-inline-field {
-    grid-template-columns: 2rem minmax(0, 1fr);
-  }
-
-  .tm-inspector-toggle-row--text-flow .tm-inspector-rotation-field {
-    grid-template-columns: 2rem minmax(0, 1fr) auto;
+  .tm-inspector-toggle--full {
+    @apply w-full;
   }
 
   .tm-text-controls-row {
@@ -1676,6 +1664,51 @@
 
   .tm-text-controls-row > .tm-inspector-field {
     @apply gap-1;
+  }
+
+  .tm-text-geometry-grid {
+    @apply grid gap-1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tm-text-geometry-grid .tm-inspector-inline-field {
+    gap: 0.375rem;
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+
+  .tm-text-flow-layout {
+    @apply grid gap-1.5;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tm-text-flow-panel {
+    @apply grid gap-1 rounded-[10px] border border-border/60 bg-background/75 p-1.5;
+    min-width: 0;
+  }
+
+  .tm-text-flow-panel--full {
+    grid-column: 1 / -1;
+  }
+
+  .tm-text-flow-panel__title {
+    @apply text-[10px] font-medium leading-4 text-muted-foreground;
+  }
+
+  .tm-text-flow-panel__grid {
+    @apply grid gap-1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tm-text-flow-panel__grid--layout {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tm-text-flow-panel__stack {
+    @apply grid gap-1;
+  }
+
+  .tm-text-flow-layout .tm-inspector-rotation-field {
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
   }
 
   .tm-text-align-grid {

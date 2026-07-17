@@ -291,9 +291,14 @@ function estimateTextHeight(
     align: element.align,
     maxLines: element.maxLines,
     verticalAlign: element.verticalAlign,
+    stretchXGrow: element.stretchXGrow,
+    stretchXShrink: element.stretchXShrink,
+    stretchYGrow: element.stretchYGrow,
+    stretchYShrink: element.stretchYShrink,
     stretchX: element.stretchX,
     stretchY: element.stretchY,
     autoWrap: element.autoWrap ?? true,
+    adaptiveFontSize: element.adaptiveFontSize ?? false,
     verticalText: element.verticalText ?? false,
   })
   return layout.naturalHeight

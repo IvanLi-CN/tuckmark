@@ -315,26 +315,43 @@
   print artifacts, selection geometry, and inline editing:
   - legacy baseline-anchored text is normalized into top-left container
     geometry when drafts and system templates are read
-  - saved text carries `height`, `fontFamily`, `verticalAlign`, `stretchX`,
-    `stretchY`, `autoWrap`, and `verticalText`
+  - saved text carries `height`, `fontFamily`, `verticalAlign`,
+    `stretchXGrow`, `stretchXShrink`, `stretchYGrow`, `stretchYShrink`,
+    `autoWrap`, `adaptiveFontSize`, and `verticalText`
+  - the read path still accepts legacy `stretchX` and `stretchY`; `true` maps
+    to both grow and shrink on that axis, while canonical grow/shrink fields
+    remain the only write path
   - saved text carries `lineHeight`, which controls multiline baseline spacing
     without changing font size
+  - newly inserted freeform text now defaults to `autoWrap=false` and
+    `adaptiveFontSize=true`; its seed container height now matches one text
+    line so the stock placeholder content renders at the intended starting
+    size, while preset-backed and legacy content keeps its explicit or
+    compatibility wrap and adaptive state
   - resizing a text element updates only the container `width` and `height`,
-    leaving `fontSize` unchanged
-  - horizontal and vertical stretch scale the rendered content in the selected
-    axis without writing that scale back into `fontSize`
+    leaving `fontSize` unchanged unless adaptive sizing is enabled
+  - horizontal and vertical grow/shrink scale rendered content only on the
+    matching fit condition for that axis and do not write that scale back into
+    `fontSize`
   - automatic wrapping breaks text to the container width, including long-token
     character breaks; disabling it keeps explicit lines intact and relies on
     container clipping
   - two-end justification uses the shared text layout to add per-line character
     spacing and SVG `textLength` / `lengthAdjust="spacing"` output without
     writing scale back into `fontSize`
+  - the inspector splits text fitting into `水平拉升`, `水平挤压`, `垂直拉升`,
+    `垂直挤压`, and `自适应`; `两端对齐` and `水平拉升` clear each other
+    automatically, while `水平挤压` remains compatible with either one
   - vertical text resolves top-to-bottom glyph columns, clips them to the text
     container, and uses the same stage and SVG renderer paths as horizontal
     text
   - the shared text layout resolves a natural visible text BBOX, then aligns
     that BBOX inside the element container according to the selected
     horizontal and vertical alignment
+  - adaptive sizing forces `effectiveAutoWrap=false`, measures natural text
+    height through the shared layout, and writes a corrected `fontSize` back
+    after a second measurement pass so Konva, inline editing, SVG preview, and
+    print artifacts stay in sync
   - justified horizontal text uses the same Konva ink-box measurement path as
     normal horizontal text for vertical positioning; justification changes
     character spacing only and must not move the visible text BBOX vertically
