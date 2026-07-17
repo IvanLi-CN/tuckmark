@@ -3917,16 +3917,12 @@ function CanvasInspector({
         <div className="tm-form-grid">
           {element.kind === "text" ? (
             <div className="tm-text-geometry-grid tm-inspector-field--full">
-              <div className="tm-text-geometry-column">
-                {xField}
-                {widthField}
-                {fontSizeField}
-              </div>
-              <div className="tm-text-geometry-column">
-                {yField}
-                {heightField}
-                {textLineHeightField}
-              </div>
+              {xField}
+              {widthField}
+              {fontSizeField}
+              {yField}
+              {heightField}
+              {textLineHeightField}
             </div>
           ) : (
             <>

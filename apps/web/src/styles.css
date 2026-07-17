@@ -1667,13 +1667,12 @@
   }
 
   .tm-text-geometry-grid {
-    @apply grid gap-1.5;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    @apply grid gap-1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .tm-text-geometry-column {
-    @apply grid gap-1;
-    min-width: 0;
+  .tm-text-geometry-grid .tm-inspector-inline-field {
+    grid-template-columns: 1.25rem minmax(0, 1fr);
   }
 
   .tm-text-flow-layout {
