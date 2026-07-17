@@ -3639,6 +3639,96 @@ function CanvasInspector({
   const hasEncodedContentIssue =
     issue != null &&
     (element.kind === "barcode" || element.kind === "qr" || element.kind === "datamatrix")
+  const xField = renderNumberField(
+    "X",
+    element.x,
+    (value) => updateElement((item) => ({ ...item, x: value })),
+    "pos-x"
+  )
+  const yField = renderNumberField(
+    "Y",
+    element.y,
+    (value) => updateElement((item) => ({ ...item, y: value })),
+    "pos-y"
+  )
+  const widthField =
+    "width" in element
+      ? renderNumberField(
+          "宽",
+          element.width,
+          (value) =>
+            updateElement((item) =>
+              item.kind === "rect"
+                ? {
+                    ...item,
+                    width: Math.max(16, value),
+                    radius: clampRectRadius(item.radius, Math.max(16, value), item.height),
+                  }
+                : "width" in item
+                  ? ({ ...item, width: Math.max(16, value) } as CanvasDraftElement)
+                  : item
+            ),
+          "size-width"
+        )
+      : null
+  const heightField =
+    "height" in element
+      ? renderNumberField(
+          "高",
+          element.height,
+          (value) =>
+            updateElement((item) =>
+              item.kind === "rect"
+                ? {
+                    ...item,
+                    height: Math.max(12, value),
+                    radius: clampRectRadius(item.radius, item.width, Math.max(12, value)),
+                  }
+                : "height" in item
+                  ? ({ ...item, height: Math.max(12, value) } as CanvasDraftElement)
+                  : item
+            ),
+          "size-height"
+        )
+      : null
+  const fontSizeField =
+    "fontSize" in element
+      ? renderNumberField(
+          "字号",
+          element.fontSize,
+          (value) =>
+            updateElement((item) =>
+              "fontSize" in item
+                ? ({
+                    ...item,
+                    fontSize: Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, value),
+                  } as CanvasDraftElement)
+                : item
+            ),
+          "text-font-size",
+          0.1,
+          1,
+          readOnly || (element.kind === "text" && element.adaptiveFontSize)
+        )
+      : null
+  const textLineHeightField =
+    element.kind === "text"
+      ? renderNumberField(
+          "行高",
+          element.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
+          (value) =>
+            updateElement((item) =>
+              item.kind === "text"
+                ? {
+                    ...item,
+                    lineHeight: normalizeTextLineHeight(value),
+                  }
+                : item
+            ),
+          "text-line-height",
+          0.1
+        )
+      : null
   const textFitState = element.kind === "text" ? resolveCanvasTextFitState(element) : null
   const effectiveAutoWrap =
     element.kind === "text" ? !element.adaptiveFontSize && element.autoWrap : false
@@ -3825,56 +3915,28 @@ function CanvasInspector({
 
       <CanvasSection title="几何与样式" className="tm-inspector-section">
         <div className="tm-form-grid">
-          {renderNumberField(
-            "X",
-            element.x,
-            (value) => updateElement((item) => ({ ...item, x: value })),
-            "pos-x"
+          {element.kind === "text" ? (
+            <div className="tm-text-geometry-grid tm-inspector-field--full">
+              <div className="tm-text-geometry-column">
+                {xField}
+                {widthField}
+                {fontSizeField}
+              </div>
+              <div className="tm-text-geometry-column">
+                {yField}
+                {heightField}
+                {textLineHeightField}
+              </div>
+            </div>
+          ) : (
+            <>
+              {xField}
+              {yField}
+              {widthField}
+              {heightField}
+              {fontSizeField}
+            </>
           )}
-          {renderNumberField(
-            "Y",
-            element.y,
-            (value) => updateElement((item) => ({ ...item, y: value })),
-            "pos-y"
-          )}
-          {"width" in element
-            ? renderNumberField(
-                "宽",
-                element.width,
-                (value) =>
-                  updateElement((item) =>
-                    item.kind === "rect"
-                      ? {
-                          ...item,
-                          width: Math.max(16, value),
-                          radius: clampRectRadius(item.radius, Math.max(16, value), item.height),
-                        }
-                      : "width" in item
-                        ? ({ ...item, width: Math.max(16, value) } as CanvasDraftElement)
-                        : item
-                  ),
-                "size-width"
-              )
-            : null}
-          {"height" in element
-            ? renderNumberField(
-                "高",
-                element.height,
-                (value) =>
-                  updateElement((item) =>
-                    item.kind === "rect"
-                      ? {
-                          ...item,
-                          height: Math.max(12, value),
-                          radius: clampRectRadius(item.radius, item.width, Math.max(12, value)),
-                        }
-                      : "height" in item
-                        ? ({ ...item, height: Math.max(12, value) } as CanvasDraftElement)
-                        : item
-                  ),
-                "size-height"
-              )
-            : null}
           {element.kind === "rect"
             ? renderNumberField(
                 "圆角",
@@ -3920,42 +3982,6 @@ function CanvasInspector({
                 (value) =>
                   updateElement((item) => (item.kind === "line" ? { ...item, y2: value } : item)),
                 "line-y2"
-              )
-            : null}
-          {"fontSize" in element
-            ? renderNumberField(
-                "字号",
-                element.fontSize,
-                (value) =>
-                  updateElement((item) =>
-                    "fontSize" in item
-                      ? ({
-                          ...item,
-                          fontSize: Math.max(8 / CANVAS_DOTS_PER_MILLIMETER, value),
-                        } as CanvasDraftElement)
-                      : item
-                  ),
-                "text-font-size",
-                0.1,
-                1,
-                readOnly || (element.kind === "text" && element.adaptiveFontSize)
-              )
-            : null}
-          {element.kind === "text"
-            ? renderNumberField(
-                "行高",
-                element.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
-                (value) =>
-                  updateElement((item) =>
-                    item.kind === "text"
-                      ? {
-                          ...item,
-                          lineHeight: normalizeTextLineHeight(value),
-                        }
-                      : item
-                  ),
-                "text-line-height",
-                0.1
               )
             : null}
           {element.kind === "text" ? (
