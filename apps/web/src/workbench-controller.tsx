@@ -25,6 +25,7 @@ import {
   pickDataDirectory,
   requestConfiguredDirectoryPermission,
   restoreConfiguredBackup,
+  restoreRuntimeFromConfiguredDirectoryIfNeeded,
   supportsDataDirectoryFeatures,
   syncConfiguredDataDirectory,
   tryBackgroundMirrorSync,
@@ -586,6 +587,7 @@ export function useWorkbenchController({
     setStartupSyncReady(!(context.surface === "server-http" && context.mode === "runtime"))
     void (async () => {
       try {
+        await restoreRuntimeFromConfiguredDirectoryIfNeeded()
         await Promise.all([
           refreshSetup(),
           refreshUserTemplates(),

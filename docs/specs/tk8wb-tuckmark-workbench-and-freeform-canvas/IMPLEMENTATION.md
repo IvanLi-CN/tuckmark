@@ -203,6 +203,9 @@
   - one-time migration of existing browser-local user templates, saved
     versions, autosaves, working copies, and compatible local settings into the
     unified runtime store
+  - configured-directory startup restore that compares the current runtime
+    snapshot against `manifest.json` and reloads the mirror snapshot before
+    page refresh when the directory copy is newer or strictly more complete
   - preset-scoped browser storage persistence for scratch drafts still feeding
     same-device sync, while scratch and preset-template working copies are also
     mirrored into the runtime store for backup / export
