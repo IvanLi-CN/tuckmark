@@ -92,6 +92,12 @@ while the workbench was being productized:
     `server-http`
   - browser-local user templates and their version history remain intentionally
     outside that sync contract
+- A later configured-directory recovery fix tightened reload behavior for
+  browser-local user templates:
+  - workbench startup now compares the configured directory manifest against
+    the current runtime snapshot before page refresh
+  - a newer or strictly more complete directory mirror is restored back into
+    the runtime store so reload does not strand directory-backed template data
 - A later interaction-hardening round tightened text-selection behavior across
   the entire workbench:
   - shared shell and workspace chrome now default to non-selectable behavior
