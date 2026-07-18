@@ -1,26 +1,26 @@
-import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fireEvent, userEvent, within } from "storybook/test";
+import type { Meta, StoryObj } from "@storybook/react-vite"
+import { expect, fireEvent, userEvent, within } from "storybook/test"
 
-import type { ApiClient } from "./api-client.js";
-import { DemoApiClient } from "./api-client.js";
+import type { ApiClient } from "./api-client.js"
+import { DemoApiClient } from "./api-client.js"
 import {
   createDraftFromPreset,
   getPresetById,
   toggleElementBinding,
-} from "./canvas-editor-model.js";
-import { fallbackTemplates } from "./demo-data.js";
+} from "./canvas-editor-model.js"
+import { fallbackTemplates } from "./demo-data.js"
 import {
   clearRecentCanvasDimensions,
   recordRecentCanvasDimension,
-} from "./lib/canvas-dimensions.js";
-import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js";
-import type { AppContext } from "./types.js";
+} from "./lib/canvas-dimensions.js"
+import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
+import type { AppContext } from "./types.js"
 import {
   resetUserTemplateStoreForTest,
   saveUserTemplate,
   saveUserTemplateAutosave,
-} from "./user-template-store.js";
-import { WorkbenchAppStory } from "./workbench-app.js";
+} from "./user-template-store.js"
+import { WorkbenchAppStory } from "./workbench-app.js"
 
 const runtimeContext: AppContext = {
   apiBasePath: "",
@@ -31,7 +31,7 @@ const runtimeContext: AppContext = {
     browserDirectPrintPath: "available",
     serviceApiPrintPath: "disabled",
   },
-};
+}
 
 const demoContext: AppContext = {
   apiBasePath: "",
@@ -42,7 +42,7 @@ const demoContext: AppContext = {
     browserDirectPrintPath: "mocked",
     serviceApiPrintPath: "mocked",
   },
-};
+}
 
 const longTitleTemplates = fallbackTemplates.map((template, index) =>
   index === 0
@@ -50,18 +50,15 @@ const longTitleTemplates = fallbackTemplates.map((template, index) =>
         ...template,
         name: "Compact Shipping Label For Warehouse Returns And International Forwarding",
       }
-    : template,
-);
+    : template
+)
 
-const longTitleDemoBaseClient = new DemoApiClient(demoContext);
-const longTitleDemoClient = Object.assign(
-  Object.create(longTitleDemoBaseClient),
-  {
-    async listTemplates() {
-      return longTitleTemplates;
-    },
+const longTitleDemoBaseClient = new DemoApiClient(demoContext)
+const longTitleDemoClient = Object.assign(Object.create(longTitleDemoBaseClient), {
+  async listTemplates() {
+    return longTitleTemplates
   },
-) as ApiClient;
+}) as ApiClient
 
 const strandedPwaUpdateSnapshot: PwaUpdateSnapshot = {
   status: "ready",
@@ -73,7 +70,7 @@ const strandedPwaUpdateSnapshot: PwaUpdateSnapshot = {
     buildRef: "e499426",
   },
   error: null,
-};
+}
 
 const meta: Meta<typeof WorkbenchAppStory> = {
   title: "Tuckmark/Workbench",
@@ -88,98 +85,92 @@ const meta: Meta<typeof WorkbenchAppStory> = {
       },
     },
   },
-};
+}
 
-export default meta;
+export default meta
 
-type Story = StoryObj<typeof WorkbenchAppStory>;
+type Story = StoryObj<typeof WorkbenchAppStory>
 
 async function seedUserTemplateFixtures() {
-  await resetUserTemplateStoreForTest();
+  await resetUserTemplateStoreForTest()
 
-  const presetDraft = createDraftFromPreset(getPresetById("shipping-wide"));
-  const recipientElement = presetDraft.elements.find(
-    (element) => element.kind === "text",
-  );
-  const noteElement = presetDraft.elements.filter(
-    (element) => element.kind === "text",
-  )[1];
+  const presetDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+  const recipientElement = presetDraft.elements.find((element) => element.kind === "text")
+  const noteElement = presetDraft.elements.filter((element) => element.kind === "text")[1]
   if (!recipientElement || !noteElement) {
-    return;
+    return
   }
 
-  let draft = toggleElementBinding(presetDraft, recipientElement.id, true);
-  draft = toggleElementBinding(draft, noteElement.id, true);
+  let draft = toggleElementBinding(presetDraft, recipientElement.id, true)
+  draft = toggleElementBinding(draft, noteElement.id, true)
   draft = {
     ...draft,
     name: "本地发货模板",
     fields: draft.fields.map((field, index) =>
       index === 0
         ? { ...field, label: "收件人", defaultValue: "Koha Cat" }
-        : { ...field, label: "备注", defaultValue: "Handle with care" },
+        : { ...field, label: "备注", defaultValue: "Handle with care" }
     ),
-  };
+  }
 
   const saved = await saveUserTemplate({
     name: "本地发货模板",
     document: draft,
-  });
+  })
 
-  const savedDraft = structuredClone(saved.workingCopy.draft);
+  const savedDraft = structuredClone(saved.workingCopy.draft)
   savedDraft.fields = savedDraft.fields.map((field, index) =>
-    index === 0 ? { ...field, defaultValue: "Warehouse Desk 7" } : field,
-  );
+    index === 0 ? { ...field, defaultValue: "Warehouse Desk 7" } : field
+  )
   await saveUserTemplate({
     name: "本地发货模板",
     templateId: saved.template.id,
     sourceVersionId: saved.version.id,
     document: savedDraft,
-  });
+  })
 
-  const autosaveDraft = structuredClone(savedDraft);
+  const autosaveDraft = structuredClone(savedDraft)
   autosaveDraft.fields = autosaveDraft.fields.map((field, index) =>
-    index === 1 ? { ...field, defaultValue: "Auto-saved note" } : field,
-  );
+    index === 1 ? { ...field, defaultValue: "Auto-saved note" } : field
+  )
   await saveUserTemplateAutosave({
     templateId: saved.template.id,
     source: { kind: "user-template", templateId: saved.template.id },
     document: autosaveDraft,
     sourceVersionId: saved.version.id,
-  });
+  })
 }
 
 function seedDimensionFixtures() {
-  clearRecentCanvasDimensions();
-  recordRecentCanvasDimension({ width: 64, height: 30 });
-  recordRecentCanvasDimension({ width: 48, height: 20 });
+  clearRecentCanvasDimensions()
+  recordRecentCanvasDimension({ width: 64, height: 30 })
+  recordRecentCanvasDimension({ width: 48, height: 20 })
 }
 
 function getCanvasInteractionSurface(canvasElement: HTMLElement) {
-  const paper = canvasElement.querySelector<HTMLElement>(
-    ".tm-stage-paper--base",
-  );
-  const stage = canvasElement.querySelector<HTMLElement>(".konvajs-content");
+  const paper = canvasElement.querySelector<HTMLElement>(".tm-stage-paper--base")
+  const stage = canvasElement.querySelector<HTMLElement>(".konvajs-content")
   if (!paper || !stage) {
-    throw new Error("expected canvas paper and Konva stage");
+    throw new Error("expected canvas paper and Konva stage")
   }
-  const bounds = paper.getBoundingClientRect();
+  const bounds = paper.getBoundingClientRect()
   return {
     stage,
     left: bounds.left,
     top: bounds.top,
     scale: bounds.width / 384,
-  };
+  }
 }
 
 function toCanvasPointer(
   surface: ReturnType<typeof getCanvasInteractionSurface>,
   xMillimeters: number,
-  yMillimeters: number,
+  yMillimeters: number
 ) {
   return {
     clientX: surface.left + xMillimeters * 8 * surface.scale,
     clientY: surface.top + yMillimeters * 8 * surface.scale,
-  };
+  }
 }
 
 export const Home: Story = {
@@ -187,7 +178,7 @@ export const Home: Story = {
     context: runtimeContext,
     initialEntries: ["/"],
   },
-};
+}
 
 export const HomeDark: Story = {
   args: {
@@ -195,7 +186,7 @@ export const HomeDark: Story = {
     initialEntries: ["/"],
     theme: "dark",
   },
-};
+}
 
 export const HomeDarkDeferredHydrationPending: Story = {
   args: {
@@ -210,7 +201,7 @@ export const HomeDarkDeferredHydrationPending: Story = {
       offlineWarmupStatus: "pending",
     },
   },
-};
+}
 
 export const HomeWithStrandedPwaUpdate: Story = {
   args: {
@@ -218,14 +209,14 @@ export const HomeWithStrandedPwaUpdate: Story = {
     initialEntries: ["/"],
     pwaUpdateSnapshot: strandedPwaUpdateSnapshot,
   },
-};
+}
 
 export const HomeSelectableContract: Story = {
   args: {
     context: runtimeContext,
     initialEntries: ["/"],
   },
-};
+}
 
 export const HomeDeviceDrawerBrowserDirectCancelled: Story = {
   args: {
@@ -242,11 +233,11 @@ export const HomeDeviceDrawerBrowserDirectCancelled: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: /选择设备/ }));
-    await canvas.findByText("已取消连接");
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: /选择设备/ }))
+    await canvas.findByText("已取消连接")
   },
-};
+}
 
 export const HomeDeviceDrawerBrowserDirectBusy: Story = {
   args: {
@@ -257,11 +248,11 @@ export const HomeDeviceDrawerBrowserDirectBusy: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: /选择设备/ }));
-    await canvas.findByRole("button", { name: "连接中…" });
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: /选择设备/ }))
+    await canvas.findByRole("button", { name: "连接中…" })
   },
-};
+}
 
 export const TemplatesWorkspace: Story = {
   args: {
@@ -270,26 +261,24 @@ export const TemplatesWorkspace: Story = {
   },
   loaders: [
     async () => {
-      await resetUserTemplateStoreForTest();
-      return {};
+      await resetUserTemplateStoreForTest()
+      return {}
     },
   ],
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement)
     const addTemplateButtons = canvas.getAllByRole("button", {
       name: "新增模板",
-    });
-    await expect(addTemplateButtons).toHaveLength(2);
-    await expect(addTemplateButtons[1]).toHaveClass(
-      /tm-template-list__empty-action-button/,
-    );
-    await canvas.findByRole("link", { name: "GitHub" });
-    await canvas.findByText("v0.1.0");
-    await canvas.findByRole("link", { name: "© 2026 Ivan Li" });
-    await canvas.findByText("Service API: disabled");
-    await canvas.findByText("Browser direct: available");
+    })
+    await expect(addTemplateButtons).toHaveLength(2)
+    await expect(addTemplateButtons[1]).toHaveClass(/tm-template-list__empty-action-button/)
+    await canvas.findByRole("link", { name: "GitHub" })
+    await canvas.findByText("v0.1.0")
+    await canvas.findByRole("link", { name: "© 2026 Ivan Li" })
+    await canvas.findByText("Service API: disabled")
+    await canvas.findByText("Browser direct: available")
   },
-};
+}
 
 export const TemplatesWorkspaceImportPackage: Story = {
   args: {
@@ -298,13 +287,13 @@ export const TemplatesWorkspaceImportPackage: Story = {
   },
   loaders: [
     async () => {
-      await resetUserTemplateStoreForTest();
-      return {};
+      await resetUserTemplateStoreForTest()
+      return {}
     },
   ],
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const chooser = canvas.getByLabelText("选择模板包文件");
+    const canvas = within(canvasElement)
+    const chooser = canvas.getByLabelText("选择模板包文件")
     const file = new File(
       [
         JSON.stringify({
@@ -358,14 +347,14 @@ export const TemplatesWorkspaceImportPackage: Story = {
         }),
       ],
       "ina219.package.json",
-      { type: "application/json" },
-    );
+      { type: "application/json" }
+    )
 
-    await userEvent.upload(chooser, file);
-    await canvas.findByText("INA219 模块盒");
-    await canvas.findByText("已导入 INA219 模块盒");
+    await userEvent.upload(chooser, file)
+    await canvas.findByText("INA219 模块盒")
+    await canvas.findByText("已导入 INA219 模块盒")
   },
-};
+}
 
 export const TemplatesWorkspaceWithUserTemplates: Story = {
   args: {
@@ -374,11 +363,11 @@ export const TemplatesWorkspaceWithUserTemplates: Story = {
   },
   loaders: [
     async () => {
-      await seedUserTemplateFixtures();
-      return {};
+      await seedUserTemplateFixtures()
+      return {}
     },
   ],
-};
+}
 
 export const TemplatesList: Story = {
   args: {
@@ -386,10 +375,10 @@ export const TemplatesList: Story = {
     initialEntries: ["/templates"],
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("tab", { name: "列表" }));
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
   },
-};
+}
 
 export const TemplatesListEditing: Story = {
   args: {
@@ -397,14 +386,14 @@ export const TemplatesListEditing: Story = {
     initialEntries: ["/templates"],
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("tab", { name: "列表" }));
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
     const [firstRecipientButton] = canvas.getAllByRole("button", {
       name: "Koha Cat",
-    });
-    await userEvent.click(firstRecipientButton);
+    })
+    await userEvent.click(firstRecipientButton)
   },
-};
+}
 
 export const TemplatesSelectableEditing: Story = {
   args: {
@@ -412,21 +401,21 @@ export const TemplatesSelectableEditing: Story = {
     initialEntries: ["/templates"],
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("tab", { name: "列表" }));
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
     const [firstRecipientButton] = canvas.getAllByRole("button", {
       name: "Koha Cat",
-    });
-    await userEvent.click(firstRecipientButton);
+    })
+    await userEvent.click(firstRecipientButton)
   },
-};
+}
 
 export const CanvasWorkspace: Story = {
   args: {
     context: runtimeContext,
     initialEntries: ["/canvas"],
   },
-};
+}
 
 export const CanvasWorkspaceDark: Story = {
   args: {
@@ -434,7 +423,7 @@ export const CanvasWorkspaceDark: Story = {
     initialEntries: ["/canvas"],
     theme: "dark",
   },
-};
+}
 
 export const CanvasWorkspaceWide: Story = {
   args: {
@@ -456,7 +445,7 @@ export const CanvasWorkspaceWide: Story = {
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
-};
+}
 
 export const CanvasWorkspaceWheelNavigation: Story = {
   args: {
@@ -479,36 +468,36 @@ export const CanvasWorkspaceWheelNavigation: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const paper = canvasElement.querySelector(".tm-stage-paper--base");
-    const stage = canvasElement.querySelector(".konvajs-content");
+    const paper = canvasElement.querySelector(".tm-stage-paper--base")
+    const stage = canvasElement.querySelector(".konvajs-content")
     if (!(paper instanceof HTMLElement) || !stage) {
-      throw new Error("Missing canvas stage surface");
+      throw new Error("Missing canvas stage surface")
     }
 
-    const before = paper.getBoundingClientRect();
-    await fireEvent.wheel(stage, { deltaY: -96 });
-    const afterZoom = paper.getBoundingClientRect();
+    const before = paper.getBoundingClientRect()
+    await fireEvent.wheel(stage, { deltaY: -96 })
+    const afterZoom = paper.getBoundingClientRect()
 
-    await expect(afterZoom.width).toBeGreaterThan(before.width);
+    await expect(afterZoom.width).toBeGreaterThan(before.width)
 
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    await fireEvent.wheel(stage, { deltaX: 96 });
-    const afterPan = paper.getBoundingClientRect();
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    await fireEvent.wheel(stage, { deltaX: 96 })
+    const afterPan = paper.getBoundingClientRect()
 
-    await expect(afterPan.width).toBeCloseTo(afterZoom.width, 1);
-    await expect(afterPan.x).toBeLessThan(afterZoom.x - 80);
+    await expect(afterPan.width).toBeCloseTo(afterZoom.width, 1)
+    await expect(afterPan.x).toBeLessThan(afterZoom.x - 80)
 
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await new Promise((resolve) => setTimeout(resolve, 150))
     for (const deltaY of [5, 8, 5, 4, 2, 1]) {
-      await fireEvent.wheel(stage, { deltaY });
+      await fireEvent.wheel(stage, { deltaY })
     }
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    const afterFinePan = paper.getBoundingClientRect();
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    const afterFinePan = paper.getBoundingClientRect()
 
-    await expect(afterFinePan.width).toBeCloseTo(afterPan.width, 1);
-    await expect(afterFinePan.y).toBeLessThan(afterPan.y - 20);
+    await expect(afterFinePan.width).toBeCloseTo(afterPan.width, 1)
+    await expect(afterFinePan.y).toBeLessThan(afterPan.y - 20)
   },
-};
+}
 
 export const CanvasWorkspaceMarqueeSelection: Story = {
   args: {
@@ -531,11 +520,11 @@ export const CanvasWorkspaceMarqueeSelection: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await canvas.findByText("344%");
-    await canvas.findByText("未选择元素");
+    const canvas = within(canvasElement)
+    await canvas.findByText("344%")
+    await canvas.findByText("未选择元素")
   },
-};
+}
 
 export const CanvasWorkspaceDimensionPicker: Story = {
   args: {
@@ -545,8 +534,8 @@ export const CanvasWorkspaceDimensionPicker: Story = {
   },
   loaders: [
     async () => {
-      seedDimensionFixtures();
-      return {};
+      seedDimensionFixtures()
+      return {}
     },
   ],
   parameters: {
@@ -558,15 +547,15 @@ export const CanvasWorkspaceDimensionPicker: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const widthInput = canvas.getByLabelText("标签宽度");
-    const heightInput = canvas.getByLabelText("标签高度");
-    await userEvent.clear(heightInput);
-    await userEvent.clear(widthInput);
-    await userEvent.type(widthInput, "64");
-    await canvas.findByRole("option", { name: "64 × 30 mm" });
+    const canvas = within(canvasElement)
+    const widthInput = canvas.getByLabelText("标签宽度")
+    const heightInput = canvas.getByLabelText("标签高度")
+    await userEvent.clear(heightInput)
+    await userEvent.clear(widthInput)
+    await userEvent.type(widthInput, "64")
+    await canvas.findByRole("option", { name: "64 × 30 mm" })
   },
-};
+}
 
 export const CanvasWorkspaceSelectableDefault: Story = {
   args: {
@@ -588,7 +577,7 @@ export const CanvasWorkspaceSelectableDefault: Story = {
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
-};
+}
 
 export const CanvasWorkspaceSelectableText: Story = {
   args: {
@@ -604,7 +593,7 @@ export const CanvasWorkspaceSelectableText: Story = {
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
-};
+}
 
 export const CanvasWorkspaceClipboard: Story = {
   args: {
@@ -627,37 +616,31 @@ export const CanvasWorkspaceClipboard: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement)
     const clipboardItems: Array<{
-      data: Record<string, Blob>;
-      getType: (type: string) => Promise<Blob>;
-      types: string[];
-    }> = [];
-    const originalClipboard = navigator.clipboard;
-    const originalClipboardItem = window.ClipboardItem;
-    const originalSecureContext = Object.getOwnPropertyDescriptor(
-      window,
-      "isSecureContext",
-    );
+      data: Record<string, Blob>
+      getType: (type: string) => Promise<Blob>
+      types: string[]
+    }> = []
+    const originalClipboard = navigator.clipboard
+    const originalClipboardItem = window.ClipboardItem
+    const originalSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureContext")
 
     class StoryClipboardItem {
-      readonly data: Record<string, Blob>;
-      readonly types: string[];
+      readonly data: Record<string, Blob>
+      readonly types: string[]
 
       constructor(data: Record<string, Blob>) {
-        this.data = data;
-        this.types = Object.keys(data);
+        this.data = data
+        this.types = Object.keys(data)
       }
 
       async getType(type: string) {
-        const blob = this.data[type];
+        const blob = this.data[type]
         if (!blob) {
-          throw new DOMException(
-            `Missing clipboard type: ${type}`,
-            "NotFoundError",
-          );
+          throw new DOMException(`Missing clipboard type: ${type}`, "NotFoundError")
         }
-        return blob;
+        return blob
       }
     }
 
@@ -665,65 +648,60 @@ export const CanvasWorkspaceClipboard: Story = {
       value: {
         read: async () => clipboardItems,
         write: async (items: StoryClipboardItem[]) => {
-          clipboardItems.splice(0, clipboardItems.length, ...items);
+          clipboardItems.splice(0, clipboardItems.length, ...items)
         },
       },
       configurable: true,
-    });
+    })
     Object.defineProperty(window, "ClipboardItem", {
       value: StoryClipboardItem,
       configurable: true,
       writable: true,
-    });
+    })
     Object.defineProperty(window, "isSecureContext", {
       value: true,
       configurable: true,
-    });
+    })
 
     try {
       const beforeCount = canvasElement.querySelectorAll(
-        '.tm-layer-list--inspector input[aria-label$="图层名称"]',
-      ).length;
+        '.tm-layer-list--inspector input[aria-label$="图层名称"]'
+      ).length
 
-      await userEvent.click(canvas.getByRole("button", { name: "拷贝" }));
-      await expect(
-        canvas.findByText("已拷贝所选图层。"),
-      ).resolves.toBeVisible();
+      await userEvent.click(canvas.getByRole("button", { name: "拷贝" }))
+      await expect(canvas.findByText("已拷贝所选图层。")).resolves.toBeVisible()
 
-      await userEvent.click(canvas.getByRole("button", { name: "粘贴" }));
+      await userEvent.click(canvas.getByRole("button", { name: "粘贴" }))
       await expect(
-        canvas.findByText("移动鼠标以放置，单击确认，按 Esc 取消。"),
-      ).resolves.toBeVisible();
+        canvas.findByText("移动鼠标以放置，单击确认，按 Esc 取消。")
+      ).resolves.toBeVisible()
+      await expect(canvas.findByText("单色编辑，所见即所得。")).resolves.toBeVisible()
       await expect(
-        canvas.findByText("单色编辑，所见即所得。"),
-      ).resolves.toBeVisible();
-      await expect(
-        canvasElement.querySelectorAll(
-          '.tm-layer-list--inspector input[aria-label$="图层名称"]',
-        ).length,
-      ).toBe(beforeCount + 1);
+        canvasElement.querySelectorAll('.tm-layer-list--inspector input[aria-label$="图层名称"]')
+          .length
+      ).toBe(beforeCount + 1)
     } finally {
       Object.defineProperty(navigator, "clipboard", {
         value: originalClipboard,
         configurable: true,
-      });
+      })
       if (originalClipboardItem) {
         Object.defineProperty(window, "ClipboardItem", {
           value: originalClipboardItem,
           configurable: true,
           writable: true,
-        });
+        })
       } else {
-        Reflect.deleteProperty(window, "ClipboardItem");
+        Reflect.deleteProperty(window, "ClipboardItem")
       }
       if (originalSecureContext) {
-        Object.defineProperty(window, "isSecureContext", originalSecureContext);
+        Object.defineProperty(window, "isSecureContext", originalSecureContext)
       } else {
-        Reflect.deleteProperty(window, "isSecureContext");
+        Reflect.deleteProperty(window, "isSecureContext")
       }
     }
   },
-};
+}
 
 export const CanvasWorkspaceSnapEnabled: Story = {
   args: {
@@ -746,11 +724,11 @@ export const CanvasWorkspaceSnapEnabled: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const snapButton = await canvas.findByRole("button", { name: "吸附" });
-    await expect(snapButton).toHaveAttribute("aria-pressed", "true");
+    const canvas = within(canvasElement)
+    const snapButton = await canvas.findByRole("button", { name: "吸附" })
+    await expect(snapButton).toHaveAttribute("aria-pressed", "true")
   },
-};
+}
 
 export const CanvasWorkspaceMagneticSnap: Story = {
   args: {
@@ -773,41 +751,35 @@ export const CanvasWorkspaceMagneticSnap: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const snapButton = await canvas.findByRole("button", { name: "吸附" });
-    await expect(snapButton).toHaveAttribute("aria-pressed", "true");
-    const stage = canvasElement.querySelector(".konvajs-content");
+    const canvas = within(canvasElement)
+    const snapButton = await canvas.findByRole("button", { name: "吸附" })
+    await expect(snapButton).toHaveAttribute("aria-pressed", "true")
+    const stage = canvasElement.querySelector(".konvajs-content")
     if (!stage) {
-      throw new Error("expected Konva stage content");
+      throw new Error("expected Konva stage content")
     }
 
-    const stageRect = stage.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect()
     const start = {
       clientX: stageRect.left + 188,
       clientY: stageRect.top + 282,
-    };
+    }
     const target = {
       clientX: stageRect.left + 283,
       clientY: stageRect.top + 282,
-    };
+    }
 
     await userEvent.pointer([
       { target: stage, coords: start },
       { keys: "[MouseLeft>]", target: stage, coords: start },
       { target: stage, coords: target },
-    ]);
-    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute(
-      "data-snap-guides",
-      "1",
-    );
+    ])
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "1")
 
-    await fireEvent.mouseUp(window, target);
-    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute(
-      "data-snap-guides",
-      "0",
-    );
+    await fireEvent.mouseUp(window, target)
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "0")
   },
-};
+}
 
 export const CanvasWorkspaceTransformerBottomCenterSnap: Story = {
   args: {
@@ -830,35 +802,29 @@ export const CanvasWorkspaceTransformerBottomCenterSnap: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const surface = getCanvasInteractionSurface(canvasElement);
-    const start = toCanvasPointer(surface, 24, 10.4);
-    const target = toCanvasPointer(surface, 24, 13.6);
+    const canvas = within(canvasElement)
+    const surface = getCanvasInteractionSurface(canvasElement)
+    const start = toCanvasPointer(surface, 24, 10.4)
+    const target = toCanvasPointer(surface, 24, 13.6)
 
     await userEvent.pointer([
       { target: surface.stage, coords: start },
       { keys: "[MouseLeft>]", target: surface.stage, coords: start },
       { target: surface.stage, coords: target },
-    ]);
-    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute(
-      "data-snap-guides",
-      "1",
-    );
+    ])
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "1")
     await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute(
       "data-snap-guide-signature",
-      "y:13.2:element",
-    );
+      "y:13.2:element"
+    )
 
-    await fireEvent.mouseUp(window, target);
-    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute(
-      "data-snap-guides",
-      "0",
-    );
+    await fireEvent.mouseUp(window, target)
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "0")
     await expect(canvas.getByTestId("canvas-stage-shell")).not.toHaveAttribute(
-      "data-snap-guide-signature",
-    );
+      "data-snap-guide-signature"
+    )
   },
-};
+}
 
 export const CanvasWorkspaceLineEndpointCenterSnap: Story = {
   args: {
@@ -881,35 +847,29 @@ export const CanvasWorkspaceLineEndpointCenterSnap: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const surface = getCanvasInteractionSurface(canvasElement);
-    const start = toCanvasPointer(surface, 15.8, 9.4);
-    const target = toCanvasPointer(surface, 31.6, 9.6);
+    const canvas = within(canvasElement)
+    const surface = getCanvasInteractionSurface(canvasElement)
+    const start = toCanvasPointer(surface, 15.8, 9.4)
+    const target = toCanvasPointer(surface, 31.6, 9.6)
 
     await userEvent.pointer([
       { target: surface.stage, coords: start },
       { keys: "[MouseLeft>]", target: surface.stage, coords: start },
       { target: surface.stage, coords: target },
-    ]);
-    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute(
-      "data-snap-guides",
-      "2",
-    );
+    ])
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "2")
     await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute(
       "data-snap-guide-signature",
-      "x:32:element|y:10:element",
-    );
+      "x:32:element|y:10:element"
+    )
 
-    await fireEvent.mouseUp(window, target);
-    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute(
-      "data-snap-guides",
-      "0",
-    );
+    await fireEvent.mouseUp(window, target)
+    await expect(canvas.getByTestId("canvas-stage-shell")).toHaveAttribute("data-snap-guides", "0")
     await expect(canvas.getByTestId("canvas-stage-shell")).not.toHaveAttribute(
-      "data-snap-guide-signature",
-    );
+      "data-snap-guide-signature"
+    )
   },
-};
+}
 
 export const CanvasWorkspaceTransformerBottomCenterGuideState: Story = {
   args: {
@@ -931,7 +891,7 @@ export const CanvasWorkspaceTransformerBottomCenterGuideState: Story = {
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
-};
+}
 
 export const CanvasWorkspaceLineEndpointCenterGuideState: Story = {
   args: {
@@ -953,7 +913,7 @@ export const CanvasWorkspaceLineEndpointCenterGuideState: Story = {
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
-};
+}
 
 export const CanvasWorkspaceNarrow: Story = {
   args: {
@@ -969,7 +929,7 @@ export const CanvasWorkspaceNarrow: Story = {
   globals: {
     viewport: { value: "canvas-narrow-editor", isRotated: false },
   },
-};
+}
 
 export const CanvasWorkspaceTextDoubleClickEditing: Story = {
   args: {
@@ -986,35 +946,28 @@ export const CanvasWorkspaceTextDoubleClickEditing: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await canvas.findByText("已选 1 项");
+    const canvas = within(canvasElement)
+    await canvas.findByText("已选 1 项")
 
-    const paper = canvasElement.querySelector(".tm-stage-paper--base");
-    const stageCanvas = canvasElement.querySelector(
-      ".tm-stage--overlay canvas",
-    );
-    if (
-      !(paper instanceof HTMLElement) ||
-      !(stageCanvas instanceof HTMLCanvasElement)
-    ) {
-      throw new Error("Missing canvas stage surface");
+    const paper = canvasElement.querySelector(".tm-stage-paper--base")
+    const stageCanvas = canvasElement.querySelector(".tm-stage--overlay canvas")
+    if (!(paper instanceof HTMLElement) || !(stageCanvas instanceof HTMLCanvasElement)) {
+      throw new Error("Missing canvas stage surface")
     }
 
     const readNumber = (label: string) => {
-      const input = canvas.getByLabelText(label) as HTMLInputElement;
-      return Number(input.value);
-    };
-    const paperWidth = readNumber("标签宽度");
-    const paperHeight = readNumber("标签高度");
-    const x = readNumber("X");
-    const y = readNumber("Y");
-    const width = readNumber("宽");
-    const height = readNumber("高");
-    const paperRect = paper.getBoundingClientRect();
-    const clientX =
-      paperRect.left + ((x + width / 2) / paperWidth) * paperRect.width;
-    const clientY =
-      paperRect.top + ((y + height / 2) / paperHeight) * paperRect.height;
+      const input = canvas.getByLabelText(label) as HTMLInputElement
+      return Number(input.value)
+    }
+    const paperWidth = readNumber("标签宽度")
+    const paperHeight = readNumber("标签高度")
+    const x = readNumber("X")
+    const y = readNumber("Y")
+    const width = readNumber("宽")
+    const height = readNumber("高")
+    const paperRect = paper.getBoundingClientRect()
+    const clientX = paperRect.left + ((x + width / 2) / paperWidth) * paperRect.width
+    const clientY = paperRect.top + ((y + height / 2) / paperHeight) * paperRect.height
 
     for (const type of [
       "mousedown",
@@ -1032,14 +985,14 @@ export const CanvasWorkspaceTextDoubleClickEditing: Story = {
           clientX,
           clientY,
           button: 0,
-        }),
-      );
+        })
+      )
     }
 
-    const inlineEditor = await canvas.findByLabelText("画布文本内联编辑");
-    await expect(inlineEditor).toHaveFocus();
+    const inlineEditor = await canvas.findByLabelText("画布文本内联编辑")
+    await expect(inlineEditor).toHaveFocus()
   },
-};
+}
 
 export const CanvasWorkspaceTextReady: Story = {
   args: {
@@ -1056,26 +1009,26 @@ export const CanvasWorkspaceTextReady: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await canvas.findByText("已选 1 项");
-    const fontSize = await canvas.findByLabelText("字号");
-    await expect(fontSize).toHaveDisplayValue("5.0");
-    await expect(fontSize).toBeDisabled();
-    const wrapButton = await canvas.findByRole("button", { name: "自动换行" });
-    await expect(wrapButton).toHaveAttribute("aria-pressed", "false");
-    await expect(wrapButton).toBeDisabled();
+    const canvas = within(canvasElement)
+    await canvas.findByText("已选 1 项")
+    const fontSize = await canvas.findByLabelText("字号")
+    await expect(fontSize).toHaveDisplayValue("5.0")
+    await expect(fontSize).toBeDisabled()
+    const wrapButton = await canvas.findByRole("button", { name: "自动换行" })
+    await expect(wrapButton).toHaveAttribute("aria-pressed", "false")
+    await expect(wrapButton).toBeDisabled()
     const horizontalShrink = await canvas.findByRole("button", {
       name: "水平挤压",
-    });
-    await expect(horizontalShrink).toHaveAttribute("aria-pressed", "true");
-    const adaptive = await canvas.findByRole("button", { name: "自适应" });
-    await expect(adaptive).toHaveAttribute("aria-pressed", "true");
+    })
+    await expect(horizontalShrink).toHaveAttribute("aria-pressed", "true")
+    const adaptive = await canvas.findByRole("button", { name: "自适应" })
+    await expect(adaptive).toHaveAttribute("aria-pressed", "true")
     const verticalShrink = await canvas.findByRole("button", {
       name: "垂直挤压",
-    });
-    await expect(verticalShrink).toHaveAttribute("aria-pressed", "false");
+    })
+    await expect(verticalShrink).toHaveAttribute("aria-pressed", "false")
   },
-};
+}
 
 export const CanvasWorkspaceTextSelected: Story = {
   args: {
@@ -1092,79 +1045,73 @@ export const CanvasWorkspaceTextSelected: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const inlineEditor = (await canvas.findByLabelText(
-      "画布文本内联编辑",
-    )) as HTMLTextAreaElement;
-    await userEvent.type(inlineEditor, "{End}{Enter}内联编辑");
-    await expect(inlineEditor.value).toContain("\n内联编辑");
-    await userEvent.keyboard("{Control>}{Enter}{/Control}");
-    await expect(
-      canvas.queryByLabelText("画布文本内联编辑"),
-    ).not.toBeInTheDocument();
-    await canvas.findByDisplayValue(/内联编辑/);
+    const canvas = within(canvasElement)
+    const inlineEditor = (await canvas.findByLabelText("画布文本内联编辑")) as HTMLTextAreaElement
+    await userEvent.type(inlineEditor, "{End}{Enter}内联编辑")
+    await expect(inlineEditor.value).toContain("\n内联编辑")
+    await userEvent.keyboard("{Control>}{Enter}{/Control}")
+    await expect(canvas.queryByLabelText("画布文本内联编辑")).not.toBeInTheDocument()
+    await canvas.findByDisplayValue(/内联编辑/)
 
-    await expect(
-      (await canvas.findAllByDisplayValue("文本 2")).length,
-    ).toBeGreaterThan(0);
-    await canvas.findByLabelText("字号");
-    await canvas.findByLabelText("行高");
-    await canvas.findByLabelText("字体");
-    await userEvent.click(canvas.getByRole("combobox", { name: "字体" }));
-    await canvas.findByRole("option", { name: "IBM Plex Mono" });
-    await canvas.findByRole("option", { name: "Times New Roman" });
-    await expect(canvas.queryByText("官方中文")).toBeNull();
-    await userEvent.keyboard("{Escape}");
-    await canvas.findByRole("group", { name: "文本九宫格对齐" });
-    await canvas.findByLabelText("文本左上对齐");
+    await expect((await canvas.findAllByDisplayValue("文本 2")).length).toBeGreaterThan(0)
+    await canvas.findByLabelText("字号")
+    await canvas.findByLabelText("行高")
+    await canvas.findByLabelText("字体")
+    await userEvent.click(canvas.getByRole("combobox", { name: "字体" }))
+    await canvas.findByRole("option", { name: "IBM Plex Mono" })
+    await canvas.findByRole("option", { name: "Times New Roman" })
+    await expect(canvas.queryByText("官方中文")).toBeNull()
+    await userEvent.keyboard("{Escape}")
+    await canvas.findByRole("group", { name: "文本九宫格对齐" })
+    await canvas.findByLabelText("文本左上对齐")
     const horizontalGrow = await canvas.findByRole("button", {
       name: "水平拉升",
-    });
-    await expect(horizontalGrow).toHaveAttribute("aria-pressed", "false");
+    })
+    await expect(horizontalGrow).toHaveAttribute("aria-pressed", "false")
     const horizontalShrink = await canvas.findByRole("button", {
       name: "水平挤压",
-    });
-    await expect(horizontalShrink).toHaveAttribute("aria-pressed", "false");
-    const justifyText = await canvas.findByRole("button", { name: "两端对齐" });
-    await expect(justifyText).toHaveAttribute("aria-pressed", "false");
-    await userEvent.click(justifyText);
-    await expect(justifyText).toHaveAttribute("aria-pressed", "true");
-    await userEvent.click(horizontalGrow);
-    await expect(horizontalGrow).toHaveAttribute("aria-pressed", "true");
-    await expect(justifyText).toHaveAttribute("aria-pressed", "false");
-    await userEvent.click(horizontalShrink);
-    await expect(horizontalGrow).toHaveAttribute("aria-pressed", "true");
-    await expect(horizontalShrink).toHaveAttribute("aria-pressed", "true");
+    })
+    await expect(horizontalShrink).toHaveAttribute("aria-pressed", "false")
+    const justifyText = await canvas.findByRole("button", { name: "两端对齐" })
+    await expect(justifyText).toHaveAttribute("aria-pressed", "false")
+    await userEvent.click(justifyText)
+    await expect(justifyText).toHaveAttribute("aria-pressed", "true")
+    await userEvent.click(horizontalGrow)
+    await expect(horizontalGrow).toHaveAttribute("aria-pressed", "true")
+    await expect(justifyText).toHaveAttribute("aria-pressed", "false")
+    await userEvent.click(horizontalShrink)
+    await expect(horizontalGrow).toHaveAttribute("aria-pressed", "true")
+    await expect(horizontalShrink).toHaveAttribute("aria-pressed", "true")
     const verticalGrow = await canvas.findByRole("button", {
       name: "垂直拉升",
-    });
-    await expect(verticalGrow).toHaveAttribute("aria-pressed", "false");
-    await userEvent.click(verticalGrow);
-    await expect(verticalGrow).toHaveAttribute("aria-pressed", "true");
+    })
+    await expect(verticalGrow).toHaveAttribute("aria-pressed", "false")
+    await userEvent.click(verticalGrow)
+    await expect(verticalGrow).toHaveAttribute("aria-pressed", "true")
     const verticalShrink = await canvas.findByRole("button", {
       name: "垂直挤压",
-    });
-    await expect(verticalShrink).toHaveAttribute("aria-pressed", "false");
-    await userEvent.click(verticalShrink);
-    await expect(verticalShrink).toHaveAttribute("aria-pressed", "true");
+    })
+    await expect(verticalShrink).toHaveAttribute("aria-pressed", "false")
+    await userEvent.click(verticalShrink)
+    await expect(verticalShrink).toHaveAttribute("aria-pressed", "true")
     const verticalText = await canvas.findByRole("button", {
       name: "纵向文本",
-    });
-    await expect(verticalText).toHaveAttribute("aria-pressed", "false");
-    await userEvent.click(verticalText);
-    await expect(verticalText).toHaveAttribute("aria-pressed", "true");
-    await userEvent.click(verticalText);
-    await expect(verticalText).toHaveAttribute("aria-pressed", "false");
-    const rotationInput = await canvas.findByLabelText("旋转");
-    await expect(rotationInput).toHaveDisplayValue("0");
-    await canvas.findByRole("button", { name: "逆时针旋转 45 度" });
+    })
+    await expect(verticalText).toHaveAttribute("aria-pressed", "false")
+    await userEvent.click(verticalText)
+    await expect(verticalText).toHaveAttribute("aria-pressed", "true")
+    await userEvent.click(verticalText)
+    await expect(verticalText).toHaveAttribute("aria-pressed", "false")
+    const rotationInput = await canvas.findByLabelText("旋转")
+    await expect(rotationInput).toHaveDisplayValue("0")
+    await canvas.findByRole("button", { name: "逆时针旋转 45 度" })
     const rotateClockwise = await canvas.findByRole("button", {
       name: "顺时针旋转 45 度",
-    });
-    await userEvent.click(rotateClockwise);
-    await expect(rotationInput).toHaveDisplayValue("45");
+    })
+    await userEvent.click(rotateClockwise)
+    await expect(rotationInput).toHaveDisplayValue("45")
   },
-};
+}
 
 export const CanvasWorkspaceTextAdaptiveSizing: Story = {
   args: {
@@ -1181,25 +1128,25 @@ export const CanvasWorkspaceTextAdaptiveSizing: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement)
     const adaptiveButton = await canvas.findByRole("button", {
       name: "自适应",
-    });
-    const wrapButton = await canvas.findByRole("button", { name: "自动换行" });
-    const fontSize = await canvas.findByLabelText("字号");
+    })
+    const wrapButton = await canvas.findByRole("button", { name: "自动换行" })
+    const fontSize = await canvas.findByLabelText("字号")
 
-    await expect(adaptiveButton).toHaveAttribute("aria-pressed", "false");
-    await expect(wrapButton).toHaveAttribute("aria-pressed", "true");
-    await expect(fontSize).not.toBeDisabled();
+    await expect(adaptiveButton).toHaveAttribute("aria-pressed", "false")
+    await expect(wrapButton).toHaveAttribute("aria-pressed", "true")
+    await expect(fontSize).not.toBeDisabled()
 
-    await userEvent.click(adaptiveButton);
+    await userEvent.click(adaptiveButton)
 
-    await expect(adaptiveButton).toHaveAttribute("aria-pressed", "true");
-    await expect(wrapButton).toHaveAttribute("aria-pressed", "false");
-    await expect(wrapButton).toBeDisabled();
-    await expect(fontSize).toBeDisabled();
+    await expect(adaptiveButton).toHaveAttribute("aria-pressed", "true")
+    await expect(wrapButton).toHaveAttribute("aria-pressed", "false")
+    await expect(wrapButton).toBeDisabled()
+    await expect(fontSize).toBeDisabled()
   },
-};
+}
 
 export const CanvasWorkspaceTextFontMetrics: Story = {
   args: {
@@ -1222,11 +1169,11 @@ export const CanvasWorkspaceTextFontMetrics: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await canvas.findByDisplayValue("Noto Sans SC BBOX");
-    await canvas.findByText("字体");
+    const canvas = within(canvasElement)
+    await canvas.findByDisplayValue("Noto Sans SC BBOX")
+    await canvas.findByText("字体")
   },
-};
+}
 
 export const CanvasWorkspaceTextInlineEditingClickAwayCommit: Story = {
   args: {
@@ -1243,19 +1190,15 @@ export const CanvasWorkspaceTextInlineEditingClickAwayCommit: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const inlineEditor = (await canvas.findByLabelText(
-      "画布文本内联编辑",
-    )) as HTMLTextAreaElement;
-    await userEvent.type(inlineEditor, "{End}点击提交");
+    const canvas = within(canvasElement)
+    const inlineEditor = (await canvas.findByLabelText("画布文本内联编辑")) as HTMLTextAreaElement
+    await userEvent.type(inlineEditor, "{End}点击提交")
 
-    const stageCanvas = canvasElement.querySelector(
-      ".tm-stage--overlay canvas",
-    );
+    const stageCanvas = canvasElement.querySelector(".tm-stage--overlay canvas")
     if (!(stageCanvas instanceof HTMLCanvasElement)) {
-      throw new Error("Missing canvas stage surface");
+      throw new Error("Missing canvas stage surface")
     }
-    const stageRect = stageCanvas.getBoundingClientRect();
+    const stageRect = stageCanvas.getBoundingClientRect()
     for (const type of ["mousedown", "mouseup", "click"]) {
       stageCanvas.dispatchEvent(
         new MouseEvent(type, {
@@ -1264,16 +1207,14 @@ export const CanvasWorkspaceTextInlineEditingClickAwayCommit: Story = {
           clientX: stageRect.left + 20,
           clientY: stageRect.top + 20,
           button: 0,
-        }),
-      );
+        })
+      )
     }
 
-    await expect(
-      canvas.queryByLabelText("画布文本内联编辑"),
-    ).not.toBeInTheDocument();
-    await canvas.findByDisplayValue(/点击提交/);
+    await expect(canvas.queryByLabelText("画布文本内联编辑")).not.toBeInTheDocument()
+    await canvas.findByDisplayValue(/点击提交/)
   },
-};
+}
 
 export const CanvasWorkspaceTextInlineEditingJustify: Story = {
   args: {
@@ -1290,22 +1231,20 @@ export const CanvasWorkspaceTextInlineEditingJustify: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const justifyText = await canvas.findByRole("button", { name: "两端对齐" });
-    await expect(justifyText).toHaveAttribute("aria-pressed", "true");
+    const canvas = within(canvasElement)
+    const justifyText = await canvas.findByRole("button", { name: "两端对齐" })
+    await expect(justifyText).toHaveAttribute("aria-pressed", "true")
     await expect(await canvas.findByLabelText("文本左上对齐")).toHaveAttribute(
       "aria-pressed",
-      "true",
-    );
+      "true"
+    )
 
-    const inlineEditor = (await canvas.findByLabelText(
-      "画布文本内联编辑",
-    )) as HTMLTextAreaElement;
-    const editorStyle = getComputedStyle(inlineEditor);
-    await expect(editorStyle.textAlign).toBe("justify");
-    await expect(editorStyle.textAlignLast).toBe("justify");
+    const inlineEditor = (await canvas.findByLabelText("画布文本内联编辑")) as HTMLTextAreaElement
+    const editorStyle = getComputedStyle(inlineEditor)
+    await expect(editorStyle.textAlign).toBe("justify")
+    await expect(editorStyle.textAlignLast).toBe("justify")
   },
-};
+}
 
 export const CanvasWorkspaceTextInlineEditingJustifyMultiline: Story = {
   args: {
@@ -1322,22 +1261,20 @@ export const CanvasWorkspaceTextInlineEditingJustifyMultiline: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const justifyText = await canvas.findByRole("button", { name: "两端对齐" });
-    await expect(justifyText).toHaveAttribute("aria-pressed", "true");
+    const canvas = within(canvasElement)
+    const justifyText = await canvas.findByRole("button", { name: "两端对齐" })
+    await expect(justifyText).toHaveAttribute("aria-pressed", "true")
     await expect(await canvas.findByLabelText("文本左上对齐")).toHaveAttribute(
       "aria-pressed",
-      "true",
-    );
+      "true"
+    )
 
-    const inlineEditor = (await canvas.findByLabelText(
-      "画布文本内联编辑",
-    )) as HTMLTextAreaElement;
-    const editorStyle = getComputedStyle(inlineEditor);
-    await expect(editorStyle.textAlign).toBe("justify");
-    await expect(parseFloat(inlineEditor.style.top)).toBe(0);
+    const inlineEditor = (await canvas.findByLabelText("画布文本内联编辑")) as HTMLTextAreaElement
+    const editorStyle = getComputedStyle(inlineEditor)
+    await expect(editorStyle.textAlign).toBe("justify")
+    await expect(parseFloat(inlineEditor.style.top)).toBe(0)
   },
-};
+}
 
 export const CanvasWorkspaceTextInlineEditingCenteredAlignment: Story = {
   args: {
@@ -1354,20 +1291,18 @@ export const CanvasWorkspaceTextInlineEditingCenteredAlignment: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement)
     await expect(await canvas.findByLabelText("文本居中对齐")).toHaveAttribute(
       "aria-pressed",
-      "true",
-    );
+      "true"
+    )
 
-    const inlineEditor = (await canvas.findByLabelText(
-      "画布文本内联编辑",
-    )) as HTMLTextAreaElement;
-    const editorStyle = getComputedStyle(inlineEditor);
-    await expect(editorStyle.textAlign).toBe("center");
-    await expect(parseFloat(inlineEditor.style.left)).not.toBe(0);
+    const inlineEditor = (await canvas.findByLabelText("画布文本内联编辑")) as HTMLTextAreaElement
+    const editorStyle = getComputedStyle(inlineEditor)
+    await expect(editorStyle.textAlign).toBe("center")
+    await expect(parseFloat(inlineEditor.style.left)).not.toBe(0)
   },
-};
+}
 
 export const CanvasWorkspaceTextInlineEditingCancel: Story = {
   args: {
@@ -1384,20 +1319,14 @@ export const CanvasWorkspaceTextInlineEditingCancel: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const inlineEditor = (await canvas.findByLabelText(
-      "画布文本内联编辑",
-    )) as HTMLTextAreaElement;
-    await userEvent.type(inlineEditor, "{End}取消内容");
-    await userEvent.keyboard("{Escape}");
-    await expect(
-      canvas.queryByLabelText("画布文本内联编辑"),
-    ).not.toBeInTheDocument();
-    await expect(
-      canvas.queryByDisplayValue(/取消内容/),
-    ).not.toBeInTheDocument();
+    const canvas = within(canvasElement)
+    const inlineEditor = (await canvas.findByLabelText("画布文本内联编辑")) as HTMLTextAreaElement
+    await userEvent.type(inlineEditor, "{End}取消内容")
+    await userEvent.keyboard("{Escape}")
+    await expect(canvas.queryByLabelText("画布文本内联编辑")).not.toBeInTheDocument()
+    await expect(canvas.queryByDisplayValue(/取消内容/)).not.toBeInTheDocument()
   },
-};
+}
 
 export const CanvasWorkspaceRectSelected: Story = {
   args: {
@@ -1414,13 +1343,11 @@ export const CanvasWorkspaceRectSelected: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await expect(
-      (await canvas.findAllByDisplayValue("直角矩形")).length,
-    ).toBeGreaterThan(0);
-    await expect(await canvas.findByLabelText("圆角")).toHaveValue("0");
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("直角矩形")).length).toBeGreaterThan(0)
+    await expect(await canvas.findByLabelText("圆角")).toHaveValue("0")
   },
-};
+}
 
 export const CanvasWorkspaceCircleSelected: Story = {
   args: {
@@ -1437,13 +1364,11 @@ export const CanvasWorkspaceCircleSelected: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await expect(
-      (await canvas.findAllByDisplayValue("圆形示例")).length,
-    ).toBeGreaterThan(0);
-    await canvas.findByLabelText("边长");
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("圆形示例")).length).toBeGreaterThan(0)
+    await canvas.findByLabelText("边长")
   },
-};
+}
 
 export const CanvasWorkspaceTriangleSelected: Story = {
   args: {
@@ -1460,14 +1385,12 @@ export const CanvasWorkspaceTriangleSelected: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await expect(
-      (await canvas.findAllByDisplayValue("三角形示例")).length,
-    ).toBeGreaterThan(0);
-    await canvas.findByLabelText("宽");
-    await canvas.findByLabelText("高");
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("三角形示例")).length).toBeGreaterThan(0)
+    await canvas.findByLabelText("宽")
+    await canvas.findByLabelText("高")
   },
-};
+}
 
 export const CanvasWorkspaceLineSelected: Story = {
   args: {
@@ -1484,14 +1407,12 @@ export const CanvasWorkspaceLineSelected: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await expect(
-      (await canvas.findAllByDisplayValue("端点线段")).length,
-    ).toBeGreaterThan(0);
-    await canvas.findByLabelText("X2");
-    await canvas.findByLabelText("Y2");
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("端点线段")).length).toBeGreaterThan(0)
+    await canvas.findByLabelText("X2")
+    await canvas.findByLabelText("Y2")
   },
-};
+}
 
 export const CanvasWorkspaceBarcodeSelected: Story = {
   args: {
@@ -1507,7 +1428,7 @@ export const CanvasWorkspaceBarcodeSelected: Story = {
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
-};
+}
 
 export const CanvasWorkspaceBarcodeInvalid: Story = {
   args: {
@@ -1523,7 +1444,7 @@ export const CanvasWorkspaceBarcodeInvalid: Story = {
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
-};
+}
 
 export const CanvasWorkspaceDataMatrixSelected: Story = {
   args: {
@@ -1540,17 +1461,13 @@ export const CanvasWorkspaceDataMatrixSelected: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await expect(
-      (await canvas.findAllByDisplayValue("资产矩阵码")).length,
-    ).toBeGreaterThan(0);
-    await canvas.findByLabelText("边长");
-    await canvas.findByLabelText("编码");
-    await canvas.findByText(
-      "固定使用通用 ECC200 方形符号，不提供额外格式开关。",
-    );
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("资产矩阵码")).length).toBeGreaterThan(0)
+    await canvas.findByLabelText("边长")
+    await canvas.findByLabelText("编码")
+    await canvas.findByText("固定使用通用 ECC200 方形符号，不提供额外格式开关。")
   },
-};
+}
 
 export const CanvasWorkspaceDataMatrixInvalid: Story = {
   args: {
@@ -1567,32 +1484,22 @@ export const CanvasWorkspaceDataMatrixInvalid: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await expect(
-      (await canvas.findAllByDisplayValue("待修正数据矩阵码")).length,
-    ).toBeGreaterThan(0);
-    await canvas.findByText("数据矩阵码内容为空");
-    const sections = Array.from(
-      canvasElement.querySelectorAll<HTMLElement>(".tm-editor-section"),
-    );
+    const canvas = within(canvasElement)
+    await expect((await canvas.findAllByDisplayValue("待修正数据矩阵码")).length).toBeGreaterThan(0)
+    await canvas.findByText("数据矩阵码内容为空")
+    const sections = Array.from(canvasElement.querySelectorAll<HTMLElement>(".tm-editor-section"))
     const contentSection = sections.find(
-      (section) =>
-        section.querySelector(".tm-editor-section__title")?.textContent ===
-        "内容",
-    );
+      (section) => section.querySelector(".tm-editor-section__title")?.textContent === "内容"
+    )
     const geometrySection = sections.find(
-      (section) =>
-        section.querySelector(".tm-editor-section__title")?.textContent ===
-        "几何与样式",
-    );
-    expect(contentSection).toBeTruthy();
-    expect(contentSection?.textContent ?? "").toContain("数据矩阵码内容为空");
-    expect(geometrySection).toBeTruthy();
-    expect(geometrySection?.textContent ?? "").not.toContain(
-      "数据矩阵码内容为空",
-    );
+      (section) => section.querySelector(".tm-editor-section__title")?.textContent === "几何与样式"
+    )
+    expect(contentSection).toBeTruthy()
+    expect(contentSection?.textContent ?? "").toContain("数据矩阵码内容为空")
+    expect(geometrySection).toBeTruthy()
+    expect(geometrySection?.textContent ?? "").not.toContain("数据矩阵码内容为空")
   },
-};
+}
 
 export const CanvasWorkspaceOutputTab: Story = {
   args: {
@@ -1608,7 +1515,7 @@ export const CanvasWorkspaceOutputTab: Story = {
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
-};
+}
 
 export const CanvasWorkspaceUserTemplateVersions: Story = {
   args: {
@@ -1617,15 +1524,13 @@ export const CanvasWorkspaceUserTemplateVersions: Story = {
   },
   loaders: [
     async () => {
-      await seedUserTemplateFixtures();
-      const presetDraft = createDraftFromPreset(getPresetById("shipping-wide"));
-      const recipientElement = presetDraft.elements.find(
-        (element) => element.kind === "text",
-      );
+      await seedUserTemplateFixtures()
+      const presetDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+      const recipientElement = presetDraft.elements.find((element) => element.kind === "text")
       if (!recipientElement) {
-        return { templateId: null };
+        return { templateId: null }
       }
-      let draft = toggleElementBinding(presetDraft, recipientElement.id, true);
+      let draft = toggleElementBinding(presetDraft, recipientElement.id, true)
       draft = {
         ...draft,
         name: "本地发货模板",
@@ -1634,11 +1539,11 @@ export const CanvasWorkspaceUserTemplateVersions: Story = {
           label: "收件人",
           defaultValue: "Koha Cat",
         })),
-      };
+      }
       const result = await saveUserTemplate({
         name: "版本故事模板",
         document: draft,
-      });
+      })
       await saveUserTemplateAutosave({
         templateId: result.template.id,
         source: { kind: "user-template", templateId: result.template.id },
@@ -1650,12 +1555,12 @@ export const CanvasWorkspaceUserTemplateVersions: Story = {
           })),
         },
         sourceVersionId: result.version.id,
-      });
-      return { templateId: result.template.id };
+      })
+      return { templateId: result.template.id }
     },
   ],
   render: (_args, context) => {
-    const templateId = context.loaded?.templateId as string | null;
+    const templateId = context.loaded?.templateId as string | null
     return (
       <WorkbenchAppStory
         context={runtimeContext}
@@ -1665,7 +1570,7 @@ export const CanvasWorkspaceUserTemplateVersions: Story = {
             : "/canvas?panel=versions",
         ]}
       />
-    );
+    )
   },
   parameters: {
     viewport: {
@@ -1675,7 +1580,7 @@ export const CanvasWorkspaceUserTemplateVersions: Story = {
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
-};
+}
 
 export const CanvasWorkspaceOutputTabPlay: Story = {
   args: {
@@ -1684,10 +1589,10 @@ export const CanvasWorkspaceOutputTabPlay: Story = {
     canvasScenario: "wide-default",
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "输出" }));
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: "输出" }))
   },
-};
+}
 
 export const CanvasWorkspaceOutputErrorBubble: Story = {
   args: {
@@ -1704,11 +1609,11 @@ export const CanvasWorkspaceOutputErrorBubble: Story = {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "直接打印" }));
-    await canvas.findByRole("button", { name: "查看操作失败详情" });
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: "直接打印" }))
+    await canvas.findByRole("button", { name: "查看操作失败详情" })
   },
-};
+}
 
 export const CanvasWorkspaceDraftRestore: Story = {
   args: {
@@ -1724,7 +1629,7 @@ export const CanvasWorkspaceDraftRestore: Story = {
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
   },
-};
+}
 
 export const DemoMode: Story = {
   args: {
@@ -1732,7 +1637,7 @@ export const DemoMode: Story = {
     client: new DemoApiClient(demoContext),
     initialEntries: ["/templates"],
   },
-};
+}
 
 export const TemplatesLargeGridLongTitle: Story = {
   args: {
@@ -1741,10 +1646,10 @@ export const TemplatesLargeGridLongTitle: Story = {
     initialEntries: ["/templates"],
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("tab", { name: "大图" }));
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("tab", { name: "大图" }))
   },
-};
+}
 
 export const TemplatesDisabledRailNarrow: Story = {
   args: {
@@ -1760,7 +1665,7 @@ export const TemplatesDisabledRailNarrow: Story = {
   globals: {
     viewport: { value: "template-single-outlet", isRotated: false },
   },
-};
+}
 
 export const TemplatesSingleOutletNarrow: Story = {
   args: {
@@ -1777,12 +1682,10 @@ export const TemplatesSingleOutletNarrow: Story = {
     viewport: { value: "template-single-outlet", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(
-      canvas.getByRole("button", { name: /Compact Shipping Label/ }),
-    );
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: /Compact Shipping Label/ }))
   },
-};
+}
 
 export const TemplatesStackedPreviewNarrow: Story = {
   args: {
@@ -1799,9 +1702,7 @@ export const TemplatesStackedPreviewNarrow: Story = {
     viewport: { value: "template-stacked-preview", isRotated: false },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(
-      canvas.getByRole("button", { name: /Compact Shipping Label/ }),
-    );
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: /Compact Shipping Label/ }))
   },
-};
+}

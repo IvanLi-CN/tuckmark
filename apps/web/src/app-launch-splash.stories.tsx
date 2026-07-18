@@ -1,6 +1,6 @@
-import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { Meta, StoryObj } from "@storybook/react-vite"
 
-import { AppLaunchSplash } from "./app-launch-splash.js";
+import { AppLaunchSplash } from "./app-launch-splash.js"
 
 const meta: Meta<typeof AppLaunchSplash> = {
   title: "Tuckmark/App Launch Splash",
@@ -22,13 +22,13 @@ const meta: Meta<typeof AppLaunchSplash> = {
       </div>
     ),
   ],
-};
+}
 
-export default meta;
+export default meta
 
-type Story = StoryObj<typeof AppLaunchSplash>;
+type Story = StoryObj<typeof AppLaunchSplash>
 
-export const Default: Story = {};
+export const Default: Story = {}
 
 export const PreparingCurrentRoute: Story = {
   args: {
@@ -58,10 +58,10 @@ export const PreparingCurrentRoute: Story = {
       },
     ],
   },
-};
+}
 
 export const Dark: Story = {
   args: {
     theme: "dark",
   },
-};
+}

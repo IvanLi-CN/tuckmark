@@ -8,7 +8,9 @@ export const LazyTemplatesRoute = React.lazy(loadTemplatesRoute)
 export const LazyCanvasRoute = React.lazy(loadCanvasRoute)
 export const LazySystemRoute = React.lazy(loadSystemRoute)
 
-export function normalizeWorkbenchRoutePath(pathname: string): "/" | "/templates" | "/canvas" | "/system" {
+export function normalizeWorkbenchRoutePath(
+  pathname: string
+): "/" | "/templates" | "/canvas" | "/system" {
   const normalized = pathname.replace(/\/+$/, "") || "/"
   if (normalized.endsWith("/templates")) {
     return "/templates"

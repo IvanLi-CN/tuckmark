@@ -28,16 +28,8 @@
   --radius: 0.875rem;
   --tm-page-background: #f6efe6;
   --tm-page-background-image:
-    radial-gradient(
-      circle at 16% 14%,
-      rgba(255, 255, 255, 0.92),
-      transparent 26%
-    ),
-    radial-gradient(
-      circle at 82% 18%,
-      rgba(229, 197, 160, 0.28),
-      transparent 28%
-    ),
+    radial-gradient(circle at 16% 14%, rgba(255, 255, 255, 0.92), transparent 26%),
+    radial-gradient(circle at 82% 18%, rgba(229, 197, 160, 0.28), transparent 28%),
     linear-gradient(180deg, rgba(250, 244, 236, 0.98), rgba(239, 229, 216, 1));
   --tm-selection-background: rgba(168, 115, 69, 0.24);
   --tm-chrome-border: color-mix(in oklab, var(--border) 78%, white);
@@ -48,13 +40,8 @@
       rgba(255, 255, 255, 0.72) 34%,
       rgba(223, 195, 165, 0.34) 100%
     ),
-    linear-gradient(
-      180deg,
-      rgba(255, 248, 242, 0.94),
-      rgba(248, 239, 229, 0.92)
-    );
-  --tm-chrome-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.88), 0 16px 40px rgba(73, 46, 24, 0.08);
+    linear-gradient(180deg, rgba(255, 248, 242, 0.94), rgba(248, 239, 229, 0.92));
+  --tm-chrome-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88), 0 16px 40px rgba(73, 46, 24, 0.08);
   --tm-nav-hover-surface: rgba(255, 255, 255, 0.68);
   --tm-nav-active-border: rgba(168, 115, 69, 0.2);
   --tm-nav-active-surface: linear-gradient(
@@ -84,22 +71,13 @@
       rgba(255, 255, 255, 0.76) 38%,
       rgba(229, 205, 175, 0.25) 100%
     ),
-    linear-gradient(
-      180deg,
-      rgba(255, 248, 243, 0.95),
-      rgba(246, 236, 225, 0.92)
-    );
-  --tm-hero-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 18px 44px rgba(73, 46, 24, 0.08);
+    linear-gradient(180deg, rgba(255, 248, 243, 0.95), rgba(246, 236, 225, 0.92));
+  --tm-hero-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 18px 44px rgba(73, 46, 24, 0.08);
   --tm-panel-surface: rgba(255, 255, 255, 0.84);
   --tm-panel-shadow: 0 10px 24px rgba(73, 46, 24, 0.05);
   --tm-pane-surface: rgba(255, 255, 255, 0.9);
   --tm-pane-shadow: 0 8px 18px rgba(73, 46, 24, 0.04);
-  --tm-canvas-toast-surface: color-mix(
-    in oklab,
-    var(--background) 86%,
-    white 14%
-  );
+  --tm-canvas-toast-surface: color-mix(in oklab, var(--background) 86%, white 14%);
   --tm-canvas-toast-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.86), 0 10px 20px rgba(73, 46, 24, 0.1);
   --tm-choice-hover-surface: rgba(247, 239, 231, 0.92);
@@ -116,11 +94,7 @@
     rgba(247, 241, 234, 0.98)
   );
   --tm-preview-surface:
-    radial-gradient(
-      circle at top left,
-      rgba(255, 255, 255, 0.72),
-      transparent 24%
-    ),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 24%),
     linear-gradient(180deg, rgba(244, 236, 226, 0.82), rgba(241, 232, 220, 0.9));
   --tm-stage-grid-line: rgba(232, 237, 241, 0.92);
   --tm-stage-paper-border: rgba(215, 220, 215, 0.96);
@@ -150,8 +124,7 @@
     rgba(255, 250, 244, 0.98),
     rgba(248, 239, 229, 0.98)
   );
-  --tm-pwa-toast-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 8px 14px rgba(73, 46, 24, 0.12);
+  --tm-pwa-toast-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 8px 14px rgba(73, 46, 24, 0.12);
   --tm-launch-background: #faf6ef;
   --tm-launch-surface: rgba(255, 252, 247, 0.78);
   --tm-launch-line: rgba(154, 116, 83, 0.18);
@@ -160,16 +133,8 @@
   --tm-launch-ink: #2e241b;
   --tm-launch-muted: #786757;
   --tm-launch-page-gradients:
-    radial-gradient(
-      circle at 12% 12%,
-      rgba(255, 255, 255, 0.96),
-      transparent 24%
-    ),
-    radial-gradient(
-      circle at 82% 18%,
-      rgba(239, 222, 201, 0.52),
-      transparent 28%
-    ),
+    radial-gradient(circle at 12% 12%, rgba(255, 255, 255, 0.96), transparent 24%),
+    radial-gradient(circle at 82% 18%, rgba(239, 222, 201, 0.52), transparent 28%),
     linear-gradient(180deg, rgba(223, 200, 172, 0.14), transparent 42%);
   --tm-launch-ambient-left: radial-gradient(
     circle,
@@ -183,11 +148,7 @@
   );
   --tm-launch-wave-fill:
     linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0)),
-    radial-gradient(
-      circle at top,
-      rgba(248, 236, 219, 0.52),
-      rgba(248, 236, 219, 0)
-    );
+    radial-gradient(circle at top, rgba(248, 236, 219, 0.52), rgba(248, 236, 219, 0));
   --tm-launch-grid-line: rgba(178, 149, 116, 0.16);
   --tm-launch-grid-pattern: rgba(168, 134, 96, 0.09);
   --tm-launch-register-line: rgba(122, 93, 64, 0.26);
@@ -220,17 +181,11 @@
   );
   --tm-launch-label-line: rgba(164, 131, 97, 0.24);
   --tm-launch-label-fill:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.72),
-      rgba(255, 255, 255, 0.26)
-    ),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.26)),
     linear-gradient(90deg, rgba(225, 209, 189, 0.2), rgba(225, 209, 189, 0));
   --tm-launch-barcode-fill:
-    linear-gradient(90deg, rgba(56, 41, 28, 0.96) 2px, transparent 2px) 0 0 /
-      8px 100%,
-    linear-gradient(90deg, rgba(56, 41, 28, 0.84) 1px, transparent 1px) 0 0 /
-      5px 100%,
+    linear-gradient(90deg, rgba(56, 41, 28, 0.96) 2px, transparent 2px) 0 0 / 8px 100%,
+    linear-gradient(90deg, rgba(56, 41, 28, 0.84) 1px, transparent 1px) 0 0 / 5px 100%,
     rgba(255, 255, 255, 0.56);
   --tm-launch-checklist-divider: rgba(168, 134, 96, 0.12);
   --tm-launch-checklist-dot: linear-gradient(180deg, #b96f3a, #d9a46d);
@@ -247,8 +202,7 @@
   );
   --tm-launch-ticket-grid-pattern: rgba(166, 131, 95, 0.1);
   --tm-launch-ticket-code-fill:
-    linear-gradient(90deg, rgba(52, 39, 28, 0.94) 3px, transparent 3px) 0 0 /
-      11px 100%,
+    linear-gradient(90deg, rgba(52, 39, 28, 0.94) 3px, transparent 3px) 0 0 / 11px 100%,
     linear-gradient(rgba(52, 39, 28, 0.94) 3px, transparent 3px) 0 0 / 100% 11px,
     rgba(255, 255, 255, 0.66);
   --tm-launch-ticket-code-line: rgba(120, 92, 63, 0.18);
@@ -256,9 +210,8 @@
 
 @theme inline {
   --font-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", "Hiragino Sans GB", "Noto Sans CJK SC", "PingFang SC",
-    sans-serif;
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Hiragino Sans GB", "Noto Sans CJK SC", "PingFang SC", sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -468,16 +421,8 @@
     --ring: oklch(0.74 0.07 58);
     --tm-page-background: #120f0d;
     --tm-page-background-image:
-      radial-gradient(
-        circle at 16% 12%,
-        rgba(92, 64, 40, 0.24),
-        transparent 26%
-      ),
-      radial-gradient(
-        circle at 84% 14%,
-        rgba(208, 146, 86, 0.16),
-        transparent 28%
-      ),
+      radial-gradient(circle at 16% 12%, rgba(92, 64, 40, 0.24), transparent 26%),
+      radial-gradient(circle at 84% 14%, rgba(208, 146, 86, 0.16), transparent 28%),
       linear-gradient(180deg, rgba(28, 22, 19, 0.98), rgba(18, 15, 14, 1));
     --tm-selection-background: rgba(216, 159, 102, 0.28);
     --tm-chrome-border: rgba(179, 138, 104, 0.18);
@@ -489,8 +434,7 @@
         rgba(176, 116, 65, 0.12) 100%
       ),
       linear-gradient(180deg, rgba(36, 29, 26, 0.96), rgba(25, 21, 19, 0.96));
-    --tm-chrome-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.025), 0 20px 44px rgba(0, 0, 0, 0.34);
+    --tm-chrome-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025), 0 20px 44px rgba(0, 0, 0, 0.34);
     --tm-nav-hover-surface: rgba(255, 245, 231, 0.04);
     --tm-nav-active-border: rgba(245, 208, 164, 0.18);
     --tm-nav-active-surface: linear-gradient(
@@ -509,11 +453,7 @@
         rgba(255, 245, 231, 0.04) 34%,
         rgba(210, 145, 88, 0.18) 100%
       ),
-      linear-gradient(
-        180deg,
-        rgba(58, 45, 37, 0.98) 0%,
-        rgba(36, 30, 27, 0.98) 100%
-      );
+      linear-gradient(180deg, rgba(58, 45, 37, 0.98) 0%, rgba(36, 30, 27, 0.98) 100%);
     --tm-product-mark-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 30px rgba(0, 0, 0, 0.28);
     --tm-product-mark-foreground: #cb8a52;
@@ -525,8 +465,7 @@
         rgba(176, 116, 65, 0.1) 100%
       ),
       linear-gradient(180deg, rgba(36, 29, 26, 0.94), rgba(27, 22, 20, 0.94));
-    --tm-hero-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.02), 0 24px 48px rgba(0, 0, 0, 0.32);
+    --tm-hero-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02), 0 24px 48px rgba(0, 0, 0, 0.32);
     --tm-panel-surface: rgba(39, 32, 29, 0.86);
     --tm-panel-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
     --tm-pane-surface: rgba(33, 27, 24, 0.92);
@@ -552,11 +491,7 @@
       rgba(34, 29, 26, 0.98)
     );
     --tm-preview-surface:
-      radial-gradient(
-        circle at top left,
-        rgba(255, 245, 231, 0.06),
-        transparent 24%
-      ),
+      radial-gradient(circle at top left, rgba(255, 245, 231, 0.06), transparent 24%),
       linear-gradient(180deg, rgba(41, 34, 30, 0.96), rgba(28, 24, 22, 0.98));
     --tm-stage-grid-line: rgba(90, 84, 77, 0.52);
     --tm-stage-paper-border: rgba(114, 103, 92, 0.6);
@@ -581,13 +516,8 @@
     --tm-table-row-active-surface: rgba(83, 61, 44, 0.26);
     --tm-table-focus-surface: rgba(255, 245, 231, 0.06);
     --tm-table-focus-ring: rgba(216, 159, 102, 0.32);
-    --tm-pwa-toast-surface: linear-gradient(
-      180deg,
-      rgba(38, 31, 27, 0.98),
-      rgba(28, 23, 21, 0.98)
-    );
-    --tm-pwa-toast-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 24px rgba(0, 0, 0, 0.28);
+    --tm-pwa-toast-surface: linear-gradient(180deg, rgba(38, 31, 27, 0.98), rgba(28, 23, 21, 0.98));
+    --tm-pwa-toast-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 24px rgba(0, 0, 0, 0.28);
   }
 
   .tm-launch-root {
@@ -610,22 +540,10 @@
     --tm-launch-ink: #f5eee6;
     --tm-launch-muted: #baa895;
     --tm-launch-page-gradients:
-      radial-gradient(
-        circle at 16% 18%,
-        rgba(70, 51, 34, 0.42),
-        transparent 24%
-      ),
-      radial-gradient(
-        circle at 84% 16%,
-        rgba(189, 129, 73, 0.16),
-        transparent 28%
-      ),
+      radial-gradient(circle at 16% 18%, rgba(70, 51, 34, 0.42), transparent 24%),
+      radial-gradient(circle at 84% 16%, rgba(189, 129, 73, 0.16), transparent 28%),
       linear-gradient(180deg, rgba(30, 22, 17, 0.92), rgba(18, 15, 13, 1));
-    --tm-launch-ambient-left: radial-gradient(
-      circle,
-      rgba(98, 69, 44, 0.42),
-      rgba(98, 69, 44, 0)
-    );
+    --tm-launch-ambient-left: radial-gradient(circle, rgba(98, 69, 44, 0.42), rgba(98, 69, 44, 0));
     --tm-launch-ambient-right: radial-gradient(
       circle,
       rgba(209, 144, 88, 0.18),
@@ -633,11 +551,7 @@
     );
     --tm-launch-wave-fill:
       linear-gradient(180deg, rgba(52, 37, 28, 0.42), rgba(18, 15, 13, 0)),
-      radial-gradient(
-        circle at top,
-        rgba(108, 69, 39, 0.32),
-        rgba(108, 69, 39, 0)
-      );
+      radial-gradient(circle at top, rgba(108, 69, 39, 0.32), rgba(108, 69, 39, 0));
     --tm-launch-grid-line: rgba(240, 206, 167, 0.08);
     --tm-launch-grid-pattern: rgba(240, 206, 167, 0.06);
     --tm-launch-register-line: rgba(225, 192, 158, 0.24);
@@ -670,17 +584,11 @@
     );
     --tm-launch-label-line: rgba(237, 202, 164, 0.12);
     --tm-launch-label-fill:
-      linear-gradient(
-        180deg,
-        rgba(255, 249, 240, 0.04),
-        rgba(255, 249, 240, 0.01)
-      ),
+      linear-gradient(180deg, rgba(255, 249, 240, 0.04), rgba(255, 249, 240, 0.01)),
       linear-gradient(90deg, rgba(215, 160, 104, 0.06), rgba(215, 160, 104, 0));
     --tm-launch-barcode-fill:
-      linear-gradient(90deg, rgba(243, 229, 212, 0.82) 2px, transparent 2px) 0
-        0 / 8px 100%,
-      linear-gradient(90deg, rgba(243, 229, 212, 0.66) 1px, transparent 1px) 0
-        0 / 5px 100%,
+      linear-gradient(90deg, rgba(243, 229, 212, 0.82) 2px, transparent 2px) 0 0 / 8px 100%,
+      linear-gradient(90deg, rgba(243, 229, 212, 0.66) 1px, transparent 1px) 0 0 / 5px 100%,
       rgba(255, 250, 243, 0.06);
     --tm-launch-checklist-divider: rgba(238, 205, 167, 0.08);
     --tm-launch-checklist-dot: linear-gradient(180deg, #d89f66, #f4c892);
@@ -697,10 +605,8 @@
     );
     --tm-launch-ticket-grid-pattern: rgba(238, 205, 167, 0.08);
     --tm-launch-ticket-code-fill:
-      linear-gradient(90deg, rgba(245, 233, 218, 0.84) 3px, transparent 3px) 0
-        0 / 11px 100%,
-      linear-gradient(rgba(245, 233, 218, 0.84) 3px, transparent 3px) 0 0 / 100%
-        11px,
+      linear-gradient(90deg, rgba(245, 233, 218, 0.84) 3px, transparent 3px) 0 0 / 11px 100%,
+      linear-gradient(rgba(245, 233, 218, 0.84) 3px, transparent 3px) 0 0 / 100% 11px,
       rgba(255, 250, 243, 0.05);
     --tm-launch-ticket-code-line: rgba(239, 205, 166, 0.14);
   }
@@ -1122,15 +1028,8 @@
     inset: 1rem;
     border-radius: 1.125rem;
     background-image:
-      linear-gradient(
-        var(--tm-launch-ticket-grid-pattern) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        90deg,
-        var(--tm-launch-ticket-grid-pattern) 1px,
-        transparent 1px
-      );
+      linear-gradient(var(--tm-launch-ticket-grid-pattern) 1px, transparent 1px),
+      linear-gradient(90deg, var(--tm-launch-ticket-grid-pattern) 1px, transparent 1px);
     background-size: 1.125rem 1.125rem;
   }
 
@@ -1612,10 +1511,7 @@
 
   @media (min-width: 1280px) {
     .tm-pane-grid--triple {
-      grid-template-columns: minmax(172px, 0.38fr) minmax(0, 1.9fr) minmax(
-          312px,
-          0.94fr
-        );
+      grid-template-columns: minmax(172px, 0.38fr) minmax(0, 1.9fr) minmax(312px, 0.94fr);
     }
 
     .tm-pane-grid--triple .tm-pane--left {
@@ -1633,10 +1529,7 @@
     }
 
     .tm-pane-grid--template.tm-pane-grid--triple {
-      grid-template-columns: minmax(300px, 0.92fr) minmax(0, 1.42fr) minmax(
-          312px,
-          0.96fr
-        );
+      grid-template-columns: minmax(300px, 0.92fr) minmax(0, 1.42fr) minmax(312px, 0.96fr);
     }
 
     .tm-pane-grid--template.tm-pane-grid--triple .tm-pane--left {
@@ -1995,20 +1888,10 @@
     white-space: nowrap;
     text-overflow: clip;
     line-height: 1.08;
-    -webkit-mask-image: linear-gradient(
-      90deg,
-      #000 0,
-      #000 calc(100% - 1.8rem),
-      transparent 100%
-    );
+    -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 1.8rem), transparent 100%);
     -webkit-mask-repeat: no-repeat;
     -webkit-mask-size: 100% 100%;
-    mask-image: linear-gradient(
-      90deg,
-      #000 0,
-      #000 calc(100% - 1.8rem),
-      transparent 100%
-    );
+    mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 1.8rem), transparent 100%);
     mask-repeat: no-repeat;
     mask-size: 100% 100%;
   }
@@ -2964,16 +2847,8 @@
     --ring: oklch(0.74 0.07 58);
     --tm-page-background: #120f0d;
     --tm-page-background-image:
-      radial-gradient(
-        circle at 16% 12%,
-        rgba(92, 64, 40, 0.24),
-        transparent 26%
-      ),
-      radial-gradient(
-        circle at 84% 14%,
-        rgba(208, 146, 86, 0.16),
-        transparent 28%
-      ),
+      radial-gradient(circle at 16% 12%, rgba(92, 64, 40, 0.24), transparent 26%),
+      radial-gradient(circle at 84% 14%, rgba(208, 146, 86, 0.16), transparent 28%),
       linear-gradient(180deg, rgba(28, 22, 19, 0.98), rgba(18, 15, 14, 1));
     --tm-selection-background: rgba(216, 159, 102, 0.28);
     --tm-chrome-border: rgba(179, 138, 104, 0.18);
@@ -2985,8 +2860,7 @@
         rgba(176, 116, 65, 0.12) 100%
       ),
       linear-gradient(180deg, rgba(36, 29, 26, 0.96), rgba(25, 21, 19, 0.96));
-    --tm-chrome-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.025), 0 20px 44px rgba(0, 0, 0, 0.34);
+    --tm-chrome-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025), 0 20px 44px rgba(0, 0, 0, 0.34);
     --tm-nav-hover-surface: rgba(255, 245, 231, 0.04);
     --tm-nav-active-border: rgba(245, 208, 164, 0.18);
     --tm-nav-active-surface: linear-gradient(
@@ -3005,11 +2879,7 @@
         rgba(255, 245, 231, 0.04) 34%,
         rgba(210, 145, 88, 0.18) 100%
       ),
-      linear-gradient(
-        180deg,
-        rgba(58, 45, 37, 0.98) 0%,
-        rgba(36, 30, 27, 0.98) 100%
-      );
+      linear-gradient(180deg, rgba(58, 45, 37, 0.98) 0%, rgba(36, 30, 27, 0.98) 100%);
     --tm-product-mark-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 30px rgba(0, 0, 0, 0.28);
     --tm-product-mark-foreground: #cb8a52;
@@ -3021,8 +2891,7 @@
         rgba(176, 116, 65, 0.1) 100%
       ),
       linear-gradient(180deg, rgba(36, 29, 26, 0.94), rgba(27, 22, 20, 0.94));
-    --tm-hero-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.02), 0 24px 48px rgba(0, 0, 0, 0.32);
+    --tm-hero-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02), 0 24px 48px rgba(0, 0, 0, 0.32);
     --tm-panel-surface: rgba(39, 32, 29, 0.86);
     --tm-panel-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
     --tm-pane-surface: rgba(33, 27, 24, 0.92);
@@ -3048,11 +2917,7 @@
       rgba(34, 29, 26, 0.98)
     );
     --tm-preview-surface:
-      radial-gradient(
-        circle at top left,
-        rgba(255, 245, 231, 0.06),
-        transparent 24%
-      ),
+      radial-gradient(circle at top left, rgba(255, 245, 231, 0.06), transparent 24%),
       linear-gradient(180deg, rgba(41, 34, 30, 0.96), rgba(28, 24, 22, 0.98));
     --tm-stage-grid-line: rgba(90, 84, 77, 0.52);
     --tm-stage-paper-border: rgba(114, 103, 92, 0.6);
@@ -3077,13 +2942,8 @@
     --tm-table-row-active-surface: rgba(83, 61, 44, 0.26);
     --tm-table-focus-surface: rgba(255, 245, 231, 0.06);
     --tm-table-focus-ring: rgba(216, 159, 102, 0.32);
-    --tm-pwa-toast-surface: linear-gradient(
-      180deg,
-      rgba(38, 31, 27, 0.98),
-      rgba(28, 23, 21, 0.98)
-    );
-    --tm-pwa-toast-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 24px rgba(0, 0, 0, 0.28);
+    --tm-pwa-toast-surface: linear-gradient(180deg, rgba(38, 31, 27, 0.98), rgba(28, 23, 21, 0.98));
+    --tm-pwa-toast-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 24px rgba(0, 0, 0, 0.28);
     --tm-launch-background: #14110f;
     --tm-launch-surface: rgba(32, 27, 24, 0.78);
     --tm-launch-line: rgba(236, 206, 170, 0.14);
@@ -3092,22 +2952,10 @@
     --tm-launch-ink: #f5eee6;
     --tm-launch-muted: #baa895;
     --tm-launch-page-gradients:
-      radial-gradient(
-        circle at 16% 18%,
-        rgba(70, 51, 34, 0.42),
-        transparent 24%
-      ),
-      radial-gradient(
-        circle at 84% 16%,
-        rgba(189, 129, 73, 0.16),
-        transparent 28%
-      ),
+      radial-gradient(circle at 16% 18%, rgba(70, 51, 34, 0.42), transparent 24%),
+      radial-gradient(circle at 84% 16%, rgba(189, 129, 73, 0.16), transparent 28%),
       linear-gradient(180deg, rgba(30, 22, 17, 0.92), rgba(18, 15, 13, 1));
-    --tm-launch-ambient-left: radial-gradient(
-      circle,
-      rgba(98, 69, 44, 0.42),
-      rgba(98, 69, 44, 0)
-    );
+    --tm-launch-ambient-left: radial-gradient(circle, rgba(98, 69, 44, 0.42), rgba(98, 69, 44, 0));
     --tm-launch-ambient-right: radial-gradient(
       circle,
       rgba(209, 144, 88, 0.18),
@@ -3115,11 +2963,7 @@
     );
     --tm-launch-wave-fill:
       linear-gradient(180deg, rgba(52, 37, 28, 0.42), rgba(18, 15, 13, 0)),
-      radial-gradient(
-        circle at top,
-        rgba(108, 69, 39, 0.32),
-        rgba(108, 69, 39, 0)
-      );
+      radial-gradient(circle at top, rgba(108, 69, 39, 0.32), rgba(108, 69, 39, 0));
     --tm-launch-grid-line: rgba(240, 206, 167, 0.08);
     --tm-launch-grid-pattern: rgba(240, 206, 167, 0.06);
     --tm-launch-register-line: rgba(225, 192, 158, 0.24);
@@ -3152,17 +2996,11 @@
     );
     --tm-launch-label-line: rgba(237, 202, 164, 0.12);
     --tm-launch-label-fill:
-      linear-gradient(
-        180deg,
-        rgba(255, 249, 240, 0.04),
-        rgba(255, 249, 240, 0.01)
-      ),
+      linear-gradient(180deg, rgba(255, 249, 240, 0.04), rgba(255, 249, 240, 0.01)),
       linear-gradient(90deg, rgba(215, 160, 104, 0.06), rgba(215, 160, 104, 0));
     --tm-launch-barcode-fill:
-      linear-gradient(90deg, rgba(243, 229, 212, 0.82) 2px, transparent 2px) 0
-        0 / 8px 100%,
-      linear-gradient(90deg, rgba(243, 229, 212, 0.66) 1px, transparent 1px) 0
-        0 / 5px 100%,
+      linear-gradient(90deg, rgba(243, 229, 212, 0.82) 2px, transparent 2px) 0 0 / 8px 100%,
+      linear-gradient(90deg, rgba(243, 229, 212, 0.66) 1px, transparent 1px) 0 0 / 5px 100%,
       rgba(255, 250, 243, 0.06);
     --tm-launch-checklist-divider: rgba(238, 205, 167, 0.08);
     --tm-launch-checklist-dot: linear-gradient(180deg, #d89f66, #f4c892);
@@ -3179,10 +3017,8 @@
     );
     --tm-launch-ticket-grid-pattern: rgba(238, 205, 167, 0.08);
     --tm-launch-ticket-code-fill:
-      linear-gradient(90deg, rgba(245, 233, 218, 0.84) 3px, transparent 3px) 0
-        0 / 11px 100%,
-      linear-gradient(rgba(245, 233, 218, 0.84) 3px, transparent 3px) 0 0 / 100%
-        11px,
+      linear-gradient(90deg, rgba(245, 233, 218, 0.84) 3px, transparent 3px) 0 0 / 11px 100%,
+      linear-gradient(rgba(245, 233, 218, 0.84) 3px, transparent 3px) 0 0 / 100% 11px,
       rgba(255, 250, 243, 0.05);
     --tm-launch-ticket-code-line: rgba(239, 205, 166, 0.14);
   }

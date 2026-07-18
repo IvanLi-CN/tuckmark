@@ -47,10 +47,7 @@ async function requestServiceWorkerWarmup(tiers: readonly PwaAssetTier[]): Promi
   })
 }
 
-export function usePwaAssetWarmup(
-  context: AppContext,
-  enabled: boolean
-): PwaAssetWarmupStatus {
+export function usePwaAssetWarmup(context: AppContext, enabled: boolean): PwaAssetWarmupStatus {
   const [status, setStatus] = React.useState<PwaAssetWarmupStatus>(() =>
     import.meta.env.PROD && context.surface === "browser-static" && context.mode === "runtime"
       ? "idle"

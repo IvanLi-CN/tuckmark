@@ -169,9 +169,7 @@ const originalSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureC
 let mountedRoot: ReturnType<typeof ReactDOM.createRoot> | null = null
 let viewportWidth = 1440
 
-function queueFetchJsonResponsesByRequest(
-  responses: Record<string, unknown | unknown[]>
-): void {
+function queueFetchJsonResponsesByRequest(responses: Record<string, unknown | unknown[]>): void {
   const queues = new Map<string, unknown[]>()
   for (const [key, value] of Object.entries(responses)) {
     queues.set(key, Array.isArray(value) ? [...value] : [value])
@@ -870,9 +868,9 @@ async function waitForServerRuntimeReady(): Promise<void> {
 
 function queryButton(label: string): HTMLButtonElement {
   const buttons = Array.from(document.querySelectorAll("button"))
-  const button = buttons.find((item) =>
-    item.textContent?.includes(label)
-  ) as HTMLButtonElement | undefined
+  const button = buttons.find((item) => item.textContent?.includes(label)) as
+    | HTMLButtonElement
+    | undefined
   if (!button) {
     const availableButtons = buttons
       .map((item) => item.textContent?.replace(/\s+/g, " ").trim())

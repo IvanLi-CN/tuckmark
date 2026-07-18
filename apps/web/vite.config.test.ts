@@ -106,8 +106,10 @@ describe("PWA build assets", () => {
     expect(source).toContain('"./pwa/tuckmark-icon-192.png"')
     expect(source).toContain('const INSTALL_TIERS = ["shell", "route"]')
     expect(source).toContain('event.data?.type === "WARM_ASSETS"')
-    expect(source).toContain('const tiers = Array.isArray(event.data.tiers) ? event.data.tiers : ["feature"]')
-    expect(source).toContain('cacheAssetUrls(resolveAssetUrlsForTiers(INSTALL_TIERS))')
+    expect(source).toContain(
+      'const tiers = Array.isArray(event.data.tiers) ? event.data.tiers : ["feature"]'
+    )
+    expect(source).toContain("cacheAssetUrls(resolveAssetUrlsForTiers(INSTALL_TIERS))")
     expect(source).toContain('event.data?.type === "SKIP_WAITING"')
     expect(source).toContain('const VERSION_METADATA_URL = "./version.json"')
     expect(source).toContain("requestUrl.pathname.endsWith(VERSION_METADATA_URL.slice(1))")

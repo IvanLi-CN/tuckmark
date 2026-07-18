@@ -1,18 +1,18 @@
 export type AppLaunchSplashProps = {
-  detailText?: string;
-  progressPercent?: number;
-  statusText?: string;
-  steps?: readonly AppLaunchSplashStep[];
-  theme?: "auto" | "dark" | "light";
-};
+  detailText?: string
+  progressPercent?: number
+  statusText?: string
+  steps?: readonly AppLaunchSplashStep[]
+  theme?: "auto" | "dark" | "light"
+}
 
-export type AppLaunchSplashStepState = "pending" | "active" | "complete";
+export type AppLaunchSplashStepState = "pending" | "active" | "complete"
 
 export type AppLaunchSplashStep = {
-  id?: string;
-  label: string;
-  state: AppLaunchSplashStepState;
-};
+  id?: string
+  label: string
+  state: AppLaunchSplashStepState
+}
 
 const DEFAULT_STEPS = [
   {
@@ -35,17 +35,17 @@ const DEFAULT_STEPS = [
     label: "补齐离线资源缓存",
     state: "pending",
   },
-] satisfies readonly AppLaunchSplashStep[];
+] satisfies readonly AppLaunchSplashStep[]
 
 function describeStepState(state: AppLaunchSplashStepState) {
   switch (state) {
     case "complete":
-      return "已完成";
+      return "已完成"
     case "active":
-      return "处理中";
+      return "处理中"
     case "pending":
     default:
-      return "待处理";
+      return "待处理"
   }
 }
 
@@ -63,9 +63,9 @@ export function AppLaunchSplash({
     theme === "light" ? "tm-launch-root--light" : "",
   ]
     .filter(Boolean)
-    .join(" ");
-  const safeProgress = Math.max(0, Math.min(100, Math.round(progressPercent)));
-  const completedSteps = steps.filter((step) => step.state === "complete").length;
+    .join(" ")
+  const safeProgress = Math.max(0, Math.min(100, Math.round(progressPercent)))
+  const completedSteps = steps.filter((step) => step.state === "complete").length
 
   return (
     <div
@@ -76,28 +76,13 @@ export function AppLaunchSplash({
       aria-label={`Tuckmark ${statusText}`}
     >
       <div className="tm-launch-stage">
-        <div
-          className="tm-launch-ambient tm-launch-ambient--left"
-          aria-hidden="true"
-        />
-        <div
-          className="tm-launch-ambient tm-launch-ambient--right"
-          aria-hidden="true"
-        />
+        <div className="tm-launch-ambient tm-launch-ambient--left" aria-hidden="true" />
+        <div className="tm-launch-ambient tm-launch-ambient--right" aria-hidden="true" />
         <div className="tm-launch-wave" aria-hidden="true" />
         <div className="tm-launch-grid" aria-hidden="true" />
-        <div
-          className="tm-launch-register tm-launch-register--top-left"
-          aria-hidden="true"
-        />
-        <div
-          className="tm-launch-register tm-launch-register--top-right"
-          aria-hidden="true"
-        />
-        <div
-          className="tm-launch-register tm-launch-register--bottom-right"
-          aria-hidden="true"
-        />
+        <div className="tm-launch-register tm-launch-register--top-left" aria-hidden="true" />
+        <div className="tm-launch-register tm-launch-register--top-right" aria-hidden="true" />
+        <div className="tm-launch-register tm-launch-register--bottom-right" aria-hidden="true" />
 
         <div className="tm-launch-layout">
           <section className="tm-launch-copy-panel">
@@ -131,10 +116,7 @@ export function AppLaunchSplash({
                 aria-valuenow={safeProgress}
                 aria-valuetext={`${completedSteps} / ${steps.length} 启动阶段已完成`}
               >
-                <div
-                  className="tm-launch-progress-fill"
-                  style={{ width: `${safeProgress}%` }}
-                />
+                <div className="tm-launch-progress-fill" style={{ width: `${safeProgress}%` }} />
               </div>
             </div>
           </section>
@@ -184,5 +166,5 @@ export function AppLaunchSplash({
         </div>
       </div>
     </div>
-  );
+  )
 }

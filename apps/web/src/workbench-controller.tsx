@@ -193,9 +193,7 @@ function buildStartupSplashState(args: {
     (args.completedStepIds.length / STARTUP_STEP_ORDER.length) * 100
   )
   const activeStepId =
-    args.activeStepId ??
-    STARTUP_STEP_ORDER.find((stepId) => !completedSet.has(stepId)) ??
-    null
+    args.activeStepId ?? STARTUP_STEP_ORDER.find((stepId) => !completedSet.has(stepId)) ?? null
 
   return {
     detailText: activeStepId
@@ -206,11 +204,7 @@ function buildStartupSplashState(args: {
     steps: STARTUP_STEP_ORDER.map((stepId) => ({
       id: stepId,
       label: STARTUP_STEP_LABELS[stepId],
-      state: completedSet.has(stepId)
-        ? "complete"
-        : stepId === activeStepId
-          ? "active"
-          : "pending",
+      state: completedSet.has(stepId) ? "complete" : stepId === activeStepId ? "active" : "pending",
     })),
   }
 }
@@ -367,15 +361,11 @@ export function useWorkbenchController({
   )
   const runtimeStartup = context.mode === "runtime"
   const [startupSyncReady, setStartupSyncReady] = React.useState(!runtimeStartup)
-  const [deferredHydrationPending, setDeferredHydrationPending] = React.useState(
-    runtimeStartup
-  )
+  const [deferredHydrationPending, setDeferredHydrationPending] = React.useState(runtimeStartup)
   const [startupActiveStepId, setStartupActiveStepId] = React.useState<StartupStepId | null>(
     runtimeStartup ? "runtime-shell" : null
   )
-  const [startupCompletedStepIds, setStartupCompletedStepIds] = React.useState<StartupStepId[]>(
-    []
-  )
+  const [startupCompletedStepIds, setStartupCompletedStepIds] = React.useState<StartupStepId[]>([])
   const syncInFlightRef = React.useRef<Promise<void> | null>(null)
   const syncQueuedRef = React.useRef(false)
   const dataDirectorySyncTimerRef = React.useRef<number | null>(null)
@@ -394,8 +384,7 @@ export function useWorkbenchController({
   const browserPrintSupported = React.useMemo(() => isBrowserPrintSupported(), [])
   const initialRoutePath = React.useMemo(() => {
     const pathname =
-      providedInitialRoutePath ??
-      (typeof window !== "undefined" ? window.location.pathname : "/")
+      providedInitialRoutePath ?? (typeof window !== "undefined" ? window.location.pathname : "/")
     const normalized = pathname.replace(/\/+$/, "") || "/"
     if (normalized.endsWith("/templates")) {
       return "/templates"
@@ -747,10 +736,7 @@ export function useWorkbenchController({
           }
         }
 
-        const deferredTasks: Promise<unknown>[] = [
-          refreshSetup(),
-          refreshRenderOptionsFromStore(),
-        ]
+        const deferredTasks: Promise<unknown>[] = [refreshSetup(), refreshRenderOptionsFromStore()]
 
         if (initialRoutePath !== "/templates") {
           deferredTasks.push(refreshUserTemplates())

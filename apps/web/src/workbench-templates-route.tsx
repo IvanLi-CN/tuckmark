@@ -17,6 +17,7 @@ import { createDraftFromUserTemplatePackage } from "./canvas-editor-model.js"
 import { ActionButton } from "./components/ui/action-button.js"
 import { Input } from "./components/ui/input.js"
 import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
+import { cn } from "./lib/utils.js"
 import { ensureExtendedRuntimeFontStyles } from "./runtime-font-loader.js"
 import type { CanvasDraftDocument, Template, UserTemplateSummary } from "./types.js"
 import {
@@ -25,26 +26,22 @@ import {
   saveUserTemplate,
 } from "./user-template-store.js"
 import {
-  createInitialTemplateRows,
-  type WorkbenchController,
-} from "./workbench-controller.js"
-import {
+  createTemplatePrintSource,
+  createUserTemplatePrintSource,
   EmptyMini,
+  getTemplateColumnWidthRange,
   PaneHeader,
+  resolveTemplateColumnLayout,
   TEMPLATE_PREVIEW_DEBOUNCE_MS,
   TEMPLATE_STACKED_PREVIEW_THRESHOLD,
   TemplateGroup,
   TemplatesPrintRail,
-  createTemplatePrintSource,
-  createUserTemplatePrintSource,
-  getTemplateColumnWidthRange,
-  resolveTemplateColumnLayout,
   toTemplateFieldList,
   useElementClientWidth,
   useMediaQuery,
   WIDE_TRIPLE_THRESHOLD,
 } from "./workbench-app.js"
-import { cn } from "./lib/utils.js"
+import { createInitialTemplateRows, type WorkbenchController } from "./workbench-controller.js"
 
 type TemplateRow = {
   id: string
@@ -72,8 +69,9 @@ function toSingleLineFieldValue(value: string): string {
 }
 
 function useTemplatesRouteState(controller: WorkbenchController) {
-  const [userTemplatePreviewDrafts, setUserTemplatePreviewDrafts] =
-    React.useState<Record<string, CanvasDraftDocument | null>>({})
+  const [userTemplatePreviewDrafts, setUserTemplatePreviewDrafts] = React.useState<
+    Record<string, CanvasDraftDocument | null>
+  >({})
   const templateEntries = React.useMemo<TemplateCardEntry[]>(
     () => [
       ...controller.templates.map((template) => ({
@@ -90,14 +88,10 @@ function useTemplatesRouteState(controller: WorkbenchController) {
     ],
     [controller.templates, controller.userTemplates, userTemplatePreviewDrafts]
   )
-  const [templateEntryId, setTemplateEntryId] = React.useState(
-    () => templateEntries[0]?.id ?? ""
-  )
+  const [templateEntryId, setTemplateEntryId] = React.useState(() => templateEntries[0]?.id ?? "")
   const activeTemplateEntry = React.useMemo(
     () =>
-      templateEntries.find((entry) => entry.id === templateEntryId) ??
-      templateEntries[0] ??
-      null,
+      templateEntries.find((entry) => entry.id === templateEntryId) ?? templateEntries[0] ?? null,
     [templateEntries, templateEntryId]
   )
   const activeTemplate = activeTemplateEntry?.template ?? null
@@ -106,15 +100,13 @@ function useTemplatesRouteState(controller: WorkbenchController) {
   )
   const [activeUserTemplateDraft, setActiveUserTemplateDraft] =
     React.useState<CanvasDraftDocument | null>(null)
-  const [activeUserTemplateDraftLoading, setActiveUserTemplateDraftLoading] =
-    React.useState(false)
+  const [activeUserTemplateDraftLoading, setActiveUserTemplateDraftLoading] = React.useState(false)
   const [selectedRowId, setSelectedRowId] = React.useState<string>("")
   const [editingTemplateCell, setEditingTemplateCell] = React.useState<{
     rowId: string
     fieldKey: string
   } | null>(null)
-  const [templateNarrowStage, setTemplateNarrowStage] =
-    React.useState<TemplateNarrowStage>("list")
+  const [templateNarrowStage, setTemplateNarrowStage] = React.useState<TemplateNarrowStage>("list")
 
   React.useEffect(() => {
     if (!activeTemplateEntry || !activeTemplate) {
@@ -334,9 +326,7 @@ function useTemplatesRouteState(controller: WorkbenchController) {
     if (!selectedTemplateRow) {
       return
     }
-    setTemplateRows((currentRows) =>
-      currentRows.filter((row) => row.id !== selectedTemplateRow.id)
-    )
+    setTemplateRows((currentRows) => currentRows.filter((row) => row.id !== selectedTemplateRow.id))
     setEditingTemplateCell(null)
     setTemplateNarrowStage("table")
   }, [selectedTemplateRow])
@@ -364,11 +354,7 @@ function useTemplatesRouteState(controller: WorkbenchController) {
               row,
               controller.renderOptions
             )
-          : createTemplatePrintSource(
-              activeTemplate as Template,
-              row,
-              controller.renderOptions
-            )
+          : createTemplatePrintSource(activeTemplate as Template, row, controller.renderOptions)
       const previewKey = JSON.stringify(source)
       const result = await controller.previewSource(source)
 
@@ -407,11 +393,7 @@ function useTemplatesRouteState(controller: WorkbenchController) {
               row,
               controller.renderOptions
             )
-          : createTemplatePrintSource(
-              activeTemplate as Template,
-              row,
-              controller.renderOptions
-            )
+          : createTemplatePrintSource(activeTemplate as Template, row, controller.renderOptions)
       const previewKey = JSON.stringify(source)
       if (
         lastAutoPreviewKeyRef.current === previewKey ||
@@ -476,11 +458,7 @@ function useTemplatesRouteState(controller: WorkbenchController) {
       }
       setTemplateNarrowStage("table")
     },
-    [
-      autoPreviewTemplateRow,
-      clearTemplateAutoPreviewTimer,
-      selectedTemplateRow,
-    ]
+    [autoPreviewTemplateRow, clearTemplateAutoPreviewTimer, selectedTemplateRow]
   )
 
   const previewSelectedTemplateRow = React.useCallback(async () => {
@@ -569,23 +547,17 @@ export default function WorkbenchTemplatesRoute({
   const usesSingleOutletFlow = !isTriple
   const showsTableStage = state.templateNarrowStage === "table"
   const showsDisabledPreviewRail =
-    usesSingleOutletFlow &&
-    state.templateNarrowStage === "list" &&
-    !stacksPreviewBelowTable
+    usesSingleOutletFlow && state.templateNarrowStage === "list" && !stacksPreviewBelowTable
   const usesSplitTableAndPreview =
     usesSingleOutletFlow && showsTableStage && !stacksPreviewBelowTable
   const showsListOnlyPane =
-    usesSingleOutletFlow &&
-    state.templateNarrowStage === "list" &&
-    stacksPreviewBelowTable
-  const showTemplateListPane =
-    !usesSingleOutletFlow || state.templateNarrowStage === "list"
+    usesSingleOutletFlow && state.templateNarrowStage === "list" && stacksPreviewBelowTable
+  const showTemplateListPane = !usesSingleOutletFlow || state.templateNarrowStage === "list"
   const showTemplateTablePane = !usesSingleOutletFlow || showsTableStage
   const showTemplatePreviewPane =
     !usesSingleOutletFlow || showsTableStage || showsDisabledPreviewRail
   const activeUserTemplatePending =
-    state.activeTemplateEntry?.kind === "user" &&
-    state.activeUserTemplateDraftLoading
+    state.activeTemplateEntry?.kind === "user" && state.activeUserTemplateDraftLoading
   const templatePreviewDisabled =
     showsDisabledPreviewRail ||
     !state.activeTemplateEntry ||
@@ -595,19 +567,11 @@ export default function WorkbenchTemplatesRoute({
   const importInputId = React.useId()
   const importInputRef = React.useRef<HTMLInputElement | null>(null)
   const [importStatus, setImportStatus] = React.useState("")
-  const [tableShellElement, setTableShellElement] =
-    React.useState<HTMLDivElement | null>(null)
+  const [tableShellElement, setTableShellElement] = React.useState<HTMLDivElement | null>(null)
   const tableShellWidth = useElementClientWidth(tableShellElement)
-  const activeTemplateFields = state.activeTemplate
-    ? toTemplateFieldList(state.activeTemplate)
-    : []
+  const activeTemplateFields = state.activeTemplate ? toTemplateFieldList(state.activeTemplate) : []
   const templateColumnLayout = React.useMemo(
-    () =>
-      resolveTemplateColumnLayout(
-        activeTemplateFields,
-        state.templateRows,
-        tableShellWidth
-      ),
+    () => resolveTemplateColumnLayout(activeTemplateFields, state.templateRows, tableShellWidth),
     [activeTemplateFields, state.templateRows, tableShellWidth]
   )
 
@@ -630,9 +594,7 @@ export default function WorkbenchTemplatesRoute({
         await controller.refreshUserTemplates()
         setImportStatus(`已导入 ${templatePackage.name}`)
       } catch (error) {
-        setImportStatus(
-          error instanceof Error ? `导入失败：${error.message}` : "导入失败。"
-        )
+        setImportStatus(error instanceof Error ? `导入失败：${error.message}` : "导入失败。")
       } finally {
         if (importInputRef.current) {
           importInputRef.current.value = ""
@@ -670,9 +632,7 @@ export default function WorkbenchTemplatesRoute({
                     size="sm"
                     variant="outline"
                     onClick={() =>
-                      setListMode((currentMode) =>
-                        currentMode === "large" ? "list" : "large"
-                      )
+                      setListMode((currentMode) => (currentMode === "large" ? "list" : "large"))
                     }
                   />
                 </div>
@@ -716,9 +676,7 @@ export default function WorkbenchTemplatesRoute({
               className={cn(
                 "tm-pane__body",
                 "tm-template-list",
-                listMode === "large"
-                  ? "tm-template-list--large"
-                  : "tm-template-list--list"
+                listMode === "large" ? "tm-template-list--large" : "tm-template-list--list"
               )}
             >
               <TemplateGroup
@@ -869,9 +827,7 @@ export default function WorkbenchTemplatesRoute({
                       state.templateRows.map((row, rowIndex) => (
                         <tr
                           key={row.id}
-                          className={cn(
-                            row.id === state.selectedRowId && "tm-table__row--active"
-                          )}
+                          className={cn(row.id === state.selectedRowId && "tm-table__row--active")}
                           onClick={() => {
                             state.setSelectedRowId(row.id)
                             state.setTemplateNarrowStage("table")
