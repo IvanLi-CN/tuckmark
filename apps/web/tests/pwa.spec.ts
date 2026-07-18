@@ -89,7 +89,10 @@ test("browser-static build ships complete PWA assets without remote font depende
 
   expect(indexHtml).toContain('rel="manifest"')
   expect(indexHtml).toContain('data-launch-screen="booting"')
-  expect(indexHtml).toContain("Tuckmark 正在装载应用运行时")
+  expect(indexHtml).toContain("Tuckmark 正在启动运行时引导")
+  expect(indexHtml).toContain("装载当前页面模块")
+  expect(indexHtml).toContain("准备当前页面状态")
+  expect(indexHtml).toContain("补齐离线资源缓存")
   expect(indexHtml).toContain("@media (prefers-color-scheme: dark)")
   expect(indexHtml).toContain("--tm-launch-background: #14110f;")
   expect(indexHtml).not.toContain("fonts.googleapis.com")

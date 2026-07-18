@@ -812,7 +812,7 @@
         data-launch-screen="booting"
         role="status"
         aria-live="polite"
-        aria-label="Tuckmark 正在装载应用运行时"
+        aria-label="Tuckmark 正在启动运行时引导"
       >
         <div class="tm-launch-stage">
           <div
@@ -851,8 +851,12 @@
               </div>
 
               <div class="tm-launch-text-block">
-                <p class="tm-launch-status">正在装载应用运行时</p>
-                <p class="tm-launch-detail">正在装载应用运行时资源。</p>
+                <p class="tm-launch-status" data-launch-status-text>
+                  正在启动运行时引导
+                </p>
+                <p class="tm-launch-detail" data-launch-detail-text>
+                  正在启动运行时引导，准备装载当前页面模块。
+                </p>
               </div>
 
               <div class="tm-launch-progress-block">
@@ -864,13 +868,18 @@
                 <div
                   class="tm-launch-progress-rail"
                   role="progressbar"
-                  aria-label="正在装载应用运行时 进度"
+                  aria-label="正在启动运行时引导 进度"
                   aria-valuemin="0"
                   aria-valuemax="100"
                   aria-valuenow="0"
                   aria-valuetext="0 / 4 启动阶段已完成"
+                  data-launch-progress-rail
                 >
-                  <div class="tm-launch-progress-fill" style="width: 0%"></div>
+                  <div
+                    class="tm-launch-progress-fill"
+                    style="width: 0%"
+                    data-launch-progress-fill
+                  ></div>
                 </div>
               </div>
             </section>
@@ -896,25 +905,65 @@
               </div>
 
               <div class="tm-launch-checklist">
-                <div class="tm-launch-checklist-item tm-launch-checklist-item--active">
-                  <span class="tm-launch-checklist-dot tm-launch-checklist-dot--active"></span>
-                  <span class="tm-launch-checklist-text">装载应用运行时</span>
-                  <span class="tm-launch-checklist-state tm-launch-checklist-state--active">处理中</span>
+                <div
+                  class="tm-launch-checklist-item tm-launch-checklist-item--active"
+                  data-launch-step="bootstrap-loaded"
+                >
+                  <span
+                    class="tm-launch-checklist-dot tm-launch-checklist-dot--active"
+                    data-launch-step-dot
+                  ></span>
+                  <span class="tm-launch-checklist-text">启动运行时引导</span>
+                  <span
+                    class="tm-launch-checklist-state tm-launch-checklist-state--active"
+                    data-launch-step-state
+                    >处理中</span
+                  >
                 </div>
-                <div class="tm-launch-checklist-item tm-launch-checklist-item--pending">
-                  <span class="tm-launch-checklist-dot tm-launch-checklist-dot--pending"></span>
-                  <span class="tm-launch-checklist-text">装载系统模板与设备配置</span>
-                  <span class="tm-launch-checklist-state tm-launch-checklist-state--pending">待处理</span>
+                <div
+                  class="tm-launch-checklist-item tm-launch-checklist-item--pending"
+                  data-launch-step="current-route-chunk-ready"
+                >
+                  <span
+                    class="tm-launch-checklist-dot tm-launch-checklist-dot--pending"
+                    data-launch-step-dot
+                  ></span>
+                  <span class="tm-launch-checklist-text">装载当前页面模块</span>
+                  <span
+                    class="tm-launch-checklist-state tm-launch-checklist-state--pending"
+                    data-launch-step-state
+                    >待处理</span
+                  >
                 </div>
-                <div class="tm-launch-checklist-item tm-launch-checklist-item--pending">
-                  <span class="tm-launch-checklist-dot tm-launch-checklist-dot--pending"></span>
-                  <span class="tm-launch-checklist-text">读取本地模板与打印设置</span>
-                  <span class="tm-launch-checklist-state tm-launch-checklist-state--pending">待处理</span>
+                <div
+                  class="tm-launch-checklist-item tm-launch-checklist-item--pending"
+                  data-launch-step="current-route-data-ready"
+                >
+                  <span
+                    class="tm-launch-checklist-dot tm-launch-checklist-dot--pending"
+                    data-launch-step-dot
+                  ></span>
+                  <span class="tm-launch-checklist-text">准备当前页面状态</span>
+                  <span
+                    class="tm-launch-checklist-state tm-launch-checklist-state--pending"
+                    data-launch-step-state
+                    >待处理</span
+                  >
                 </div>
-                <div class="tm-launch-checklist-item tm-launch-checklist-item--pending">
-                  <span class="tm-launch-checklist-dot tm-launch-checklist-dot--pending"></span>
-                  <span class="tm-launch-checklist-text">校验离线目录与最近状态</span>
-                  <span class="tm-launch-checklist-state tm-launch-checklist-state--pending">待处理</span>
+                <div
+                  class="tm-launch-checklist-item tm-launch-checklist-item--pending"
+                  data-launch-step="offline-warmup"
+                >
+                  <span
+                    class="tm-launch-checklist-dot tm-launch-checklist-dot--pending"
+                    data-launch-step-dot
+                  ></span>
+                  <span class="tm-launch-checklist-text">补齐离线资源缓存</span>
+                  <span
+                    class="tm-launch-checklist-state tm-launch-checklist-state--pending"
+                    data-launch-step-state
+                    >待处理</span
+                  >
                 </div>
               </div>
 
@@ -927,6 +976,127 @@
         </div>
       </div>
     </div>
+    <script>
+      ;(() => {
+        const launchRoot = document.querySelector("[data-launch-screen='booting']")
+        const statusTextNode = launchRoot?.querySelector("[data-launch-status-text]")
+        const detailTextNode = launchRoot?.querySelector("[data-launch-detail-text]")
+        const progressRail = launchRoot?.querySelector("[data-launch-progress-rail]")
+        const progressFill = launchRoot?.querySelector("[data-launch-progress-fill]")
+        const stepNodes = Array.from(
+          launchRoot?.querySelectorAll("[data-launch-step]") ?? []
+        )
+
+        const stepOrder = [
+          "bootstrap-loaded",
+          "current-route-chunk-ready",
+          "current-route-data-ready",
+          "offline-warmup",
+        ]
+
+        const stepLabels = {
+          "bootstrap-loaded": "启动运行时引导",
+          "current-route-chunk-ready": "装载当前页面模块",
+          "current-route-data-ready": "准备当前页面状态",
+          "offline-warmup": "补齐离线资源缓存",
+        }
+
+        const stepStatusLabels = {
+          pending: "待处理",
+          active: "处理中",
+          complete: "已完成",
+        }
+
+        const phaseState = {
+          "bootstrap-loaded": {
+            statusText: "正在启动运行时引导",
+            detailText: "正在启动运行时引导，准备装载当前页面模块。",
+            steps: {
+              "bootstrap-loaded": "active",
+              "current-route-chunk-ready": "pending",
+              "current-route-data-ready": "pending",
+              "offline-warmup": "pending",
+            },
+          },
+          "current-route-chunk-ready": {
+            statusText: "正在装载当前页面模块",
+            detailText: "正在预载当前页面模块，准备进入工作台。",
+            steps: {
+              "bootstrap-loaded": "complete",
+              "current-route-chunk-ready": "active",
+              "current-route-data-ready": "pending",
+              "offline-warmup": "pending",
+            },
+          },
+          "current-route-data-ready": {
+            statusText: "正在准备当前页面状态",
+            detailText: "正在准备当前页面所需的最小运行时状态。",
+            steps: {
+              "bootstrap-loaded": "complete",
+              "current-route-chunk-ready": "complete",
+              "current-route-data-ready": "active",
+              "offline-warmup": "pending",
+            },
+          },
+        }
+
+        function applyLaunchPhase(phaseId) {
+          const phase = phaseState[phaseId]
+          if (!phase || !launchRoot) {
+            return
+          }
+
+          const completedCount = stepOrder.filter(
+            (stepId) => phase.steps[stepId] === "complete"
+          ).length
+          const progressPercent = Math.round((completedCount / stepOrder.length) * 100)
+
+          launchRoot.setAttribute("aria-label", `Tuckmark ${phase.statusText}`)
+
+          if (statusTextNode) {
+            statusTextNode.textContent = phase.statusText
+          }
+          if (detailTextNode) {
+            detailTextNode.textContent = phase.detailText
+          }
+          if (progressRail) {
+            progressRail.setAttribute("aria-label", `${phase.statusText} 进度`)
+            progressRail.setAttribute("aria-valuenow", String(progressPercent))
+            progressRail.setAttribute(
+              "aria-valuetext",
+              `${completedCount} / ${stepOrder.length} 启动阶段已完成`
+            )
+          }
+          if (progressFill) {
+            progressFill.style.width = `${progressPercent}%`
+          }
+
+          for (const stepNode of stepNodes) {
+            const stepId = stepNode.getAttribute("data-launch-step")
+            const nextState = phase.steps[stepId] ?? "pending"
+            stepNode.className = `tm-launch-checklist-item tm-launch-checklist-item--${nextState}`
+
+            const dotNode = stepNode.querySelector("[data-launch-step-dot]")
+            if (dotNode) {
+              dotNode.className = `tm-launch-checklist-dot tm-launch-checklist-dot--${nextState}`
+            }
+
+            const stateNode = stepNode.querySelector("[data-launch-step-state]")
+            if (stateNode) {
+              stateNode.className =
+                `tm-launch-checklist-state tm-launch-checklist-state--${nextState}`
+              stateNode.textContent = stepStatusLabels[nextState] ?? stepStatusLabels.pending
+            }
+          }
+        }
+
+        applyLaunchPhase("bootstrap-loaded")
+        window.__tuckmarkLaunchShell = {
+          setPhase: applyLaunchPhase,
+          stepLabels,
+        }
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
