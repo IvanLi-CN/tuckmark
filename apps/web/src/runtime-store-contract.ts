@@ -28,6 +28,7 @@ export type RuntimeStoreSnapshot = {
     height: number
     createdAt: string
     updatedAt: string
+    archivedAt?: string | null
     currentVersionId: string
     fieldOrder: string[]
   }>
@@ -52,6 +53,7 @@ export type RuntimeStoreSaveWorkingCopyArgs = {
 
 export interface RuntimeStore {
   listTemplates(): Promise<UserTemplateSummary[]>
+  listArchivedTemplates(): Promise<UserTemplateSummary[]>
   readTemplate(templateId: string): Promise<UserTemplateSummary | null>
   readHistory(templateId: string): Promise<UserTemplateHistory | null>
   readVersion(versionId: string): Promise<UserTemplateVersionSnapshot | null>
@@ -60,6 +62,10 @@ export interface RuntimeStore {
     version: UserTemplateVersionSnapshot
     workingCopy: CanvasWorkingCopyIndexEntry
   }>
+  renameTemplate(templateId: string, name: string): Promise<UserTemplateSummary | null>
+  archiveTemplate(templateId: string): Promise<UserTemplateSummary | null>
+  restoreTemplate(templateId: string): Promise<UserTemplateSummary | null>
+  purgeTemplate(templateId: string): Promise<void>
   saveAutosave(args: RuntimeStoreSaveWorkingCopyArgs): Promise<CanvasWorkingCopyIndexEntry>
   replaceWorkingCopy(args: RuntimeStoreSaveWorkingCopyArgs): Promise<CanvasWorkingCopyIndexEntry>
   loadWorkingCopy(source: CanvasDraftSource): Promise<CanvasWorkingCopyIndexEntry | null>

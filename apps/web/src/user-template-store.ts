@@ -123,6 +123,16 @@ function compareVersionsOldestFirst(
   return left.version - right.version || left.createdAt.localeCompare(right.createdAt)
 }
 
+function compareArchivedNewestFirst(left: UserTemplateRecord, right: UserTemplateRecord): number {
+  const leftArchivedAt = left.archivedAt ?? ""
+  const rightArchivedAt = right.archivedAt ?? ""
+  return (
+    rightArchivedAt.localeCompare(leftArchivedAt) ||
+    right.updatedAt.localeCompare(left.updatedAt) ||
+    left.id.localeCompare(right.id)
+  )
+}
+
 function buildTemplateSummary(
   template: UserTemplateRecord,
   workingCopy: CanvasWorkingCopyIndexEntry | null,
@@ -208,6 +218,23 @@ class MemoryUserTemplateStore implements RuntimeStore {
     const templates = Array.from(this.templates.values()).sort((left, right) =>
       right.updatedAt.localeCompare(left.updatedAt)
     )
+    return templates
+      .filter((template) => !template.archivedAt)
+      .map((template) =>
+        buildTemplateSummary(
+          template,
+          this.workingCopies.get(
+            createSourceKey({ kind: "user-template", templateId: template.id })
+          ) ?? null,
+          this.versions.get(template.currentVersionId)?.document ?? null
+        )
+      )
+  }
+
+  async listArchivedTemplates(): Promise<UserTemplateSummary[]> {
+    const templates = Array.from(this.templates.values())
+      .filter((template) => Boolean(template.archivedAt))
+      .sort(compareArchivedNewestFirst)
     return templates.map((template) =>
       buildTemplateSummary(
         template,
@@ -302,6 +329,7 @@ class MemoryUserTemplateStore implements RuntimeStore {
       height: document.height,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
+      archivedAt: existing?.archivedAt ?? null,
       currentVersionId: version.id,
       fieldOrder: document.fields.map((field) => field.key),
     }
@@ -329,6 +357,36 @@ class MemoryUserTemplateStore implements RuntimeStore {
       version: cloneValue(version),
       workingCopy: cloneValue(workingCopy),
     }
+  }
+
+  async renameTemplate(templateId: string, name: string): Promise<UserTemplateSummary | null> {
+    const existing = this.templates.get(templateId)
+    if (!existing) {
+      return null
+    }
+
+    const renamedAt = new Date().toISOString()
+    const nextTemplate: UserTemplateRecord = {
+      ...existing,
+      name,
+      updatedAt: renamedAt,
+    }
+    this.templates.set(templateId, nextTemplate)
+
+    const sourceKey = createSourceKey({ kind: "user-template", templateId })
+    const workingCopy = this.workingCopies.get(sourceKey)
+    if (workingCopy) {
+      this.workingCopies.set(sourceKey, {
+        ...workingCopy,
+        updatedAt: renamedAt,
+        draft: {
+          ...workingCopy.draft,
+          name,
+        },
+      })
+    }
+
+    return await this.readTemplate(templateId)
   }
 
   async saveAutosave(args: {
@@ -401,6 +459,46 @@ class MemoryUserTemplateStore implements RuntimeStore {
     this.trimVersions(templateId, "autosave", MAX_AUTOSAVE_VERSIONS)
 
     return cloneValue(workingCopy)
+  }
+
+  async archiveTemplate(templateId: string): Promise<UserTemplateSummary | null> {
+    const existing = this.templates.get(templateId)
+    if (!existing) {
+      return null
+    }
+    const archivedAt = new Date().toISOString()
+    const nextTemplate: UserTemplateRecord = {
+      ...existing,
+      archivedAt,
+      updatedAt: archivedAt,
+    }
+    this.templates.set(templateId, nextTemplate)
+    return await this.readTemplate(templateId)
+  }
+
+  async restoreTemplate(templateId: string): Promise<UserTemplateSummary | null> {
+    const existing = this.templates.get(templateId)
+    if (!existing) {
+      return null
+    }
+    const restoredAt = new Date().toISOString()
+    const nextTemplate: UserTemplateRecord = {
+      ...existing,
+      archivedAt: null,
+      updatedAt: restoredAt,
+    }
+    this.templates.set(templateId, nextTemplate)
+    return await this.readTemplate(templateId)
+  }
+
+  async purgeTemplate(templateId: string): Promise<void> {
+    this.templates.delete(templateId)
+    this.workingCopies.delete(createSourceKey({ kind: "user-template", templateId }))
+    Array.from(this.versions.values())
+      .filter((version) => version.templateId === templateId)
+      .forEach((version) => {
+        this.versions.delete(version.id)
+      })
   }
 
   async replaceWorkingCopy(args: {
@@ -567,7 +665,35 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
         const versionMap = new Map(versions.map((version) => [version.id, version]))
         const workingCopyMap = new Map(workingCopies.map((entry) => [entry.sourceKey, entry]))
         return records
+          .filter((template) => !template.archivedAt)
           .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+          .map((template) =>
+            buildTemplateSummary(
+              template,
+              workingCopyMap.get(
+                createSourceKey({ kind: "user-template", templateId: template.id })
+              ) ?? null,
+              versionMap.get(template.currentVersionId)?.document ?? null
+            )
+          )
+      }
+    )
+    return cloneValue(templates)
+  }
+
+  override async listArchivedTemplates(): Promise<UserTemplateSummary[]> {
+    const templates = await this.transaction(
+      [TEMPLATE_STORE, VERSION_STORE, WORKING_COPY_STORE],
+      "readonly",
+      async (stores) => {
+        const records = await readAll<UserTemplateRecord>(stores[TEMPLATE_STORE])
+        const versions = await readAll<UserTemplateVersionSnapshot>(stores[VERSION_STORE])
+        const workingCopies = await readAll<CanvasWorkingCopyIndexEntry>(stores[WORKING_COPY_STORE])
+        const versionMap = new Map(versions.map((version) => [version.id, version]))
+        const workingCopyMap = new Map(workingCopies.map((entry) => [entry.sourceKey, entry]))
+        return records
+          .filter((template) => Boolean(template.archivedAt))
+          .sort(compareArchivedNewestFirst)
           .map((template) =>
             buildTemplateSummary(
               template,
@@ -683,6 +809,7 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
       height: document.height,
       createdAt: current?.template.createdAt ?? now,
       updatedAt: now,
+      archivedAt: current?.template.archivedAt ?? null,
       currentVersionId: version.id,
       fieldOrder: document.fields.map((field) => field.key),
     }
@@ -715,6 +842,44 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
       version: cloneValue(version),
       workingCopy: cloneValue(workingCopy),
     }
+  }
+
+  override async renameTemplate(
+    templateId: string,
+    name: string
+  ): Promise<UserTemplateSummary | null> {
+    await this.transaction([TEMPLATE_STORE, WORKING_COPY_STORE], "readwrite", async (stores) => {
+      const template = await readOne<UserTemplateRecord>(stores[TEMPLATE_STORE], templateId)
+      if (!template) {
+        return
+      }
+
+      const renamedAt = new Date().toISOString()
+      await put(stores[TEMPLATE_STORE], {
+        ...template,
+        name,
+        updatedAt: renamedAt,
+      } satisfies UserTemplateRecord)
+
+      const sourceKey = createSourceKey({ kind: "user-template", templateId })
+      const workingCopy = await readOne<CanvasWorkingCopyIndexEntry>(
+        stores[WORKING_COPY_STORE],
+        sourceKey
+      )
+      if (!workingCopy) {
+        return
+      }
+
+      await put(stores[WORKING_COPY_STORE], {
+        ...workingCopy,
+        updatedAt: renamedAt,
+        draft: {
+          ...workingCopy.draft,
+          name,
+        },
+      } satisfies CanvasWorkingCopyIndexEntry)
+    })
+    return this.readTemplate(templateId)
   }
 
   override async saveAutosave(args: {
@@ -830,6 +995,53 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
       await put(stores[WORKING_COPY_STORE], workingCopy)
     })
     return cloneValue(workingCopy)
+  }
+
+  override async archiveTemplate(templateId: string): Promise<UserTemplateSummary | null> {
+    await this.transaction([TEMPLATE_STORE], "readwrite", async (stores) => {
+      const template = await readOne<UserTemplateRecord>(stores[TEMPLATE_STORE], templateId)
+      if (!template) {
+        return
+      }
+      const archivedAt = new Date().toISOString()
+      await put(stores[TEMPLATE_STORE], {
+        ...template,
+        archivedAt,
+        updatedAt: archivedAt,
+      } satisfies UserTemplateRecord)
+    })
+    return this.readTemplate(templateId)
+  }
+
+  override async restoreTemplate(templateId: string): Promise<UserTemplateSummary | null> {
+    await this.transaction([TEMPLATE_STORE], "readwrite", async (stores) => {
+      const template = await readOne<UserTemplateRecord>(stores[TEMPLATE_STORE], templateId)
+      if (!template) {
+        return
+      }
+      const restoredAt = new Date().toISOString()
+      await put(stores[TEMPLATE_STORE], {
+        ...template,
+        archivedAt: null,
+        updatedAt: restoredAt,
+      } satisfies UserTemplateRecord)
+    })
+    return this.readTemplate(templateId)
+  }
+
+  override async purgeTemplate(templateId: string): Promise<void> {
+    await this.transaction(
+      [TEMPLATE_STORE, VERSION_STORE, WORKING_COPY_STORE],
+      "readwrite",
+      async (stores) => {
+        await remove(stores[TEMPLATE_STORE], templateId)
+        await remove(
+          stores[WORKING_COPY_STORE],
+          createSourceKey({ kind: "user-template", templateId })
+        )
+        await deleteByIndex(stores[VERSION_STORE].index("templateId"), templateId)
+      }
+    )
   }
 
   override async loadWorkingCopy(
@@ -1107,6 +1319,11 @@ export async function listUserTemplates(): Promise<UserTemplateSummary[]> {
   return store.listTemplates()
 }
 
+export async function listArchivedUserTemplates(): Promise<UserTemplateSummary[]> {
+  const store = await resolveStore()
+  return store.listArchivedTemplates()
+}
+
 export async function readUserTemplate(templateId: string): Promise<UserTemplateSummary | null> {
   const store = await resolveStore()
   return store.readTemplate(templateId)
@@ -1137,6 +1354,42 @@ export async function saveUserTemplate(args: {
   const result = await store.saveTemplate(args)
   emitRuntimeStoreMutation("template-saved")
   return result
+}
+
+export async function renameUserTemplate(
+  templateId: string,
+  name: string
+): Promise<UserTemplateSummary | null> {
+  const store = await resolveStore()
+  const result = await store.renameTemplate(templateId, name)
+  if (result) {
+    emitRuntimeStoreMutation("template-renamed")
+  }
+  return result
+}
+
+export async function archiveUserTemplate(templateId: string): Promise<UserTemplateSummary | null> {
+  const store = await resolveStore()
+  const result = await store.archiveTemplate(templateId)
+  if (result) {
+    emitRuntimeStoreMutation("template-archived")
+  }
+  return result
+}
+
+export async function restoreUserTemplate(templateId: string): Promise<UserTemplateSummary | null> {
+  const store = await resolveStore()
+  const result = await store.restoreTemplate(templateId)
+  if (result) {
+    emitRuntimeStoreMutation("template-restored")
+  }
+  return result
+}
+
+export async function purgeUserTemplate(templateId: string): Promise<void> {
+  const store = await resolveStore()
+  await store.purgeTemplate(templateId)
+  emitRuntimeStoreMutation("template-purged")
 }
 
 export async function saveUserTemplateAutosave(args: {

@@ -16,6 +16,8 @@ import {
 import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import type { AppContext } from "./types.js"
 import {
+  archiveUserTemplate,
+  listArchivedUserTemplates,
   resetUserTemplateStoreForTest,
   saveUserTemplate,
   saveUserTemplateAutosave,
@@ -139,6 +141,91 @@ async function seedUserTemplateFixtures() {
     document: autosaveDraft,
     sourceVersionId: saved.version.id,
   })
+}
+
+async function seedArchivedUserTemplateFixtures() {
+  await seedUserTemplateFixtures()
+  const archived = await saveUserTemplate({
+    name: "已归档货架标签",
+    document: createDraftFromPreset(getPresetById("ops-tag")),
+  })
+  await archiveUserTemplate(archived.template.id)
+  return listArchivedUserTemplates()
+}
+
+async function seedPreviewOverflowTemplateFixtures() {
+  await resetUserTemplateStoreForTest()
+
+  const baseDraft = createDraftFromPreset(getPresetById("ops-tag"))
+  const firstText = baseDraft.elements.find(
+    (element): element is Extract<(typeof baseDraft.elements)[number], { kind: "text" }> =>
+      element.kind === "text"
+  )
+  if (!firstText) {
+    return
+  }
+
+  const templates = [
+    {
+      name: "快递单宽版",
+      value: "20nF\n50V X7R 0402",
+      fontSize: 7.2,
+      x: 1.4,
+      y: 2.1,
+      width: 27.2,
+      height: 15.6,
+      maxLines: 2,
+    },
+    {
+      name: "二行元器件",
+      value: "20nF\n50V X7R 0402",
+      fontSize: 7.2,
+      x: 1.4,
+      y: 2.1,
+      width: 27.2,
+      height: 15.6,
+      maxLines: 2,
+    },
+    {
+      name: "元器件三行",
+      value: "20kΩ\n厚膜电阻 0402\n50V 1/4W NGC",
+      fontSize: 5.6,
+      x: -0.8,
+      y: 1.2,
+      width: 29.1,
+      height: 17.5,
+      maxLines: 3,
+    },
+  ] as const
+
+  for (const template of templates) {
+    await saveUserTemplate({
+      name: template.name,
+      document: {
+        ...baseDraft,
+        name: template.name,
+        width: 30,
+        height: 20,
+        elements: [
+          {
+            ...firstText,
+            x: template.x,
+            y: template.y,
+            width: template.width,
+            height: template.height,
+            fontSize: template.fontSize,
+            maxLines: template.maxLines,
+            autoWrap: false,
+            adaptiveFontSize: false,
+            align: "center",
+            verticalAlign: "middle",
+            value: template.value,
+            meta: { ...firstText.meta, name: `${template.name} 预览文本` },
+          },
+        ],
+      },
+    })
+  }
 }
 
 function seedDimensionFixtures() {
@@ -334,11 +421,55 @@ export const TemplatesWorkspaceWithUserTemplates: Story = {
   ],
 }
 
+export const TemplatesLargeGridMoreMenu: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+  },
+  loaders: [
+    async () => {
+      await seedUserTemplateFixtures()
+      return {}
+    },
+  ],
+  play: async ({ canvasElement }) => {
+    const page = within(document.body)
+    const trigger = canvasElement.ownerDocument.querySelector(
+      "button[aria-label='本地发货模板 更多操作']"
+    ) as HTMLButtonElement | null
+    if (!trigger) {
+      throw new Error("expected large-grid more trigger")
+    }
+    await userEvent.click(trigger)
+    await page.findByRole("menuitem", { name: "重命名" })
+    await page.findByRole("menuitem", { name: "归档" })
+  },
+}
+
+export const TemplatesPreviewOverflowFitted: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+  },
+  loaders: [
+    async () => {
+      await seedPreviewOverflowTemplateFixtures()
+      return {}
+    },
+  ],
+}
+
 export const TemplatesList: Story = {
   args: {
     context: runtimeContext,
     initialEntries: ["/templates"],
   },
+  loaders: [
+    async () => {
+      await seedUserTemplateFixtures()
+      return {}
+    },
+  ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
@@ -350,6 +481,12 @@ export const TemplatesListEditing: Story = {
     context: runtimeContext,
     initialEntries: ["/templates"],
   },
+  loaders: [
+    async () => {
+      await seedUserTemplateFixtures()
+      return {}
+    },
+  ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
@@ -363,11 +500,108 @@ export const TemplatesSelectableEditing: Story = {
     context: runtimeContext,
     initialEntries: ["/templates"],
   },
+  loaders: [
+    async () => {
+      await seedUserTemplateFixtures()
+      return {}
+    },
+  ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
     const [firstRecipientButton] = canvas.getAllByRole("button", { name: "Koha Cat" })
     await userEvent.click(firstRecipientButton)
+  },
+}
+
+export const TemplatesListMoreMenu: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+  },
+  loaders: [
+    async () => {
+      await seedUserTemplateFixtures()
+      return {}
+    },
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const page = within(document.body)
+    await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
+    await userEvent.click(canvas.getByRole("button", { name: /本地发货模板 更多操作/ }))
+    await page.findByRole("menuitem", { name: "归档" })
+  },
+}
+
+export const TemplatesContextMenu: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+  },
+  loaders: [
+    async () => {
+      await seedUserTemplateFixtures()
+      return {}
+    },
+  ],
+  play: async ({ canvasElement }) => {
+    const page = within(document.body)
+    const targetCard = Array.from(canvasElement.querySelectorAll(".tm-template-card")).find(
+      (item) => item.textContent?.includes("本地发货模板")
+    ) as HTMLElement | undefined
+    if (!targetCard) {
+      throw new Error("expected user template card for context menu story")
+    }
+    fireEvent.contextMenu(targetCard, { clientX: 360, clientY: 240 })
+    await page.findByRole("menuitem", { name: "归档" })
+  },
+}
+
+export const TemplatesArchiveToast: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+  },
+  loaders: [
+    async () => {
+      await seedUserTemplateFixtures()
+      return {}
+    },
+  ],
+  play: async ({ canvasElement }) => {
+    const page = within(document.body)
+    const targetCard = Array.from(canvasElement.querySelectorAll(".tm-template-card")).find(
+      (item) => item.textContent?.includes("本地发货模板")
+    ) as HTMLElement | undefined
+    if (!targetCard) {
+      throw new Error("expected user template card for archive toast story")
+    }
+    fireEvent.contextMenu(targetCard, { clientX: 360, clientY: 240 })
+    await userEvent.click(await page.findByRole("menuitem", { name: "归档" }))
+    await page.findByText("已归档模板")
+    await page.findByRole("button", { name: "撤销" })
+  },
+}
+
+export const SystemArchiveManagement: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/system"],
+  },
+  loaders: [
+    async () => {
+      const archived = await seedArchivedUserTemplateFixtures()
+      return { archivedCount: archived.length }
+    },
+  ],
+  play: async ({ canvasElement, loaded }) => {
+    const canvas = within(canvasElement)
+    await expect(loaded.archivedCount).toBeGreaterThan(0)
+    await canvas.findByText("模板归档")
+    await canvas.findByText("已归档货架标签")
+    await canvas.findByRole("button", { name: "恢复模板" })
+    await canvas.findByRole("button", { name: "彻底删除" })
   },
 }
 

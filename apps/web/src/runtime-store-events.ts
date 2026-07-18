@@ -1,5 +1,9 @@
 export type RuntimeStoreMutationReason =
   | "template-saved"
+  | "template-renamed"
+  | "template-archived"
+  | "template-restored"
+  | "template-purged"
   | "autosave-saved"
   | "working-copy-replaced"
   | "working-copy-cleared"

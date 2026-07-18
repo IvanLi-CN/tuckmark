@@ -1,5 +1,7 @@
+import type { LucideIcon } from "lucide-react"
 import {
   AlertCircle,
+  Archive,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -11,20 +13,25 @@ import {
   LayoutList,
   LayoutTemplate,
   MonitorCog,
+  MoreHorizontal,
   Package2,
   PencilRuler,
   Plus,
   Printer,
   RefreshCcw,
+  RotateCcw,
   Rows3,
   ScanSearch,
   Settings2,
   SquarePen,
   Trash2,
+  Type,
+  Undo2,
   Upload,
   Wifi,
 } from "lucide-react"
 import React from "react"
+import { createPortal } from "react-dom"
 import {
   Circle as KonvaCircle,
   Line as KonvaLine,
@@ -48,6 +55,7 @@ import {
   DEFAULT_TEXT_FONT_FAMILY,
   getTemplateById,
   parseUserTemplatePackage,
+  resolveTextLayout,
 } from "../../../packages/core/src/web.js"
 
 import type { ApiClient } from "./api-client.js"
@@ -56,7 +64,9 @@ import {
   buildTemplateFieldsFromDraft,
   type CanvasStoryScenario,
   compileDraftToFilledCanvasDefinition,
+  createDraftFromSystemTemplate,
   createDraftFromUserTemplatePackage,
+  getElementSelectionBounds,
 } from "./canvas-editor-model.js"
 import { CanvasWorkspace } from "./canvas-page.js"
 import { ProductMark } from "./components/product-mark.js"
@@ -65,6 +75,7 @@ import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
 import { Button } from "./components/ui/button.js"
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card.js"
+import { PromptDialog } from "./components/ui/dialog.js"
 import { Input } from "./components/ui/input.js"
 import { Label } from "./components/ui/label.js"
 import { SegmentedTabs } from "./components/ui/segmented-tabs.js"
@@ -81,7 +92,7 @@ import { DataDirectoryNudgeToast } from "./data-directory-nudge-toast.js"
 import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
 import { FooterBuildMeta } from "./footer-build-meta.js"
 import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
-import { canvasDotsToMillimeters } from "./lib/canvas-units.js"
+import { canvasDotsToMillimeters, canvasMillimetersToDots } from "./lib/canvas-units.js"
 import { cn } from "./lib/utils.js"
 import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import { applyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
@@ -90,6 +101,7 @@ import type {
   AppContext,
   CanvasDocumentPreset,
   CanvasDraftDocument,
+  CanvasDraftElement,
   CanvasElement,
   RenderOptions,
   Template,
@@ -137,6 +149,19 @@ type TemplateFocus = "left-center" | "center-right"
 type CanvasFocus = "left-center" | "center-right"
 type TemplateListMode = "large" | "list"
 type TemplateNarrowStage = "list" | "table"
+type TemplateActionKind = "edit" | "rename" | "archive"
+
+type TemplateArchiveToastState = {
+  nonce: string
+  templateId: string
+  templateName: string
+}
+
+type TemplateActionMenuState = {
+  entry: TemplateCardEntry
+  x: number
+  y: number
+}
 
 type CanvasDraft = {
   id: string
@@ -213,6 +238,7 @@ const SUPPORTED_MIN_WIDTH = 1024
 const TEMPLATE_STACKED_PREVIEW_THRESHOLD = 960
 const TEMPLATE_INDEX_COLUMN_WIDTH = 44
 const TEMPLATE_PREVIEW_DEBOUNCE_MS = 320
+const ARCHIVE_TOAST_DURATION_MS = 5_000
 
 function useMediaQuery(query: string): boolean {
   const getValue = React.useCallback(() => {
@@ -307,13 +333,237 @@ function formatTemplateCardSize(entry: TemplateCardEntry): string {
   })
 }
 
+function buildTemplateMenuActionItems(entry: TemplateCardEntry): Array<{
+  kind: TemplateActionKind
+  label: string
+  icon: LucideIcon
+}> {
+  if (entry.kind === "system") {
+    return [{ kind: "edit", label: "编辑", icon: SquarePen }]
+  }
+  return [
+    { kind: "edit", label: "编辑", icon: SquarePen },
+    { kind: "rename", label: "重命名", icon: Type },
+    { kind: "archive", label: "归档", icon: Archive },
+  ]
+}
+
+const TEMPLATE_PREVIEW_ROOT_PATTERN =
+  /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="[^"]+" height="[^"]+" viewBox="[^"]+">/
+const TEMPLATE_PREVIEW_OVERFLOW_PADDING_MM = 1.25
+const TEMPLATE_CARD_LONG_PRESS_MS = 420
+const TEMPLATE_CARD_LONG_PRESS_MOVE_TOLERANCE = 10
+
+type TemplatePreviewBounds = {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+function toTemplatePreviewBounds(args: {
+  left: number
+  top: number
+  width: number
+  height: number
+}): TemplatePreviewBounds {
+  return {
+    left: args.left,
+    top: args.top,
+    right: args.left + args.width,
+    bottom: args.top + args.height,
+  }
+}
+
+function unionTemplatePreviewBounds(
+  current: TemplatePreviewBounds,
+  next: TemplatePreviewBounds
+): TemplatePreviewBounds {
+  return {
+    left: Math.min(current.left, next.left),
+    top: Math.min(current.top, next.top),
+    right: Math.max(current.right, next.right),
+    bottom: Math.max(current.bottom, next.bottom),
+  }
+}
+
+function rotateTemplatePreviewBounds(
+  bounds: TemplatePreviewBounds,
+  origin: { x: number; y: number },
+  rotation = 0
+): TemplatePreviewBounds {
+  if (!rotation) {
+    return bounds
+  }
+
+  const radians = (rotation * Math.PI) / 180
+  const cos = Math.cos(radians)
+  const sin = Math.sin(radians)
+  const corners = [
+    { x: bounds.left, y: bounds.top },
+    { x: bounds.right, y: bounds.top },
+    { x: bounds.right, y: bounds.bottom },
+    { x: bounds.left, y: bounds.bottom },
+  ].map((point) => {
+    const offsetX = point.x - origin.x
+    const offsetY = point.y - origin.y
+    return {
+      x: origin.x + offsetX * cos - offsetY * sin,
+      y: origin.y + offsetX * sin + offsetY * cos,
+    }
+  })
+
+  return {
+    left: Math.min(...corners.map((point) => point.x)),
+    top: Math.min(...corners.map((point) => point.y)),
+    right: Math.max(...corners.map((point) => point.x)),
+    bottom: Math.max(...corners.map((point) => point.y)),
+  }
+}
+
+function resolvePreviewDraftElements(
+  draft: CanvasDraftDocument,
+  input: Record<string, string>
+): CanvasDraftElement[] {
+  const fieldMap = new Map(
+    draft.fields.map((field) => [field.key, input[field.key] ?? field.defaultValue ?? ""])
+  )
+
+  return draft.elements
+    .filter((element) => element.meta.visible)
+    .map((element) => {
+      if (
+        (element.kind === "text" ||
+          element.kind === "barcode" ||
+          element.kind === "qr" ||
+          element.kind === "datamatrix") &&
+        element.binding
+      ) {
+        return {
+          ...element,
+          value: fieldMap.get(element.binding.fieldKey) ?? element.value,
+        }
+      }
+      return element
+    })
+}
+
+function getTextPreviewBounds(
+  element: Extract<CanvasDraftElement, { kind: "text" }>
+): TemplatePreviewBounds {
+  const layout = resolveTextLayout({
+    text: element.value,
+    fontSize: element.fontSize,
+    width: element.width,
+    height: element.height,
+    lineHeight: element.lineHeight,
+    fontFamily: element.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY,
+    fontWeight: element.fontWeight,
+    align: element.align,
+    maxLines: element.maxLines,
+    verticalAlign: element.verticalAlign,
+    stretchXGrow: element.stretchXGrow,
+    stretchXShrink: element.stretchXShrink,
+    stretchYGrow: element.stretchYGrow,
+    stretchYShrink: element.stretchYShrink,
+    stretchX: element.stretchX ?? false,
+    stretchY: element.stretchY ?? false,
+    autoWrap: element.autoWrap ?? true,
+    adaptiveFontSize: element.adaptiveFontSize ?? false,
+    verticalText: element.verticalText ?? false,
+  })
+
+  const contentBounds = toTemplatePreviewBounds({
+    left: element.x + layout.contentX + layout.textOffsetX * layout.scaleX,
+    top: element.y + layout.contentY + layout.textOffsetY * layout.scaleY,
+    width: Math.max(layout.contentWidth * layout.scaleX, 0.0001),
+    height: Math.max(layout.contentHeight * layout.scaleY, 0.0001),
+  })
+
+  return rotateTemplatePreviewBounds(
+    contentBounds,
+    {
+      x: element.x + element.width / 2,
+      y: element.y + element.height / 2,
+    },
+    element.rotation
+  )
+}
+
+function getDraftElementPreviewBounds(element: CanvasDraftElement): TemplatePreviewBounds {
+  if (element.kind === "text") {
+    return getTextPreviewBounds(element)
+  }
+
+  const bounds = getElementSelectionBounds(element)
+  return toTemplatePreviewBounds({
+    left: bounds.x,
+    top: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+  })
+}
+
+function applyTemplatePreviewViewport(
+  svg: string,
+  viewBox: { left: number; top: number; width: number; height: number }
+): string {
+  const root = `<svg xmlns="http://www.w3.org/2000/svg" width="${viewBox.width}" height="${viewBox.height}" viewBox="${viewBox.left} ${viewBox.top} ${viewBox.width} ${viewBox.height}">`
+  return svg
+    .replace(TEMPLATE_PREVIEW_ROOT_PATTERN, root)
+    .replaceAll(' overflow="hidden"', ' overflow="visible"')
+}
+
+function buildDraftPreviewSvg(
+  draft: CanvasDraftDocument,
+  input: Record<string, string>
+): string | null {
+  try {
+    const previewElements = resolvePreviewDraftElements(draft, input)
+    const compiled = compileDraftToFilledCanvasDefinition(draft, input)
+    const canvasBounds = toTemplatePreviewBounds({
+      left: 0,
+      top: 0,
+      width: draft.width,
+      height: draft.height,
+    })
+    const combinedBounds = previewElements.reduce(
+      (bounds, element) =>
+        unionTemplatePreviewBounds(bounds, getDraftElementPreviewBounds(element)),
+      canvasBounds
+    )
+    const leftPadding = combinedBounds.left < 0 ? TEMPLATE_PREVIEW_OVERFLOW_PADDING_MM : 0
+    const topPadding = combinedBounds.top < 0 ? TEMPLATE_PREVIEW_OVERFLOW_PADDING_MM : 0
+    const rightPadding =
+      combinedBounds.right > draft.width ? TEMPLATE_PREVIEW_OVERFLOW_PADDING_MM : 0
+    const bottomPadding =
+      combinedBounds.bottom > draft.height ? TEMPLATE_PREVIEW_OVERFLOW_PADDING_MM : 0
+    const left = canvasMillimetersToDots(combinedBounds.left - leftPadding)
+    const top = canvasMillimetersToDots(combinedBounds.top - topPadding)
+    const right = canvasMillimetersToDots(combinedBounds.right + rightPadding)
+    const bottom = canvasMillimetersToDots(combinedBounds.bottom + bottomPadding)
+
+    return applyTemplatePreviewViewport(
+      buildSvg(compiled.width, compiled.height, compiled.elements, {}),
+      {
+        left,
+        top,
+        width: Math.max(right - left, 1),
+        height: Math.max(bottom - top, 1),
+      }
+    )
+  } catch {
+    return null
+  }
+}
+
 function buildTemplatePreviewSvg(template: Template): string | null {
   try {
     const preset = getTemplateById(template.id)
     const input = Object.fromEntries(
       preset.fields.map((field) => [field.key, field.defaultValue ?? field.label])
     )
-    return buildSvg(preset.width, preset.height, preset.elements, input)
+    return buildDraftPreviewSvg(createDraftFromSystemTemplate(preset), input)
   } catch {
     return null
   }
@@ -333,8 +583,7 @@ function buildUserTemplatePreviewSvg(draft: CanvasDraftDocument | null): string 
       height: draft.height,
       fields: buildTemplateFieldsFromDraft(draft),
     })
-    const compiled = compileDraftToFilledCanvasDefinition(draft, input)
-    return buildSvg(compiled.width, compiled.height, compiled.elements, {})
+    return buildDraftPreviewSvg(draft, input)
   } catch {
     return null
   }
@@ -781,8 +1030,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   )
   const [templateEntryId, setTemplateEntryId] = React.useState(() => templateEntries[0]?.id ?? "")
   const activeTemplateEntry = React.useMemo(
-    () =>
-      templateEntries.find((entry) => entry.id === templateEntryId) ?? templateEntries[0] ?? null,
+    () => templateEntries.find((entry) => entry.id === templateEntryId) ?? null,
     [templateEntries, templateEntryId]
   )
   const activeTemplate = activeTemplateEntry?.template ?? null
@@ -1249,6 +1497,29 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     selectedTemplateRow,
   ])
 
+  const archiveTemplateEntry = React.useCallback(
+    async (entryId: string) => {
+      const entry = templateEntries.find((item) => item.id === entryId)
+      if (entry?.kind !== "user") {
+        return null
+      }
+
+      if (templateEntryId === entryId) {
+        const visibleUserEntries = templateEntries.filter((item) => item.kind === "user")
+        const currentIndex = visibleUserEntries.findIndex((item) => item.id === entryId)
+        const fallbackEntry =
+          visibleUserEntries[currentIndex + 1] ?? visibleUserEntries[currentIndex - 1] ?? null
+        setTemplateEntryId(fallbackEntry?.id ?? "")
+      }
+
+      setTemplateFocus("left-center")
+      setTemplateNarrowStage("list")
+      setEditingTemplateCell(null)
+      return controller.archiveTemplate(entry.template.id)
+    },
+    [controller, templateEntries, templateEntryId]
+  )
+
   const addCanvasElement = React.useCallback((kind: CanvasElement["kind"]) => {
     setCanvasDraft((currentDraft) => {
       const nextElement = createCanvasElement(kind, currentDraft.elements.length)
@@ -1309,6 +1580,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     previewSelectedTemplateRow,
     printCanvas,
     printSelectedTemplateRow,
+    archiveTemplateEntry,
     removeCanvasElement,
     autoPreviewTemplateRow,
     selectedCanvasElement,
@@ -1336,12 +1608,53 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   }
 }
 
+function ArchiveUndoToast({
+  toast,
+  onUndo,
+}: {
+  toast: TemplateArchiveToastState | null
+  onUndo: () => void | Promise<void>
+}) {
+  if (!toast) {
+    return null
+  }
+
+  return (
+    <div className="tm-archive-toast" role="status" aria-live="polite" key={toast.nonce}>
+      <div className="tm-archive-toast__progress" aria-hidden="true" />
+      <div className="tm-archive-toast__icon">
+        <Archive className="size-4" />
+      </div>
+      <div className="tm-archive-toast__body">
+        <div className="tm-archive-toast__title">已归档模板</div>
+        <div className="tm-archive-toast__description">{toast.templateName}</div>
+      </div>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        className="tm-archive-toast__button"
+        onClick={() => {
+          void onUndo()
+        }}
+      >
+        <Undo2 className="size-4" />
+        <span>撤销</span>
+      </Button>
+    </div>
+  )
+}
+
 function WorkbenchLayout({
   controller,
   pwaUpdateSnapshot,
+  archiveToast,
+  onUndoArchiveToast,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
   pwaUpdateSnapshot?: PwaUpdateSnapshot
+  archiveToast: TemplateArchiveToastState | null
+  onUndoArchiveToast: () => void | Promise<void>
 }) {
   const location = useLocation()
   const navigate = useNavigate()
@@ -1451,6 +1764,14 @@ function WorkbenchLayout({
           applyPwaUpdate(pwaUpdate)
         }}
       />
+
+      {archiveToast ? (
+        <ArchiveUndoToast
+          key={archiveToast.nonce}
+          toast={archiveToast}
+          onUndo={onUndoArchiveToast}
+        />
+      ) : null}
 
       <DataDirectoryNudgeToast
         open={controller.directorySetupNudgeOpen}
@@ -1825,9 +2146,11 @@ function DashboardPage({ controller }: { controller: ReturnType<typeof useWorkbe
 function TemplatesPage({
   controller,
   state,
+  onPresentArchiveToast,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
   state: ReturnType<typeof useWorkbenchPages>
+  onPresentArchiveToast: (template: UserTemplateSummary) => void
 }) {
   const navigate = useNavigate()
   const isTriple = useMediaQuery(`(min-width: ${WIDE_TRIPLE_THRESHOLD}px)`)
@@ -1854,20 +2177,69 @@ function TemplatesPage({
     !state.selectedTemplateRow ||
     activeUserTemplatePending
   const [listMode, setListMode] = React.useState<TemplateListMode>("large")
+  const [actionMenu, setActionMenu] = React.useState<TemplateActionMenuState | null>(null)
+  const [renameDialog, setRenameDialog] = React.useState<{
+    templateId: string
+    currentName: string
+  } | null>(null)
   const importInputId = React.useId()
   const importInputRef = React.useRef<HTMLInputElement | null>(null)
   const [importStatus, setImportStatus] = React.useState("")
   const [tableShellElement, setTableShellElement] = React.useState<HTMLDivElement | null>(null)
   const tableShellWidth = useElementClientWidth(tableShellElement)
   const activeTemplateFields = state.activeTemplate ? toTemplateFieldList(state.activeTemplate) : []
+  const systemEntries = React.useMemo(
+    () => state.templateEntries.filter((entry) => entry.kind === "system"),
+    [state.templateEntries]
+  )
+  const userEntries = React.useMemo(
+    () => state.templateEntries.filter((entry) => entry.kind === "user"),
+    [state.templateEntries]
+  )
   const templateColumnLayout = React.useMemo(
     () => resolveTemplateColumnLayout(activeTemplateFields, state.templateRows, tableShellWidth),
     [activeTemplateFields, state.templateRows, tableShellWidth]
   )
 
   React.useEffect(() => {
-    void controller.refreshUserTemplates()
-  }, [controller.refreshUserTemplates])
+    void Promise.all([controller.refreshUserTemplates(), controller.refreshArchivedUserTemplates()])
+  }, [controller.refreshArchivedUserTemplates, controller.refreshUserTemplates])
+
+  React.useEffect(() => {
+    if (actionMenu && !state.templateEntries.some((entry) => entry.id === actionMenu.entry.id)) {
+      setActionMenu(null)
+    }
+  }, [actionMenu, state.templateEntries])
+
+  React.useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof HTMLElement)) {
+        return
+      }
+      if (
+        target.closest(".tm-template-card") ||
+        target.closest(".tm-template-action-menu") ||
+        target.closest("[role='dialog']")
+      ) {
+        return
+      }
+      setActionMenu(null)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setActionMenu(null)
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [])
 
   const importTemplatePackage = React.useCallback(
     async (file: File) => {
@@ -1879,7 +2251,10 @@ function TemplatesPage({
           description: templatePackage.description,
           document: draft,
         })
-        await controller.refreshUserTemplates()
+        await Promise.all([
+          controller.refreshUserTemplates(),
+          controller.refreshArchivedUserTemplates(),
+        ])
         setImportStatus(`已导入 ${templatePackage.name}`)
       } catch (error) {
         setImportStatus(error instanceof Error ? `导入失败：${error.message}` : "导入失败。")
@@ -1889,7 +2264,93 @@ function TemplatesPage({
         }
       }
     },
-    [controller.refreshUserTemplates]
+    [controller.refreshArchivedUserTemplates, controller.refreshUserTemplates]
+  )
+
+  const editTemplateEntry = React.useCallback(
+    (entryId: string) => {
+      const entry = state.templateEntries.find((item) => item.id === entryId)
+      if (!entry) {
+        return
+      }
+      navigate(
+        entry.kind === "system"
+          ? `/canvas?source=preset-template&templateId=${entry.template.id}`
+          : `/canvas?source=user-template&templateId=${entry.template.id}`
+      )
+    },
+    [navigate, state.templateEntries]
+  )
+
+  const archiveTemplateEntry = React.useCallback(
+    async (entryId: string) => {
+      const archived = await state.archiveTemplateEntry(entryId)
+      if (!archived) {
+        return
+      }
+      setActionMenu(null)
+      onPresentArchiveToast(archived)
+    },
+    [onPresentArchiveToast, state]
+  )
+
+  const openRenameTemplateDialog = React.useCallback((entry: TemplateCardEntry) => {
+    if (entry.kind !== "user") {
+      return
+    }
+    setActionMenu(null)
+    setRenameDialog({
+      templateId: entry.template.id,
+      currentName: entry.template.name,
+    })
+  }, [])
+
+  const handleTemplateAction = React.useCallback(
+    async (entry: TemplateCardEntry, action: TemplateActionKind) => {
+      if (action === "edit") {
+        editTemplateEntry(entry.id)
+        setActionMenu(null)
+        return
+      }
+      if (action === "rename") {
+        openRenameTemplateDialog(entry)
+        return
+      }
+      await archiveTemplateEntry(entry.id)
+    },
+    [archiveTemplateEntry, editTemplateEntry, openRenameTemplateDialog]
+  )
+
+  const handleTemplateSelect = React.useCallback(
+    (entryId: string) => {
+      state.setTemplateEntryId(entryId)
+      if (usesSingleOutletFlow) {
+        state.setTemplateNarrowStage("table")
+        return
+      }
+      state.setTemplateFocus("left-center")
+    },
+    [state, usesSingleOutletFlow]
+  )
+
+  const openTemplateActionMenu = React.useCallback(
+    (entry: TemplateCardEntry, position: { x: number; y: number }) => {
+      state.setTemplateEntryId(entry.id)
+      setActionMenu({
+        entry,
+        x: position.x,
+        y: position.y,
+      })
+    },
+    [state]
+  )
+
+  const handleTemplateContextMenu = React.useCallback(
+    (entry: TemplateCardEntry, event: React.MouseEvent<HTMLElement>) => {
+      event.preventDefault()
+      openTemplateActionMenu(entry, { x: event.clientX, y: event.clientY })
+    },
+    [openTemplateActionMenu]
   )
 
   return (
@@ -1969,28 +2430,16 @@ function TemplatesPage({
             >
               <TemplateGroup
                 title="系统模板"
-                entries={state.templateEntries.filter((entry) => entry.kind === "system")}
+                entries={systemEntries}
                 listMode={listMode}
                 activeEntryId={state.activeTemplateEntry?.id ?? ""}
-                onSelect={(entryId) => {
-                  state.setTemplateEntryId(entryId)
-                  if (usesSingleOutletFlow) {
-                    state.setTemplateNarrowStage("table")
-                    return
-                  }
-                  state.setTemplateFocus("left-center")
-                }}
-                onEdit={(entryId) => {
-                  const entry = state.templateEntries.find((item) => item.id === entryId)
-                  if (entry?.kind !== "system") {
-                    return
-                  }
-                  navigate(`/canvas?source=preset-template&templateId=${entry.template.id}`)
-                }}
+                onSelect={handleTemplateSelect}
+                onContextMenu={handleTemplateContextMenu}
+                onOpenMenu={openTemplateActionMenu}
               />
               <TemplateGroup
                 title="我的模板"
-                entries={state.templateEntries.filter((entry) => entry.kind === "user")}
+                entries={userEntries}
                 listMode={listMode}
                 activeEntryId={state.activeTemplateEntry?.id ?? ""}
                 emptyText="还没有保存到浏览器本地的用户模板。"
@@ -2006,21 +2455,9 @@ function TemplatesPage({
                     onClick={() => navigate("/canvas")}
                   />
                 }
-                onSelect={(entryId) => {
-                  state.setTemplateEntryId(entryId)
-                  if (usesSingleOutletFlow) {
-                    state.setTemplateNarrowStage("table")
-                    return
-                  }
-                  state.setTemplateFocus("left-center")
-                }}
-                onEdit={(entryId) => {
-                  const entry = state.templateEntries.find((item) => item.id === entryId)
-                  if (entry?.kind !== "user") {
-                    return
-                  }
-                  navigate(`/canvas?source=user-template&templateId=${entry.template.id}`)
-                }}
+                onSelect={handleTemplateSelect}
+                onContextMenu={handleTemplateContextMenu}
+                onOpenMenu={openTemplateActionMenu}
               />
               {importStatus ? (
                 <div className="tm-template-list__status" role="status">
@@ -2028,6 +2465,30 @@ function TemplatesPage({
                 </div>
               ) : null}
             </div>
+            <TemplateActionMenu state={actionMenu} onAction={handleTemplateAction} />
+            <PromptDialog
+              open={renameDialog !== null}
+              title="重命名模板"
+              description="更新模板名称，不影响现有版本历史与归档状态。"
+              label="模板名称"
+              defaultValue={renameDialog?.currentName ?? ""}
+              confirmLabel="保存"
+              requiredMessage="请输入模板名称。"
+              onOpenChange={(open) => {
+                if (!open) {
+                  setRenameDialog(null)
+                }
+              }}
+              onConfirm={(value) => {
+                if (!renameDialog) {
+                  return
+                }
+                if (value === renameDialog.currentName) {
+                  return
+                }
+                void controller.renameTemplate(renameDialog.templateId, value)
+              }}
+            />
           </aside>
         ) : null}
 
@@ -2417,6 +2878,71 @@ function CanvasPageLegacy({
   )
 }
 
+function ArchivedTemplateManagementCard({
+  controller,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>
+}) {
+  return (
+    <Card className="tm-panel">
+      <CardHeader>
+        <CardTitle as="h2">模板归档</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {controller.archivedUserTemplates.length === 0 ? (
+          <EmptyMini text="当前没有已归档的用户模板。" />
+        ) : (
+          controller.archivedUserTemplates.map((template) => (
+            <div key={template.id} className="tm-archive-list-item">
+              <div className="tm-archive-list-item__main">
+                <div className="tm-archive-list-item__title-row">
+                  <div className="tm-archive-list-item__title">{template.name}</div>
+                  <Badge variant="outline">
+                    {formatCanvasDimension({
+                      width: template.width,
+                      height: template.height,
+                    })}
+                  </Badge>
+                </div>
+                <div className="tm-archive-list-item__meta">
+                  <span>{template.description || "浏览器本地模板"}</span>
+                  <span>
+                    归档于 {formatRelativeTime(template.archivedAt ?? template.updatedAt)}
+                  </span>
+                </div>
+              </div>
+              <div className="tm-archive-list-item__actions">
+                <ActionButton
+                  type="button"
+                  name="恢复模板"
+                  icon={RotateCcw}
+                  mode="icon-text"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void controller.restoreArchivedTemplate(template.id)
+                  }}
+                />
+                <ActionButton
+                  type="button"
+                  name="彻底删除"
+                  icon={Trash2}
+                  mode="icon-text"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void controller.purgeArchivedTemplate(template.id)
+                  }}
+                />
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbenchController> }) {
   return (
     <section className="tm-system">
@@ -2438,6 +2964,8 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
           onSyncNow={() => void controller.syncDataDirectoryNow()}
           onTakeOverWrites={controller.takeOverDataDirectoryWrites}
         />
+
+        <ArchivedTemplateManagementCard controller={controller} />
 
         <Card className="tm-panel">
           <CardHeader>
@@ -2631,18 +3159,102 @@ function EmptyMini({ children, text }: { children?: React.ReactNode; text: strin
   )
 }
 
+function TemplateActionMenu({
+  state,
+  onAction,
+}: {
+  state: TemplateActionMenuState | null
+  onAction: (entry: TemplateCardEntry, action: TemplateActionKind) => void | Promise<void>
+}) {
+  const menuRef = React.useRef<HTMLDivElement | null>(null)
+  const [position, setPosition] = React.useState({ left: 12, top: 12 })
+
+  React.useLayoutEffect(() => {
+    if (!state) {
+      return
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const menu = menuRef.current
+      if (!menu) {
+        return
+      }
+      const rect = menu.getBoundingClientRect()
+      const left = Math.min(state.x, window.innerWidth - rect.width - 12)
+      const top = Math.min(state.y, window.innerHeight - rect.height - 12)
+      setPosition({
+        left: Math.max(12, left),
+        top: Math.max(12, top),
+      })
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [state])
+
+  React.useEffect(() => {
+    if (!state) {
+      return
+    }
+    const firstItem = menuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']")
+    firstItem?.focus()
+  }, [state])
+
+  if (!state) {
+    return null
+  }
+
+  const actions = buildTemplateMenuActionItems(state.entry)
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="tm-template-action-menu"
+      role="menu"
+      aria-label={`${state.entry.template.name} 操作`}
+      style={{
+        left: `${position.left}px`,
+        top: `${position.top}px`,
+      }}
+    >
+      {actions.map((action) => {
+        const Icon = action.icon
+        return (
+          <button
+            key={`${state.entry.id}:${action.kind}:menu`}
+            type="button"
+            role="menuitem"
+            className={cn(
+              "tm-template-action-menu__item",
+              action.kind === "archive" && "tm-template-action-menu__item--archive"
+            )}
+            onClick={() => {
+              void onAction(state.entry, action.kind)
+            }}
+          >
+            <Icon className="size-4" />
+            <span>{action.label}</span>
+          </button>
+        )
+      })}
+    </div>,
+    document.body
+  )
+}
+
 function TemplateCard({
   entry,
   active,
   mode,
   onClick,
-  onEdit,
+  onContextMenu,
+  onOpenMenu,
 }: {
   entry: TemplateCardEntry
   active: boolean
   mode: TemplateListMode
   onClick: () => void
-  onEdit: () => void
+  onContextMenu: (entry: TemplateCardEntry, event: React.MouseEvent<HTMLElement>) => void
+  onOpenMenu: (entry: TemplateCardEntry, position: { x: number; y: number }) => void
 }) {
   const template = entry.template
   const previewSvg = React.useMemo(
@@ -2653,6 +3265,128 @@ function TemplateCard({
     [entry]
   )
   const previewSrc = previewSvg ? toDataUrl(previewSvg) : null
+  const longPressTimerRef = React.useRef<number | null>(null)
+  const longPressPointerIdRef = React.useRef<number | null>(null)
+  const longPressOriginRef = React.useRef<{ x: number; y: number } | null>(null)
+  const longPressPositionRef = React.useRef<{ x: number; y: number } | null>(null)
+  const suppressSurfaceClickRef = React.useRef(false)
+  const suppressContextMenuUntilRef = React.useRef(0)
+
+  const cancelLongPress = React.useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+    longPressPointerIdRef.current = null
+    longPressOriginRef.current = null
+    longPressPositionRef.current = null
+  }, [])
+
+  React.useEffect(() => cancelLongPress, [cancelLongPress])
+
+  const openMenuFromTrigger = React.useCallback(
+    (target: HTMLElement) => {
+      const rect = target.getBoundingClientRect()
+      onOpenMenu(entry, {
+        x: rect.right - 8,
+        y: rect.bottom + 8,
+      })
+    },
+    [entry, onOpenMenu]
+  )
+
+  const handleSurfaceClick = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      if (suppressSurfaceClickRef.current) {
+        suppressSurfaceClickRef.current = false
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
+      onClick()
+    },
+    [onClick]
+  )
+
+  const handleSurfacePointerDown = React.useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (event.pointerType === "mouse" || event.button !== 0) {
+        return
+      }
+      cancelLongPress()
+      if (event.currentTarget.setPointerCapture) {
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId)
+        } catch {
+          // Pointer capture can be unavailable for synthetic or downgraded pointer sequences.
+        }
+      }
+      longPressPointerIdRef.current = event.pointerId
+      longPressOriginRef.current = { x: event.clientX, y: event.clientY }
+      longPressPositionRef.current = { x: event.clientX, y: event.clientY }
+      const currentTarget = event.currentTarget
+      longPressTimerRef.current = window.setTimeout(() => {
+        longPressTimerRef.current = null
+        suppressSurfaceClickRef.current = true
+        suppressContextMenuUntilRef.current = Date.now() + 900
+        const position = longPressPositionRef.current
+        if (position) {
+          onOpenMenu(entry, position)
+          return
+        }
+        openMenuFromTrigger(currentTarget)
+      }, TEMPLATE_CARD_LONG_PRESS_MS)
+    },
+    [cancelLongPress, entry, onOpenMenu, openMenuFromTrigger]
+  )
+
+  const handleSurfacePointerMove = React.useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (
+        event.pointerType === "mouse" ||
+        event.pointerId !== longPressPointerIdRef.current ||
+        !longPressOriginRef.current
+      ) {
+        return
+      }
+      longPressPositionRef.current = { x: event.clientX, y: event.clientY }
+      const distance = Math.hypot(
+        event.clientX - longPressOriginRef.current.x,
+        event.clientY - longPressOriginRef.current.y
+      )
+      if (distance > TEMPLATE_CARD_LONG_PRESS_MOVE_TOLERANCE) {
+        cancelLongPress()
+      }
+    },
+    [cancelLongPress]
+  )
+
+  const handleSurfacePointerFinish = React.useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (event.pointerId === longPressPointerIdRef.current) {
+        try {
+          if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId)
+          }
+        } catch {
+          // Ignore release failures when the pointer was never captured.
+        }
+        cancelLongPress()
+      }
+    },
+    [cancelLongPress]
+  )
+
+  const handleCardContextMenu = React.useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      if (Date.now() < suppressContextMenuUntilRef.current) {
+        event.preventDefault()
+        return
+      }
+      onContextMenu(entry, event)
+    },
+    [entry, onContextMenu]
+  )
 
   return (
     <article
@@ -2662,35 +3396,58 @@ function TemplateCard({
         mode === "list" && "tm-template-card--list",
         active && "tm-template-card--active"
       )}
+      onContextMenu={handleCardContextMenu}
     >
-      <button type="button" className="tm-template-card__surface" onClick={onClick}>
-        <div className="tm-template-card__preview">
-          {previewSrc ? (
-            <img
-              src={previewSrc}
-              alt={`${template.name} preview`}
-              className="tm-template-card__image"
-            />
-          ) : (
-            <div className="tm-template-card__placeholder">{template.name}</div>
-          )}
-        </div>
-        <div className="tm-template-card__meta">
-          <div className="tm-template-card__name">{template.name}</div>
-          <div className="tm-template-card__size">{formatTemplateCardSize(entry)}</div>
-        </div>
-      </button>
-      <div className="tm-template-card__actions">
-        <ActionButton
+      <div className="tm-template-card__main">
+        <button
           type="button"
-          name="编辑模板"
-          icon={SquarePen}
-          mode="icon-text"
-          size="sm"
-          variant="outline"
-          className="shrink-0"
-          onClick={onEdit}
-        />
+          className="tm-template-card__surface"
+          onClick={handleSurfaceClick}
+          onPointerDown={handleSurfacePointerDown}
+          onPointerMove={handleSurfacePointerMove}
+          onPointerUp={handleSurfacePointerFinish}
+          onPointerCancel={handleSurfacePointerFinish}
+          onLostPointerCapture={handleSurfacePointerFinish}
+        >
+          <div className="tm-template-card__preview">
+            {previewSrc ? (
+              <img
+                src={previewSrc}
+                alt={`${template.name} preview`}
+                className="tm-template-card__image"
+              />
+            ) : (
+              <div className="tm-template-card__placeholder">{template.name}</div>
+            )}
+          </div>
+          <div className="tm-template-card__meta">
+            <div className="tm-template-card__name">{template.name}</div>
+            <div className="tm-template-card__size">{formatTemplateCardSize(entry)}</div>
+          </div>
+        </button>
+        {mode === "list" || mode === "large" ? (
+          <div
+            className={cn(
+              "tm-template-card__menu-trigger-wrap",
+              mode === "large" && "tm-template-card__menu-trigger-wrap--grid"
+            )}
+          >
+            <Button
+              type="button"
+              variant="bare"
+              size="icon"
+              className="tm-template-card__menu-trigger"
+              aria-label={`${template.name} 更多操作`}
+              aria-haspopup="menu"
+              onClick={(event) => {
+                event.stopPropagation()
+                openMenuFromTrigger(event.currentTarget)
+              }}
+            >
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </div>
+        ) : null}
       </div>
     </article>
   )
@@ -2704,7 +3461,8 @@ function TemplateGroup({
   emptyText = "当前分组没有模板。",
   emptyAction,
   onSelect,
-  onEdit,
+  onContextMenu,
+  onOpenMenu,
 }: {
   title: string
   entries: TemplateCardEntry[]
@@ -2713,7 +3471,8 @@ function TemplateGroup({
   emptyText?: string
   emptyAction?: React.ReactNode
   onSelect: (entryId: string) => void
-  onEdit: (entryId: string) => void
+  onContextMenu: (entry: TemplateCardEntry, event: React.MouseEvent<HTMLElement>) => void
+  onOpenMenu: (entry: TemplateCardEntry, position: { x: number; y: number }) => void
 }) {
   return (
     <section className="tm-template-group">
@@ -2744,7 +3503,8 @@ function TemplateGroup({
               active={activeEntryId === entry.id}
               mode={listMode}
               onClick={() => onSelect(entry.id)}
-              onEdit={() => onEdit(entry.id)}
+              onContextMenu={onContextMenu}
+              onOpenMenu={onOpenMenu}
             />
           ))}
         </div>
@@ -3368,16 +4128,70 @@ function WorkbenchRouter({
   pwaUpdateSnapshot?: PwaUpdateSnapshot
 }) {
   const pageState = useWorkbenchPages(controller)
+  const [archiveToast, setArchiveToast] = React.useState<TemplateArchiveToastState | null>(null)
+
+  React.useEffect(() => {
+    if (!archiveToast) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setArchiveToast(null)
+    }, ARCHIVE_TOAST_DURATION_MS)
+    return () => window.clearTimeout(timer)
+  }, [archiveToast])
+
+  React.useEffect(() => {
+    if (!archiveToast) {
+      return
+    }
+    if (
+      !controller.archivedUserTemplates.some((template) => template.id === archiveToast.templateId)
+    ) {
+      setArchiveToast(null)
+    }
+  }, [archiveToast, controller.archivedUserTemplates])
+
+  const presentArchiveToast = React.useCallback((template: UserTemplateSummary) => {
+    setArchiveToast({
+      nonce:
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now()}`,
+      templateId: template.id,
+      templateName: template.name,
+    })
+  }, [])
+
+  const undoArchiveToast = React.useCallback(async () => {
+    if (!archiveToast) {
+      return
+    }
+    await controller.restoreArchivedTemplate(archiveToast.templateId)
+    setArchiveToast(null)
+  }, [archiveToast, controller])
 
   return (
     <Routes>
       <Route
-        element={<WorkbenchLayout controller={controller} pwaUpdateSnapshot={pwaUpdateSnapshot} />}
+        element={
+          <WorkbenchLayout
+            controller={controller}
+            pwaUpdateSnapshot={pwaUpdateSnapshot}
+            archiveToast={archiveToast}
+            onUndoArchiveToast={undoArchiveToast}
+          />
+        }
       >
         <Route path="/" element={<DashboardPage controller={controller} />} />
         <Route
           path="/templates"
-          element={<TemplatesPage controller={controller} state={pageState} />}
+          element={
+            <TemplatesPage
+              controller={controller}
+              state={pageState}
+              onPresentArchiveToast={presentArchiveToast}
+            />
+          }
         />
         <Route
           path="/canvas"

@@ -2704,6 +2704,7 @@ async function loadDraftForSource(source: CanvasDraftSource): Promise<{
     return {
       draft: {
         ...cloneDraft(currentVersion.document),
+        name: versionHistory.template.name,
         source,
         templateId: source.templateId,
         baseVersionId: currentVersion.id,
@@ -2857,7 +2858,6 @@ function TextInlineEditor({
     measureText: measureCanvasTextLine,
   })
   const contentWidth = Math.max(layout.contentWidth, layout.resolvedFontSize)
-  const contentHeight = Math.max(layout.contentHeight, layout.resolvedFontSize)
   const contentX = layout.contentX
   const contentY = layout.contentY
   const usesBoxWrapWidth = layout.effectiveAutoWrap && !element.verticalText && layout.scaleX === 1
@@ -4706,21 +4706,6 @@ function CanvasOutput({
 
 type CanvasElementGroup = Konva.Group & {
   __tuckmarkOriginalGetClientRect?: Konva.Group["getClientRect"]
-}
-
-function alignOffset(
-  containerSize: number,
-  contentSize: number,
-  align: "start" | "middle" | "end"
-) {
-  switch (align) {
-    case "middle":
-      return (containerSize - contentSize) / 2
-    case "end":
-      return containerSize - contentSize
-    case "start":
-      return 0
-  }
 }
 
 let textMeasureContext: CanvasRenderingContext2D | null | undefined

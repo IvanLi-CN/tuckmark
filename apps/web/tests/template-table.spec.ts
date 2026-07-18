@@ -1,4 +1,12 @@
-import { expect, test } from "@playwright/test"
+import { expect, type Page, test } from "@playwright/test"
+
+function templateCardSurface(page: Page, name: string) {
+  return page
+    .locator(".tm-template-card")
+    .filter({ hasText: name })
+    .locator(".tm-template-card__surface")
+    .first()
+}
 
 test("template table keeps the cell size stable when a cell enters edit mode", async ({ page }) => {
   await page.goto("/templates?demo=true")
@@ -344,7 +352,7 @@ test("template page collapses to a single outlet flow on narrow widths", async (
   await expect(page.getByText("模板列表")).toBeVisible()
   await expect(page.getByText("批量录入表")).toHaveCount(0)
 
-  await page.getByRole("button", { name: /Compact Shipping Label/ }).click()
+  await templateCardSurface(page, "Compact Shipping Label").click()
 
   await expect(page.getByText("批量录入表")).toBeVisible()
   await expect(page.getByText("模板列表")).toHaveCount(0)
@@ -364,7 +372,7 @@ test("template page moves preview and print below the table on extra narrow widt
   await page.setViewportSize({ width: 930, height: 820 })
   await page.goto("/templates?demo=true")
 
-  await page.getByRole("button", { name: /Compact Shipping Label/ }).click()
+  await templateCardSurface(page, "Compact Shipping Label").click()
 
   const layout = await page.locator("section.tm-workspace").evaluate((workspace) => {
     const centerPane = workspace.querySelector(".tm-pane--center")
