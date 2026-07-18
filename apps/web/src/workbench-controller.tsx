@@ -155,7 +155,6 @@ function describeStartupStatus(stepId: StartupStepId): string {
       return "正在装载系统模板与设备配置"
     case "load-local-state":
       return "正在读取本地模板与打印设置"
-    case "verify-runtime-state":
     default:
       return "正在校验离线目录与最近状态"
   }
@@ -171,7 +170,6 @@ function describeStartupDetail(stepId: StartupStepId, context: AppContext): stri
         : "正在读取系统模板与当前设备配置。"
     case "load-local-state":
       return "正在读取本地模板、工作草稿与默认打印设置。"
-    case "verify-runtime-state":
     default:
       return context.surface === "server-http"
         ? "正在校验离线数据目录并同步最近状态。"
