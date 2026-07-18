@@ -41,7 +41,8 @@ test("preset templates can be saved into browser-local user templates and reused
   await page.getByRole("button", { name: "生成预览" }).click()
   await expect(page.locator("img[alt='preview artifact']")).toBeVisible()
 
-  await userCard.getByRole("button", { name: "编辑模板" }).click()
+  await userCard.getByRole("button", { name: "E2E Cable Tag 更多操作" }).click()
+  await page.getByRole("menuitem", { name: "编辑" }).click()
   await expect(page).toHaveURL(/\/canvas\?source=user-template&templateId=/)
   await expect(page.getByText("用户模板：E2E Cable Tag")).toBeVisible()
 })
