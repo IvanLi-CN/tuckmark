@@ -15,6 +15,12 @@
 - Real hardware validation completed in Chrome desktop against printer
   `P2-Y404125469`: browser-direct safe-text printing succeeded after the browser
   packet encoder was switched to the detonger-backed path.
+- Browser-direct wasm initialization now clears a failed init promise before the
+  next retry, so a transient wasm fetch abort no longer poisons preview or
+  direct print for the rest of the current page session.
+- Real hardware validation completed in Chrome PWA against printer
+  `P2-Y404125469`: after reconnecting the browser-direct printer, preview and
+  direct print both succeeded from the installed workbench.
 
 ## Remaining validation
 

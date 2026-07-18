@@ -20,7 +20,7 @@ let detongerInitPromise: Promise<unknown> | undefined
 
 async function ensureDetongerWasmReady(): Promise<void> {
   if (!detongerInitPromise) {
-    detongerInitPromise =
+    detongerInitPromise = (
       typeof document === "undefined"
         ? (async () => {
             const { readFile } = await import("node:fs/promises")
@@ -30,6 +30,10 @@ async function ensureDetongerWasmReady(): Promise<void> {
             initDetongerWasmSync(wasmBytes)
           })()
         : initDetongerWasm()
+    ).catch((error) => {
+      detongerInitPromise = undefined
+      throw error
+    })
   }
   await detongerInitPromise
 }
