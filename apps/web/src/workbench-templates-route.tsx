@@ -10,7 +10,6 @@ import {
   Upload,
 } from "lucide-react"
 import React from "react"
-import { useNavigate } from "react-router-dom"
 import { parseUserTemplatePackage } from "../../../packages/core/src/web.js"
 
 import { createDraftFromUserTemplatePackage } from "./canvas-editor-model.js"
@@ -42,6 +41,7 @@ import {
   WIDE_TRIPLE_THRESHOLD,
 } from "./workbench-app.js"
 import { createInitialTemplateRows, type WorkbenchController } from "./workbench-controller.js"
+import { useWorkbenchNavigate } from "./workbench-navigation.js"
 
 type TemplateRow = {
   id: string
@@ -538,7 +538,7 @@ export default function WorkbenchTemplatesRoute({
   controller: WorkbenchController
   onRouteChunkReady?: () => void
 }) {
-  const navigate = useNavigate()
+  const navigate = useWorkbenchNavigate()
   const state = useTemplatesRouteState(controller)
   const isTriple = useMediaQuery(`(min-width: ${WIDE_TRIPLE_THRESHOLD}px)`)
   const stacksPreviewBelowTable = !useMediaQuery(

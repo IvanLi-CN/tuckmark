@@ -51,11 +51,17 @@
   and now exposes an explicit `theme` prop so Storybook can lock light or dark
   states without relying on ambient browser settings.
 - `apps/web/src/startup-contract.ts` formalizes startup task phases for the
-  launch shell and runtime pending UI:
+  launch shell control flow and runtime pending UI:
   - `bootstrap-loaded`
   - `current-route-chunk-ready`
   - `current-route-data-ready`
   - `offline-warmup`
+- The owner-facing launch shell no longer renders those internal phases as a
+  visible checklist. `apps/web/index.html`, `apps/web/src/app-launch-splash.tsx`,
+  and `apps/web/src/workbench-app.tsx` now keep the public copy generic, avoid
+  secondary explanatory cards, and keep the progress rail indeterminate because
+  route readiness, deferred hydration, and offline warmup may overlap in real
+  startup traces.
 - `apps/web/src/workbench-app.tsx` keeps the routed runtime shell mounted for
   code-loading continuity, but hides it with the platform `hidden` contract
   until `shellReady` flips true so the startup overlay never reveals the
@@ -67,9 +73,24 @@
 - `apps/web/src/pwa-asset-warmup.ts` triggers runtime warmup of `feature`
   assets only after the current-route shell is mounted, keeping offline
   coverage automatic without blocking startup navigation.
+- `apps/web/src/workbench-route-registry.tsx` now exposes route preloading
+  helpers for `/templates`, `/canvas`, and `/system`, and
+  `apps/web/src/workbench-app.tsx` uses them in two places:
+  - after `shellReady`, it silently warms the deferred route chunks in the
+    background
+  - on primary-nav pointer/focus intent, it opportunistically preloads the
+    target route before click
+- `apps/web/src/workbench-navigation.ts` now centralizes in-app route changes:
+  it preloads the destination workbench route before calling the router
+  navigation API, so owner-triggered page switches keep the current page in
+  place until the destination module is ready.
+- `apps/web/src/workbench-app.tsx` keeps `React.Suspense` fallback for route
+  chunk races, but the fallback is now a small route-local skeleton instead of
+  a card that reads like a second startup panel.
 - `apps/web/tests/pwa.spec.ts` covers service worker registration, offline
   route refresh, launch-shell-first startup, warmup-complete offline behavior,
-  and PWA asset inspection including `version.json` consistency, asset-tier
+  deferred-route warmup preventing startup-like page-switch loading, and PWA
+  asset inspection including `version.json` consistency, asset-tier
   separation, and non-precache behavior.
 - `apps/web/src/pwa-lifecycle.test.ts` covers the guarded update-check cadence:
   immediate startup checks, 30-minute periodic polling, 10-minute stale-tab

@@ -48,13 +48,21 @@ and a reproducible worktree bootstrap path.
   fallback location, preloads the current route chunk when possible, and
   asynchronously imports the routed runtime instead of synchronously loading
   the full workbench bundle from `index.html`.
-- Launch-shell progress communicates real startup tasks only:
-  `bootstrap loaded`, `current route chunk ready`, `current route data ready`,
-  and `offline warmup started/completed`. It must not imply byte-level network
-  download progress.
+- Launch-shell state is driven by real startup milestones, but the
+  owner-facing shell stays coarse: it must not enumerate internal parallel
+  task names or imply byte-level network download progress.
 - Service-worker asset caching is tiered. `install` precaches only `shell` and
   offline-refresh-critical `route` assets, while non-critical `feature` assets
   are warmed silently in the background after the current-route shell is ready.
+- Once the current-route shell is visible, browser-static must warm the
+  remaining route chunks in the background so ordinary in-app page switches do
+  not reopen the owner-facing startup shell.
+- If a deferred route chunk is still racing the first navigation, any loading
+  affordance must stay route-local and lightweight instead of presenting a
+  second startup-like screen.
+- Owner-initiated in-app route switches should commit only after the target
+  route module is ready, so the mounted current page stays visible instead of
+  blanking or presenting a restart-like transition.
 - If the current tab has gone stale since its last update check, returning the
   page to a visible, focused, or newly online state must trigger a guarded
   catch-up update check without surfacing any extra post-startup loading UI.
@@ -93,10 +101,16 @@ and a reproducible worktree bootstrap path.
   dark color schemes.
 - Installed-PWA startup reaches a navigable current-route shell before
   background hydration and feature warmup finish.
-- The owner-facing launch shell progress rail reflects startup task completion
-  rather than fixed placeholder percentages or download-byte promises.
+- The owner-facing launch shell uses generic branded startup copy and an
+  indeterminate progress rail while startup is pending; it does not expose
+  internal task names, auxiliary explanatory cards, or byte-level download
+  promises.
 - Service-worker `install` precache is limited to `shell` and `route` assets;
   `feature` assets are cached later through silent warmup.
+- Ordinary page switches inside the mounted workbench do not reopen the
+  owner-facing launch shell; after shell-ready they should resolve from warmed
+  route chunks, with at most a local route placeholder if prefetch loses a
+  race.
 - Offline refresh still works for `/`, `/templates`, `/canvas`, and `/system`
   after a first successful online load and automatic background warmup.
 - New-version caching is silent; the update prompt appears only after the
@@ -154,10 +168,11 @@ PR: include
 
 The cold-start launch shell evidence is captured from a repo-owned mock render
 that mirrors the static entry HTML, while the same state also keeps Storybook
-coverage for ongoing review. The shell intentionally communicates startup
-progress without blocking or replacing the later non-blocking update prompt
-contract. Its checklist and progress rail reflect startup task phases, not
-byte-level network download progress.
+coverage for ongoing review. The shell intentionally communicates branded
+startup readiness without blocking or replacing the later non-blocking update
+prompt contract. Its copy stays coarse and its progress rail stays
+indeterminate so installed-PWA startup does not pretend internally parallel
+work is a linear checklist or a byte-level network download.
 
 PR: include
 ![Browser-static launch splash](./assets/pwa-launch-splash-state.png)

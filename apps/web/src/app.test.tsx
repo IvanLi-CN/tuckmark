@@ -24,6 +24,7 @@ import {
   normalizeCanvasWheelDeltas,
   normalizeTransformedElementGeometry,
   panViewportByWheel,
+  preloadCanvasWorkspaceRouteData,
   projectCanvasTransformerBoxToStage,
   projectStageTransformerBoxToCanvas,
   startClipboardPastePlacement,
@@ -1161,6 +1162,59 @@ describe("web workbench app", () => {
     expect(document.querySelector(".tm-launch-progress-rail")).not.toBeNull()
   })
 
+  it("keeps owner-facing startup copy generic while the overlay is active", async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const rootElement = document.getElementById("root")
+    if (!rootElement) {
+      throw new Error("Missing root element")
+    }
+
+    window.history.replaceState({}, "", "/")
+
+    await act(async () => {
+      mountedRoot = ReactDOM.createRoot(rootElement)
+      mountedRoot.render(<App context={browserRuntimeContext} />)
+      await flush(1)
+    })
+
+    await act(async () => {
+      await vi.dynamicImportSettled()
+      await flush(1)
+    })
+
+    expect(document.body.textContent).toContain("正在准备工作台")
+    expect(document.body.textContent).not.toContain("启动运行时引导")
+    expect(document.body.textContent).not.toContain("装载当前页面模块")
+    expect(document.body.textContent).not.toContain("准备当前页面状态")
+    expect(document.body.textContent).not.toContain("补齐离线资源缓存")
+    expect(document.body.textContent).not.toContain("进入后继续补齐")
+    expect(document.querySelector(".tm-launch-checklist")).toBeNull()
+    expect(document.querySelector(".tm-launch-note")).toBeNull()
+  })
+
+  it("mounts a preloaded canvas route without flashing the canvas loading placeholder", async () => {
+    const path = "/canvas?source=preset-template&templateId=cable-tag"
+    await preloadCanvasWorkspaceRouteData(path)
+
+    document.body.innerHTML = '<div id="root"></div>'
+    const rootElement = document.getElementById("root")
+    if (!rootElement) {
+      throw new Error("Missing root element")
+    }
+
+    window.history.replaceState({}, "", path)
+
+    await act(async () => {
+      mountedRoot = ReactDOM.createRoot(rootElement)
+      mountedRoot.render(<App context={browserRuntimeContext} />)
+      await flush(1)
+    })
+
+    expect(document.body.textContent).not.toContain("正在读取当前画布草稿")
+    expect(document.body.textContent).not.toContain("正在读取画布")
+    expect(document.body.textContent).toContain("系统模板：Cable Tag")
+  })
+
   it("shows phase-based startup progress while bootstrap work is still pending", async () => {
     const actualStore = await vi.importActual<typeof import("./user-template-store.js")>(
       "./user-template-store.js"
@@ -1176,9 +1230,10 @@ describe("web workbench app", () => {
       await renderApp(browserRuntimeContext)
 
       expect(document.body.textContent).toContain("打印工作台")
-      expect(document.body.textContent).toContain("工作台已就绪")
-      expect(document.body.textContent).toContain("正在后台补齐模板、设置与最近状态。")
-      expect(document.body.textContent).toContain("Deferred hydration")
+      expect(document.body.textContent).not.toContain("工作台已就绪")
+      expect(document.body.textContent).not.toContain("正在后台补齐模板、设置与最近状态。")
+      expect(document.body.textContent).not.toContain("Deferred hydration")
+      expect(document.body.textContent).not.toContain("Offline warmup")
 
       const shell = document.querySelector<HTMLElement>(".tm-shell")
       expect(shell?.getAttribute("data-shell-ready")).toBe("true")

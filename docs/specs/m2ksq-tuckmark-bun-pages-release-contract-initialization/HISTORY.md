@@ -51,3 +51,21 @@ runtime workbench could still peek through underneath the owner-facing launch
 surface during the `current route data ready` phase. The routed shell now stays
 hidden until `shellReady` is true, so installed-PWA startup no longer feels
 like it has already entered the app before the startup shell exits.
+
+The owner-facing launch copy was then tightened again after runtime traces
+showed deferred hydration and offline warmup often overlap rather than execute
+as a neat sequential checklist. The public splash now keeps branded generic
+copy with an indeterminate rail, while the internal startup milestones remain
+available only to the control flow and verification surfaces.
+
+That launch shell was simplified once more after review showed the secondary
+bottom-right note card still read like explanatory chrome instead of a normal
+loading affordance. The installed-PWA splash now keeps only the primary
+brand/title/detail/progress composition and removes the extra note entirely.
+
+Route-loading behavior was then tightened again after runtime verification
+showed the first in-app page switch could still expose a large lazy-route
+fallback that felt like the app was cold-starting twice. Deferred route chunks
+now warm immediately after `shellReady`, nav intent preloads the likely target
+route, and any remaining route race falls back to a small local skeleton
+instead of a startup-like loading screen.

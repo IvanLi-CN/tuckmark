@@ -81,44 +81,44 @@ export function buildStartupSplashState(args: {
 
   if (!args.currentRouteChunkReady) {
     return {
-      detailText: "正在预载当前页面模块，准备进入工作台。",
+      detailText: "正在启动运行环境并装载当前页面。",
       progressPercent,
-      statusText: "正在装载当前页面模块",
+      statusText: "正在准备工作台",
       steps,
     }
   }
 
   if (!args.currentRouteDataReady) {
     return {
-      detailText: "正在准备当前页面所需的最小运行时状态。",
+      detailText: "当前页面就绪后会立即进入，其他资产会在后台静默补齐。",
       progressPercent,
-      statusText: "正在准备当前页面状态",
+      statusText: "正在准备工作台",
       steps,
     }
   }
 
   if (args.offlineWarmupStatus === "pending") {
     return {
-      detailText: "已进入工作台，正在后台补齐离线资源缓存。",
+      detailText: "工作台已可用，正在后台静默补齐完整资产。",
       progressPercent,
-      statusText: "正在补齐离线资源缓存",
+      statusText: "正在进入工作台",
       steps,
     }
   }
 
   if (args.deferredHydrationPending) {
     return {
-      detailText: "已进入工作台，正在后台补齐模板、设置与最近状态。",
+      detailText: "工作台已可用，正在后台静默补齐完整资产。",
       progressPercent,
-      statusText: "正在后台补齐完整资产",
+      statusText: "正在进入工作台",
       steps,
     }
   }
 
   return {
-    detailText: "正在进入打印工作台。",
+    detailText: "工作台已完成首屏准备。",
     progressPercent: 100,
-    statusText: "启动完成",
+    statusText: "工作台已就绪",
     steps,
   }
 }

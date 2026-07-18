@@ -38,11 +38,23 @@ while the workbench was being productized:
     imports so deep links can load their own route first
   - deferred setup, recent activity, and offline warmup now continue in the
     background with an explicit non-blocking shell notice
+  - the owner-facing startup overlay later dropped its explicit step checklist
+    after verification showed those background tasks overlap in real startup
+    traces
 - The text-font delivery path was tightened in the same round:
   - startup now carries only the core local font set needed by shell chrome and
     brand copy
   - long-tail bundled fonts remain self-hosted but load on demand when canvas
     drafts, preview, or the font selector actually need them
+- A later runtime-convergence pass corrected the first in-app navigation path:
+  - once `shellReady` flips true, the workbench now warms the deferred route
+    chunks in the background
+  - primary-nav intent preloads the likely target route before click
+  - any remaining chunk race falls back to a route-local skeleton instead of
+    reintroducing a startup-like loading screen during page switches
+  - the owner-facing runtime also dropped its in-shell deferred-hydration /
+    offline-warmup status card after review showed it still read like loading
+    chrome instead of normal application UI
 - template browsing keeps two explicit modes, but compactness is controlled at
   the item level instead of shrinking the whole pane indiscriminately
 - list-mode thumbnails keep a readable minimum preview size instead of being
@@ -295,3 +307,9 @@ while the workbench was being productized:
     ordinary drag, which stays on the existing edge-only target set
   - active-axis guide rendering now matches the actual interaction source, so
     `bottom-center` text resize no longer emits unrelated side guides
+- The startup overlay was later simplified again after owner review:
+  - the secondary bottom-right launch note was removed from the shared
+    splash because it read like explanatory chrome rather than a standard
+    loading affordance
+  - the startup surface now relies on the primary title, terse detail copy,
+    and indeterminate progress affordance only

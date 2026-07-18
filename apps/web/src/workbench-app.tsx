@@ -41,7 +41,6 @@ import {
   Route,
   Routes,
   useLocation,
-  useNavigate,
 } from "react-router-dom"
 import {
   buildSvg,
@@ -110,11 +109,11 @@ import {
   type WorkbenchDeviceDrawerFeedback,
   type WorkbenchStoryStateOverrides,
 } from "./workbench-controller.js"
+import { preloadWorkbenchNavigationIntent, useWorkbenchNavigate } from "./workbench-navigation.js"
 import {
-  LazyCanvasRoute,
-  LazySystemRoute,
-  LazyTemplatesRoute,
   normalizeWorkbenchRoutePath,
+  preloadDeferredWorkbenchRoutes,
+  useDeferredWorkbenchRouteModule,
 } from "./workbench-route-registry.js"
 
 type AppProps = {
@@ -1393,16 +1392,18 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
 function WorkbenchLayout({
   controller,
   hydrationState,
+  onRouteIntent,
   pwaUpdateSnapshot,
   shellHidden = false,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
   hydrationState: WorkbenchHydrationState
+  onRouteIntent: (pathname: string) => void
   pwaUpdateSnapshot?: PwaUpdateSnapshot
   shellHidden?: boolean
 }) {
   const location = useLocation()
-  const navigate = useNavigate()
+  const navigate = useWorkbenchNavigate()
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const runtimePwaUpdate = usePwaUpdate(controller.context)
   const pwaUpdate = pwaUpdateSnapshot ?? runtimePwaUpdate
@@ -1420,6 +1421,24 @@ function WorkbenchLayout({
   const surfaceLabel =
     controller.context.surface === "server-http" ? "Server HTTP" : "Browser static"
   const modeLabel = controller.context.mode === "demo" ? "Demo mode" : "Runtime mode"
+  const handlePrimaryNavClick = React.useCallback(
+    (event: React.MouseEvent<HTMLAnchorElement>, pathname: string) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        normalizeWorkbenchRoutePath(location.pathname) === normalizeWorkbenchRoutePath(pathname)
+      ) {
+        return
+      }
+      event.preventDefault()
+      void navigate(pathname)
+    },
+    [location.pathname, navigate]
+  )
 
   return (
     <div
@@ -1441,6 +1460,10 @@ function WorkbenchLayout({
                   key={item.to}
                   to={item.to}
                   end={item.to === "/"}
+                  onPointerEnter={() => onRouteIntent(item.to)}
+                  onPointerDown={() => onRouteIntent(item.to)}
+                  onFocus={() => onRouteIntent(item.to)}
+                  onClick={(event) => handlePrimaryNavClick(event, item.to)}
                   className={({ isActive }) =>
                     cn("tm-nav__link", "tm-selectable-none", isActive && "tm-nav__link--active")
                   }
@@ -1472,8 +1495,6 @@ function WorkbenchLayout({
           </Button>
         </div>
       </header>
-
-      <RuntimeHydrationNotice hydrationState={hydrationState} />
 
       <main className={cn("tm-main", isCanvasRoute && "tm-main--canvas")}>
         <Outlet />
@@ -1761,39 +1782,8 @@ function StatusPill({
   )
 }
 
-function RuntimeHydrationNotice({ hydrationState }: { hydrationState: WorkbenchHydrationState }) {
-  if (!hydrationState.deferredHydrationPending && !hydrationState.offlineWarmupPending) {
-    return null
-  }
-
-  const statusText = hydrationState.deferredHydrationPending
-    ? "正在后台补齐模板、设置与最近状态。"
-    : "正在后台补齐离线资源缓存。"
-
-  return (
-    <section
-      className="tm-runtime-status"
-      aria-label="Tuckmark runtime hydration status"
-      role="status"
-    >
-      <div className="tm-runtime-status__copy">
-        <span className="tm-runtime-status__title">工作台已就绪</span>
-        <span className="tm-runtime-status__text">{statusText}</span>
-      </div>
-      <div className="tm-runtime-status__badges">
-        {hydrationState.deferredHydrationPending ? (
-          <Badge variant="outline">Deferred hydration</Badge>
-        ) : null}
-        {hydrationState.offlineWarmupPending ? (
-          <Badge variant="secondary">Offline warmup</Badge>
-        ) : null}
-      </div>
-    </section>
-  )
-}
-
 function DashboardPage({ controller }: { controller: ReturnType<typeof useWorkbenchController> }) {
-  const navigate = useNavigate()
+  const navigate = useWorkbenchNavigate()
 
   return (
     <section className="tm-dashboard">
@@ -1927,7 +1917,7 @@ function TemplatesPage({
   controller: ReturnType<typeof useWorkbenchController>
   state: ReturnType<typeof useWorkbenchPages>
 }) {
-  const navigate = useNavigate()
+  const navigate = useWorkbenchNavigate()
   const isTriple = useMediaQuery(`(min-width: ${WIDE_TRIPLE_THRESHOLD}px)`)
   const stacksPreviewBelowTable = !useMediaQuery(
     `(min-width: ${TEMPLATE_STACKED_PREVIEW_THRESHOLD}px)`
@@ -3488,9 +3478,9 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
 
 function RouteLoadingPanel() {
   return (
-    <div className="tm-route-loading" role="status" aria-live="polite">
-      <RefreshCcw className="size-4 animate-spin" />
-      <span>正在装载页面模块…</span>
+    <div className="tm-route-loading" role="status" aria-live="polite" aria-label="正在打开页面">
+      <div className="tm-route-loading__line tm-route-loading__line--title" />
+      <div className="tm-route-loading__line tm-route-loading__line--body" />
     </div>
   )
 }
@@ -3509,10 +3499,77 @@ function DashboardRoute({
   return <DashboardPage controller={controller} />
 }
 
+function TemplatesRouteBoundary({
+  controller,
+  onRouteChunkReady,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>
+  onRouteChunkReady: () => void
+}) {
+  const routeModule = useDeferredWorkbenchRouteModule("/templates")
+  if (!routeModule) {
+    return <RouteLoadingPanel />
+  }
+
+  const TemplatesRoute = routeModule.default as React.ComponentType<{
+    controller: ReturnType<typeof useWorkbenchController>
+    onRouteChunkReady?: () => void
+  }>
+  return <TemplatesRoute controller={controller} onRouteChunkReady={onRouteChunkReady} />
+}
+
+function CanvasRouteBoundary({
+  controller,
+  initialScenario,
+  onRouteChunkReady,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>
+  initialScenario?: CanvasStoryScenario
+  onRouteChunkReady: () => void
+}) {
+  const routeModule = useDeferredWorkbenchRouteModule("/canvas")
+  if (!routeModule) {
+    return <RouteLoadingPanel />
+  }
+
+  const CanvasRoute = routeModule.default as React.ComponentType<{
+    controller: ReturnType<typeof useWorkbenchController>
+    initialScenario?: CanvasStoryScenario
+    onRouteChunkReady?: () => void
+  }>
+  return (
+    <CanvasRoute
+      controller={controller}
+      initialScenario={initialScenario}
+      onRouteChunkReady={onRouteChunkReady}
+    />
+  )
+}
+
+function SystemRouteBoundary({
+  controller,
+  onRouteChunkReady,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>
+  onRouteChunkReady: () => void
+}) {
+  const routeModule = useDeferredWorkbenchRouteModule("/system")
+  if (!routeModule) {
+    return <RouteLoadingPanel />
+  }
+
+  const SystemRoute = routeModule.default as React.ComponentType<{
+    controller: ReturnType<typeof useWorkbenchController>
+    onRouteChunkReady?: () => void
+  }>
+  return <SystemRoute controller={controller} onRouteChunkReady={onRouteChunkReady} />
+}
+
 function LazyWorkbenchRouter({
   controller,
   canvasScenario,
   hydrationState,
+  onRouteIntent,
   onRouteChunkReady,
   pwaUpdateSnapshot,
   shellHidden = false,
@@ -3520,6 +3577,7 @@ function LazyWorkbenchRouter({
   controller: ReturnType<typeof useWorkbenchController>
   canvasScenario?: CanvasStoryScenario
   hydrationState: WorkbenchHydrationState
+  onRouteIntent: (pathname: string) => void
   onRouteChunkReady: () => void
   pwaUpdateSnapshot?: PwaUpdateSnapshot
   shellHidden?: boolean
@@ -3531,6 +3589,7 @@ function LazyWorkbenchRouter({
           <WorkbenchLayout
             controller={controller}
             hydrationState={hydrationState}
+            onRouteIntent={onRouteIntent}
             pwaUpdateSnapshot={pwaUpdateSnapshot}
             shellHidden={shellHidden}
           />
@@ -3543,29 +3602,23 @@ function LazyWorkbenchRouter({
         <Route
           path="/templates"
           element={
-            <React.Suspense fallback={<RouteLoadingPanel />}>
-              <LazyTemplatesRoute controller={controller} onRouteChunkReady={onRouteChunkReady} />
-            </React.Suspense>
+            <TemplatesRouteBoundary controller={controller} onRouteChunkReady={onRouteChunkReady} />
           }
         />
         <Route
           path="/canvas"
           element={
-            <React.Suspense fallback={<RouteLoadingPanel />}>
-              <LazyCanvasRoute
-                controller={controller}
-                initialScenario={canvasScenario}
-                onRouteChunkReady={onRouteChunkReady}
-              />
-            </React.Suspense>
+            <CanvasRouteBoundary
+              controller={controller}
+              initialScenario={canvasScenario}
+              onRouteChunkReady={onRouteChunkReady}
+            />
           }
         />
         <Route
           path="/system"
           element={
-            <React.Suspense fallback={<RouteLoadingPanel />}>
-              <LazySystemRoute controller={controller} onRouteChunkReady={onRouteChunkReady} />
-            </React.Suspense>
+            <SystemRouteBoundary controller={controller} onRouteChunkReady={onRouteChunkReady} />
           }
         />
       </Route>
@@ -3577,6 +3630,7 @@ function EagerWorkbenchRouter({
   controller,
   canvasScenario,
   hydrationState,
+  onRouteIntent,
   onRouteChunkReady,
   pwaUpdateSnapshot,
   shellHidden = false,
@@ -3584,6 +3638,7 @@ function EagerWorkbenchRouter({
   controller: ReturnType<typeof useWorkbenchController>
   canvasScenario?: CanvasStoryScenario
   hydrationState: WorkbenchHydrationState
+  onRouteIntent: (pathname: string) => void
   onRouteChunkReady: () => void
   pwaUpdateSnapshot?: PwaUpdateSnapshot
   shellHidden?: boolean
@@ -3597,6 +3652,7 @@ function EagerWorkbenchRouter({
           <WorkbenchLayout
             controller={controller}
             hydrationState={hydrationState}
+            onRouteIntent={onRouteIntent}
             pwaUpdateSnapshot={pwaUpdateSnapshot}
             shellHidden={shellHidden}
           />
@@ -3655,9 +3711,10 @@ export function WorkbenchApp({
   startupShell = "disabled",
   theme = "auto",
 }: AppProps) {
-  const initialRoutePath = normalizeWorkbenchRoutePath(
-    typeof window !== "undefined" ? window.location.pathname : "/"
+  const initialRoutePathRef = React.useRef(
+    normalizeWorkbenchRoutePath(typeof window !== "undefined" ? window.location.pathname : "/")
   )
+  const initialRoutePath = initialRoutePathRef.current
   const controller = useWorkbenchController({
     client,
     context,
@@ -3666,6 +3723,7 @@ export function WorkbenchApp({
   const [currentRouteChunkReady, setCurrentRouteChunkReady] = React.useState(
     initialRoutePath === "/" || Boolean(bootstrapState?.currentRouteChunkReady)
   )
+  const routeWarmupStartedRef = React.useRef(false)
   const offlineWarmupStatus = usePwaAssetWarmup(controller.context, controller.startupSyncReady)
 
   React.useEffect(() => {
@@ -3709,6 +3767,18 @@ export function WorkbenchApp({
   const handleRouteChunkReady = React.useCallback(() => {
     setCurrentRouteChunkReady(true)
   }, [])
+  const handleRouteIntent = React.useCallback((pathname: string) => {
+    preloadWorkbenchNavigationIntent(pathname)
+  }, [])
+
+  React.useEffect(() => {
+    if (!hydrationState.shellReady || routeWarmupStartedRef.current) {
+      return
+    }
+    routeWarmupStartedRef.current = true
+    void preloadDeferredWorkbenchRoutes().catch(() => undefined)
+  }, [hydrationState.shellReady])
+
   const shellHidden = startupShell === "auto" && !hydrationState.shellReady
   const RouterComponent =
     import.meta.env.MODE === "test" ? EagerWorkbenchRouter : LazyWorkbenchRouter
@@ -3719,6 +3789,7 @@ export function WorkbenchApp({
         controller={controller}
         canvasScenario={canvasScenario}
         hydrationState={hydrationState}
+        onRouteIntent={handleRouteIntent}
         onRouteChunkReady={handleRouteChunkReady}
         pwaUpdateSnapshot={pwaUpdateSnapshot}
         shellHidden={shellHidden}
@@ -3730,6 +3801,7 @@ export function WorkbenchApp({
         controller={controller}
         canvasScenario={canvasScenario}
         hydrationState={hydrationState}
+        onRouteIntent={handleRouteIntent}
         onRouteChunkReady={handleRouteChunkReady}
         pwaUpdateSnapshot={pwaUpdateSnapshot}
         shellHidden={shellHidden}
@@ -3744,9 +3816,7 @@ export function WorkbenchApp({
         <div className="tm-startup-overlay">
           <AppLaunchSplash
             detailText={launchSplashState.detailText}
-            progressPercent={launchSplashState.progressPercent}
             statusText={launchSplashState.statusText}
-            steps={launchSplashState.steps}
             theme={theme}
           />
         </div>
@@ -3792,6 +3862,7 @@ export function WorkbenchAppStory({
           controller={controller}
           canvasScenario={canvasScenario}
           hydrationState={hydrationState}
+          onRouteIntent={() => undefined}
           onRouteChunkReady={() => {
             void bootstrapState
           }}

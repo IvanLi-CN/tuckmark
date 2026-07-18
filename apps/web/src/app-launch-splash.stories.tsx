@@ -32,31 +32,8 @@ export const Default: Story = {}
 
 export const PreparingCurrentRoute: Story = {
   args: {
-    statusText: "正在准备当前页面状态",
-    detailText: "正在准备当前页面所需的最小运行时状态。",
-    progressPercent: 50,
-    steps: [
-      {
-        id: "bootstrap-loaded",
-        label: "启动运行时引导",
-        state: "complete",
-      },
-      {
-        id: "current-route-chunk-ready",
-        label: "装载当前页面模块",
-        state: "complete",
-      },
-      {
-        id: "current-route-data-ready",
-        label: "准备当前页面状态",
-        state: "active",
-      },
-      {
-        id: "offline-warmup",
-        label: "补齐离线资源缓存",
-        state: "pending",
-      },
-    ],
+    statusText: "正在准备工作台",
+    detailText: "当前页面就绪后会立即进入，其他资产会在后台静默补齐。",
   },
 }
 

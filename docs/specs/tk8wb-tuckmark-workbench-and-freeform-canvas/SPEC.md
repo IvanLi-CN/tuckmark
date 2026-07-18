@@ -81,14 +81,28 @@ output.
     current route navigable and operable
   - `deferred`: non-current-route data, recent state, settings hydration, and
     non-critical offline warmup after the shell is already visible
+- The owner-facing startup overlay uses generic branded copy only. It must not
+  expose internal parallel task names as if they were a linear checklist, and
+  it should not add secondary explanatory cards that compete with the primary
+  loading message.
 - Startup-shell exit is keyed to `currentRouteReady`, not to full background
   hydration completion.
 - `/templates`, `/canvas`, and `/system` load through route-level dynamic
   imports; deep-link startup prefers the target route chunk instead of first
   mounting `/`.
-- The shared shell may show a non-blocking runtime hydration notice after mount
-  while deferred background work is still pending. That notice must not block
-  navigation or primary route actions.
+- Once the current-route shell is ready, the workbench warms the other formal
+  route chunks in the background and may also preload on nav intent so normal
+  page switches do not regress into startup-like loading behavior.
+- Page-to-page navigation inside the mounted workbench must never reopen the
+  owner-facing startup overlay. If a route chunk still races the first switch,
+  the fallback stays local to the routed content area and remains visually
+  subordinate to the persistent shell.
+- Owner-triggered route switches commit after the destination route module is
+  ready, so the current page remains visible while the next workbench surface
+  is being prepared.
+- Deferred background hydration and offline warmup stay owner-facing silent
+  after mount. They must not block navigation or primary route actions, and
+  they must not surface a persistent in-shell status card or badge group.
 
 ### Visual direction
 
@@ -609,6 +623,9 @@ output.
   templates, settings, recent activity, and offline warmup is complete.
 - Deep-link startup to `/templates`, `/canvas`, and `/system` loads the target
   route first instead of bouncing through `/`.
+- Ordinary page switches after shell-ready keep the mounted shell in place and
+  do not reopen a startup overlay; deferred route loads resolve through warmup
+  or a route-local placeholder only.
 - The device drawer opens from any page, supports keyboard close, and restores
   focus to the trigger.
 - Browser-direct chooser cancellation and recoverable device-drawer action

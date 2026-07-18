@@ -1,8 +1,8 @@
 export type AppLaunchSplashProps = {
   detailText?: string
   progressPercent?: number
+  progressMode?: "determinate" | "indeterminate"
   statusText?: string
-  steps?: readonly AppLaunchSplashStep[]
   theme?: "auto" | "dark" | "light"
 }
 
@@ -14,46 +14,11 @@ export type AppLaunchSplashStep = {
   state: AppLaunchSplashStepState
 }
 
-const DEFAULT_STEPS = [
-  {
-    id: "bootstrap-loaded",
-    label: "启动运行时引导",
-    state: "complete",
-  },
-  {
-    id: "current-route-chunk-ready",
-    label: "装载当前页面模块",
-    state: "active",
-  },
-  {
-    id: "current-route-data-ready",
-    label: "准备当前页面状态",
-    state: "pending",
-  },
-  {
-    id: "offline-warmup",
-    label: "补齐离线资源缓存",
-    state: "pending",
-  },
-] satisfies readonly AppLaunchSplashStep[]
-
-function describeStepState(state: AppLaunchSplashStepState) {
-  switch (state) {
-    case "complete":
-      return "已完成"
-    case "active":
-      return "处理中"
-    case "pending":
-    default:
-      return "待处理"
-  }
-}
-
 export function AppLaunchSplash({
-  detailText = "正在预载当前页面模块，准备进入工作台。",
-  progressPercent = 25,
-  statusText = "正在装载当前页面模块",
-  steps = DEFAULT_STEPS,
+  detailText = "当前页面就绪后会立即进入，其他资产会在后台静默补齐。",
+  progressMode = "indeterminate",
+  progressPercent,
+  statusText = "正在准备工作台",
   theme = "auto",
 }: AppLaunchSplashProps) {
   const rootClassName = [
@@ -64,8 +29,12 @@ export function AppLaunchSplash({
   ]
     .filter(Boolean)
     .join(" ")
-  const safeProgress = Math.max(0, Math.min(100, Math.round(progressPercent)))
-  const completedSteps = steps.filter((step) => step.state === "complete").length
+  const hasDeterminateProgress =
+    progressMode === "determinate" && typeof progressPercent === "number"
+  const safeProgress =
+    hasDeterminateProgress && typeof progressPercent === "number"
+      ? Math.max(0, Math.min(100, Math.round(progressPercent)))
+      : null
 
   return (
     <div
@@ -96,27 +65,42 @@ export function AppLaunchSplash({
               </div>
             </div>
 
-            <div className="tm-launch-text-block">
-              <p className="tm-launch-status">{statusText}</p>
-              <p className="tm-launch-detail">{detailText}</p>
-            </div>
-
-            <div className="tm-launch-progress-block">
-              <div className="tm-launch-progress-dots">
-                <span />
-                <span />
-                <span />
+            <div className="tm-launch-message-stack">
+              <div className="tm-launch-text-block">
+                <p className="tm-launch-status">{statusText}</p>
+                <p className="tm-launch-detail">{detailText}</p>
               </div>
-              <div
-                className="tm-launch-progress-rail"
-                role="progressbar"
-                aria-label={`${statusText} 进度`}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={safeProgress}
-                aria-valuetext={`${completedSteps} / ${steps.length} 启动阶段已完成`}
-              >
-                <div className="tm-launch-progress-fill" style={{ width: `${safeProgress}%` }} />
+
+              <div className="tm-launch-progress-block">
+                <div className="tm-launch-progress-dots">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div
+                  className={[
+                    "tm-launch-progress-rail",
+                    !hasDeterminateProgress ? "tm-launch-progress-rail--indeterminate" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  role="progressbar"
+                  aria-label={`${statusText} 进度`}
+                  aria-valuemin={hasDeterminateProgress ? 0 : undefined}
+                  aria-valuemax={hasDeterminateProgress ? 100 : undefined}
+                  aria-valuenow={safeProgress ?? undefined}
+                  aria-valuetext={statusText}
+                >
+                  <div
+                    className={[
+                      "tm-launch-progress-fill",
+                      !hasDeterminateProgress ? "tm-launch-progress-fill--indeterminate" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    style={safeProgress !== null ? { width: `${safeProgress}%` } : undefined}
+                  />
+                </div>
               </div>
             </div>
           </section>
@@ -137,25 +121,6 @@ export function AppLaunchSplash({
                 <div className="tm-launch-sheet-label" />
               </div>
               <div className="tm-launch-sheet-barcode" />
-            </div>
-
-            <div className="tm-launch-checklist">
-              {steps.map((step) => (
-                <div
-                  key={step.id ?? step.label}
-                  className={`tm-launch-checklist-item tm-launch-checklist-item--${step.state}`}
-                >
-                  <span
-                    className={`tm-launch-checklist-dot tm-launch-checklist-dot--${step.state}`}
-                  />
-                  <span className="tm-launch-checklist-text">{step.label}</span>
-                  <span
-                    className={`tm-launch-checklist-state tm-launch-checklist-state--${step.state}`}
-                  >
-                    {describeStepState(step.state)}
-                  </span>
-                </div>
-              ))}
             </div>
 
             <div className="tm-launch-ticket">

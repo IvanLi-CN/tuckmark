@@ -68,6 +68,69 @@ test("browser-static build does not prompt for an update when version metadata m
   await expect(page.getByLabel("Tuckmark Web update status")).toHaveCount(0)
 })
 
+test("browser-static warms deferred route chunks so page switches do not reopen a loading screen", async ({
+  page,
+}) => {
+  let templateChunkRequests = 0
+
+  await page.route("**/assets/route-templates-*.js", async (route) => {
+    templateChunkRequests += 1
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    await route.continue()
+  })
+
+  await page.goto("/")
+  await expect(page.getByRole("heading", { name: "打印工作台" })).toBeVisible()
+
+  await expect
+    .poll(() => templateChunkRequests, {
+      timeout: 5_000,
+    })
+    .toBeGreaterThan(0)
+
+  await page.waitForTimeout(350)
+  const requestCountBeforeClick = templateChunkRequests
+
+  await page.getByRole("link", { name: "模板" }).click()
+  await expect(page.locator(".tm-startup-overlay")).toHaveCount(0)
+  await expect(page.locator(".tm-route-loading")).toHaveCount(0)
+  await expect(page.getByText("模板列表")).toBeVisible()
+  expect(templateChunkRequests).toBe(requestCountBeforeClick)
+})
+
+test("browser-static keeps the current page visible while the target route chunk is still loading", async ({
+  page,
+}) => {
+  let templateChunkRequests = 0
+  let releaseTemplateChunk: (() => void) | null = null
+  const templateChunkGate = new Promise<void>((resolve) => {
+    releaseTemplateChunk = resolve
+  })
+
+  await page.route("**/assets/route-templates-*.js", async (route) => {
+    templateChunkRequests += 1
+    await templateChunkGate
+    await route.continue()
+  })
+
+  await page.goto("/")
+  await expect(page.getByRole("heading", { name: "打印工作台" })).toBeVisible()
+
+  await expect
+    .poll(() => templateChunkRequests, {
+      timeout: 5_000,
+    })
+    .toBeGreaterThan(0)
+
+  await page.getByRole("link", { name: "模板" }).click()
+  await expect(page.getByRole("heading", { name: "打印工作台" })).toBeVisible()
+  await expect(page.locator(".tm-startup-overlay")).toHaveCount(0)
+  await expect(page.locator(".tm-route-loading")).toHaveCount(0)
+
+  releaseTemplateChunk?.()
+  await expect(page.getByText("模板列表")).toBeVisible()
+})
+
 test("browser-static build ships complete PWA assets without remote font dependency", async () => {
   const distRoot = path.resolve(__dirname, "../dist")
   const indexHtml = await fs.readFile(path.join(distRoot, "index.html"), "utf8")
@@ -89,10 +152,14 @@ test("browser-static build ships complete PWA assets without remote font depende
 
   expect(indexHtml).toContain('rel="manifest"')
   expect(indexHtml).toContain('data-launch-screen="booting"')
-  expect(indexHtml).toContain("Tuckmark 正在启动运行时引导")
-  expect(indexHtml).toContain("装载当前页面模块")
-  expect(indexHtml).toContain("准备当前页面状态")
-  expect(indexHtml).toContain("补齐离线资源缓存")
+  expect(indexHtml).toContain("Tuckmark 正在准备工作台")
+  expect(indexHtml).toContain("当前页面就绪后会立即进入，其他资产会在后台静默补齐。")
+  expect(indexHtml).not.toContain("进入后继续补齐")
+  expect(indexHtml).not.toContain("完整资产会在后台静默完成。")
+  expect(indexHtml).not.toContain("启动运行时引导")
+  expect(indexHtml).not.toContain("装载当前页面模块")
+  expect(indexHtml).not.toContain("准备当前页面状态")
+  expect(indexHtml).not.toContain("补齐离线资源缓存")
   expect(indexHtml).toContain("@media (prefers-color-scheme: dark)")
   expect(indexHtml).toContain("--tm-launch-background: #14110f;")
   expect(indexHtml).not.toContain("fonts.googleapis.com")

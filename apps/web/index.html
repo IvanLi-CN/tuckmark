@@ -248,7 +248,7 @@
 
       .tm-launch-copy-panel {
         display: grid;
-        gap: 26px;
+        gap: 32px;
         align-self: center;
         max-width: 520px;
       }
@@ -279,7 +279,7 @@
 
       .tm-launch-copy {
         display: grid;
-        gap: 4px;
+        gap: 2px;
       }
 
       .tm-launch-kicker,
@@ -300,13 +300,19 @@
         color: var(--tm-launch-muted);
         font-size: 12px;
         font-weight: 600;
+        line-height: 1;
         letter-spacing: 0.32em;
         text-transform: uppercase;
       }
 
+      .tm-launch-message-stack {
+        display: grid;
+        gap: 28px;
+      }
+
       .tm-launch-text-block {
         display: grid;
-        gap: 10px;
+        gap: 14px;
       }
 
       .tm-launch-status {
@@ -314,20 +320,22 @@
         color: var(--tm-launch-ink);
         font-size: clamp(42px, 6vw, 72px);
         font-weight: 680;
-        line-height: 0.94;
-        letter-spacing: -0.07em;
+        line-height: 0.9;
+        letter-spacing: -0.035em;
+        text-wrap: balance;
       }
 
       .tm-launch-detail {
         max-width: 26rem;
         color: var(--tm-launch-muted);
         font-size: 16px;
-        line-height: 1.6;
+        line-height: 1.5;
+        text-wrap: pretty;
       }
 
       .tm-launch-progress-block {
         display: grid;
-        gap: 12px;
+        gap: 10px;
         max-width: 280px;
       }
 
@@ -382,13 +390,18 @@
         box-shadow: 0 0 18px var(--tm-launch-progress-glow);
       }
 
+      .tm-launch-progress-fill--indeterminate {
+        width: 34%;
+        animation: tm-launch-progress-loop 1.45s ease-in-out infinite;
+        will-change: transform;
+      }
+
       .tm-launch-art-panel {
         position: relative;
         min-height: 620px;
       }
 
       .tm-launch-sheet,
-      .tm-launch-checklist,
       .tm-launch-ticket {
         position: absolute;
         border: 1px solid var(--tm-launch-line);
@@ -466,92 +479,9 @@
         background: var(--tm-launch-barcode-fill);
       }
 
-      .tm-launch-checklist {
-        left: 26px;
-        bottom: 90px;
-        width: min(28vw, 360px);
-        min-width: 280px;
-        border-radius: 26px;
-        padding: 16px;
-      }
-
-      .tm-launch-checklist-item {
-        display: grid;
-        align-items: center;
-        gap: 12px;
-        grid-template-columns: auto 1fr auto;
-        padding: 12px 0;
-      }
-
-      .tm-launch-checklist-item + .tm-launch-checklist-item {
-        border-top: 1px solid var(--tm-launch-checklist-divider);
-      }
-
-      .tm-launch-checklist-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 999px;
-        background: var(--tm-launch-checklist-dot);
-        box-shadow: 0 0 0 4px var(--tm-launch-checklist-ring);
-      }
-
-      .tm-launch-checklist-dot--pending {
-        opacity: 0.52;
-      }
-
-      .tm-launch-checklist-dot--active {
-        box-shadow:
-          0 0 0 4px var(--tm-launch-checklist-ring),
-          0 0 18px color-mix(in srgb, var(--tm-launch-primary) 34%, transparent);
-      }
-
-      .tm-launch-checklist-dot--complete {
-        background: color-mix(in srgb, var(--tm-launch-primary) 88%, white);
-      }
-
-      .tm-launch-checklist-item--pending .tm-launch-checklist-text {
-        color: color-mix(in srgb, var(--tm-launch-ink) 70%, var(--tm-launch-muted));
-      }
-
-      .tm-launch-checklist-item--active .tm-launch-checklist-text {
-        color: var(--tm-launch-primary-strong);
-      }
-
-      .tm-launch-checklist-text {
-        color: var(--tm-launch-ink);
-        font-size: 14px;
-        font-weight: 500;
-      }
-
-      .tm-launch-checklist-state {
-        min-width: 62px;
-        padding: 5px 10px;
-        border-radius: 999px;
-        background: var(--tm-launch-checklist-state);
-        color: var(--tm-launch-primary-strong);
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.04em;
-        line-height: 1;
-        text-align: center;
-      }
-
-      .tm-launch-checklist-state--pending {
-        background: color-mix(in srgb, var(--tm-launch-surface) 92%, transparent);
-        color: var(--tm-launch-muted);
-      }
-
-      .tm-launch-checklist-state--active {
-        box-shadow: 0 0 18px color-mix(in srgb, var(--tm-launch-primary) 14%, transparent);
-      }
-
-      .tm-launch-checklist-state--complete {
-        background: color-mix(in srgb, var(--tm-launch-primary) 22%, transparent);
-      }
-
       .tm-launch-ticket {
         right: 56px;
-        bottom: 26px;
+        bottom: 20px;
         width: 180px;
         height: 134px;
         border-radius: 24px;
@@ -612,6 +542,20 @@
         }
       }
 
+      @keyframes tm-launch-progress-loop {
+        0% {
+          transform: translateX(-24%) scaleX(0.92);
+        }
+
+        50% {
+          transform: translateX(94%) scaleX(1);
+        }
+
+        100% {
+          transform: translateX(224%) scaleX(0.92);
+        }
+      }
+
       @keyframes tm-launch-sweep {
         from {
           transform: scaleX(0.76);
@@ -651,13 +595,6 @@
           top: 18px;
           right: 12px;
           width: min(100%, 420px);
-          min-width: 0;
-        }
-
-        .tm-launch-checklist {
-          left: 0;
-          bottom: 0;
-          width: min(100%, 340px);
           min-width: 0;
         }
 
@@ -812,7 +749,7 @@
         data-launch-screen="booting"
         role="status"
         aria-live="polite"
-        aria-label="Tuckmark 正在启动运行时引导"
+        aria-label="Tuckmark 正在准备工作台"
       >
         <div class="tm-launch-stage">
           <div
@@ -850,36 +787,34 @@
                 </div>
               </div>
 
-              <div class="tm-launch-text-block">
-                <p class="tm-launch-status" data-launch-status-text>
-                  正在启动运行时引导
-                </p>
-                <p class="tm-launch-detail" data-launch-detail-text>
-                  正在启动运行时引导，准备装载当前页面模块。
-                </p>
-              </div>
-
-              <div class="tm-launch-progress-block">
-                <div class="tm-launch-progress-dots">
-                  <span></span>
-                  <span></span>
-                  <span></span>
+              <div class="tm-launch-message-stack">
+                <div class="tm-launch-text-block">
+                  <p class="tm-launch-status" data-launch-status-text>
+                    正在准备工作台
+                  </p>
+                  <p class="tm-launch-detail" data-launch-detail-text>
+                    当前页面就绪后会立即进入，其他资产会在后台静默补齐。
+                  </p>
                 </div>
-                <div
-                  class="tm-launch-progress-rail"
-                  role="progressbar"
-                  aria-label="正在启动运行时引导 进度"
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                  aria-valuenow="0"
-                  aria-valuetext="0 / 4 启动阶段已完成"
-                  data-launch-progress-rail
-                >
+
+                <div class="tm-launch-progress-block">
+                  <div class="tm-launch-progress-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
                   <div
-                    class="tm-launch-progress-fill"
-                    style="width: 0%"
-                    data-launch-progress-fill
-                  ></div>
+                    class="tm-launch-progress-rail tm-launch-progress-rail--indeterminate"
+                    role="progressbar"
+                    aria-label="正在准备工作台 进度"
+                    aria-valuetext="正在准备工作台"
+                    data-launch-progress-rail
+                  >
+                    <div
+                      class="tm-launch-progress-fill tm-launch-progress-fill--indeterminate"
+                      data-launch-progress-fill
+                    ></div>
+                  </div>
                 </div>
               </div>
             </section>
@@ -904,69 +839,6 @@
                 <div class="tm-launch-sheet-barcode"></div>
               </div>
 
-              <div class="tm-launch-checklist">
-                <div
-                  class="tm-launch-checklist-item tm-launch-checklist-item--active"
-                  data-launch-step="bootstrap-loaded"
-                >
-                  <span
-                    class="tm-launch-checklist-dot tm-launch-checklist-dot--active"
-                    data-launch-step-dot
-                  ></span>
-                  <span class="tm-launch-checklist-text">启动运行时引导</span>
-                  <span
-                    class="tm-launch-checklist-state tm-launch-checklist-state--active"
-                    data-launch-step-state
-                    >处理中</span
-                  >
-                </div>
-                <div
-                  class="tm-launch-checklist-item tm-launch-checklist-item--pending"
-                  data-launch-step="current-route-chunk-ready"
-                >
-                  <span
-                    class="tm-launch-checklist-dot tm-launch-checklist-dot--pending"
-                    data-launch-step-dot
-                  ></span>
-                  <span class="tm-launch-checklist-text">装载当前页面模块</span>
-                  <span
-                    class="tm-launch-checklist-state tm-launch-checklist-state--pending"
-                    data-launch-step-state
-                    >待处理</span
-                  >
-                </div>
-                <div
-                  class="tm-launch-checklist-item tm-launch-checklist-item--pending"
-                  data-launch-step="current-route-data-ready"
-                >
-                  <span
-                    class="tm-launch-checklist-dot tm-launch-checklist-dot--pending"
-                    data-launch-step-dot
-                  ></span>
-                  <span class="tm-launch-checklist-text">准备当前页面状态</span>
-                  <span
-                    class="tm-launch-checklist-state tm-launch-checklist-state--pending"
-                    data-launch-step-state
-                    >待处理</span
-                  >
-                </div>
-                <div
-                  class="tm-launch-checklist-item tm-launch-checklist-item--pending"
-                  data-launch-step="offline-warmup"
-                >
-                  <span
-                    class="tm-launch-checklist-dot tm-launch-checklist-dot--pending"
-                    data-launch-step-dot
-                  ></span>
-                  <span class="tm-launch-checklist-text">补齐离线资源缓存</span>
-                  <span
-                    class="tm-launch-checklist-state tm-launch-checklist-state--pending"
-                    data-launch-step-state
-                    >待处理</span
-                  >
-                </div>
-              </div>
-
               <div class="tm-launch-ticket">
                 <div class="tm-launch-ticket-grid"></div>
                 <div class="tm-launch-ticket-code"></div>
@@ -982,61 +854,19 @@
         const statusTextNode = launchRoot?.querySelector("[data-launch-status-text]")
         const detailTextNode = launchRoot?.querySelector("[data-launch-detail-text]")
         const progressRail = launchRoot?.querySelector("[data-launch-progress-rail]")
-        const progressFill = launchRoot?.querySelector("[data-launch-progress-fill]")
-        const stepNodes = Array.from(
-          launchRoot?.querySelectorAll("[data-launch-step]") ?? []
-        )
-
-        const stepOrder = [
-          "bootstrap-loaded",
-          "current-route-chunk-ready",
-          "current-route-data-ready",
-          "offline-warmup",
-        ]
-
-        const stepLabels = {
-          "bootstrap-loaded": "启动运行时引导",
-          "current-route-chunk-ready": "装载当前页面模块",
-          "current-route-data-ready": "准备当前页面状态",
-          "offline-warmup": "补齐离线资源缓存",
-        }
-
-        const stepStatusLabels = {
-          pending: "待处理",
-          active: "处理中",
-          complete: "已完成",
-        }
 
         const phaseState = {
           "bootstrap-loaded": {
-            statusText: "正在启动运行时引导",
-            detailText: "正在启动运行时引导，准备装载当前页面模块。",
-            steps: {
-              "bootstrap-loaded": "active",
-              "current-route-chunk-ready": "pending",
-              "current-route-data-ready": "pending",
-              "offline-warmup": "pending",
-            },
+            statusText: "正在准备工作台",
+            detailText: "正在启动运行环境并装载当前页面。",
           },
           "current-route-chunk-ready": {
-            statusText: "正在装载当前页面模块",
-            detailText: "正在预载当前页面模块，准备进入工作台。",
-            steps: {
-              "bootstrap-loaded": "complete",
-              "current-route-chunk-ready": "active",
-              "current-route-data-ready": "pending",
-              "offline-warmup": "pending",
-            },
+            statusText: "正在准备工作台",
+            detailText: "当前页面就绪后会立即进入，其他资产会在后台静默补齐。",
           },
           "current-route-data-ready": {
-            statusText: "正在准备当前页面状态",
-            detailText: "正在准备当前页面所需的最小运行时状态。",
-            steps: {
-              "bootstrap-loaded": "complete",
-              "current-route-chunk-ready": "complete",
-              "current-route-data-ready": "active",
-              "offline-warmup": "pending",
-            },
+            statusText: "正在进入工作台",
+            detailText: "已完成首屏准备，正在切换到工作台。",
           },
         }
 
@@ -1045,11 +875,6 @@
           if (!phase || !launchRoot) {
             return
           }
-
-          const completedCount = stepOrder.filter(
-            (stepId) => phase.steps[stepId] === "complete"
-          ).length
-          const progressPercent = Math.round((completedCount / stepOrder.length) * 100)
 
           launchRoot.setAttribute("aria-label", `Tuckmark ${phase.statusText}`)
 
@@ -1061,39 +886,13 @@
           }
           if (progressRail) {
             progressRail.setAttribute("aria-label", `${phase.statusText} 进度`)
-            progressRail.setAttribute("aria-valuenow", String(progressPercent))
-            progressRail.setAttribute(
-              "aria-valuetext",
-              `${completedCount} / ${stepOrder.length} 启动阶段已完成`
-            )
-          }
-          if (progressFill) {
-            progressFill.style.width = `${progressPercent}%`
-          }
-
-          for (const stepNode of stepNodes) {
-            const stepId = stepNode.getAttribute("data-launch-step")
-            const nextState = phase.steps[stepId] ?? "pending"
-            stepNode.className = `tm-launch-checklist-item tm-launch-checklist-item--${nextState}`
-
-            const dotNode = stepNode.querySelector("[data-launch-step-dot]")
-            if (dotNode) {
-              dotNode.className = `tm-launch-checklist-dot tm-launch-checklist-dot--${nextState}`
-            }
-
-            const stateNode = stepNode.querySelector("[data-launch-step-state]")
-            if (stateNode) {
-              stateNode.className =
-                `tm-launch-checklist-state tm-launch-checklist-state--${nextState}`
-              stateNode.textContent = stepStatusLabels[nextState] ?? stepStatusLabels.pending
-            }
+            progressRail.setAttribute("aria-valuetext", phase.statusText)
           }
         }
 
         applyLaunchPhase("bootstrap-loaded")
         window.__tuckmarkLaunchShell = {
           setPhase: applyLaunchPhase,
-          stepLabels,
         }
       })()
     </script>

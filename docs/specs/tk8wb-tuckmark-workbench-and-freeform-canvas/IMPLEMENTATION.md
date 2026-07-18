@@ -23,6 +23,8 @@
   background hydration:
   - `apps/web/src/workbench-route-registry.tsx` owns dynamic route imports for
     `/templates`, `/canvas`, and `/system`
+  - the same route registry also owns reusable preload helpers so the runtime
+    can warm deferred route chunks after `shellReady`
   - `apps/web/src/workbench-controller.tsx` blocks only current-route critical
     data before marking the shell ready, then continues setup/template/status
     work in the background
@@ -31,6 +33,20 @@
     `offlineWarmupStatus`, while keeping the mounted shell hidden until
     `shellReady` is true so the startup overlay does not reveal the workbench
     prematurely
+  - `apps/web/src/workbench-app.tsx` also preloads target route chunks on
+    primary-nav hover, focus, and pointer-down intent so first page switches
+    normally complete without exposing the route-level fallback
+  - `apps/web/src/workbench-navigation.ts` wraps imperative route changes so
+    buttons and route-owned actions keep the current page mounted until the
+    destination route chunk is ready
+  - the owner-facing startup overlay now keeps its title, detail copy, and
+    progress affordance generic instead of exposing those background phases as
+    a visible per-task checklist or secondary note card
+  - deferred hydration and offline warmup remain observable through runtime
+    state attributes for tests and control flow, but no longer render an
+    owner-facing in-shell status card once the workbench itself is visible
+  - if a route chunk still loses that race, the `React.Suspense` fallback is a
+    small routed-content skeleton instead of a startup-like loading card
 - The `/system` page now combines existing app / print settings with a route
   owned `SystemDataStorageCard` that surfaces:
   - browser capability state for `File System Access API` + `OPFS`
