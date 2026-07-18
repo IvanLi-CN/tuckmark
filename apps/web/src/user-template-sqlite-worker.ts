@@ -43,10 +43,15 @@ type SqliteDatabase = {
 type WorkerMethodMap = {
   init: undefined
   listTemplates: undefined
+  listArchivedTemplates: undefined
   readTemplate: { templateId: string }
   readHistory: { templateId: string }
   readVersion: { versionId: string }
   saveTemplate: RuntimeStoreSaveTemplateArgs
+  renameTemplate: { templateId: string; name: string }
+  archiveTemplate: { templateId: string }
+  restoreTemplate: { templateId: string }
+  purgeTemplate: { templateId: string }
   saveAutosave: RuntimeStoreSaveWorkingCopyArgs
   replaceWorkingCopy: RuntimeStoreSaveWorkingCopyArgs
   loadWorkingCopy: { source: CanvasDraftSource }
@@ -137,6 +142,16 @@ function compareVersionsOldestFirst(
   right: UserTemplateVersionSnapshot
 ): number {
   return left.version - right.version || left.createdAt.localeCompare(right.createdAt)
+}
+
+function compareArchivedNewestFirst(left: UserTemplateRecord, right: UserTemplateRecord): number {
+  const leftArchivedAt = left.archivedAt ?? ""
+  const rightArchivedAt = right.archivedAt ?? ""
+  return (
+    rightArchivedAt.localeCompare(leftArchivedAt) ||
+    right.updatedAt.localeCompare(left.updatedAt) ||
+    left.id.localeCompare(right.id)
+  )
 }
 
 function getNextSavedVersionNumber(versions: Iterable<UserTemplateVersionSnapshot>): number {
@@ -495,14 +510,36 @@ async function listTemplates() {
   const versionMap = new Map(versions.map((version) => [version.id, version]))
   const workingCopies = readWorkingCopyRecords(db)
   const workingCopyMap = new Map(workingCopies.map((entry) => [entry.sourceKey, entry]))
-  return templates.map((template) =>
-    buildTemplateSummary(
-      template,
-      workingCopyMap.get(createSourceKey({ kind: "user-template", templateId: template.id })) ??
-        null,
-      versionMap.get(template.currentVersionId)?.document ?? null
+  return templates
+    .filter((template) => !template.archivedAt)
+    .map((template) =>
+      buildTemplateSummary(
+        template,
+        workingCopyMap.get(createSourceKey({ kind: "user-template", templateId: template.id })) ??
+          null,
+        versionMap.get(template.currentVersionId)?.document ?? null
+      )
     )
-  )
+}
+
+async function listArchivedTemplates() {
+  const db = await resolveDb()
+  const templates = readTemplateRecords(db)
+  const versions = readVersionRecords(db)
+  const versionMap = new Map(versions.map((version) => [version.id, version]))
+  const workingCopies = readWorkingCopyRecords(db)
+  const workingCopyMap = new Map(workingCopies.map((entry) => [entry.sourceKey, entry]))
+  return templates
+    .filter((template) => Boolean(template.archivedAt))
+    .sort(compareArchivedNewestFirst)
+    .map((template) =>
+      buildTemplateSummary(
+        template,
+        workingCopyMap.get(createSourceKey({ kind: "user-template", templateId: template.id })) ??
+          null,
+        versionMap.get(template.currentVersionId)?.document ?? null
+      )
+    )
 }
 
 async function readTemplate(templateId: string) {
@@ -582,6 +619,7 @@ async function saveTemplate(args: RuntimeStoreSaveTemplateArgs) {
       height: document.height,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
+      archivedAt: existing?.archivedAt ?? null,
       currentVersionId: version.id,
       fieldOrder: document.fields.map((field) => field.key),
     }
@@ -605,6 +643,43 @@ async function saveTemplate(args: RuntimeStoreSaveTemplateArgs) {
       version: cloneValue(version),
       workingCopy: cloneValue(workingCopy),
     }
+  })
+}
+
+async function renameTemplate(templateId: string, name: string) {
+  const db = await resolveDb()
+  return withTransaction(db, () => {
+    const row = db.selectObject("select payload from templates where id = ?1", [templateId])
+    if (!row?.payload) {
+      return null
+    }
+
+    const renamedAt = new Date().toISOString()
+    const template = parseJsonColumn<UserTemplateRecord>(row.payload)
+    upsertTemplateRecord(db, {
+      ...template,
+      name,
+      updatedAt: renamedAt,
+    })
+
+    const workingCopyKey = createSourceKey({ kind: "user-template", templateId })
+    const workingCopyRow = db.selectObject(
+      "select payload from working_copies where source_key = ?1",
+      [workingCopyKey]
+    )
+    if (workingCopyRow?.payload) {
+      const workingCopy = parseJsonColumn<CanvasWorkingCopyIndexEntry>(workingCopyRow.payload)
+      upsertWorkingCopyRecord(db, {
+        ...workingCopy,
+        updatedAt: renamedAt,
+        draft: {
+          ...workingCopy.draft,
+          name,
+        },
+      })
+    }
+
+    return readTemplate(templateId)
   })
 }
 
@@ -692,6 +767,56 @@ async function replaceWorkingCopy(args: RuntimeStoreSaveWorkingCopyArgs) {
     }
     upsertWorkingCopyRecord(db, workingCopy)
     return cloneValue(workingCopy)
+  })
+}
+
+async function archiveTemplate(templateId: string) {
+  const db = await resolveDb()
+  return withTransaction(db, () => {
+    const row = db.selectObject("select payload from templates where id = ?1", [templateId])
+    if (!row?.payload) {
+      return null
+    }
+    const template = parseJsonColumn<UserTemplateRecord>(row.payload)
+    const archivedAt = new Date().toISOString()
+    upsertTemplateRecord(db, {
+      ...template,
+      archivedAt,
+      updatedAt: archivedAt,
+    })
+    return readTemplate(templateId)
+  })
+}
+
+async function restoreTemplate(templateId: string) {
+  const db = await resolveDb()
+  return withTransaction(db, () => {
+    const row = db.selectObject("select payload from templates where id = ?1", [templateId])
+    if (!row?.payload) {
+      return null
+    }
+    const template = parseJsonColumn<UserTemplateRecord>(row.payload)
+    const restoredAt = new Date().toISOString()
+    upsertTemplateRecord(db, {
+      ...template,
+      archivedAt: null,
+      updatedAt: restoredAt,
+    })
+    return readTemplate(templateId)
+  })
+}
+
+async function purgeTemplate(templateId: string) {
+  const db = await resolveDb()
+  withTransaction(db, () => {
+    db.exec("delete from versions where template_id = ?1", { bind: [templateId] })
+    db.exec("delete from working_copies where source_key = ?1 or template_id = ?1", {
+      bind: [templateId],
+    })
+    db.exec("delete from working_copies where source_key = ?1", {
+      bind: [createSourceKey({ kind: "user-template", templateId })],
+    })
+    db.exec("delete from templates where id = ?1", { bind: [templateId] })
   })
 }
 
@@ -801,6 +926,8 @@ async function dispatchRequest(request: WorkerRequest): Promise<unknown> {
       return true
     case "listTemplates":
       return listTemplates()
+    case "listArchivedTemplates":
+      return listArchivedTemplates()
     case "readTemplate":
       return readTemplate((request.args as WorkerMethodMap["readTemplate"]).templateId)
     case "readHistory":
@@ -809,6 +936,17 @@ async function dispatchRequest(request: WorkerRequest): Promise<unknown> {
       return readVersion((request.args as WorkerMethodMap["readVersion"]).versionId)
     case "saveTemplate":
       return saveTemplate(request.args as WorkerMethodMap["saveTemplate"])
+    case "renameTemplate":
+      return renameTemplate(
+        (request.args as WorkerMethodMap["renameTemplate"]).templateId,
+        (request.args as WorkerMethodMap["renameTemplate"]).name
+      )
+    case "archiveTemplate":
+      return archiveTemplate((request.args as WorkerMethodMap["archiveTemplate"]).templateId)
+    case "restoreTemplate":
+      return restoreTemplate((request.args as WorkerMethodMap["restoreTemplate"]).templateId)
+    case "purgeTemplate":
+      return purgeTemplate((request.args as WorkerMethodMap["purgeTemplate"]).templateId)
     case "saveAutosave":
       return saveAutosave(request.args as WorkerMethodMap["saveAutosave"])
     case "replaceWorkingCopy":

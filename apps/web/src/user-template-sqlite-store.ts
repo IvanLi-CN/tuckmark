@@ -3,10 +3,15 @@ import type { RuntimeStore } from "./runtime-store-contract.js"
 type WorkerMethodMap = {
   init: undefined
   listTemplates: undefined
+  listArchivedTemplates: undefined
   readTemplate: { templateId: string }
   readHistory: { templateId: string }
   readVersion: { versionId: string }
   saveTemplate: Parameters<RuntimeStore["saveTemplate"]>[0]
+  renameTemplate: { templateId: string; name: string }
+  archiveTemplate: { templateId: string }
+  restoreTemplate: { templateId: string }
+  purgeTemplate: { templateId: string }
   saveAutosave: Parameters<RuntimeStore["saveAutosave"]>[0]
   replaceWorkingCopy: Parameters<RuntimeStore["replaceWorkingCopy"]>[0]
   loadWorkingCopy: { source: Parameters<RuntimeStore["loadWorkingCopy"]>[0] }
@@ -129,6 +134,12 @@ class SqliteRuntimeStoreClient implements RuntimeStore {
     >
   }
 
+  async listArchivedTemplates() {
+    return (await this.request("listArchivedTemplates", undefined)) as Awaited<
+      ReturnType<RuntimeStore["listArchivedTemplates"]>
+    >
+  }
+
   async readTemplate(templateId: string) {
     return (await this.request("readTemplate", { templateId })) as Awaited<
       ReturnType<RuntimeStore["readTemplate"]>
@@ -151,6 +162,28 @@ class SqliteRuntimeStoreClient implements RuntimeStore {
     return (await this.request("saveTemplate", args)) as Awaited<
       ReturnType<RuntimeStore["saveTemplate"]>
     >
+  }
+
+  async renameTemplate(templateId: string, name: string) {
+    return (await this.request("renameTemplate", { templateId, name })) as Awaited<
+      ReturnType<RuntimeStore["renameTemplate"]>
+    >
+  }
+
+  async archiveTemplate(templateId: string) {
+    return (await this.request("archiveTemplate", { templateId })) as Awaited<
+      ReturnType<RuntimeStore["archiveTemplate"]>
+    >
+  }
+
+  async restoreTemplate(templateId: string) {
+    return (await this.request("restoreTemplate", { templateId })) as Awaited<
+      ReturnType<RuntimeStore["restoreTemplate"]>
+    >
+  }
+
+  async purgeTemplate(templateId: string) {
+    await this.request("purgeTemplate", { templateId })
   }
 
   async saveAutosave(args: Parameters<RuntimeStore["saveAutosave"]>[0]) {

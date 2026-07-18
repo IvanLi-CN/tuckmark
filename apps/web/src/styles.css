@@ -525,6 +525,32 @@
     @apply flex items-start justify-between gap-3 rounded-2xl border border-border/65 bg-background/70 px-4 py-3;
   }
 
+  .tm-archive-list-item {
+    @apply flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border/65 bg-background/72 px-4 py-3;
+  }
+
+  .tm-archive-list-item__main {
+    @apply min-w-0 flex-1;
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .tm-archive-list-item__title-row {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .tm-archive-list-item__title {
+    @apply min-w-0 flex-1 text-sm font-semibold text-foreground;
+  }
+
+  .tm-archive-list-item__meta {
+    @apply flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground;
+  }
+
+  .tm-archive-list-item__actions {
+    @apply flex flex-wrap justify-end gap-2;
+  }
+
   .tm-pane-grid {
     @apply grid min-h-[700px] gap-3;
     grid-template-columns: minmax(0, 1fr);
@@ -549,6 +575,16 @@
 
   .tm-pane-grid--template {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tm-pane-grid--template .tm-pane--left .tm-pane__body {
+    flex: none;
+    min-height: auto;
+  }
+
+  .tm-pane-grid--template .tm-pane--left {
+    display: block;
+    min-height: fit-content;
   }
 
   .tm-pane-grid--template .tm-pane--right {
@@ -629,8 +665,9 @@
     }
 
     .tm-pane-grid--template.tm-pane-grid--triple .tm-pane--left {
-      align-self: stretch;
+      align-self: start;
       height: auto;
+      display: block;
     }
   }
 
@@ -780,6 +817,10 @@
     overflow: visible;
   }
 
+  .tm-pane--left .tm-pane__body.tm-template-list--large {
+    padding-bottom: 2.75rem;
+  }
+
   .tm-pane--left .tm-pane__headline h2 {
     @apply text-[0.9rem] leading-5;
   }
@@ -882,6 +923,7 @@
   .tm-template-list--large {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-bottom: 2.75rem;
   }
 
   .tm-template-list--list {
@@ -906,7 +948,6 @@
   .tm-template-group__grid--large {
     gap: 0.625rem;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: 1fr;
   }
 
   .tm-template-group__grid--list {
@@ -915,13 +956,22 @@
   }
 
   .tm-template-card {
-    @apply flex min-w-0 w-full flex-col rounded-[18px] border border-border/70 bg-background/80 text-left transition-colors;
+    @apply flex min-w-0 w-full flex-col rounded-[18px] border border-border/70 bg-background/80 text-left;
     height: 100%;
-    overflow: hidden;
+    isolation: isolate;
+    position: relative;
+    overflow: visible;
+    transition:
+      border-color 180ms ease,
+      background-color 180ms ease,
+      box-shadow 220ms ease,
+      transform 220ms ease;
   }
 
   .tm-template-card--grid {
-    min-height: 10.75rem;
+    height: auto;
+    min-height: 10.5rem;
+    box-shadow: 0 4px 10px rgba(73, 46, 24, 0.03);
   }
 
   .tm-template-card:hover {
@@ -934,37 +984,74 @@
   }
 
   .tm-template-card--list {
-    min-height: 58px;
+    min-height: 92px;
+    overflow: hidden;
+  }
+
+  .tm-template-card--grid:hover,
+  .tm-template-card--grid:focus-within {
+    background: rgba(247, 239, 231, 0.96);
+    border-color: color-mix(in oklab, var(--border) 74%, white);
+    box-shadow: 0 12px 18px rgba(73, 46, 24, 0.1);
+    transform: translateY(-1px);
+    z-index: 3;
+  }
+
+  .tm-template-card--grid.tm-template-card--active:hover,
+  .tm-template-card--grid.tm-template-card--active:focus-within {
+    border-color: rgba(168, 115, 69, 0.48);
+    background: rgba(255, 247, 239, 0.98);
+  }
+
+  .tm-template-card__main {
+    @apply flex min-w-0 flex-1;
+    position: relative;
+    z-index: 1;
   }
 
   .tm-template-card__surface {
     @apply flex min-w-0 w-full flex-col items-stretch text-left;
     flex: 1 1 auto;
-    gap: 0.45rem;
-    padding: 0.65rem;
+    justify-content: flex-start;
+    gap: 0.55rem;
+    border: 0;
+    background: transparent;
+    padding: 0.78rem;
+    touch-action: manipulation;
+  }
+
+  .tm-template-card--list .tm-template-card__main {
+    align-items: stretch;
+    gap: 0.15rem;
+    padding: 0.45rem 0.55rem 0.45rem 0.5rem;
   }
 
   .tm-template-card--list .tm-template-card__surface {
-    @apply flex-row items-center gap-0.5;
-    padding: 0.35rem 0.6rem 0.35rem 0.5rem;
+    @apply flex-row items-center;
+    gap: 0.75rem;
+    padding: 0;
   }
 
   .tm-template-card__preview {
     width: 100px;
     height: 62px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex: 0 0 auto;
     overflow: hidden;
     border: 1px solid color-mix(in oklab, var(--border) 78%, white);
     border-radius: 12px;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 241, 234, 0.98));
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    padding: 0.24rem;
   }
 
   .tm-template-card__image {
+    display: block;
     width: 100%;
     height: 100%;
     object-fit: contain;
-    padding: 0.12rem;
   }
 
   .tm-template-card__placeholder {
@@ -975,7 +1062,7 @@
     @apply min-w-0 flex-1;
     display: flex;
     flex-direction: column;
-    gap: 0.05rem;
+    gap: 0.18rem;
   }
 
   .tm-template-card__name {
@@ -996,36 +1083,105 @@
   .tm-template-card__size {
     @apply mt-0 text-[0.78rem] text-muted-foreground;
     line-height: 1.05;
+    white-space: nowrap;
   }
 
   .tm-template-card--grid .tm-template-card__preview {
     width: 100%;
-    height: 76px;
-    border-radius: 12px;
+    height: 104px;
+    border-radius: 14px;
+    padding: 0.35rem 0.42rem;
+  }
+
+  .tm-template-card--grid .tm-template-card__surface {
+    gap: 0.38rem;
+    padding: 0.34rem 0.38rem 0.38rem;
   }
 
   .tm-template-card--grid .tm-template-card__meta {
     width: 100%;
+    padding-inline: 0.38rem;
   }
 
   .tm-template-card--grid .tm-template-card__name {
-    @apply text-[0.95rem] font-semibold;
-    line-height: 1.08;
+    @apply text-[0.98rem] font-semibold;
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: normal;
+    text-overflow: initial;
+    line-height: 1.14;
+    min-height: calc(2 * 1.14em);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   .tm-template-card--grid .tm-template-card__size {
-    @apply mt-0.5 text-[0.82rem];
+    @apply mt-0 text-[0.8rem];
+    min-height: 1.65rem;
+    display: flex;
+    align-items: center;
+    padding-right: 2rem;
   }
 
-  .tm-template-card__actions {
-    @apply flex min-w-0 justify-start;
-    margin-top: auto;
-    padding: 0 0.65rem 0.65rem 0.65rem;
+  .tm-template-card__menu-trigger-wrap {
+    @apply flex items-start justify-end;
+    padding-top: 0.1rem;
   }
 
-  .tm-template-card--list .tm-template-card__actions {
-    margin-top: 0;
-    padding: 0 0.6rem 0.5rem 0.5rem;
+  .tm-template-card__menu-trigger-wrap--grid {
+    position: absolute;
+    right: 0.72rem;
+    bottom: 0.62rem;
+    padding-top: 0;
+    z-index: 2;
+  }
+
+  .tm-template-card__menu-trigger {
+    border-radius: 12px;
+    color: color-mix(in oklab, var(--muted-foreground) 84%, var(--foreground));
+  }
+
+  .tm-template-card__menu-trigger:hover,
+  .tm-template-card__menu-trigger:focus-visible {
+    background: rgba(255, 243, 229, 0.9);
+    color: var(--foreground);
+  }
+
+  .tm-template-action-menu {
+    position: fixed;
+    z-index: 80;
+    display: grid;
+    gap: 0.35rem;
+    min-width: 13rem;
+    border: 1px solid color-mix(in oklab, var(--border) 80%, white);
+    border-radius: 14px;
+    background: rgba(255, 253, 250, 0.98);
+    box-shadow: 0 14px 28px rgba(73, 46, 24, 0.16);
+    padding: 0.45rem;
+    backdrop-filter: blur(10px);
+  }
+
+  .tm-template-action-menu__item {
+    @apply flex items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground outline-none transition-colors;
+    border: 0;
+    background: transparent;
+  }
+
+  .tm-template-action-menu__item:hover,
+  .tm-template-action-menu__item:focus-visible {
+    background: rgba(249, 239, 226, 0.88);
+  }
+
+  .tm-template-action-menu__item--archive {
+    color: color-mix(in oklab, var(--destructive) 84%, #5e2b24);
+  }
+
+  .tm-template-action-menu__item--archive:hover,
+  .tm-template-action-menu__item--archive:focus-visible {
+    background: color-mix(in oklab, var(--destructive) 10%, white);
+    color: color-mix(in oklab, var(--destructive) 92%, #4f231d);
   }
 
   .tm-template-list__section-empty {
@@ -1803,6 +1959,62 @@
     padding: 0.75rem;
   }
 
+  .tm-archive-toast {
+    position: fixed;
+    right: clamp(1rem, 2vw, 1.5rem);
+    bottom: calc(clamp(1rem, 2vw, 1.5rem) + 6rem);
+    z-index: 75;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+    width: min(440px, calc(100vw - 2rem));
+    overflow: hidden;
+    isolation: isolate;
+    border: 1px solid color-mix(in oklab, var(--border) 82%, white);
+    border-radius: 16px;
+    background: rgba(255, 251, 246, 0.94);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 8px 18px rgba(73, 46, 24, 0.12);
+    padding: 0.75rem;
+  }
+
+  .tm-archive-toast__progress {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--primary) 28%, white),
+      color-mix(in oklab, var(--primary) 12%, white)
+    );
+    transform-origin: left center;
+    animation: tm-archive-toast-progress 5s linear forwards;
+  }
+
+  .tm-archive-toast__icon {
+    @apply grid size-8 place-items-center rounded-full;
+    background: color-mix(in oklab, var(--primary) 16%, white);
+    color: var(--primary);
+  }
+
+  .tm-archive-toast__body {
+    min-width: 0;
+  }
+
+  .tm-archive-toast__title {
+    @apply text-sm font-bold text-foreground;
+  }
+
+  .tm-archive-toast__description {
+    @apply mt-0.5 truncate text-xs text-muted-foreground;
+  }
+
+  .tm-archive-toast__button {
+    @apply rounded-full;
+  }
+
   .tm-pwa-toast__icon {
     @apply grid size-8 place-items-center rounded-full;
     background: color-mix(in oklab, var(--primary) 12%, white);
@@ -1840,9 +2052,39 @@
       grid-template-columns: auto minmax(0, 1fr);
     }
 
+    .tm-archive-toast {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
     .tm-pwa-toast__button {
       grid-column: 1 / -1;
       width: 100%;
+    }
+
+    .tm-archive-toast__button {
+      grid-column: 1 / -1;
+      width: 100%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tm-template-card {
+      transition: none;
+    }
+
+    .tm-archive-toast__progress {
+      animation: none;
+      transform: scaleX(0.18);
+    }
+  }
+
+  @keyframes tm-archive-toast-progress {
+    from {
+      transform: scaleX(1);
+    }
+
+    to {
+      transform: scaleX(0);
     }
   }
 
