@@ -29,3 +29,19 @@ were observed to miss prompts unless a waiting worker was already visible.
 Browser-static Pages builds now publish same-origin runtime metadata through
 `version.json`, and the lifecycle controller treats either waiting-worker ready
 or version-probe mismatch as a valid non-blocking update prompt source.
+
+Installed-PWA startup was later refined again after cold launches were observed
+to expose a blank body until the routed workbench bundle mounted. The
+browser-static entry HTML now ships a branded launch shell so startup latency is
+communicated without changing the later non-blocking update lifecycle.
+
+That launch shell was later refined again with coordinated light and dark
+variants so installed PWAs no longer jump from a themed browser shell into an
+unstyled or mismatched cold-start surface before the React runtime takes over.
+
+The startup path was later tightened again around perceived performance and
+offline correctness. Browser-static now boots through a thin async runtime
+bootstrap, reports task-phase startup progress instead of fake 25/50/75/100
+download placeholders, precaches only shell-plus-route assets during service
+worker install, and silently warms the remaining feature assets after the
+current route shell is already usable.

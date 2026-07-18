@@ -1,5 +1,7 @@
 import type { Preview } from "@storybook/react-vite"
 
+import "../src/runtime-core-fonts.css"
+import "../src/runtime-fonts.css"
 import "../src/styles.css"
 
 const preview: Preview = {

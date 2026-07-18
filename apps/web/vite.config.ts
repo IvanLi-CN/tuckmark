@@ -47,9 +47,12 @@ type PwaManifest = {
 }
 
 type PwaAsset = {
+  tier: PwaAssetTier
   url: string
   revision: string
 }
+
+type PwaAssetTier = "shell" | "route" | "feature"
 
 function normalizeServiceWorkerPath(value: string): string {
   return value.replace(/\\/g, "/")
@@ -66,6 +69,16 @@ export function hashPwaString(value: string): string {
     hash = Math.imul(hash, 16777619) >>> 0
   }
   return hash.toString(16)
+}
+
+function resolvePwaAssetTier(fileName: string): PwaAssetTier {
+  if (fileName.includes("route-")) {
+    return "route"
+  }
+  if (fileName.includes("feature-")) {
+    return "feature"
+  }
+  return "shell"
 }
 
 function hashAssetSource(source: string | Uint8Array): string {
@@ -154,16 +167,24 @@ export function createServiceWorkerSource({
   return `const CACHE_VERSION = ${JSON.stringify(version)}
 const APP_CACHE = \`tuckmark-app-\${CACHE_VERSION}\`
 const PRECACHE_ASSETS = ${JSON.stringify(assets, null, 2)}
-const PRECACHE_URLS = PRECACHE_ASSETS.map((asset) => asset.url)
+const INSTALL_TIERS = ["shell", "route"]
 const NAVIGATION_FALLBACK = "./index.html"
 const VERSION_METADATA_URL = ${JSON.stringify(`./${versionMetadataFile}`)}
 
+function resolveAssetUrlsForTiers(tiers) {
+  return PRECACHE_ASSETS.filter((asset) => tiers.includes(asset.tier)).map((asset) => asset.url)
+}
+
+async function cacheAssetUrls(urls) {
+  if (urls.length === 0) {
+    return
+  }
+  const cache = await caches.open(APP_CACHE)
+  await cache.addAll(urls)
+}
+
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches
-      .open(APP_CACHE)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
-  )
+  event.waitUntil(cacheAssetUrls(resolveAssetUrlsForTiers(INSTALL_TIERS)))
 })
 
 self.addEventListener("activate", (event) => {
@@ -184,6 +205,23 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting()
+    return
+  }
+  if (event.data?.type === "WARM_ASSETS") {
+    const tiers = Array.isArray(event.data.tiers) ? event.data.tiers : ["feature"]
+    const responsePort = event.ports?.[0]
+    event.waitUntil(
+      cacheAssetUrls(resolveAssetUrlsForTiers(tiers))
+        .then(() => {
+          responsePort?.postMessage({ ok: true })
+        })
+        .catch((error) => {
+          responsePort?.postMessage({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        })
+    )
   }
 })
 
@@ -248,22 +286,27 @@ function tuckmarkPwaPlugin(
       const versionMetadataSource = createRuntimeBuildMetadataSource(runtimeBuildMetadata)
       const assets: PwaAsset[] = [
         {
+          tier: "shell",
           url: "./",
           revision: "app-shell",
         },
         {
+          tier: "shell",
           url: "./404.html",
           revision: "spa-fallback",
         },
         {
+          tier: "shell",
           url: "./index.html",
           revision: "app-shell",
         },
         {
+          tier: "shell",
           url: "./pwa/tuckmark-icon-192.png",
           revision: "pwa-icon-192",
         },
         {
+          tier: "shell",
           url: "./pwa/tuckmark-icon-512.png",
           revision: "pwa-icon-512",
         },
@@ -277,12 +320,14 @@ function tuckmarkPwaPlugin(
           continue
         }
         assets.push({
+          tier: resolvePwaAssetTier(fileName),
           url: toServiceWorkerUrl(fileName),
           revision: item.type === "chunk" ? hashPwaString(item.code) : hashAssetSource(item.source),
         })
       }
 
       assets.push({
+        tier: "shell",
         url: `./${PWA_MANIFEST_FILE}`,
         revision: manifestSource,
       })
@@ -385,6 +430,53 @@ export default defineConfig(({ command, mode }) => {
       ),
     },
     plugins: [react(), tailwindcss(), tuckmarkPwaPlugin(surface, runtimeBuildMetadata)],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            const normalizedId = normalizeServiceWorkerPath(id)
+            if (normalizedId.endsWith("/src/workbench-templates-route.tsx")) {
+              return "route-templates"
+            }
+            if (
+              normalizedId.endsWith("/src/workbench-canvas-route.tsx") ||
+              normalizedId.endsWith("/src/canvas-page.tsx")
+            ) {
+              return "route-canvas"
+            }
+            if (normalizedId.endsWith("/src/workbench-system-route.tsx")) {
+              return "route-system"
+            }
+            if (
+              normalizedId.includes("/@fontsource/") ||
+              normalizedId.includes("/@fontsource-variable/")
+            ) {
+              if (
+                normalizedId.includes("@fontsource-variable/inter/") ||
+                normalizedId.includes("@fontsource-variable/noto-sans-sc/") ||
+                normalizedId.includes("@fontsource/inter-tight/")
+              ) {
+                return
+              }
+              return "feature-fonts"
+            }
+            if (
+              normalizedId.endsWith("/src/runtime-fonts.css") ||
+              normalizedId.endsWith("/src/browser-print-payload.ts") ||
+              normalizedId.endsWith("/src/browser-print-wasm.ts") ||
+              normalizedId.endsWith("/src/user-template-sqlite-worker.ts") ||
+              normalizedId.includes("/@sqlite.org/sqlite-wasm/") ||
+              normalizedId.includes("/bwip-js/") ||
+              normalizedId.includes("/jsbarcode/") ||
+              normalizedId.includes("/qrcode/")
+            ) {
+              return "feature-runtime"
+            }
+            return
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),

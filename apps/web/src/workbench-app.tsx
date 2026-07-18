@@ -23,8 +23,8 @@ import {
   Trash2,
   Upload,
   Wifi,
-} from "lucide-react"
-import React from "react"
+} from "lucide-react";
+import React from "react";
 import {
   Circle as KonvaCircle,
   Line as KonvaLine,
@@ -32,7 +32,7 @@ import {
   Text as KonvaText,
   Layer,
   Stage,
-} from "react-konva"
+} from "react-konva";
 import {
   BrowserRouter,
   MemoryRouter,
@@ -42,50 +42,70 @@ import {
   Routes,
   useLocation,
   useNavigate,
-} from "react-router-dom"
+} from "react-router-dom";
 import {
   buildSvg,
   DEFAULT_TEXT_FONT_FAMILY,
   getTemplateById,
   parseUserTemplatePackage,
-} from "../../../packages/core/src/web.js"
+} from "../../../packages/core/src/web.js";
 
-import type { ApiClient } from "./api-client.js"
-import type { BrowserPrintSource } from "./browser-print-payload.js"
+import type { ApiClient } from "./api-client.js";
+import { AppLaunchSplash } from "./app-launch-splash.js";
+import type { BrowserPrintSource } from "./browser-print-payload.js";
 import {
   buildTemplateFieldsFromDraft,
   type CanvasStoryScenario,
   compileDraftToFilledCanvasDefinition,
   createDraftFromUserTemplatePackage,
-} from "./canvas-editor-model.js"
-import { CanvasWorkspace } from "./canvas-page.js"
-import { ProductMark } from "./components/product-mark.js"
-import { ActionButton } from "./components/ui/action-button.js"
-import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
-import { Badge } from "./components/ui/badge.js"
-import { Button } from "./components/ui/button.js"
-import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card.js"
-import { Input } from "./components/ui/input.js"
-import { Label } from "./components/ui/label.js"
-import { SegmentedTabs } from "./components/ui/segmented-tabs.js"
+} from "./canvas-editor-model.js";
+import { CanvasWorkspace } from "./canvas-page.js";
+import { ProductMark } from "./components/product-mark.js";
+import { ActionButton } from "./components/ui/action-button.js";
+import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js";
+import { Badge } from "./components/ui/badge.js";
+import { Button } from "./components/ui/button.js";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "./components/ui/card.js";
+import { Input } from "./components/ui/input.js";
+import { Label } from "./components/ui/label.js";
+import { SegmentedTabs } from "./components/ui/segmented-tabs.js";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "./components/ui/select.js"
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./components/ui/sheet.js"
-import { Textarea } from "./components/ui/textarea.js"
-import { DataDirectoryNudgeToast } from "./data-directory-nudge-toast.js"
-import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
-import { FooterBuildMeta } from "./footer-build-meta.js"
-import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
-import { canvasDotsToMillimeters } from "./lib/canvas-units.js"
-import { cn } from "./lib/utils.js"
-import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
-import { applyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
-import { SystemDataStorageCard } from "./system-data-storage-card.js"
+} from "./components/ui/select.js";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "./components/ui/sheet.js";
+import { Textarea } from "./components/ui/textarea.js";
+import { DataDirectoryNudgeToast } from "./data-directory-nudge-toast.js";
+import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js";
+import { FooterBuildMeta } from "./footer-build-meta.js";
+import { formatCanvasDimension } from "./lib/canvas-dimensions.js";
+import { canvasDotsToMillimeters } from "./lib/canvas-units.js";
+import { cn } from "./lib/utils.js";
+import { usePwaAssetWarmup } from "./pwa-asset-warmup.js";
+import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js";
+import {
+  applyPwaUpdate,
+  PwaUpdateToast,
+  usePwaUpdate,
+} from "./pwa-update-toast.js";
+import {
+  buildStartupSplashState,
+  type WorkbenchHydrationState,
+} from "./startup-contract.js";
+import { SystemDataStorageCard } from "./system-data-storage-card.js";
 import type {
   AppContext,
   CanvasDocumentPreset,
@@ -95,69 +115,100 @@ import type {
   Template,
   TemplateField,
   UserTemplateSummary,
-} from "./types.js"
+} from "./types.js";
 import {
   loadWorkingCopy,
   readUserTemplateHistory,
   saveUserTemplate,
-} from "./user-template-store.js"
+} from "./user-template-store.js";
 import {
   createInitialTemplateRows,
   useWorkbenchController,
   type WorkbenchDeviceDrawerFeedback,
   type WorkbenchStoryStateOverrides,
-} from "./workbench-controller.js"
+} from "./workbench-controller.js";
+import {
+  LazyCanvasRoute,
+  LazySystemRoute,
+  LazyTemplatesRoute,
+  normalizeWorkbenchRoutePath,
+} from "./workbench-route-registry.js";
 
 type AppProps = {
-  client?: ApiClient
-  context?: AppContext
-  canvasScenario?: CanvasStoryScenario
-  pwaUpdateSnapshot?: PwaUpdateSnapshot
+  client?: ApiClient;
+  context?: AppContext;
+  bootstrapState?: {
+    currentRouteChunkReady?: boolean;
+  };
+  canvasScenario?: CanvasStoryScenario;
+  pwaUpdateSnapshot?: PwaUpdateSnapshot;
+  startupShell?: "auto" | "disabled";
+  theme?: "auto" | "light" | "dark";
+};
+
+function ThemeScope({
+  theme = "auto",
+  children,
+}: {
+  theme?: "auto" | "light" | "dark";
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "tm-theme-scope",
+        theme === "light" && "tm-theme-scope--light",
+        theme === "dark" && "tm-theme-scope--dark dark",
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
 type TemplateRow = {
-  id: string
-  values: Record<string, string>
-}
+  id: string;
+  values: Record<string, string>;
+};
 
 type TemplateCardEntry =
   | {
-      kind: "system"
-      id: string
-      template: Template
+      kind: "system";
+      id: string;
+      template: Template;
     }
   | {
-      kind: "user"
-      id: string
-      template: UserTemplateSummary
-      draft: CanvasDraftDocument | null
-    }
+      kind: "user";
+      id: string;
+      template: UserTemplateSummary;
+      draft: CanvasDraftDocument | null;
+    };
 
-type TemplateFocus = "left-center" | "center-right"
-type CanvasFocus = "left-center" | "center-right"
-type TemplateListMode = "large" | "list"
-type TemplateNarrowStage = "list" | "table"
+type TemplateFocus = "left-center" | "center-right";
+type CanvasFocus = "left-center" | "center-right";
+type TemplateListMode = "large" | "list";
+type TemplateNarrowStage = "list" | "table";
 
 type CanvasDraft = {
-  id: string
-  name: string
-  width: number
-  height: number
-  elements: CanvasElement[]
-}
+  id: string;
+  name: string;
+  width: number;
+  height: number;
+  elements: CanvasElement[];
+};
 
 type RouteLink = {
-  to: string
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-}
+  to: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
 
 const NAV_LINKS: RouteLink[] = [
   { to: "/", label: "主页", icon: Package2 },
   { to: "/templates", label: "模板", icon: LayoutTemplate },
   { to: "/canvas", label: "画布", icon: PencilRuler },
   { to: "/system", label: "系统", icon: MonitorCog },
-]
+];
 
 function GitHubMark({ className }: { className?: string }) {
   return (
@@ -170,7 +221,7 @@ function GitHubMark({ className }: { className?: string }) {
     >
       <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49v-1.73c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.1-1.49-1.1-1.49-.9-.63.07-.62.07-.62 1 .07 1.52 1.05 1.52 1.05.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.55-1.14-4.55-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.28 9.28 0 0 1 12 6.99c.85 0 1.7.12 2.5.34 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.8-4.57 5.06.36.32.68.94.68 1.9v2.79c0 .27.18.59.69.49A10.16 10.16 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z" />
     </svg>
-  )
+  );
 }
 
 const CANVAS_PRESETS: CanvasDocumentPreset[] = [
@@ -195,7 +246,7 @@ const CANVAS_PRESETS: CanvasDocumentPreset[] = [
     height: 128,
     description: "适合短说明和操作提示。",
   },
-]
+];
 
 const CANVAS_TOOL_LABELS: Record<CanvasElement["kind"], string> = {
   text: "文本",
@@ -206,82 +257,88 @@ const CANVAS_TOOL_LABELS: Record<CanvasElement["kind"], string> = {
   barcode: "Code128",
   qr: "QR",
   datamatrix: "数据矩阵码",
-}
+};
 
-const WIDE_TRIPLE_THRESHOLD = 1280
-const SUPPORTED_MIN_WIDTH = 1024
-const TEMPLATE_STACKED_PREVIEW_THRESHOLD = 960
-const TEMPLATE_INDEX_COLUMN_WIDTH = 44
-const TEMPLATE_PREVIEW_DEBOUNCE_MS = 320
+export const WIDE_TRIPLE_THRESHOLD = 1280;
+const SUPPORTED_MIN_WIDTH = 1024;
+export const TEMPLATE_STACKED_PREVIEW_THRESHOLD = 960;
+const TEMPLATE_INDEX_COLUMN_WIDTH = 44;
+export const TEMPLATE_PREVIEW_DEBOUNCE_MS = 320;
 
-function useMediaQuery(query: string): boolean {
+export function useMediaQuery(query: string): boolean {
   const getValue = React.useCallback(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return false
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return false;
     }
-    return window.matchMedia(query).matches
-  }, [query])
+    return window.matchMedia(query).matches;
+  }, [query]);
 
-  const [matches, setMatches] = React.useState(getValue)
+  const [matches, setMatches] = React.useState(getValue);
 
   React.useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return;
     }
 
-    const media = window.matchMedia(query)
-    const update = () => setMatches(media.matches)
-    update()
-    media.addEventListener("change", update)
-    return () => media.removeEventListener("change", update)
-  }, [query])
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [query]);
 
-  return matches
+  return matches;
 }
 
-function useElementClientWidth<T extends HTMLElement>(element: T | null) {
-  const [width, setWidth] = React.useState<number | null>(null)
+export function useElementClientWidth<T extends HTMLElement>(element: T | null) {
+  const [width, setWidth] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     if (!element) {
-      return
+      return;
     }
 
-    const update = () => setWidth(Math.round(element.clientWidth))
-    update()
+    const update = () => setWidth(Math.round(element.clientWidth));
+    update();
 
     if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", update)
-      return () => window.removeEventListener("resize", update)
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
     }
 
-    const observer = new ResizeObserver(() => update())
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [element])
+    const observer = new ResizeObserver(() => update());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element]);
 
-  return width
+  return width;
 }
 
 function formatRelativeTime(value: string): string {
-  const date = new Date(value)
+  const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return value
+    return value;
   }
 
-  const deltaMinutes = Math.round((Date.now() - date.getTime()) / 60_000)
+  const deltaMinutes = Math.round((Date.now() - date.getTime()) / 60_000);
   if (deltaMinutes < 1) {
-    return "刚刚"
+    return "刚刚";
   }
   if (deltaMinutes < 60) {
-    return `${deltaMinutes} 分钟前`
+    return `${deltaMinutes} 分钟前`;
   }
-  const deltaHours = Math.round(deltaMinutes / 60)
+  const deltaHours = Math.round(deltaMinutes / 60);
   if (deltaHours < 24) {
-    return `${deltaHours} 小时前`
+    return `${deltaHours} 小时前`;
   }
-  const deltaDays = Math.round(deltaHours / 24)
-  return `${deltaDays} 天前`
+  const deltaDays = Math.round(deltaHours / 24);
+  return `${deltaDays} 天前`;
 }
 
 function _formatTemplateSize(template: Template): string {
@@ -289,39 +346,47 @@ function _formatTemplateSize(template: Template): string {
     return formatCanvasDimension({
       width: canvasDotsToMillimeters(template.width),
       height: canvasDotsToMillimeters(template.height),
-    })
+    });
   }
-  return "尺寸待定"
+  return "尺寸待定";
 }
 
 function formatTemplateCardSize(entry: TemplateCardEntry): string {
   if (!entry.template.width || !entry.template.height) {
-    return "尺寸待定"
+    return "尺寸待定";
   }
   if (entry.kind === "user") {
-    return formatCanvasDimension({ width: entry.template.width, height: entry.template.height })
+    return formatCanvasDimension({
+      width: entry.template.width,
+      height: entry.template.height,
+    });
   }
   return formatCanvasDimension({
     width: canvasDotsToMillimeters(entry.template.width),
     height: canvasDotsToMillimeters(entry.template.height),
-  })
+  });
 }
 
 function buildTemplatePreviewSvg(template: Template): string | null {
   try {
-    const preset = getTemplateById(template.id)
+    const preset = getTemplateById(template.id);
     const input = Object.fromEntries(
-      preset.fields.map((field) => [field.key, field.defaultValue ?? field.label])
-    )
-    return buildSvg(preset.width, preset.height, preset.elements, input)
+      preset.fields.map((field) => [
+        field.key,
+        field.defaultValue ?? field.label,
+      ]),
+    );
+    return buildSvg(preset.width, preset.height, preset.elements, input);
   } catch {
-    return null
+    return null;
   }
 }
 
-function buildUserTemplatePreviewSvg(draft: CanvasDraftDocument | null): string | null {
+function buildUserTemplatePreviewSvg(
+  draft: CanvasDraftDocument | null,
+): string | null {
   if (!draft) {
-    return null
+    return null;
   }
 
   try {
@@ -332,17 +397,19 @@ function buildUserTemplatePreviewSvg(draft: CanvasDraftDocument | null): string 
       width: draft.width,
       height: draft.height,
       fields: buildTemplateFieldsFromDraft(draft),
-    })
-    const compiled = compileDraftToFilledCanvasDefinition(draft, input)
-    return buildSvg(compiled.width, compiled.height, compiled.elements, {})
+    });
+    const compiled = compileDraftToFilledCanvasDefinition(draft, input);
+    return buildSvg(compiled.width, compiled.height, compiled.elements, {});
   } catch {
-    return null
+    return null;
   }
 }
 
-function toTemplateFieldList(template: Template | UserTemplateSummary): TemplateField[] {
+export function toTemplateFieldList(
+  template: Template | UserTemplateSummary,
+): TemplateField[] {
   if ("required" in (template.fields[0] ?? {})) {
-    return template.fields as TemplateField[]
+    return template.fields as TemplateField[];
   }
   return template.fields.map((field) => ({
     key: field.key,
@@ -351,24 +418,24 @@ function toTemplateFieldList(template: Template | UserTemplateSummary): Template
     multiline: field.multiline,
     defaultValue: field.defaultValue,
     sampleValue: field.sampleValue,
-  }))
+  }));
 }
 
-function toDataUrl(svg: string): string {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+export function toDataUrl(svg: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 function createPreviewRenderOptions(renderOptions: RenderOptions) {
   return {
     ...renderOptions,
     previewScale: 4,
-  }
+  };
 }
 
-function createTemplatePrintSource(
+export function createTemplatePrintSource(
   template: Template,
   row: TemplateRow,
-  renderOptions: RenderOptions
+  renderOptions: RenderOptions,
 ): BrowserPrintSource {
   return {
     kind: "template",
@@ -376,14 +443,14 @@ function createTemplatePrintSource(
     rowId: row.id,
     input: row.values,
     renderOptions: createPreviewRenderOptions(renderOptions),
-  }
+  };
 }
 
-function createUserTemplatePrintSource(
+export function createUserTemplatePrintSource(
   template: UserTemplateSummary,
   draft: CanvasDraftDocument,
   row: TemplateRow,
-  renderOptions: RenderOptions
+  renderOptions: RenderOptions,
 ): BrowserPrintSource {
   return {
     kind: "canvas",
@@ -394,12 +461,15 @@ function createUserTemplatePrintSource(
       name: template.name,
       description: template.description,
     },
-  }
+  };
 }
 
-function createCanvasElement(kind: CanvasElement["kind"], index: number): CanvasElement {
-  const seedX = 28 + (index % 3) * 18
-  const seedY = 24 + (index % 4) * 16
+function createCanvasElement(
+  kind: CanvasElement["kind"],
+  index: number,
+): CanvasElement {
+  const seedX = 28 + (index % 3) * 18;
+  const seedY = 24 + (index % 4) * 16;
 
   switch (kind) {
     case "text":
@@ -425,7 +495,7 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         verticalText: false,
         value: "Editable text",
         maxLines: 2,
-      }
+      };
     case "rect":
       return {
         id: `rect-${crypto.randomUUID()}`,
@@ -438,7 +508,7 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         fill: "#ffffff",
         stroke: "#111111",
         radius: 14,
-      }
+      };
     case "circle":
       return {
         id: `circle-${crypto.randomUUID()}`,
@@ -449,7 +519,7 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         strokeWidth: 2,
         fill: "none",
         stroke: "#111111",
-      }
+      };
     case "triangle":
       return {
         id: `triangle-${crypto.randomUUID()}`,
@@ -462,7 +532,7 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         fill: "none",
         stroke: "#111111",
         rotation: 0,
-      }
+      };
     case "line":
       return {
         id: `line-${crypto.randomUUID()}`,
@@ -473,7 +543,7 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         y2: seedY + 10,
         strokeWidth: 3,
         stroke: "#111111",
-      }
+      };
     case "barcode":
       return {
         id: `barcode-${crypto.randomUUID()}`,
@@ -485,7 +555,7 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         value: "TM-0001",
         format: "CODE128",
         showValue: false,
-      }
+      };
     case "qr":
       return {
         id: `qr-${crypto.randomUUID()}`,
@@ -495,7 +565,7 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         size: 72,
         value: "https://tuckmark.local/item/TM-0001",
         errorCorrectionLevel: "M",
-      }
+      };
     case "datamatrix":
       return {
         id: `datamatrix-${crypto.randomUUID()}`,
@@ -505,7 +575,7 @@ function createCanvasElement(kind: CanvasElement["kind"], index: number): Canvas
         size: 72,
         value: "TM-0001",
         rotation: 0,
-      }
+      };
   }
 }
 
@@ -522,119 +592,145 @@ function createDraftFromPreset(preset: CanvasDocumentPreset): CanvasDraft {
       createCanvasElement("barcode", 3),
       createCanvasElement("qr", 4),
     ],
-  }
+  };
 }
 
 function toSingleLineFieldValue(value: string) {
   return value
     .replace(/\s*\n+\s*/g, " ")
     .replace(/\s{2,}/g, " ")
-    .trim()
+    .trim();
 }
 
-let templateColumnMeasureContext: CanvasRenderingContext2D | null | undefined
+let templateColumnMeasureContext: CanvasRenderingContext2D | null | undefined;
 
 function canMeasureTemplateColumnsWithCanvas() {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
-    return false
+    return false;
   }
-  return !/jsdom/i.test(navigator.userAgent)
+  return !/jsdom/i.test(navigator.userAgent);
 }
 
-function getTemplateColumnWidthRange(field: Template["fields"][number]) {
+export function getTemplateColumnWidthRange(field: Template["fields"][number]) {
   return {
     minWidth: 44,
     maxWidth: field.multiline ? 240 : 180,
-  }
+  };
 }
 
 function measureTemplateColumnTextWidth(value: string) {
-  const text = value || "—"
-  if (typeof document === "undefined" || !canMeasureTemplateColumnsWithCanvas()) {
-    return Math.max(Array.from(text).length, 1) * 7.25
+  const text = value || "—";
+  if (
+    typeof document === "undefined" ||
+    !canMeasureTemplateColumnsWithCanvas()
+  ) {
+    return Math.max(Array.from(text).length, 1) * 7.25;
   }
 
-  templateColumnMeasureContext ??= document.createElement("canvas").getContext("2d")
+  templateColumnMeasureContext ??= document
+    .createElement("canvas")
+    .getContext("2d");
   if (!templateColumnMeasureContext) {
-    return Math.max(Array.from(text).length, 1) * 7.25
+    return Math.max(Array.from(text).length, 1) * 7.25;
   }
 
   templateColumnMeasureContext.font =
-    '500 12px "DM Sans", "Noto Sans SC", "PingFang SC", sans-serif'
-  return templateColumnMeasureContext.measureText(text).width
+    '500 12px "DM Sans", "Noto Sans SC", "PingFang SC", sans-serif';
+  return templateColumnMeasureContext.measureText(text).width;
 }
 
-function getTemplateColumnWidth(field: Template["fields"][number], rows: TemplateRow[]) {
-  const { minWidth, maxWidth } = getTemplateColumnWidthRange(field)
+function getTemplateColumnWidth(
+  field: Template["fields"][number],
+  rows: TemplateRow[],
+) {
+  const { minWidth, maxWidth } = getTemplateColumnWidthRange(field);
   const contentWidth = Math.max(
     measureTemplateColumnTextWidth(field.label),
     ...rows.map((row) =>
-      measureTemplateColumnTextWidth(toSingleLineFieldValue(row.values[field.key] ?? ""))
-    )
-  )
+      measureTemplateColumnTextWidth(
+        toSingleLineFieldValue(row.values[field.key] ?? ""),
+      ),
+    ),
+  );
 
-  return Math.min(Math.max(Math.ceil(contentWidth), minWidth), maxWidth)
+  return Math.min(Math.max(Math.ceil(contentWidth), minWidth), maxWidth);
 }
 
-function resolveTemplateColumnLayout(
+export function resolveTemplateColumnLayout(
   fields: Template["fields"],
   rows: TemplateRow[],
-  availableTableWidth: number | null
+  availableTableWidth: number | null,
 ) {
-  const baseWidths = fields.map((field) => getTemplateColumnWidth(field, rows))
-  const ranges = fields.map((field) => getTemplateColumnWidthRange(field))
-  const maxWidths = ranges.map((range) => range.maxWidth)
-  const resolvedWidths = [...baseWidths]
+  const baseWidths = fields.map((field) => getTemplateColumnWidth(field, rows));
+  const ranges = fields.map((field) => getTemplateColumnWidthRange(field));
+  const maxWidths = ranges.map((range) => range.maxWidth);
+  const resolvedWidths = [...baseWidths];
 
   if (availableTableWidth !== null) {
-    const targetContentWidth = Math.max(availableTableWidth - TEMPLATE_INDEX_COLUMN_WIDTH, 0)
-    let remainingWidth = targetContentWidth - resolvedWidths.reduce((sum, width) => sum + width, 0)
+    const targetContentWidth = Math.max(
+      availableTableWidth - TEMPLATE_INDEX_COLUMN_WIDTH,
+      0,
+    );
+    let remainingWidth =
+      targetContentWidth -
+      resolvedWidths.reduce((sum, width) => sum + width, 0);
     let expandable = resolvedWidths
-      .map((width, index) => ({ width, index, capacity: (maxWidths[index] ?? width) - width }))
-      .filter((item) => item.capacity > 0.5)
+      .map((width, index) => ({
+        width,
+        index,
+        capacity: (maxWidths[index] ?? width) - width,
+      }))
+      .filter((item) => item.capacity > 0.5);
 
     while (remainingWidth > 0.5 && expandable.length > 0) {
-      const share = remainingWidth / expandable.length
-      let consumed = 0
+      const share = remainingWidth / expandable.length;
+      let consumed = 0;
 
       for (const item of expandable) {
-        const currentWidth = resolvedWidths[item.index] ?? item.width
-        const maxWidth = maxWidths[item.index] ?? currentWidth
-        const nextWidth = Math.min(currentWidth + share, maxWidth)
-        const delta = nextWidth - currentWidth
+        const currentWidth = resolvedWidths[item.index] ?? item.width;
+        const maxWidth = maxWidths[item.index] ?? currentWidth;
+        const nextWidth = Math.min(currentWidth + share, maxWidth);
+        const delta = nextWidth - currentWidth;
         if (delta <= 0) {
-          continue
+          continue;
         }
-        resolvedWidths[item.index] = nextWidth
-        consumed += delta
+        resolvedWidths[item.index] = nextWidth;
+        consumed += delta;
       }
 
       if (consumed <= 0.5) {
-        break
+        break;
       }
 
-      remainingWidth -= consumed
+      remainingWidth -= consumed;
       expandable = resolvedWidths
-        .map((width, index) => ({ width, index, capacity: (maxWidths[index] ?? width) - width }))
-        .filter((item) => item.capacity > 0.5)
+        .map((width, index) => ({
+          width,
+          index,
+          capacity: (maxWidths[index] ?? width) - width,
+        }))
+        .filter((item) => item.capacity > 0.5);
     }
   }
 
-  const roundedWidths = resolvedWidths.map((width) => Math.round(width))
-  const contentWidth = roundedWidths.reduce((sum, width) => sum + width, 0)
-  const tableWidth = Math.max(availableTableWidth ?? 0, TEMPLATE_INDEX_COLUMN_WIDTH + contentWidth)
+  const roundedWidths = resolvedWidths.map((width) => Math.round(width));
+  const contentWidth = roundedWidths.reduce((sum, width) => sum + width, 0);
+  const tableWidth = Math.max(
+    availableTableWidth ?? 0,
+    TEMPLATE_INDEX_COLUMN_WIDTH + contentWidth,
+  );
 
   return {
     columnWidths: Object.fromEntries(
-      fields.map((field, index) => [field.key, roundedWidths[index] ?? 0])
+      fields.map((field, index) => [field.key, roundedWidths[index] ?? 0]),
     ),
     tableWidth,
-  }
+  };
 }
 
 function toCanvasPrintSource(
   canvas: CanvasDraft,
-  renderOptions: RenderOptions
+  renderOptions: RenderOptions,
 ): BrowserPrintSource {
   return {
     kind: "canvas",
@@ -670,7 +766,7 @@ function toCanvasPrintSource(
               value: element.value,
               maxLines: element.maxLines,
               rotation: element.rotation ?? 0,
-            }
+            };
           case "rect":
             return {
               kind: "rect" as const,
@@ -683,7 +779,7 @@ function toCanvasPrintSource(
               stroke: element.stroke,
               radius: element.radius,
               rotation: element.rotation ?? 0,
-            }
+            };
           case "circle":
             return {
               kind: "circle" as const,
@@ -693,7 +789,7 @@ function toCanvasPrintSource(
               strokeWidth: element.strokeWidth,
               fill: element.fill,
               stroke: element.stroke,
-            }
+            };
           case "triangle":
             return {
               kind: "triangle" as const,
@@ -705,7 +801,7 @@ function toCanvasPrintSource(
               fill: element.fill,
               stroke: element.stroke,
               rotation: element.rotation ?? 0,
-            }
+            };
           case "line":
             return {
               kind: "line" as const,
@@ -715,7 +811,7 @@ function toCanvasPrintSource(
               y2: element.y2,
               strokeWidth: element.strokeWidth,
               stroke: element.stroke,
-            }
+            };
           case "barcode":
             return {
               kind: "barcode" as const,
@@ -728,7 +824,7 @@ function toCanvasPrintSource(
               format: element.format,
               showValue: element.showValue,
               rotation: element.rotation ?? 0,
-            }
+            };
           case "qr":
             return {
               kind: "qr" as const,
@@ -739,7 +835,7 @@ function toCanvasPrintSource(
               value: element.value,
               errorCorrectionLevel: element.errorCorrectionLevel,
               rotation: element.rotation ?? 0,
-            }
+            };
           case "datamatrix":
             return {
               kind: "datamatrix" as const,
@@ -749,20 +845,21 @@ function toCanvasPrintSource(
               size: element.size,
               value: element.value,
               rotation: element.rotation ?? 0,
-            }
+            };
           default:
-            return element satisfies never
+            return element satisfies never;
         }
       }),
     },
     renderOptions: createPreviewRenderOptions(renderOptions),
-  }
+  };
 }
 
-function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>) {
-  const [userTemplatePreviewDrafts, setUserTemplatePreviewDrafts] = React.useState<
-    Record<string, CanvasDraftDocument | null>
-  >({})
+function useWorkbenchPages(
+  controller: ReturnType<typeof useWorkbenchController>,
+) {
+  const [userTemplatePreviewDrafts, setUserTemplatePreviewDrafts] =
+    React.useState<Record<string, CanvasDraftDocument | null>>({});
   const templateEntries = React.useMemo<TemplateCardEntry[]>(
     () => [
       ...controller.templates.map((template) => ({
@@ -777,45 +874,55 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
         draft: userTemplatePreviewDrafts[template.id] ?? null,
       })),
     ],
-    [controller.templates, controller.userTemplates, userTemplatePreviewDrafts]
-  )
-  const [templateEntryId, setTemplateEntryId] = React.useState(() => templateEntries[0]?.id ?? "")
+    [controller.templates, controller.userTemplates, userTemplatePreviewDrafts],
+  );
+  const [templateEntryId, setTemplateEntryId] = React.useState(
+    () => templateEntries[0]?.id ?? "",
+  );
   const activeTemplateEntry = React.useMemo(
     () =>
-      templateEntries.find((entry) => entry.id === templateEntryId) ?? templateEntries[0] ?? null,
-    [templateEntries, templateEntryId]
-  )
-  const activeTemplate = activeTemplateEntry?.template ?? null
+      templateEntries.find((entry) => entry.id === templateEntryId) ??
+      templateEntries[0] ??
+      null,
+    [templateEntries, templateEntryId],
+  );
+  const activeTemplate = activeTemplateEntry?.template ?? null;
 
   const [templateRows, setTemplateRows] = React.useState<TemplateRow[]>(() =>
-    createInitialTemplateRows(controller.templates[0], 3)
-  )
+    createInitialTemplateRows(controller.templates[0], 3),
+  );
   const [activeUserTemplateDraft, setActiveUserTemplateDraft] =
-    React.useState<CanvasDraftDocument | null>(null)
-  const [activeUserTemplateDraftLoading, setActiveUserTemplateDraftLoading] = React.useState(false)
-  const [selectedRowId, setSelectedRowId] = React.useState<string>("")
+    React.useState<CanvasDraftDocument | null>(null);
+  const [activeUserTemplateDraftLoading, setActiveUserTemplateDraftLoading] =
+    React.useState(false);
+  const [selectedRowId, setSelectedRowId] = React.useState<string>("");
   const [editingTemplateCell, setEditingTemplateCell] = React.useState<{
-    rowId: string
-    fieldKey: string
-  } | null>(null)
-  const [templateFocus, setTemplateFocus] = React.useState<TemplateFocus>("left-center")
-  const [templateNarrowStage, setTemplateNarrowStage] = React.useState<TemplateNarrowStage>("list")
+    rowId: string;
+    fieldKey: string;
+  } | null>(null);
+  const [templateFocus, setTemplateFocus] =
+    React.useState<TemplateFocus>("left-center");
+  const [templateNarrowStage, setTemplateNarrowStage] =
+    React.useState<TemplateNarrowStage>("list");
 
   React.useEffect(() => {
     if (!activeTemplateEntry || !activeTemplate) {
-      setTemplateRows([])
-      setSelectedRowId("")
-      return
+      setTemplateRows([]);
+      setSelectedRowId("");
+      return;
     }
 
-    const templateFields = toTemplateFieldList(activeTemplate)
+    const templateFields = toTemplateFieldList(activeTemplate);
     setTemplateRows((currentRows) => {
-      if (currentRows.length > 0 && currentRows[0]?.id.startsWith(activeTemplate.id)) {
+      if (
+        currentRows.length > 0 &&
+        currentRows[0]?.id.startsWith(activeTemplate.id)
+      ) {
         const schemaMatchesCurrentRows =
           Object.keys(currentRows[0]?.values ?? {}).join("|") ===
-          templateFields.map((field) => field.key).join("|")
+          templateFields.map((field) => field.key).join("|");
         if (schemaMatchesCurrentRows) {
-          return currentRows
+          return currentRows;
         }
       }
       return createInitialTemplateRows(
@@ -827,138 +934,161 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
           height: activeTemplate.height,
           fields: templateFields,
         },
-        3
-      )
-    })
-  }, [activeTemplate, activeTemplateEntry])
+        3,
+      );
+    });
+  }, [activeTemplate, activeTemplateEntry]);
 
   React.useEffect(() => {
     if (controller.userTemplates.length === 0) {
-      setUserTemplatePreviewDrafts({})
-      return
+      setUserTemplatePreviewDrafts({});
+      return;
     }
 
-    let cancelled = false
+    let cancelled = false;
     void (async () => {
       const previews = await Promise.all(
         controller.userTemplates.map(async (template) => {
           const workingCopy = await loadWorkingCopy({
             kind: "user-template",
             templateId: template.id,
-          })
+          });
           if (workingCopy?.draft) {
-            return [template.id, workingCopy.draft] as const
+            return [template.id, workingCopy.draft] as const;
           }
-          const history = await readUserTemplateHistory(template.id)
+          const history = await readUserTemplateHistory(template.id);
           const version =
-            history?.saved.find((item) => item.id === history.template.currentVersionId) ??
+            history?.saved.find(
+              (item) => item.id === history.template.currentVersionId,
+            ) ??
             history?.saved[0] ??
-            null
-          return [template.id, version?.document ?? null] as const
-        })
-      )
+            null;
+          return [template.id, version?.document ?? null] as const;
+        }),
+      );
 
       if (!cancelled) {
-        setUserTemplatePreviewDrafts(Object.fromEntries(previews))
+        setUserTemplatePreviewDrafts(Object.fromEntries(previews));
       }
-    })()
+    })();
 
     return () => {
-      cancelled = true
-    }
-  }, [controller.userTemplates])
+      cancelled = true;
+    };
+  }, [controller.userTemplates]);
 
   React.useEffect(() => {
     if (activeTemplateEntry?.kind !== "user") {
-      setActiveUserTemplateDraft(null)
-      setActiveUserTemplateDraftLoading(false)
-      controller.setRenderOptions(defaultRenderOptions)
-      return
+      setActiveUserTemplateDraft(null);
+      setActiveUserTemplateDraftLoading(false);
+      controller.setRenderOptions(defaultRenderOptions);
+      return;
     }
 
-    let cancelled = false
-    const templateId = activeTemplateEntry.template.id
-    setActiveUserTemplateDraft(null)
-    setActiveUserTemplateDraftLoading(true)
+    let cancelled = false;
+    const templateId = activeTemplateEntry.template.id;
+    setActiveUserTemplateDraft(null);
+    setActiveUserTemplateDraftLoading(true);
     void (async () => {
       try {
-        const workingCopy = await loadWorkingCopy({ kind: "user-template", templateId })
-        const version = workingCopy?.draft ?? null
+        const workingCopy = await loadWorkingCopy({
+          kind: "user-template",
+          templateId,
+        });
+        const version = workingCopy?.draft ?? null;
         if (!cancelled) {
           if (version) {
-            setActiveUserTemplateDraft(version)
-            controller.setRenderOptions({ ...defaultRenderOptions, ...version.renderOptions })
-            return
+            setActiveUserTemplateDraft(version);
+            controller.setRenderOptions({
+              ...defaultRenderOptions,
+              ...version.renderOptions,
+            });
+            return;
           }
-          const history = await readUserTemplateHistory(templateId)
+          const history = await readUserTemplateHistory(templateId);
           const savedVersion =
-            history?.saved.find((item) => item.id === history.template.currentVersionId) ??
+            history?.saved.find(
+              (item) => item.id === history.template.currentVersionId,
+            ) ??
             history?.saved[0] ??
-            null
+            null;
           if (!cancelled) {
-            const draft = savedVersion?.document ?? null
-            setActiveUserTemplateDraft(draft)
-            controller.setRenderOptions({ ...defaultRenderOptions, ...draft?.renderOptions })
+            const draft = savedVersion?.document ?? null;
+            setActiveUserTemplateDraft(draft);
+            controller.setRenderOptions({
+              ...defaultRenderOptions,
+              ...draft?.renderOptions,
+            });
           }
         }
       } finally {
         if (!cancelled) {
-          setActiveUserTemplateDraftLoading(false)
+          setActiveUserTemplateDraftLoading(false);
         }
       }
-    })()
+    })();
 
     return () => {
-      cancelled = true
-    }
-  }, [activeTemplateEntry, controller.setRenderOptions])
+      cancelled = true;
+    };
+  }, [activeTemplateEntry, controller.setRenderOptions]);
 
   React.useEffect(() => {
     if (!templateRows.some((row) => row.id === selectedRowId)) {
-      setSelectedRowId(templateRows[0]?.id ?? "")
+      setSelectedRowId(templateRows[0]?.id ?? "");
     }
-  }, [selectedRowId, templateRows])
+  }, [selectedRowId, templateRows]);
 
   React.useEffect(() => {
     if (!editingTemplateCell) {
-      return
+      return;
     }
-    const row = templateRows.find((item) => item.id === editingTemplateCell.rowId)
+    const row = templateRows.find(
+      (item) => item.id === editingTemplateCell.rowId,
+    );
     const hasField =
       (activeTemplateEntry?.kind === "user"
         ? activeTemplateEntry.template.fields
         : activeTemplate?.fields
-      )?.some((field) => field.key === editingTemplateCell.fieldKey) ?? false
+      )?.some((field) => field.key === editingTemplateCell.fieldKey) ?? false;
     if (!row || !hasField) {
-      setEditingTemplateCell(null)
+      setEditingTemplateCell(null);
     }
-  }, [activeTemplate, activeTemplateEntry, editingTemplateCell, templateRows])
+  }, [activeTemplate, activeTemplateEntry, editingTemplateCell, templateRows]);
 
   const selectedTemplateRow = React.useMemo(
-    () => templateRows.find((row) => row.id === selectedRowId) ?? templateRows[0] ?? null,
-    [selectedRowId, templateRows]
-  )
-  const lastAutoPreviewKeyRef = React.useRef<string | null>(null)
-  const autoPreviewInFlightKeyRef = React.useRef<string | null>(null)
-  const templateAutoPreviewTimerRef = React.useRef<number | null>(null)
+    () =>
+      templateRows.find((row) => row.id === selectedRowId) ??
+      templateRows[0] ??
+      null,
+    [selectedRowId, templateRows],
+  );
+  const lastAutoPreviewKeyRef = React.useRef<string | null>(null);
+  const autoPreviewInFlightKeyRef = React.useRef<string | null>(null);
+  const templateAutoPreviewTimerRef = React.useRef<number | null>(null);
 
   const clearTemplateAutoPreviewTimer = React.useCallback(() => {
     if (templateAutoPreviewTimerRef.current === null) {
-      return
+      return;
     }
-    window.clearTimeout(templateAutoPreviewTimerRef.current)
-    templateAutoPreviewTimerRef.current = null
-  }, [])
+    window.clearTimeout(templateAutoPreviewTimerRef.current);
+    templateAutoPreviewTimerRef.current = null;
+  }, []);
 
   React.useEffect(() => {
-    lastAutoPreviewKeyRef.current = null
-    autoPreviewInFlightKeyRef.current = null
-    clearTemplateAutoPreviewTimer()
-  }, [clearTemplateAutoPreviewTimer])
+    lastAutoPreviewKeyRef.current = null;
+    autoPreviewInFlightKeyRef.current = null;
+    clearTemplateAutoPreviewTimer();
+  }, [clearTemplateAutoPreviewTimer]);
 
-  React.useEffect(() => clearTemplateAutoPreviewTimer, [clearTemplateAutoPreviewTimer])
+  React.useEffect(
+    () => clearTemplateAutoPreviewTimer,
+    [clearTemplateAutoPreviewTimer],
+  );
 
-  const [canvasPresetId, setCanvasPresetId] = React.useState(CANVAS_PRESETS[0]?.id ?? "")
+  const [canvasPresetId, setCanvasPresetId] = React.useState(
+    CANVAS_PRESETS[0]?.id ?? "",
+  );
   const [canvasDraft, setCanvasDraft] = React.useState<CanvasDraft>(() =>
     createDraftFromPreset(
       CANVAS_PRESETS[0] ??
@@ -968,50 +1098,58 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
           width: 384,
           height: 224,
           description: "",
-        }
-    )
-  )
-  const [selectedCanvasElementId, setSelectedCanvasElementId] = React.useState<string>(
-    () => canvasDraft.elements[0]?.id ?? ""
-  )
-  const [canvasFocus, setCanvasFocus] = React.useState<CanvasFocus>("left-center")
+        },
+    ),
+  );
+  const [selectedCanvasElementId, setSelectedCanvasElementId] =
+    React.useState<string>(() => canvasDraft.elements[0]?.id ?? "");
+  const [canvasFocus, setCanvasFocus] =
+    React.useState<CanvasFocus>("left-center");
 
   const canvasPreset = React.useMemo(
-    () => CANVAS_PRESETS.find((item) => item.id === canvasPresetId) ?? CANVAS_PRESETS[0],
-    [canvasPresetId]
-  )
+    () =>
+      CANVAS_PRESETS.find((item) => item.id === canvasPresetId) ??
+      CANVAS_PRESETS[0],
+    [canvasPresetId],
+  );
 
   React.useEffect(() => {
     if (!canvasPreset) {
-      return
+      return;
     }
     setCanvasDraft((currentDraft) => {
       if (currentDraft.id === canvasPreset.id) {
-        return currentDraft
+        return currentDraft;
       }
-      return createDraftFromPreset(canvasPreset)
-    })
-  }, [canvasPreset])
+      return createDraftFromPreset(canvasPreset);
+    });
+  }, [canvasPreset]);
 
   React.useEffect(() => {
-    if (!canvasDraft.elements.some((element) => element.id === selectedCanvasElementId)) {
-      setSelectedCanvasElementId(canvasDraft.elements[0]?.id ?? "")
+    if (
+      !canvasDraft.elements.some(
+        (element) => element.id === selectedCanvasElementId,
+      )
+    ) {
+      setSelectedCanvasElementId(canvasDraft.elements[0]?.id ?? "");
     }
-  }, [canvasDraft.elements, selectedCanvasElementId])
+  }, [canvasDraft.elements, selectedCanvasElementId]);
 
   const selectedCanvasElement = React.useMemo(
     () =>
-      canvasDraft.elements.find((element) => element.id === selectedCanvasElementId) ??
+      canvasDraft.elements.find(
+        (element) => element.id === selectedCanvasElementId,
+      ) ??
       canvasDraft.elements[0] ??
       null,
-    [canvasDraft.elements, selectedCanvasElementId]
-  )
+    [canvasDraft.elements, selectedCanvasElementId],
+  );
 
   const addTemplateRow = React.useCallback(() => {
     if (!activeTemplate) {
-      return
+      return;
     }
-    const fields = toTemplateFieldList(activeTemplate)
+    const fields = toTemplateFieldList(activeTemplate);
     const row: TemplateRow = {
       id: `${activeTemplate.id}-${crypto.randomUUID()}`,
       values: buildInputFromTemplate({
@@ -1022,64 +1160,73 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
         height: activeTemplate.height,
         fields,
       }),
-    }
-    setTemplateRows((currentRows) => [...currentRows, row])
-    setSelectedRowId(row.id)
-    setEditingTemplateCell(fields[0] ? { rowId: row.id, fieldKey: fields[0].key } : null)
-    setTemplateFocus("left-center")
-    setTemplateNarrowStage("table")
-  }, [activeTemplate])
+    };
+    setTemplateRows((currentRows) => [...currentRows, row]);
+    setSelectedRowId(row.id);
+    setEditingTemplateCell(
+      fields[0] ? { rowId: row.id, fieldKey: fields[0].key } : null,
+    );
+    setTemplateFocus("left-center");
+    setTemplateNarrowStage("table");
+  }, [activeTemplate]);
 
   const duplicateTemplateRow = React.useCallback(() => {
     if (!selectedTemplateRow) {
-      return
+      return;
     }
     const row: TemplateRow = {
       id: `${selectedTemplateRow.id}-copy-${crypto.randomUUID()}`,
       values: { ...selectedTemplateRow.values },
-    }
+    };
     setTemplateRows((currentRows) => {
-      const index = currentRows.findIndex((item) => item.id === selectedTemplateRow.id)
+      const index = currentRows.findIndex(
+        (item) => item.id === selectedTemplateRow.id,
+      );
       if (index < 0) {
-        return [...currentRows, row]
+        return [...currentRows, row];
       }
-      const next = [...currentRows]
-      next.splice(index + 1, 0, row)
-      return next
-    })
-    setSelectedRowId(row.id)
+      const next = [...currentRows];
+      next.splice(index + 1, 0, row);
+      return next;
+    });
+    setSelectedRowId(row.id);
     const fields =
       activeTemplateEntry?.kind === "user"
         ? activeTemplateEntry.template.fields
-        : activeTemplate?.fields
-    setEditingTemplateCell(fields?.[0] ? { rowId: row.id, fieldKey: fields[0].key } : null)
-    setTemplateFocus("left-center")
-    setTemplateNarrowStage("table")
-  }, [activeTemplate, activeTemplateEntry, selectedTemplateRow])
+        : activeTemplate?.fields;
+    setEditingTemplateCell(
+      fields?.[0] ? { rowId: row.id, fieldKey: fields[0].key } : null,
+    );
+    setTemplateFocus("left-center");
+    setTemplateNarrowStage("table");
+  }, [activeTemplate, activeTemplateEntry, selectedTemplateRow]);
 
   const deleteTemplateRow = React.useCallback(() => {
     if (!selectedTemplateRow) {
-      return
+      return;
     }
-    setTemplateRows((currentRows) => currentRows.filter((row) => row.id !== selectedTemplateRow.id))
-    setEditingTemplateCell(null)
-    setTemplateFocus("left-center")
-    setTemplateNarrowStage("table")
-  }, [selectedTemplateRow])
+    setTemplateRows((currentRows) =>
+      currentRows.filter((row) => row.id !== selectedTemplateRow.id),
+    );
+    setEditingTemplateCell(null);
+    setTemplateFocus("left-center");
+    setTemplateNarrowStage("table");
+  }, [selectedTemplateRow]);
 
   const previewTemplateRow = React.useCallback(
     async (row: TemplateRow, focusTarget: "preserve" | "right") => {
       if (!activeTemplate) {
-        controller.setError("先选择模板与一行数据。")
-        return
+        controller.setError("先选择模板与一行数据。");
+        return;
       }
       const userTemplateDraftReady =
         activeTemplateEntry?.kind !== "user" ||
-        (activeUserTemplateDraft?.templateId === activeTemplateEntry.template.id &&
-          !activeUserTemplateDraftLoading)
+        (activeUserTemplateDraft?.templateId ===
+          activeTemplateEntry.template.id &&
+          !activeUserTemplateDraftLoading);
       if (!userTemplateDraftReady) {
-        controller.setError("正在读取本地模板草稿，请稍后再预览。")
-        return
+        controller.setError("正在读取本地模板草稿，请稍后再预览。");
+        return;
       }
 
       const source =
@@ -1088,16 +1235,20 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
               activeTemplateEntry.template,
               activeUserTemplateDraft,
               row,
-              controller.renderOptions
+              controller.renderOptions,
             )
-          : createTemplatePrintSource(activeTemplate as Template, row, controller.renderOptions)
-      const previewKey = JSON.stringify(source)
-      const result = await controller.previewSource(source)
+          : createTemplatePrintSource(
+              activeTemplate as Template,
+              row,
+              controller.renderOptions,
+            );
+      const previewKey = JSON.stringify(source);
+      const result = await controller.previewSource(source);
 
       if (result !== undefined) {
-        lastAutoPreviewKeyRef.current = previewKey
+        lastAutoPreviewKeyRef.current = previewKey;
         if (focusTarget === "right") {
-          setTemplateFocus("center-right")
+          setTemplateFocus("center-right");
         }
       }
     },
@@ -1107,22 +1258,23 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       activeUserTemplateDraft,
       activeUserTemplateDraftLoading,
       controller,
-    ]
-  )
+    ],
+  );
 
   const autoPreviewTemplateRow = React.useCallback(
     async (row: TemplateRow) => {
       if (!activeTemplate) {
-        return
+        return;
       }
       const userTemplateDraftReady =
         activeTemplateEntry?.kind !== "user" ||
-        (activeUserTemplateDraft?.templateId === activeTemplateEntry.template.id &&
-          !activeUserTemplateDraftLoading)
+        (activeUserTemplateDraft?.templateId ===
+          activeTemplateEntry.template.id &&
+          !activeUserTemplateDraftLoading);
       if (!userTemplateDraftReady) {
-        return
+        return;
       }
-      clearTemplateAutoPreviewTimer()
+      clearTemplateAutoPreviewTimer();
 
       const source =
         activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
@@ -1130,23 +1282,27 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
               activeTemplateEntry.template,
               activeUserTemplateDraft,
               row,
-              controller.renderOptions
+              controller.renderOptions,
             )
-          : createTemplatePrintSource(activeTemplate as Template, row, controller.renderOptions)
-      const previewKey = JSON.stringify(source)
+          : createTemplatePrintSource(
+              activeTemplate as Template,
+              row,
+              controller.renderOptions,
+            );
+      const previewKey = JSON.stringify(source);
       if (
         lastAutoPreviewKeyRef.current === previewKey ||
         autoPreviewInFlightKeyRef.current === previewKey
       ) {
-        return
+        return;
       }
 
-      autoPreviewInFlightKeyRef.current = previewKey
+      autoPreviewInFlightKeyRef.current = previewKey;
       try {
-        await previewTemplateRow(row, "preserve")
+        await previewTemplateRow(row, "preserve");
       } finally {
         if (autoPreviewInFlightKeyRef.current === previewKey) {
-          autoPreviewInFlightKeyRef.current = null
+          autoPreviewInFlightKeyRef.current = null;
         }
       }
     },
@@ -1158,12 +1314,12 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       controller.renderOptions,
       previewTemplateRow,
       activeUserTemplateDraftLoading,
-    ]
-  )
+    ],
+  );
 
   const updateTemplateField = React.useCallback(
     (rowId: string, fieldKey: string, value: string) => {
-      const nextValue = toSingleLineFieldValue(value)
+      const nextValue = toSingleLineFieldValue(value);
       const nextSelectedRow =
         selectedTemplateRow?.id === rowId
           ? {
@@ -1173,7 +1329,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
                 [fieldKey]: nextValue,
               },
             }
-          : null
+          : null;
 
       setTemplateRows((currentRows) =>
         currentRows.map((row) =>
@@ -1185,43 +1341,53 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
                   [fieldKey]: nextValue,
                 },
               }
-            : row
-        )
-      )
+            : row,
+        ),
+      );
       if (nextSelectedRow) {
-        clearTemplateAutoPreviewTimer()
+        clearTemplateAutoPreviewTimer();
         templateAutoPreviewTimerRef.current = window.setTimeout(() => {
-          templateAutoPreviewTimerRef.current = null
-          void autoPreviewTemplateRow(nextSelectedRow)
-        }, TEMPLATE_PREVIEW_DEBOUNCE_MS)
+          templateAutoPreviewTimerRef.current = null;
+          void autoPreviewTemplateRow(nextSelectedRow);
+        }, TEMPLATE_PREVIEW_DEBOUNCE_MS);
       }
-      setTemplateFocus("left-center")
-      setTemplateNarrowStage("table")
+      setTemplateFocus("left-center");
+      setTemplateNarrowStage("table");
     },
-    [autoPreviewTemplateRow, clearTemplateAutoPreviewTimer, selectedTemplateRow]
-  )
+    [
+      autoPreviewTemplateRow,
+      clearTemplateAutoPreviewTimer,
+      selectedTemplateRow,
+    ],
+  );
 
   const previewSelectedTemplateRow = React.useCallback(async () => {
     if (!selectedTemplateRow) {
-      controller.setError("先选择模板与一行数据。")
-      return
+      controller.setError("先选择模板与一行数据。");
+      return;
     }
-    clearTemplateAutoPreviewTimer()
-    await previewTemplateRow(selectedTemplateRow, "right")
-  }, [clearTemplateAutoPreviewTimer, controller, previewTemplateRow, selectedTemplateRow])
+    clearTemplateAutoPreviewTimer();
+    await previewTemplateRow(selectedTemplateRow, "right");
+  }, [
+    clearTemplateAutoPreviewTimer,
+    controller,
+    previewTemplateRow,
+    selectedTemplateRow,
+  ]);
 
   const printSelectedTemplateRow = React.useCallback(async () => {
     if (!activeTemplate || !selectedTemplateRow) {
-      controller.setError("先选择模板与一行数据。")
-      return
+      controller.setError("先选择模板与一行数据。");
+      return;
     }
     const userTemplateDraftReady =
       activeTemplateEntry?.kind !== "user" ||
-      (activeUserTemplateDraft?.templateId === activeTemplateEntry.template.id &&
-        !activeUserTemplateDraftLoading)
+      (activeUserTemplateDraft?.templateId ===
+        activeTemplateEntry.template.id &&
+        !activeUserTemplateDraftLoading);
     if (!userTemplateDraftReady) {
-      controller.setError("正在读取本地模板草稿，请稍后再打印。")
-      return
+      controller.setError("正在读取本地模板草稿，请稍后再打印。");
+      return;
     }
     await controller.printSourceDirect(
       activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
@@ -1229,7 +1395,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
             activeTemplateEntry.template,
             activeUserTemplateDraft,
             selectedTemplateRow,
-            controller.renderOptions
+            controller.renderOptions,
           )
         : {
             kind: "template",
@@ -1237,9 +1403,9 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
             rowId: selectedTemplateRow.id,
             input: selectedTemplateRow.values,
             renderOptions: createPreviewRenderOptions(controller.renderOptions),
-          }
-    )
-    setTemplateFocus("center-right")
+          },
+    );
+    setTemplateFocus("center-right");
   }, [
     activeTemplate,
     activeTemplateEntry,
@@ -1247,52 +1413,61 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     activeUserTemplateDraftLoading,
     controller,
     selectedTemplateRow,
-  ])
+  ]);
 
   const addCanvasElement = React.useCallback((kind: CanvasElement["kind"]) => {
     setCanvasDraft((currentDraft) => {
-      const nextElement = createCanvasElement(kind, currentDraft.elements.length)
-      setSelectedCanvasElementId(nextElement.id)
+      const nextElement = createCanvasElement(
+        kind,
+        currentDraft.elements.length,
+      );
+      setSelectedCanvasElementId(nextElement.id);
       return {
         ...currentDraft,
         elements: [...currentDraft.elements, nextElement],
-      }
-    })
-    setCanvasFocus("left-center")
-  }, [])
+      };
+    });
+    setCanvasFocus("left-center");
+  }, []);
 
   const updateCanvasElement = React.useCallback(
     (elementId: string, updater: (element: CanvasElement) => CanvasElement) => {
       setCanvasDraft((currentDraft) => ({
         ...currentDraft,
         elements: currentDraft.elements.map((element) =>
-          element.id === elementId ? updater(element) : element
+          element.id === elementId ? updater(element) : element,
         ),
-      }))
+      }));
     },
-    []
-  )
+    [],
+  );
 
   const removeCanvasElement = React.useCallback(() => {
     if (!selectedCanvasElementId) {
-      return
+      return;
     }
     setCanvasDraft((currentDraft) => ({
       ...currentDraft,
-      elements: currentDraft.elements.filter((element) => element.id !== selectedCanvasElementId),
-    }))
-    setCanvasFocus("left-center")
-  }, [selectedCanvasElementId])
+      elements: currentDraft.elements.filter(
+        (element) => element.id !== selectedCanvasElementId,
+      ),
+    }));
+    setCanvasFocus("left-center");
+  }, [selectedCanvasElementId]);
 
   const previewCanvas = React.useCallback(async () => {
-    await controller.previewSource(toCanvasPrintSource(canvasDraft, controller.renderOptions))
-    setCanvasFocus("center-right")
-  }, [canvasDraft, controller])
+    await controller.previewSource(
+      toCanvasPrintSource(canvasDraft, controller.renderOptions),
+    );
+    setCanvasFocus("center-right");
+  }, [canvasDraft, controller]);
 
   const printCanvas = React.useCallback(async () => {
-    await controller.printSourceDirect(toCanvasPrintSource(canvasDraft, controller.renderOptions))
-    setCanvasFocus("center-right")
-  }, [canvasDraft, controller])
+    await controller.printSourceDirect(
+      toCanvasPrintSource(canvasDraft, controller.renderOptions),
+    );
+    setCanvasFocus("center-right");
+  }, [canvasDraft, controller]);
 
   return {
     activeTemplateEntry,
@@ -1333,64 +1508,88 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     templateRows,
     updateCanvasElement,
     updateTemplateField,
-  }
+  };
 }
 
 function WorkbenchLayout({
   controller,
+  hydrationState,
   pwaUpdateSnapshot,
 }: {
-  controller: ReturnType<typeof useWorkbenchController>
-  pwaUpdateSnapshot?: PwaUpdateSnapshot
+  controller: ReturnType<typeof useWorkbenchController>;
+  hydrationState: WorkbenchHydrationState;
+  pwaUpdateSnapshot?: PwaUpdateSnapshot;
 }) {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const [drawerOpen, setDrawerOpen] = React.useState(false)
-  const runtimePwaUpdate = usePwaUpdate(controller.context)
-  const pwaUpdate = pwaUpdateSnapshot ?? runtimePwaUpdate
-  const isCanvasRoute = location.pathname === "/canvas"
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const runtimePwaUpdate = usePwaUpdate(controller.context);
+  const pwaUpdate = pwaUpdateSnapshot ?? runtimePwaUpdate;
+  const isCanvasRoute = location.pathname === "/canvas";
   const handleDrawerOpenChange = React.useCallback(
     (nextOpen: boolean) => {
       if (!nextOpen) {
-        controller.resetDeviceDrawerState()
+        controller.resetDeviceDrawerState();
       }
-      setDrawerOpen(nextOpen)
+      setDrawerOpen(nextOpen);
     },
-    [controller]
-  )
+    [controller],
+  );
 
   const surfaceLabel =
-    controller.context.surface === "server-http" ? "Server HTTP" : "Browser static"
-  const modeLabel = controller.context.mode === "demo" ? "Demo mode" : "Runtime mode"
+    controller.context.surface === "server-http"
+      ? "Server HTTP"
+      : "Browser static";
+  const modeLabel =
+    controller.context.mode === "demo" ? "Demo mode" : "Runtime mode";
 
   return (
-    <div className={cn("tm-shell", "tm-selectable-none", isCanvasRoute && "tm-shell--canvas")}>
+    <div
+      className={cn(
+        "tm-shell",
+        "tm-selectable-none",
+        isCanvasRoute && "tm-shell--canvas",
+      )}
+      data-deferred-hydration-pending={
+        hydrationState.deferredHydrationPending ? "true" : "false"
+      }
+      data-offline-warmup-status={hydrationState.offlineWarmupStatus}
+      data-shell-ready={hydrationState.shellReady ? "true" : "false"}
+    >
       <header className="tm-header tm-selectable-none">
         <div className="tm-header__left">
           <ProductMark />
           <nav className="tm-nav" aria-label="Main navigation">
             {NAV_LINKS.map((item) => {
-              const Icon = item.icon
+              const Icon = item.icon;
               return (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   end={item.to === "/"}
                   className={({ isActive }) =>
-                    cn("tm-nav__link", "tm-selectable-none", isActive && "tm-nav__link--active")
+                    cn(
+                      "tm-nav__link",
+                      "tm-selectable-none",
+                      isActive && "tm-nav__link--active",
+                    )
                   }
                 >
                   <Icon className="size-4" />
                   <span>{item.label}</span>
                 </NavLink>
-              )
+              );
             })}
           </nav>
         </div>
         <div className="tm-header__right">
           <div className="tm-header__status">
             <Badge variant="outline">{surfaceLabel}</Badge>
-            <Badge variant={controller.context.mode === "demo" ? "secondary" : "outline"}>
+            <Badge
+              variant={
+                controller.context.mode === "demo" ? "secondary" : "outline"
+              }
+            >
               {modeLabel}
             </Badge>
           </div>
@@ -1402,11 +1601,15 @@ function WorkbenchLayout({
           >
             <Printer className="size-4" />
             <span>
-              {controller.selectedPrinter?.name ?? controller.browserPrinter?.name ?? "选择设备"}
+              {controller.selectedPrinter?.name ??
+                controller.browserPrinter?.name ??
+                "选择设备"}
             </span>
           </Button>
         </div>
       </header>
+
+      <RuntimeHydrationNotice hydrationState={hydrationState} />
 
       <main className={cn("tm-main", isCanvasRoute && "tm-main--canvas")}>
         <Outlet />
@@ -1419,9 +1622,13 @@ function WorkbenchLayout({
           <span>{location.pathname}</span>
         </div>
         <div className="tm-footer__row tm-footer__row--right">
-          <span>Service API: {controller.serviceApiUsable ? "available" : "disabled"}</span>
           <span>
-            Browser direct: {controller.browserDirectConfigured ? "available" : "disabled"}
+            Service API:{" "}
+            {controller.serviceApiUsable ? "available" : "disabled"}
+          </span>
+          <span>
+            Browser direct:{" "}
+            {controller.browserDirectConfigured ? "available" : "disabled"}
           </span>
           <a
             className="tm-footer__link"
@@ -1446,9 +1653,9 @@ function WorkbenchLayout({
         snapshot={pwaUpdate}
         onUpdate={() => {
           if (pwaUpdateSnapshot) {
-            return
+            return;
           }
-          applyPwaUpdate(pwaUpdate)
+          applyPwaUpdate(pwaUpdate);
         }}
       />
 
@@ -1456,8 +1663,8 @@ function WorkbenchLayout({
         open={controller.directorySetupNudgeOpen}
         onDismiss={controller.dismissDirectorySetupNudge}
         onOpenSystem={() => {
-          controller.dismissDirectorySetupNudge()
-          navigate("/system")
+          controller.dismissDirectorySetupNudge();
+          navigate("/system");
         }}
       />
 
@@ -1467,21 +1674,25 @@ function WorkbenchLayout({
         onOpenChange={handleDrawerOpenChange}
       />
     </div>
-  )
+  );
 }
 
 function DeviceDrawerFeedbackAlert({
   feedback,
   onDismiss,
 }: {
-  feedback: WorkbenchDeviceDrawerFeedback
-  onDismiss: () => void
+  feedback: WorkbenchDeviceDrawerFeedback;
+  onDismiss: () => void;
 }) {
-  const isError = feedback.tone === "error"
+  const isError = feedback.tone === "error";
 
   return (
     <Alert variant={isError ? "destructive" : "default"}>
-      {isError ? <AlertCircle className="mt-0.5 size-4" /> : <Info className="mt-0.5 size-4" />}
+      {isError ? (
+        <AlertCircle className="mt-0.5 size-4" />
+      ) : (
+        <Info className="mt-0.5 size-4" />
+      )}
       <AlertTitle>{feedback.title}</AlertTitle>
       <AlertDescription className="grid gap-3">
         <span>{feedback.message}</span>
@@ -1492,7 +1703,7 @@ function DeviceDrawerFeedbackAlert({
         </div>
       </AlertDescription>
     </Alert>
-  )
+  );
 }
 
 function DeviceDrawer({
@@ -1500,22 +1711,23 @@ function DeviceDrawer({
   open,
   onOpenChange,
 }: {
-  controller: ReturnType<typeof useWorkbenchController>
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  controller: ReturnType<typeof useWorkbenchController>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const drawerBusy = controller.deviceDrawerBusyAction !== null
+  const drawerBusy = controller.deviceDrawerBusyAction !== null;
   const serviceApiFeedback =
     controller.deviceDrawerFeedback?.section === "service-api"
       ? controller.deviceDrawerFeedback
-      : null
+      : null;
   const browserDirectFeedback =
     controller.deviceDrawerFeedback?.section === "browser-direct"
       ? controller.deviceDrawerFeedback
-      : null
-  const refreshBusy = controller.deviceDrawerBusyAction === "refresh-setup"
-  const probeBusy = controller.deviceDrawerBusyAction === "probe-printer"
-  const connectBusy = controller.deviceDrawerBusyAction === "connect-browser-printer"
+      : null;
+  const refreshBusy = controller.deviceDrawerBusyAction === "refresh-setup";
+  const probeBusy = controller.deviceDrawerBusyAction === "probe-printer";
+  const connectBusy =
+    controller.deviceDrawerBusyAction === "connect-browser-printer";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -1544,7 +1756,13 @@ function DeviceDrawer({
               <StatusPill
                 label="Probe"
                 value={controller.probeResult?.message ?? "等待探测"}
-                tone={controller.probeResult?.ok ? "ok" : controller.probeResult ? "warn" : "muted"}
+                tone={
+                  controller.probeResult?.ok
+                    ? "ok"
+                    : controller.probeResult
+                      ? "warn"
+                      : "muted"
+                }
               />
             </CardContent>
           </Card>
@@ -1558,7 +1776,9 @@ function DeviceDrawer({
             <CardContent className="grid gap-3">
               <Select
                 value={controller.selectedPrinter?.id ?? ""}
-                onValueChange={(value) => controller.rememberPrinterSelection(value)}
+                onValueChange={(value) =>
+                  controller.rememberPrinterSelection(value)
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="选择 service-api 打印机" />
@@ -1584,7 +1804,9 @@ function DeviceDrawer({
                   disabled={drawerBusy}
                   onClick={() => void controller.refreshDeviceDrawerSetup()}
                 >
-                  <RefreshCcw className={cn("size-4", refreshBusy && "animate-spin")} />
+                  <RefreshCcw
+                    className={cn("size-4", refreshBusy && "animate-spin")}
+                  />
                   <span>{refreshBusy ? "刷新中…" : "刷新设备"}</span>
                 </Button>
                 <Button
@@ -1593,7 +1815,9 @@ function DeviceDrawer({
                   disabled={drawerBusy}
                   onClick={() => void controller.probeDeviceDrawerPrinter()}
                 >
-                  <ScanSearch className={cn("size-4", probeBusy && "animate-pulse")} />
+                  <ScanSearch
+                    className={cn("size-4", probeBusy && "animate-pulse")}
+                  />
                   <span>{probeBusy ? "探测中…" : "探测设备"}</span>
                 </Button>
               </div>
@@ -1617,13 +1841,17 @@ function DeviceDrawer({
                 {controller.browserPrinter ? (
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="font-medium">{controller.browserPrinter.name}</div>
+                      <div className="font-medium">
+                        {controller.browserPrinter.name}
+                      </div>
                       <div className="text-muted-foreground">已连接</div>
                     </div>
                     <Badge variant="secondary">Browser P2</Badge>
                   </div>
                 ) : (
-                  <div className="text-muted-foreground">当前没有浏览器直连打印机会话。</div>
+                  <div className="text-muted-foreground">
+                    当前没有浏览器直连打印机会话。
+                  </div>
                 )}
               </div>
               <Button
@@ -1652,20 +1880,24 @@ function DeviceDrawer({
           </Card>
 
           {controller.probeResult ? (
-            <Alert variant={controller.probeResult.ok ? "default" : "destructive"}>
+            <Alert
+              variant={controller.probeResult.ok ? "default" : "destructive"}
+            >
               {controller.probeResult.ok ? (
                 <CheckCircle2 className="mt-0.5 size-4" />
               ) : (
                 <AlertCircle className="mt-0.5 size-4" />
               )}
               <AlertTitle>{controller.probeResult.stage}</AlertTitle>
-              <AlertDescription>{controller.probeResult.message}</AlertDescription>
+              <AlertDescription>
+                {controller.probeResult.message}
+              </AlertDescription>
             </Alert>
           ) : null}
         </div>
       </SheetContent>
     </Sheet>
-  )
+  );
 }
 
 function StatusPill({
@@ -1673,9 +1905,9 @@ function StatusPill({
   value,
   tone,
 }: {
-  label: string
-  value: string
-  tone: "ok" | "warn" | "muted"
+  label: string;
+  value: string;
+  tone: "ok" | "warn" | "muted";
 }) {
   return (
     <div className="tm-selectable-none flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-background/70 px-4 py-3 text-sm">
@@ -1685,17 +1917,59 @@ function StatusPill({
           "font-medium",
           tone === "ok" && "text-emerald-700",
           tone === "warn" && "text-amber-700",
-          tone === "muted" && "text-foreground"
+          tone === "muted" && "text-foreground",
         )}
       >
         {value}
       </span>
     </div>
-  )
+  );
 }
 
-function DashboardPage({ controller }: { controller: ReturnType<typeof useWorkbenchController> }) {
-  const navigate = useNavigate()
+function RuntimeHydrationNotice({
+  hydrationState,
+}: {
+  hydrationState: WorkbenchHydrationState;
+}) {
+  if (
+    !hydrationState.deferredHydrationPending &&
+    !hydrationState.offlineWarmupPending
+  ) {
+    return null;
+  }
+
+  const statusText = hydrationState.deferredHydrationPending
+    ? "正在后台补齐模板、设置与最近状态。"
+    : "正在后台补齐离线资源缓存。";
+
+  return (
+    <section
+      className="tm-runtime-status"
+      aria-label="Tuckmark runtime hydration status"
+      role="status"
+    >
+      <div className="tm-runtime-status__copy">
+        <span className="tm-runtime-status__title">工作台已就绪</span>
+        <span className="tm-runtime-status__text">{statusText}</span>
+      </div>
+      <div className="tm-runtime-status__badges">
+        {hydrationState.deferredHydrationPending ? (
+          <Badge variant="outline">Deferred hydration</Badge>
+        ) : null}
+        {hydrationState.offlineWarmupPending ? (
+          <Badge variant="secondary">Offline warmup</Badge>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function DashboardPage({
+  controller,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>;
+}) {
+  const navigate = useNavigate();
 
   return (
     <section className="tm-dashboard">
@@ -1708,7 +1982,11 @@ function DashboardPage({ controller }: { controller: ReturnType<typeof useWorkbe
               <LayoutTemplate className="size-4" />
               <span>进入模板</span>
             </Button>
-            <Button type="button" variant="secondary" onClick={() => navigate("/canvas")}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => navigate("/canvas")}
+            >
               <PencilRuler className="size-4" />
               <span>进入画布</span>
             </Button>
@@ -1812,85 +2090,105 @@ function DashboardPage({ controller }: { controller: ReturnType<typeof useWorkbe
             />
             <StatusPill
               label="Browser Direct"
-              value={controller.browserDirectConfigured ? "available" : "disabled"}
+              value={
+                controller.browserDirectConfigured ? "available" : "disabled"
+              }
               tone={controller.browserDirectConfigured ? "ok" : "muted"}
             />
           </CardContent>
         </Card>
       </div>
     </section>
-  )
+  );
 }
 
 function TemplatesPage({
   controller,
   state,
 }: {
-  controller: ReturnType<typeof useWorkbenchController>
-  state: ReturnType<typeof useWorkbenchPages>
+  controller: ReturnType<typeof useWorkbenchController>;
+  state: ReturnType<typeof useWorkbenchPages>;
 }) {
-  const navigate = useNavigate()
-  const isTriple = useMediaQuery(`(min-width: ${WIDE_TRIPLE_THRESHOLD}px)`)
+  const navigate = useNavigate();
+  const isTriple = useMediaQuery(`(min-width: ${WIDE_TRIPLE_THRESHOLD}px)`);
   const stacksPreviewBelowTable = !useMediaQuery(
-    `(min-width: ${TEMPLATE_STACKED_PREVIEW_THRESHOLD}px)`
-  )
-  const usesSingleOutletFlow = !isTriple
-  const showsTableStage = state.templateNarrowStage === "table"
+    `(min-width: ${TEMPLATE_STACKED_PREVIEW_THRESHOLD}px)`,
+  );
+  const usesSingleOutletFlow = !isTriple;
+  const showsTableStage = state.templateNarrowStage === "table";
   const showsDisabledPreviewRail =
-    usesSingleOutletFlow && state.templateNarrowStage === "list" && !stacksPreviewBelowTable
+    usesSingleOutletFlow &&
+    state.templateNarrowStage === "list" &&
+    !stacksPreviewBelowTable;
   const usesSplitTableAndPreview =
-    usesSingleOutletFlow && showsTableStage && !stacksPreviewBelowTable
+    usesSingleOutletFlow && showsTableStage && !stacksPreviewBelowTable;
   const showsListOnlyPane =
-    usesSingleOutletFlow && state.templateNarrowStage === "list" && stacksPreviewBelowTable
-  const showTemplateListPane = !usesSingleOutletFlow || state.templateNarrowStage === "list"
-  const showTemplateTablePane = !usesSingleOutletFlow || showsTableStage
+    usesSingleOutletFlow &&
+    state.templateNarrowStage === "list" &&
+    stacksPreviewBelowTable;
+  const showTemplateListPane =
+    !usesSingleOutletFlow || state.templateNarrowStage === "list";
+  const showTemplateTablePane = !usesSingleOutletFlow || showsTableStage;
   const showTemplatePreviewPane =
-    !usesSingleOutletFlow || showsTableStage || showsDisabledPreviewRail
+    !usesSingleOutletFlow || showsTableStage || showsDisabledPreviewRail;
   const activeUserTemplatePending =
-    state.activeTemplateEntry?.kind === "user" && state.activeUserTemplateDraftLoading
+    state.activeTemplateEntry?.kind === "user" &&
+    state.activeUserTemplateDraftLoading;
   const templatePreviewDisabled =
     showsDisabledPreviewRail ||
     !state.activeTemplateEntry ||
     !state.selectedTemplateRow ||
-    activeUserTemplatePending
-  const [listMode, setListMode] = React.useState<TemplateListMode>("large")
-  const importInputId = React.useId()
-  const importInputRef = React.useRef<HTMLInputElement | null>(null)
-  const [importStatus, setImportStatus] = React.useState("")
-  const [tableShellElement, setTableShellElement] = React.useState<HTMLDivElement | null>(null)
-  const tableShellWidth = useElementClientWidth(tableShellElement)
-  const activeTemplateFields = state.activeTemplate ? toTemplateFieldList(state.activeTemplate) : []
+    activeUserTemplatePending;
+  const [listMode, setListMode] = React.useState<TemplateListMode>("large");
+  const importInputId = React.useId();
+  const importInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [importStatus, setImportStatus] = React.useState("");
+  const [tableShellElement, setTableShellElement] =
+    React.useState<HTMLDivElement | null>(null);
+  const tableShellWidth = useElementClientWidth(tableShellElement);
+  const activeTemplateFields = state.activeTemplate
+    ? toTemplateFieldList(state.activeTemplate)
+    : [];
   const templateColumnLayout = React.useMemo(
-    () => resolveTemplateColumnLayout(activeTemplateFields, state.templateRows, tableShellWidth),
-    [activeTemplateFields, state.templateRows, tableShellWidth]
-  )
+    () =>
+      resolveTemplateColumnLayout(
+        activeTemplateFields,
+        state.templateRows,
+        tableShellWidth,
+      ),
+    [activeTemplateFields, state.templateRows, tableShellWidth],
+  );
 
   React.useEffect(() => {
-    void controller.refreshUserTemplates()
-  }, [controller.refreshUserTemplates])
+    void controller.refreshUserTemplates();
+  }, [controller.refreshUserTemplates]);
 
   const importTemplatePackage = React.useCallback(
     async (file: File) => {
       try {
-        const templatePackage = parseUserTemplatePackage(JSON.parse(await file.text()))
-        const draft = createDraftFromUserTemplatePackage(templatePackage)
+        const templatePackage = parseUserTemplatePackage(
+          JSON.parse(await file.text()),
+        );
+        const draft = createDraftFromUserTemplatePackage(templatePackage);
         await saveUserTemplate({
           name: templatePackage.name,
           description: templatePackage.description,
           document: draft,
-        })
-        await controller.refreshUserTemplates()
-        setImportStatus(`已导入 ${templatePackage.name}`)
+        });
+        await controller.refreshUserTemplates();
+        setImportStatus(`已导入 ${templatePackage.name}`);
       } catch (error) {
-        setImportStatus(error instanceof Error ? `导入失败：${error.message}` : "导入失败。")
+        setImportStatus(
+          error instanceof Error ? `导入失败：${error.message}` : "导入失败。",
+        );
       } finally {
         if (importInputRef.current) {
-          importInputRef.current.value = ""
+          importInputRef.current.value = "";
         }
       }
     },
-    [controller.refreshUserTemplates]
-  )
+    [controller.refreshUserTemplates],
+  );
 
   return (
     <section className="tm-workspace">
@@ -1902,7 +2200,7 @@ function TemplatesPage({
           showsDisabledPreviewRail && "tm-pane-grid--preview-side",
           usesSplitTableAndPreview && "tm-pane-grid--focus-right",
           isTriple && "tm-pane-grid--triple",
-          stacksPreviewBelowTable && "tm-pane-grid--stacked-preview"
+          stacksPreviewBelowTable && "tm-pane-grid--stacked-preview",
         )}
       >
         {showTemplateListPane ? (
@@ -1935,9 +2233,9 @@ function TemplatesPage({
                 className="sr-only"
                 aria-label="选择模板包文件"
                 onChange={(event) => {
-                  const file = event.currentTarget.files?.[0]
+                  const file = event.currentTarget.files?.[0];
                   if (file) {
-                    void importTemplatePackage(file)
+                    void importTemplatePackage(file);
                   }
                 }}
               />
@@ -1964,33 +2262,43 @@ function TemplatesPage({
               className={cn(
                 "tm-pane__body",
                 "tm-template-list",
-                listMode === "large" ? "tm-template-list--large" : "tm-template-list--list"
+                listMode === "large"
+                  ? "tm-template-list--large"
+                  : "tm-template-list--list",
               )}
             >
               <TemplateGroup
                 title="系统模板"
-                entries={state.templateEntries.filter((entry) => entry.kind === "system")}
+                entries={state.templateEntries.filter(
+                  (entry) => entry.kind === "system",
+                )}
                 listMode={listMode}
                 activeEntryId={state.activeTemplateEntry?.id ?? ""}
                 onSelect={(entryId) => {
-                  state.setTemplateEntryId(entryId)
+                  state.setTemplateEntryId(entryId);
                   if (usesSingleOutletFlow) {
-                    state.setTemplateNarrowStage("table")
-                    return
+                    state.setTemplateNarrowStage("table");
+                    return;
                   }
-                  state.setTemplateFocus("left-center")
+                  state.setTemplateFocus("left-center");
                 }}
                 onEdit={(entryId) => {
-                  const entry = state.templateEntries.find((item) => item.id === entryId)
+                  const entry = state.templateEntries.find(
+                    (item) => item.id === entryId,
+                  );
                   if (entry?.kind !== "system") {
-                    return
+                    return;
                   }
-                  navigate(`/canvas?source=preset-template&templateId=${entry.template.id}`)
+                  navigate(
+                    `/canvas?source=preset-template&templateId=${entry.template.id}`,
+                  );
                 }}
               />
               <TemplateGroup
                 title="我的模板"
-                entries={state.templateEntries.filter((entry) => entry.kind === "user")}
+                entries={state.templateEntries.filter(
+                  (entry) => entry.kind === "user",
+                )}
                 listMode={listMode}
                 activeEntryId={state.activeTemplateEntry?.id ?? ""}
                 emptyText="还没有保存到浏览器本地的用户模板。"
@@ -2007,19 +2315,23 @@ function TemplatesPage({
                   />
                 }
                 onSelect={(entryId) => {
-                  state.setTemplateEntryId(entryId)
+                  state.setTemplateEntryId(entryId);
                   if (usesSingleOutletFlow) {
-                    state.setTemplateNarrowStage("table")
-                    return
+                    state.setTemplateNarrowStage("table");
+                    return;
                   }
-                  state.setTemplateFocus("left-center")
+                  state.setTemplateFocus("left-center");
                 }}
                 onEdit={(entryId) => {
-                  const entry = state.templateEntries.find((item) => item.id === entryId)
+                  const entry = state.templateEntries.find(
+                    (item) => item.id === entryId,
+                  );
                   if (entry?.kind !== "user") {
-                    return
+                    return;
                   }
-                  navigate(`/canvas?source=user-template&templateId=${entry.template.id}`)
+                  navigate(
+                    `/canvas?source=user-template&templateId=${entry.template.id}`,
+                  );
                 }}
               />
               {importStatus ? (
@@ -2086,7 +2398,9 @@ function TemplatesPage({
                   style={{ width: `${templateColumnLayout.tableWidth}px` }}
                 >
                   <colgroup>
-                    <col style={{ width: `${TEMPLATE_INDEX_COLUMN_WIDTH}px` }} />
+                    <col
+                      style={{ width: `${TEMPLATE_INDEX_COLUMN_WIDTH}px` }}
+                    />
                     {activeTemplateFields.map((field) => (
                       <col
                         key={field.key}
@@ -2103,7 +2417,9 @@ function TemplatesPage({
                       </th>
                       {activeTemplateFields.map((field) => (
                         <th key={field.key}>
-                          <span className="tm-table__header-label">{field.label}</span>
+                          <span className="tm-table__header-label">
+                            {field.label}
+                          </span>
                         </th>
                       ))}
                     </tr>
@@ -2119,29 +2435,36 @@ function TemplatesPage({
                       state.templateRows.map((row, rowIndex) => (
                         <tr
                           key={row.id}
-                          className={cn(row.id === state.selectedRowId && "tm-table__row--active")}
+                          className={cn(
+                            row.id === state.selectedRowId &&
+                              "tm-table__row--active",
+                          )}
                           onClick={() => {
-                            state.setSelectedRowId(row.id)
-                            state.setTemplateNarrowStage("table")
-                            void state.autoPreviewTemplateRow(row)
+                            state.setSelectedRowId(row.id);
+                            state.setTemplateNarrowStage("table");
+                            void state.autoPreviewTemplateRow(row);
                           }}
                         >
                           <td>
-                            <span className="tm-table__row-index">{rowIndex + 1}</span>
+                            <span className="tm-table__row-index">
+                              {rowIndex + 1}
+                            </span>
                           </td>
                           {activeTemplateFields.map((field) => {
-                            const value = toSingleLineFieldValue(row.values[field.key] ?? "")
+                            const value = toSingleLineFieldValue(
+                              row.values[field.key] ?? "",
+                            );
                             const isEditing =
                               state.editingTemplateCell?.rowId === row.id &&
-                              state.editingTemplateCell?.fieldKey === field.key
+                              state.editingTemplateCell?.fieldKey === field.key;
                             const columnWidth =
                               templateColumnLayout.columnWidths[field.key] ??
-                              getTemplateColumnWidthRange(field).minWidth
+                              getTemplateColumnWidthRange(field).minWidth;
                             const columnStyle = {
                               width: `${columnWidth}px`,
                               minWidth: `${columnWidth}px`,
                               maxWidth: `${columnWidth}px`,
-                            } satisfies React.CSSProperties
+                            } satisfies React.CSSProperties;
 
                             return (
                               <td key={field.key}>
@@ -2154,21 +2477,29 @@ function TemplatesPage({
                                     style={columnStyle}
                                     autoFocus
                                     onFocus={() => {
-                                      state.setSelectedRowId(row.id)
-                                      state.setTemplateNarrowStage("table")
-                                      void state.autoPreviewTemplateRow(row)
+                                      state.setSelectedRowId(row.id);
+                                      state.setTemplateNarrowStage("table");
+                                      void state.autoPreviewTemplateRow(row);
                                     }}
                                     onBlur={() => {
-                                      state.setEditingTemplateCell(null)
+                                      state.setEditingTemplateCell(null);
                                     }}
                                     onKeyDown={(event) => {
-                                      if (event.key === "Enter" || event.key === "Escape") {
-                                        event.currentTarget.blur()
+                                      if (
+                                        event.key === "Enter" ||
+                                        event.key === "Escape"
+                                      ) {
+                                        event.currentTarget.blur();
                                       }
                                     }}
                                     onChange={(event) => {
-                                      const nextValue = event.currentTarget.value
-                                      state.updateTemplateField(row.id, field.key, nextValue)
+                                      const nextValue =
+                                        event.currentTarget.value;
+                                      state.updateTemplateField(
+                                        row.id,
+                                        field.key,
+                                        nextValue,
+                                      );
                                     }}
                                   />
                                 ) : (
@@ -2177,24 +2508,24 @@ function TemplatesPage({
                                     className="tm-table__cell"
                                     style={columnStyle}
                                     onFocus={() => {
-                                      state.setSelectedRowId(row.id)
-                                      state.setTemplateNarrowStage("table")
-                                      void state.autoPreviewTemplateRow(row)
+                                      state.setSelectedRowId(row.id);
+                                      state.setTemplateNarrowStage("table");
+                                      void state.autoPreviewTemplateRow(row);
                                     }}
                                     onClick={() => {
-                                      state.setSelectedRowId(row.id)
+                                      state.setSelectedRowId(row.id);
                                       state.setEditingTemplateCell({
                                         rowId: row.id,
                                         fieldKey: field.key,
-                                      })
-                                      state.setTemplateNarrowStage("table")
+                                      });
+                                      state.setTemplateNarrowStage("table");
                                     }}
                                   >
                                     {value || "—"}
                                   </button>
                                 )}
                               </td>
-                            )
+                            );
                           })}
                         </tr>
                       ))
@@ -2239,7 +2570,7 @@ function TemplatesPage({
         ) : null}
       </div>
     </section>
-  )
+  );
 }
 
 // biome-ignore lint/correctness/noUnusedVariables: legacy canvas surface remains as reference while /canvas uses CanvasWorkspace.
@@ -2247,11 +2578,11 @@ function CanvasPageLegacy({
   controller,
   state,
 }: {
-  controller: ReturnType<typeof useWorkbenchController>
-  state: ReturnType<typeof useWorkbenchPages>
+  controller: ReturnType<typeof useWorkbenchController>;
+  state: ReturnType<typeof useWorkbenchPages>;
 }) {
-  const isTriple = useMediaQuery(`(min-width: ${WIDE_TRIPLE_THRESHOLD}px)`)
-  const supportsFormal = useMediaQuery(`(min-width: ${SUPPORTED_MIN_WIDTH}px)`)
+  const isTriple = useMediaQuery(`(min-width: ${WIDE_TRIPLE_THRESHOLD}px)`);
+  const supportsFormal = useMediaQuery(`(min-width: ${SUPPORTED_MIN_WIDTH}px)`);
 
   return (
     <section className="tm-workspace">
@@ -2271,7 +2602,7 @@ function CanvasPageLegacy({
           !isTriple &&
             supportsFormal &&
             state.canvasFocus === "center-right" &&
-            "tm-pane-grid--focus-right"
+            "tm-pane-grid--focus-right",
         )}
       >
         <aside className="tm-pane tm-pane--left">
@@ -2282,8 +2613,8 @@ function CanvasPageLegacy({
               <Select
                 value={state.canvasPresetId}
                 onValueChange={(value) => {
-                  state.setCanvasPresetId(value)
-                  state.setCanvasFocus("left-center")
+                  state.setCanvasPresetId(value);
+                  state.setCanvasFocus("left-center");
                 }}
               >
                 <SelectTrigger>
@@ -2333,16 +2664,21 @@ function CanvasPageLegacy({
                     type="button"
                     className={cn(
                       "tm-choice",
-                      element.id === state.selectedCanvasElementId && "tm-choice--active"
+                      element.id === state.selectedCanvasElementId &&
+                        "tm-choice--active",
                     )}
                     onClick={() => {
-                      state.setSelectedCanvasElementId(element.id)
-                      state.setCanvasFocus("left-center")
+                      state.setSelectedCanvasElementId(element.id);
+                      state.setCanvasFocus("left-center");
                     }}
                   >
                     <div>
-                      <div className="font-medium">{CANVAS_TOOL_LABELS[element.kind]}</div>
-                      <div className="text-sm text-muted-foreground">{element.id.slice(0, 12)}</div>
+                      <div className="font-medium">
+                        {CANVAS_TOOL_LABELS[element.kind]}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {element.id.slice(0, 12)}
+                      </div>
                     </div>
                     <ChevronRight className="size-4 text-muted-foreground" />
                   </button>
@@ -2414,10 +2750,14 @@ function CanvasPageLegacy({
         </aside>
       </div>
     </section>
-  )
+  );
 }
 
-function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbenchController> }) {
+function SystemPage({
+  controller,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>;
+}) {
   return (
     <section className="tm-system">
       <div className="tm-system__grid">
@@ -2427,14 +2767,22 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
           status={controller.dataDirectoryStatus}
           onCancelDialog={controller.cancelDataDirectoryDialog}
           onChooseDirectory={() => void controller.chooseDataDirectory()}
-          onConfirmAttachment={(mode) => void controller.confirmDataDirectoryAttachment(mode)}
+          onConfirmAttachment={(mode) =>
+            void controller.confirmDataDirectoryAttachment(mode)
+          }
           onConfirmImport={() => void controller.confirmImportDataArchive()}
           onConfirmRestore={() => void controller.confirmRestoreBackup()}
           onCreateBackup={() => void controller.createManualDataBackup()}
           onExportArchive={() => void controller.exportDataArchive()}
-          onInspectImportArchive={(file) => void controller.inspectImportDataArchive(file)}
-          onInspectRestoreBackup={(entry) => void controller.inspectRestoreBackup(entry)}
-          onRequestPermission={() => void controller.requestDataDirectoryPermission()}
+          onInspectImportArchive={(file) =>
+            void controller.inspectImportDataArchive(file)
+          }
+          onInspectRestoreBackup={(entry) =>
+            void controller.inspectRestoreBackup(entry)
+          }
+          onRequestPermission={() =>
+            void controller.requestDataDirectoryPermission()
+          }
           onSyncNow={() => void controller.syncDataDirectoryNow()}
           onTakeOverWrites={controller.takeOverDataDirectoryWrites}
         />
@@ -2446,18 +2794,24 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
           <CardContent className="grid gap-3 text-sm text-muted-foreground">
             <div className="tm-list-item">
               <span>模式</span>
-              <strong>{controller.context.mode === "demo" ? "Demo" : "Runtime"}</strong>
+              <strong>
+                {controller.context.mode === "demo" ? "Demo" : "Runtime"}
+              </strong>
             </div>
             <div className="tm-list-item">
               <span>运行面</span>
               <strong>
-                {controller.context.surface === "server-http" ? "Server HTTP" : "Browser static"}
+                {controller.context.surface === "server-http"
+                  ? "Server HTTP"
+                  : "Browser static"}
               </strong>
             </div>
             <div className="tm-list-item">
               <span>当前设备</span>
               <strong>
-                {controller.selectedPrinter?.name ?? controller.browserPrinter?.name ?? "未选择"}
+                {controller.selectedPrinter?.name ??
+                  controller.browserPrinter?.name ??
+                  "未选择"}
               </strong>
             </div>
           </CardContent>
@@ -2468,7 +2822,11 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
             <CardTitle as="h2">默认打印参数</CardTitle>
           </CardHeader>
           <CardContent>
-            <RenderOptionsForm controller={controller} onFocusRight={() => undefined} compact />
+            <RenderOptionsForm
+              controller={controller}
+              onFocusRight={() => undefined}
+              compact
+            />
           </CardContent>
         </Card>
 
@@ -2477,7 +2835,11 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
             <CardTitle as="h2">设备管理与探测</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3">
-            <Button type="button" variant="outline" onClick={() => void controller.refreshSetup()}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void controller.refreshSetup()}
+            >
               <RefreshCcw className="size-4" />
               <span>刷新打印机列表</span>
             </Button>
@@ -2490,14 +2852,18 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
               <span>探测当前设备</span>
             </Button>
             {controller.probeResult ? (
-              <Alert variant={controller.probeResult.ok ? "default" : "destructive"}>
+              <Alert
+                variant={controller.probeResult.ok ? "default" : "destructive"}
+              >
                 {controller.probeResult.ok ? (
                   <CheckCircle2 className="mt-0.5 size-4" />
                 ) : (
                   <AlertCircle className="mt-0.5 size-4" />
                 )}
                 <AlertTitle>{controller.probeResult.stage}</AlertTitle>
-                <AlertDescription>{controller.probeResult.message}</AlertDescription>
+                <AlertDescription>
+                  {controller.probeResult.message}
+                </AlertDescription>
               </Alert>
             ) : (
               <EmptyMini text="尚未执行探测。" />
@@ -2506,17 +2872,17 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
         </Card>
       </div>
     </section>
-  )
+  );
 }
 
-function PaneHeader({
+export function PaneHeader({
   icon: Icon,
   title,
   actions,
 }: {
-  icon: React.ComponentType<{ className?: string }>
-  title: string
-  actions?: React.ReactNode
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  actions?: React.ReactNode;
 }) {
   return (
     <div className="tm-pane__header">
@@ -2528,21 +2894,24 @@ function PaneHeader({
       </div>
       {actions}
     </div>
-  )
+  );
 }
 
-function TemplatesPrintRail({
+export function TemplatesPrintRail({
   controller,
   state,
   disabled = false,
   unavailableMessage,
   onFocusRight,
 }: {
-  controller: ReturnType<typeof useWorkbenchController>
-  state: ReturnType<typeof useWorkbenchPages>
-  disabled?: boolean
-  unavailableMessage?: string
-  onFocusRight: () => void
+  controller: ReturnType<typeof useWorkbenchController>;
+  state: {
+    previewSelectedTemplateRow: () => Promise<void>;
+    printSelectedTemplateRow: () => Promise<void>;
+  };
+  disabled?: boolean;
+  unavailableMessage?: string;
+  onFocusRight: () => void;
 }) {
   return (
     <>
@@ -2586,7 +2955,7 @@ function TemplatesPrintRail({
         />
       </div>
     </>
-  )
+  );
 }
 
 function FocusPairSwitch({
@@ -2595,13 +2964,17 @@ function FocusPairSwitch({
   value,
   onChange,
 }: {
-  leftLabel: string
-  rightLabel: string
-  value: "left-center" | "center-right"
-  onChange: (value: "left-center" | "center-right") => void
+  leftLabel: string;
+  rightLabel: string;
+  value: "left-center" | "center-right";
+  onChange: (value: "left-center" | "center-right") => void;
 }) {
   return (
-    <div className="tm-focus-switch" role="tablist" aria-label="workspace focus">
+    <div
+      className="tm-focus-switch"
+      role="tablist"
+      aria-label="workspace focus"
+    >
       <Button
         type="button"
         size="sm"
@@ -2619,16 +2992,22 @@ function FocusPairSwitch({
         {rightLabel}
       </Button>
     </div>
-  )
+  );
 }
 
-function EmptyMini({ children, text }: { children?: React.ReactNode; text: string }) {
+export function EmptyMini({
+  children,
+  text,
+}: {
+  children?: React.ReactNode;
+  text: string;
+}) {
   return (
     <div className="tm-template-list__empty-box">
       <div>{text}</div>
       {children}
     </div>
-  )
+  );
 }
 
 function TemplateCard({
@@ -2638,21 +3017,21 @@ function TemplateCard({
   onClick,
   onEdit,
 }: {
-  entry: TemplateCardEntry
-  active: boolean
-  mode: TemplateListMode
-  onClick: () => void
-  onEdit: () => void
+  entry: TemplateCardEntry;
+  active: boolean;
+  mode: TemplateListMode;
+  onClick: () => void;
+  onEdit: () => void;
 }) {
-  const template = entry.template
+  const template = entry.template;
   const previewSvg = React.useMemo(
     () =>
       entry.kind === "user"
         ? buildUserTemplatePreviewSvg(entry.draft)
         : buildTemplatePreviewSvg(entry.template),
-    [entry]
-  )
-  const previewSrc = previewSvg ? toDataUrl(previewSvg) : null
+    [entry],
+  );
+  const previewSrc = previewSvg ? toDataUrl(previewSvg) : null;
 
   return (
     <article
@@ -2660,10 +3039,14 @@ function TemplateCard({
         "tm-template-card",
         mode === "large" && "tm-template-card--grid",
         mode === "list" && "tm-template-card--list",
-        active && "tm-template-card--active"
+        active && "tm-template-card--active",
       )}
     >
-      <button type="button" className="tm-template-card__surface" onClick={onClick}>
+      <button
+        type="button"
+        className="tm-template-card__surface"
+        onClick={onClick}
+      >
         <div className="tm-template-card__preview">
           {previewSrc ? (
             <img
@@ -2677,7 +3060,9 @@ function TemplateCard({
         </div>
         <div className="tm-template-card__meta">
           <div className="tm-template-card__name">{template.name}</div>
-          <div className="tm-template-card__size">{formatTemplateCardSize(entry)}</div>
+          <div className="tm-template-card__size">
+            {formatTemplateCardSize(entry)}
+          </div>
         </div>
       </button>
       <div className="tm-template-card__actions">
@@ -2693,10 +3078,10 @@ function TemplateCard({
         />
       </div>
     </article>
-  )
+  );
 }
 
-function TemplateGroup({
+export function TemplateGroup({
   title,
   entries,
   listMode,
@@ -2706,14 +3091,14 @@ function TemplateGroup({
   onSelect,
   onEdit,
 }: {
-  title: string
-  entries: TemplateCardEntry[]
-  listMode: TemplateListMode
-  activeEntryId: string
-  emptyText?: string
-  emptyAction?: React.ReactNode
-  onSelect: (entryId: string) => void
-  onEdit: (entryId: string) => void
+  title: string;
+  entries: TemplateCardEntry[];
+  listMode: TemplateListMode;
+  activeEntryId: string;
+  emptyText?: string;
+  emptyAction?: React.ReactNode;
+  onSelect: (entryId: string) => void;
+  onEdit: (entryId: string) => void;
 }) {
   return (
     <section className="tm-template-group">
@@ -2724,7 +3109,9 @@ function TemplateGroup({
         <div className="tm-template-list__section-empty">
           <EmptyMini text={emptyText}>
             {emptyAction ? (
-              <div className="tm-template-list__section-empty-action">{emptyAction}</div>
+              <div className="tm-template-list__section-empty-action">
+                {emptyAction}
+              </div>
             ) : null}
           </EmptyMini>
         </div>
@@ -2734,7 +3121,7 @@ function TemplateGroup({
             "tm-template-group__grid",
             listMode === "large"
               ? "tm-template-group__grid--large"
-              : "tm-template-group__grid--list"
+              : "tm-template-group__grid--list",
           )}
         >
           {entries.map((entry) => (
@@ -2750,21 +3137,21 @@ function TemplateGroup({
         </div>
       )}
     </section>
-  )
+  );
 }
 
-function RenderOptionsForm({
+export function RenderOptionsForm({
   controller,
   onFocusRight,
   compact = false,
   disabled = false,
 }: {
-  controller: ReturnType<typeof useWorkbenchController>
-  onFocusRight: () => void
-  compact?: boolean
-  disabled?: boolean
+  controller: ReturnType<typeof useWorkbenchController>;
+  onFocusRight: () => void;
+  compact?: boolean;
+  disabled?: boolean;
 }) {
-  const options = controller.renderOptions
+  const options = controller.renderOptions;
 
   return (
     <Card className="tm-panel">
@@ -2784,11 +3171,11 @@ function RenderOptionsForm({
               disabled={disabled}
               onFocus={onFocusRight}
               onChange={(event) => {
-                const rawValue = event.currentTarget.value
+                const rawValue = event.currentTarget.value;
                 controller.updateRenderOptions((current) => ({
                   ...current,
                   printWidthDots: Number(rawValue || current.printWidthDots),
-                }))
+                }));
               }}
             />
           </div>
@@ -2798,10 +3185,17 @@ function RenderOptionsForm({
               value={options.paperType}
               disabled={disabled}
               onValueChange={(value: "continuous" | "gap") =>
-                controller.updateRenderOptions((current) => ({ ...current, paperType: value }))
+                controller.updateRenderOptions((current) => ({
+                  ...current,
+                  paperType: value,
+                }))
               }
             >
-              <SelectTrigger id="paper-type" disabled={disabled} onFocus={onFocusRight}>
+              <SelectTrigger
+                id="paper-type"
+                disabled={disabled}
+                onFocus={onFocusRight}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -2819,11 +3213,11 @@ function RenderOptionsForm({
               disabled={disabled}
               onFocus={onFocusRight}
               onChange={(event) => {
-                const rawValue = event.currentTarget.value
+                const rawValue = event.currentTarget.value;
                 controller.updateRenderOptions((current) => ({
                   ...current,
                   threshold: Number(rawValue || current.threshold),
-                }))
+                }));
               }}
             />
           </div>
@@ -2836,18 +3230,18 @@ function RenderOptionsForm({
               disabled={disabled}
               onFocus={onFocusRight}
               onChange={(event) => {
-                const rawValue = event.currentTarget.value
+                const rawValue = event.currentTarget.value;
                 controller.updateRenderOptions((current) => ({
                   ...current,
                   xOffsetDots: Number(rawValue || current.xOffsetDots),
-                }))
+                }));
               }}
             />
           </div>
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 function PreviewCard({
@@ -2855,30 +3249,30 @@ function PreviewCard({
   disabled = false,
   emptyText = "先生成一个预览。",
 }: {
-  controller: ReturnType<typeof useWorkbenchController>
-  disabled?: boolean
-  emptyText?: string
+  controller: ReturnType<typeof useWorkbenchController>;
+  disabled?: boolean;
+  emptyText?: string;
 }) {
   const printStatus = React.useMemo(() => {
-    const result = controller.printResult
+    const result = controller.printResult;
     if (!result) {
-      return null
+      return null;
     }
 
     if ("job" in result && result.job) {
-      return `打印任务 ${result.job.id} 状态 ${result.job.status}。`
+      return `打印任务 ${result.job.id} 状态 ${result.job.status}。`;
     }
 
     if ("status" in result && typeof result.status === "string") {
-      return result.status
+      return result.status;
     }
 
     if ("message" in result && typeof result.message === "string") {
-      return result.message
+      return result.message;
     }
 
-    return null
-  }, [controller.printResult])
+    return null;
+  }, [controller.printResult]);
 
   return (
     <Card className="tm-panel">
@@ -2921,13 +3315,17 @@ function PreviewCard({
         ) : null}
       </CardContent>
     </Card>
-  )
+  );
 }
 
-function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> }) {
-  const stageScale = 1.45
-  const width = state.canvasDraft.width * stageScale
-  const height = state.canvasDraft.height * stageScale
+function CanvasStage({
+  state,
+}: {
+  state: ReturnType<typeof useWorkbenchPages>;
+}) {
+  const stageScale = 1.45;
+  const width = state.canvasDraft.width * stageScale;
+  const height = state.canvasDraft.height * stageScale;
 
   return (
     <div className="tm-stage-wrap">
@@ -2945,7 +3343,7 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
             shadowOffsetY={6}
           />
           {state.canvasDraft.elements.map((element) => {
-            const isSelected = element.id === state.selectedCanvasElementId
+            const isSelected = element.id === state.selectedCanvasElementId;
             if (element.kind === "text") {
               return (
                 <KonvaText
@@ -2962,12 +3360,16 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   onDragEnd={(event) =>
                     state.updateCanvasElement(element.id, (current) =>
                       current.kind === "text"
-                        ? { ...current, x: event.target.x(), y: event.target.y() }
-                        : current
+                        ? {
+                            ...current,
+                            x: event.target.x(),
+                            y: event.target.y(),
+                          }
+                        : current,
                     )
                   }
                 />
-              )
+              );
             }
 
             if (element.kind === "rect") {
@@ -2987,12 +3389,16 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   onDragEnd={(event) =>
                     state.updateCanvasElement(element.id, (current) =>
                       current.kind === "rect"
-                        ? { ...current, x: event.target.x(), y: event.target.y() }
-                        : current
+                        ? {
+                            ...current,
+                            x: event.target.x(),
+                            y: event.target.y(),
+                          }
+                        : current,
                     )
                   }
                 />
-              )
+              );
             }
 
             if (element.kind === "circle") {
@@ -3015,11 +3421,11 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                             x: event.target.x() - current.size / 2,
                             y: event.target.y() - current.size / 2,
                           }
-                        : current
+                        : current,
                     )
                   }
                 />
-              )
+              );
             }
 
             if (element.kind === "triangle") {
@@ -3028,7 +3434,14 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   key={element.id}
                   x={element.x}
                   y={element.y}
-                  points={[element.width / 2, 0, element.width, element.height, 0, element.height]}
+                  points={[
+                    element.width / 2,
+                    0,
+                    element.width,
+                    element.height,
+                    0,
+                    element.height,
+                  ]}
                   closed
                   fill={element.fill === "none" ? undefined : element.fill}
                   stroke={isSelected ? "#8b4c21" : element.stroke}
@@ -3038,12 +3451,16 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   onDragEnd={(event) =>
                     state.updateCanvasElement(element.id, (current) =>
                       current.kind === "triangle"
-                        ? { ...current, x: event.target.x(), y: event.target.y() }
-                        : current
+                        ? {
+                            ...current,
+                            x: event.target.x(),
+                            y: event.target.y(),
+                          }
+                        : current,
                     )
                   }
                 />
-              )
+              );
             }
 
             if (element.kind === "line") {
@@ -3065,11 +3482,11 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                             x2: event.target.x() + (element.x2 - element.x),
                             y2: event.target.y() + (element.y2 - element.y),
                           }
-                        : current
+                        : current,
                     )
                   }
                 />
-              )
+              );
             }
 
             if (element.kind === "barcode") {
@@ -3090,12 +3507,16 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   onDragEnd={(event) =>
                     state.updateCanvasElement(element.id, (current) =>
                       current.kind === "barcode"
-                        ? { ...current, x: event.target.x(), y: event.target.y() }
-                        : current
+                        ? {
+                            ...current,
+                            x: event.target.x(),
+                            y: event.target.y(),
+                          }
+                        : current,
                     )
                   }
                 />
-              )
+              );
             }
 
             if (element.kind === "qr") {
@@ -3115,12 +3536,16 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   onDragEnd={(event) =>
                     state.updateCanvasElement(element.id, (current) =>
                       current.kind === "qr"
-                        ? { ...current, x: event.target.x(), y: event.target.y() }
-                        : current
+                        ? {
+                            ...current,
+                            x: event.target.x(),
+                            y: event.target.y(),
+                          }
+                        : current,
                     )
                   }
                 />
-              )
+              );
             }
 
             if (element.kind === "datamatrix") {
@@ -3140,26 +3565,34 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   onDragEnd={(event) =>
                     state.updateCanvasElement(element.id, (current) =>
                       current.kind === "datamatrix"
-                        ? { ...current, x: event.target.x(), y: event.target.y() }
-                        : current
+                        ? {
+                            ...current,
+                            x: event.target.x(),
+                            y: event.target.y(),
+                          }
+                        : current,
                     )
                   }
                 />
-              )
+              );
             }
 
-            return null
+            return null;
           })}
         </Layer>
       </Stage>
     </div>
-  )
+  );
 }
 
-function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages> }) {
-  const element = state.selectedCanvasElement
+function CanvasInspector({
+  state,
+}: {
+  state: ReturnType<typeof useWorkbenchPages>;
+}) {
+  const element = state.selectedCanvasElement;
   if (!element) {
-    return <EmptyMini text="先选择一个元素。" />
+    return <EmptyMini text="先选择一个元素。" />;
   }
 
   const setNumeric = (key: string, value: number) => {
@@ -3168,38 +3601,47 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
         current.kind === "text" &&
         (key === "x" || key === "y" || key === "width" || key === "fontSize")
       ) {
-        return { ...current, [key]: value }
+        return { ...current, [key]: value };
       }
       if (
         current.kind === "rect" &&
         ["x", "y", "width", "height", "strokeWidth", "radius"].includes(key)
       ) {
-        return { ...current, [key]: value }
+        return { ...current, [key]: value };
       }
-      if (current.kind === "circle" && ["x", "y", "size", "strokeWidth"].includes(key)) {
-        return { ...current, [key]: value }
+      if (
+        current.kind === "circle" &&
+        ["x", "y", "size", "strokeWidth"].includes(key)
+      ) {
+        return { ...current, [key]: value };
       }
       if (
         current.kind === "triangle" &&
         ["x", "y", "width", "height", "strokeWidth"].includes(key)
       ) {
-        return { ...current, [key]: value }
+        return { ...current, [key]: value };
       }
-      if (current.kind === "line" && ["x", "y", "x2", "y2", "strokeWidth"].includes(key)) {
-        return { ...current, [key]: value }
+      if (
+        current.kind === "line" &&
+        ["x", "y", "x2", "y2", "strokeWidth"].includes(key)
+      ) {
+        return { ...current, [key]: value };
       }
-      if (current.kind === "barcode" && ["x", "y", "width", "height"].includes(key)) {
-        return { ...current, [key]: value }
+      if (
+        current.kind === "barcode" &&
+        ["x", "y", "width", "height"].includes(key)
+      ) {
+        return { ...current, [key]: value };
       }
       if (current.kind === "qr" && ["x", "y", "size"].includes(key)) {
-        return { ...current, [key]: value }
+        return { ...current, [key]: value };
       }
       if (current.kind === "datamatrix" && ["x", "y", "size"].includes(key)) {
-        return { ...current, [key]: value }
+        return { ...current, [key]: value };
       }
-      return current
-    })
-  }
+      return current;
+    });
+  };
 
   return (
     <Card className="tm-panel">
@@ -3216,7 +3658,9 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
             <Input
               type="number"
               value={String(element.x)}
-              onChange={(event) => setNumeric("x", Number(event.currentTarget.value || 0))}
+              onChange={(event) =>
+                setNumeric("x", Number(event.currentTarget.value || 0))
+              }
             />
           </div>
           <div className="grid gap-2">
@@ -3224,7 +3668,9 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
             <Input
               type="number"
               value={String(element.y)}
-              onChange={(event) => setNumeric("y", Number(event.currentTarget.value || 0))}
+              onChange={(event) =>
+                setNumeric("y", Number(event.currentTarget.value || 0))
+              }
             />
           </div>
         </div>
@@ -3234,10 +3680,12 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
             <Textarea
               value={element.value}
               onChange={(event) => {
-                const nextValue = event.currentTarget.value
+                const nextValue = event.currentTarget.value;
                 state.updateCanvasElement(element.id, (current) =>
-                  current.kind === "text" ? { ...current, value: nextValue } : current
-                )
+                  current.kind === "text"
+                    ? { ...current, value: nextValue }
+                    : current,
+                );
               }}
             />
             <div className="tm-form-grid tm-form-grid--compact">
@@ -3246,7 +3694,9 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
                 <Input
                   type="number"
                   value={String(element.width)}
-                  onChange={(event) => setNumeric("width", Number(event.currentTarget.value || 0))}
+                  onChange={(event) =>
+                    setNumeric("width", Number(event.currentTarget.value || 0))
+                  }
                 />
               </div>
               <div className="grid gap-2">
@@ -3255,7 +3705,10 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
                   type="number"
                   value={String(element.fontSize)}
                   onChange={(event) =>
-                    setNumeric("fontSize", Number(event.currentTarget.value || 0))
+                    setNumeric(
+                      "fontSize",
+                      Number(event.currentTarget.value || 0),
+                    )
                   }
                 />
               </div>
@@ -3270,7 +3723,9 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
               <Input
                 type="number"
                 value={String(element.width)}
-                onChange={(event) => setNumeric("width", Number(event.currentTarget.value || 0))}
+                onChange={(event) =>
+                  setNumeric("width", Number(event.currentTarget.value || 0))
+                }
               />
             </div>
             <div className="grid gap-2">
@@ -3278,7 +3733,9 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
               <Input
                 type="number"
                 value={String(element.height)}
-                onChange={(event) => setNumeric("height", Number(event.currentTarget.value || 0))}
+                onChange={(event) =>
+                  setNumeric("height", Number(event.currentTarget.value || 0))
+                }
               />
             </div>
           </div>
@@ -3291,7 +3748,9 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
               <Input
                 type="number"
                 value={String(element.size)}
-                onChange={(event) => setNumeric("size", Number(event.currentTarget.value || 0))}
+                onChange={(event) =>
+                  setNumeric("size", Number(event.currentTarget.value || 0))
+                }
               />
             </div>
           </div>
@@ -3304,7 +3763,9 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
               <Input
                 type="number"
                 value={String(element.x2)}
-                onChange={(event) => setNumeric("x2", Number(event.currentTarget.value || 0))}
+                onChange={(event) =>
+                  setNumeric("x2", Number(event.currentTarget.value || 0))
+                }
               />
             </div>
             <div className="grid gap-2">
@@ -3312,7 +3773,9 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
               <Input
                 type="number"
                 value={String(element.y2)}
-                onChange={(event) => setNumeric("y2", Number(event.currentTarget.value || 0))}
+                onChange={(event) =>
+                  setNumeric("y2", Number(event.currentTarget.value || 0))
+                }
               />
             </div>
           </div>
@@ -3322,10 +3785,12 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
           <Textarea
             value={element.value}
             onChange={(event) => {
-              const nextValue = event.currentTarget.value
+              const nextValue = event.currentTarget.value;
               state.updateCanvasElement(element.id, (current) =>
-                current.kind === "barcode" ? { ...current, value: nextValue } : current
-              )
+                current.kind === "barcode"
+                  ? { ...current, value: nextValue }
+                  : current,
+              );
             }}
           />
         ) : null}
@@ -3334,10 +3799,12 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
           <Textarea
             value={element.value}
             onChange={(event) => {
-              const nextValue = event.currentTarget.value
+              const nextValue = event.currentTarget.value;
               state.updateCanvasElement(element.id, (current) =>
-                current.kind === "qr" ? { ...current, value: nextValue } : current
-              )
+                current.kind === "qr"
+                  ? { ...current, value: nextValue }
+                  : current,
+              );
             }}
           />
         ) : null}
@@ -3346,91 +3813,345 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
           <Textarea
             value={element.value}
             onChange={(event) => {
-              const nextValue = event.currentTarget.value
+              const nextValue = event.currentTarget.value;
               state.updateCanvasElement(element.id, (current) =>
-                current.kind === "datamatrix" ? { ...current, value: nextValue } : current
-              )
+                current.kind === "datamatrix"
+                  ? { ...current, value: nextValue }
+                  : current,
+              );
             }}
           />
         ) : null}
       </CardContent>
     </Card>
-  )
+  );
 }
 
-function WorkbenchRouter({
+function RouteLoadingPanel() {
+  return (
+    <div className="tm-route-loading" role="status" aria-live="polite">
+      <RefreshCcw className="size-4 animate-spin" />
+      <span>正在装载页面模块…</span>
+    </div>
+  );
+}
+
+function DashboardRoute({
+  controller,
+  onRouteChunkReady,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>;
+  onRouteChunkReady: () => void;
+}) {
+  React.useEffect(() => {
+    onRouteChunkReady();
+  }, [onRouteChunkReady]);
+
+  return <DashboardPage controller={controller} />;
+}
+
+function LazyWorkbenchRouter({
   controller,
   canvasScenario,
+  hydrationState,
+  onRouteChunkReady,
   pwaUpdateSnapshot,
 }: {
-  controller: ReturnType<typeof useWorkbenchController>
-  canvasScenario?: CanvasStoryScenario
-  pwaUpdateSnapshot?: PwaUpdateSnapshot
+  controller: ReturnType<typeof useWorkbenchController>;
+  canvasScenario?: CanvasStoryScenario;
+  hydrationState: WorkbenchHydrationState;
+  onRouteChunkReady: () => void;
+  pwaUpdateSnapshot?: PwaUpdateSnapshot;
 }) {
-  const pageState = useWorkbenchPages(controller)
+  return (
+    <Routes>
+      <Route
+        element={
+          <WorkbenchLayout
+            controller={controller}
+            hydrationState={hydrationState}
+            pwaUpdateSnapshot={pwaUpdateSnapshot}
+          />
+        }
+      >
+        <Route
+          path="/"
+          element={
+            <DashboardRoute
+              controller={controller}
+              onRouteChunkReady={onRouteChunkReady}
+            />
+          }
+        />
+        <Route
+          path="/templates"
+          element={
+            <React.Suspense fallback={<RouteLoadingPanel />}>
+              <LazyTemplatesRoute
+                controller={controller}
+                onRouteChunkReady={onRouteChunkReady}
+              />
+            </React.Suspense>
+          }
+        />
+        <Route
+          path="/canvas"
+          element={
+            <React.Suspense fallback={<RouteLoadingPanel />}>
+              <LazyCanvasRoute
+                controller={controller}
+                initialScenario={canvasScenario}
+                onRouteChunkReady={onRouteChunkReady}
+              />
+            </React.Suspense>
+          }
+        />
+        <Route
+          path="/system"
+          element={
+            <React.Suspense fallback={<RouteLoadingPanel />}>
+              <LazySystemRoute
+                controller={controller}
+                onRouteChunkReady={onRouteChunkReady}
+              />
+            </React.Suspense>
+          }
+        />
+      </Route>
+    </Routes>
+  );
+}
+
+function EagerWorkbenchRouter({
+  controller,
+  canvasScenario,
+  hydrationState,
+  onRouteChunkReady,
+  pwaUpdateSnapshot,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>;
+  canvasScenario?: CanvasStoryScenario;
+  hydrationState: WorkbenchHydrationState;
+  onRouteChunkReady: () => void;
+  pwaUpdateSnapshot?: PwaUpdateSnapshot;
+}) {
+  const pageState = useWorkbenchPages(controller);
 
   return (
     <Routes>
       <Route
-        element={<WorkbenchLayout controller={controller} pwaUpdateSnapshot={pwaUpdateSnapshot} />}
+        element={
+          <WorkbenchLayout
+            controller={controller}
+            hydrationState={hydrationState}
+            pwaUpdateSnapshot={pwaUpdateSnapshot}
+          />
+        }
       >
-        <Route path="/" element={<DashboardPage controller={controller} />} />
+        <Route
+          path="/"
+          element={
+            <DashboardRoute
+              controller={controller}
+              onRouteChunkReady={onRouteChunkReady}
+            />
+          }
+        />
         <Route
           path="/templates"
-          element={<TemplatesPage controller={controller} state={pageState} />}
+          element={
+            <>
+              <RouteReadyEffect onReady={onRouteChunkReady} />
+              <TemplatesPage controller={controller} state={pageState} />
+            </>
+          }
         />
         <Route
           path="/canvas"
-          element={<CanvasWorkspace controller={controller} initialScenario={canvasScenario} />}
+          element={
+            <>
+              <RouteReadyEffect onReady={onRouteChunkReady} />
+              <CanvasWorkspace
+                controller={controller}
+                initialScenario={canvasScenario}
+              />
+            </>
+          }
         />
-        <Route path="/system" element={<SystemPage controller={controller} />} />
+        <Route
+          path="/system"
+          element={
+            <>
+              <RouteReadyEffect onReady={onRouteChunkReady} />
+              <SystemPage controller={controller} />
+            </>
+          }
+        />
       </Route>
     </Routes>
-  )
+  );
 }
 
-export function WorkbenchApp({ client, context, canvasScenario, pwaUpdateSnapshot }: AppProps) {
-  const controller = useWorkbenchController({ client, context })
+function RouteReadyEffect({ onReady }: { onReady: () => void }) {
+  React.useEffect(() => {
+    onReady();
+  }, [onReady]);
+
+  return null;
+}
+
+export function WorkbenchApp({
+  bootstrapState,
+  client,
+  context,
+  canvasScenario,
+  pwaUpdateSnapshot,
+  startupShell = "disabled",
+  theme = "auto",
+}: AppProps) {
+  const initialRoutePath = normalizeWorkbenchRoutePath(
+    typeof window !== "undefined" ? window.location.pathname : "/"
+  );
+  const controller = useWorkbenchController({
+    client,
+    context,
+    initialRoutePath,
+  });
+  const [currentRouteChunkReady, setCurrentRouteChunkReady] = React.useState(
+    initialRoutePath === "/" || Boolean(bootstrapState?.currentRouteChunkReady)
+  );
+  const offlineWarmupStatus = usePwaAssetWarmup(
+    controller.context,
+    controller.startupSyncReady
+  );
+
+  React.useEffect(() => {
+    if (initialRoutePath === "/") {
+      setCurrentRouteChunkReady(true);
+      return;
+    }
+    setCurrentRouteChunkReady(Boolean(bootstrapState?.currentRouteChunkReady));
+  }, [bootstrapState?.currentRouteChunkReady, initialRoutePath]);
+
+  const hydrationState = React.useMemo<WorkbenchHydrationState>(
+    () => ({
+      shellReady: currentRouteChunkReady && controller.startupSyncReady,
+      currentRouteReady: currentRouteChunkReady && controller.startupSyncReady,
+      deferredHydrationPending: controller.deferredHydrationPending,
+      offlineWarmupPending: offlineWarmupStatus === "pending",
+      offlineWarmupStatus,
+    }),
+    [
+      controller.deferredHydrationPending,
+      controller.startupSyncReady,
+      currentRouteChunkReady,
+      offlineWarmupStatus,
+    ]
+  );
+  const launchSplashState = React.useMemo(
+    () =>
+      buildStartupSplashState({
+        currentRouteChunkReady,
+        currentRouteDataReady: controller.startupSyncReady,
+        deferredHydrationPending: controller.deferredHydrationPending,
+        offlineWarmupStatus,
+      }),
+    [
+      controller.deferredHydrationPending,
+      controller.startupSyncReady,
+      currentRouteChunkReady,
+      offlineWarmupStatus,
+    ]
+  );
+  const handleRouteChunkReady = React.useCallback(() => {
+    setCurrentRouteChunkReady(true);
+  }, []);
+  const RouterComponent =
+    import.meta.env.MODE === "test" ? EagerWorkbenchRouter : LazyWorkbenchRouter;
+
   const router = controller.context.basePath ? (
     <BrowserRouter basename={controller.context.basePath}>
-      <WorkbenchRouter
+      <RouterComponent
         controller={controller}
         canvasScenario={canvasScenario}
+        hydrationState={hydrationState}
+        onRouteChunkReady={handleRouteChunkReady}
         pwaUpdateSnapshot={pwaUpdateSnapshot}
       />
     </BrowserRouter>
   ) : (
     <BrowserRouter>
-      <WorkbenchRouter
+      <RouterComponent
         controller={controller}
         canvasScenario={canvasScenario}
+        hydrationState={hydrationState}
+        onRouteChunkReady={handleRouteChunkReady}
         pwaUpdateSnapshot={pwaUpdateSnapshot}
       />
     </BrowserRouter>
-  )
+  );
 
-  return router
+  return (
+    <ThemeScope theme={theme}>
+      {router}
+      {startupShell === "auto" && !hydrationState.shellReady ? (
+        <div className="tm-startup-overlay">
+          <AppLaunchSplash
+            detailText={launchSplashState.detailText}
+            progressPercent={launchSplashState.progressPercent}
+            statusText={launchSplashState.statusText}
+            steps={launchSplashState.steps}
+            theme={theme}
+          />
+        </div>
+      ) : null}
+    </ThemeScope>
+  );
 }
 
 export function WorkbenchAppStory({
   client,
   context,
   canvasScenario,
+  bootstrapState,
   pwaUpdateSnapshot,
+  theme = "auto",
   initialEntries = ["/"],
+  hydrationStateOverride,
   storyStateOverrides,
 }: AppProps & {
-  initialEntries?: string[]
-  storyStateOverrides?: WorkbenchStoryStateOverrides
+  initialEntries?: string[];
+  hydrationStateOverride?: Partial<WorkbenchHydrationState>;
+  storyStateOverrides?: WorkbenchStoryStateOverrides;
 }) {
-  const controller = useWorkbenchController({ client, context, storyStateOverrides })
+  const initialRoutePath = normalizeWorkbenchRoutePath(initialEntries[0] ?? "/");
+  const controller = useWorkbenchController({
+    client,
+    context,
+    initialRoutePath,
+    storyStateOverrides,
+  });
+  const hydrationState: WorkbenchHydrationState = {
+    shellReady: true,
+    currentRouteReady: true,
+    deferredHydrationPending: controller.deferredHydrationPending,
+    offlineWarmupPending: false,
+    offlineWarmupStatus: "complete",
+    ...hydrationStateOverride,
+  };
   return (
-    <MemoryRouter initialEntries={initialEntries}>
-      <WorkbenchRouter
-        controller={controller}
-        canvasScenario={canvasScenario}
-        pwaUpdateSnapshot={pwaUpdateSnapshot}
-      />
-    </MemoryRouter>
-  )
+    <ThemeScope theme={theme}>
+      <MemoryRouter initialEntries={initialEntries}>
+        <LazyWorkbenchRouter
+          controller={controller}
+          canvasScenario={canvasScenario}
+          hydrationState={hydrationState}
+          onRouteChunkReady={() => {
+            void bootstrapState;
+          }}
+          pwaUpdateSnapshot={pwaUpdateSnapshot}
+        />
+      </MemoryRouter>
+    </ThemeScope>
+  );
 }

@@ -1,26 +1,21 @@
-import React from "react"
-import ReactDOM from "react-dom/client"
-
-import { App } from "./app.js"
 import { restoreSpaRedirectLocation } from "./spa-fallback.js"
-import "./styles.css"
-
-export function mountApp(element: HTMLElement, useStrictMode = true) {
-  const root = ReactDOM.createRoot(element)
-  root.render(
-    useStrictMode ? (
-      <React.StrictMode>
-        <App />
-      </React.StrictMode>
-    ) : (
-      <App />
-    )
-  )
-  return root
-}
+import { preloadWorkbenchRoute } from "./workbench-route-registry.js"
 
 const rootElement = document.getElementById("root")
 if (rootElement) {
   restoreSpaRedirectLocation()
-  mountApp(rootElement, true)
+  void Promise.all([
+    import("./app-runtime.js"),
+    preloadWorkbenchRoute(window.location.pathname).catch(() => false),
+  ]).then(([runtimeModule, currentRouteChunkReady]) => {
+    runtimeModule.mountApp(
+      rootElement,
+      {
+        bootstrapState: {
+          currentRouteChunkReady,
+        },
+      },
+      true
+    )
+  })
 }

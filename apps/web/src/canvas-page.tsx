@@ -6273,7 +6273,7 @@ function CanvasVersionsPanel({
   )
 }
 
-function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
+export function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const routeSource = React.useMemo(() => resolveCanvasSource(searchParams), [searchParams])
@@ -7230,5 +7230,3 @@ function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
     </section>
   )
 }
-
-export { CanvasWorkspace }

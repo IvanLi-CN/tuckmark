@@ -14,6 +14,21 @@
   - drawer-local feedback state for device actions so browser-direct
     cancellation, browser-direct connection failures, and service-api probe /
     refresh failures stay recoverable in-context without closing the drawer
+  - one shared theme-token layer that follows `prefers-color-scheme` in normal
+    runtime and also supports explicit light / dark wrapping for Storybook
+    verification
+  - a startup/hydration contract where the runtime shell can mount before
+    deferred setup, recent activity, and offline warmup have all completed
+- Route startup is now split between route-level code loading and deferred
+  background hydration:
+  - `apps/web/src/workbench-route-registry.tsx` owns dynamic route imports for
+    `/templates`, `/canvas`, and `/system`
+  - `apps/web/src/workbench-controller.tsx` blocks only current-route critical
+    data before marking the shell ready, then continues setup/template/status
+    work in the background
+  - `apps/web/src/workbench-app.tsx` exposes runtime shell state through
+    `shellReady`, `currentRouteReady`, `deferredHydrationPending`, and
+    `offlineWarmupStatus`
 - The `/system` page now combines existing app / print settings with a route
   owned `SystemDataStorageCard` that surfaces:
   - browser capability state for `File System Access API` + `OPFS`
@@ -63,6 +78,9 @@
     reset
   - lower-noise panel framing and a cooler stage surface so the editable label
     stays visually dominant
+  - dark-theme shell surfaces that keep the white paper base neutral while
+    restyling chrome, cards, rails, and status surfaces into the same clay
+    family used by the launch splash
   - a right-side inspector split into `属性` and `输出`
   - a toolbar-entry version-history drawer instead of a permanently visible
     right-rail history panel
@@ -169,6 +187,12 @@
     accepted for existing drafts and templates through alias mapping onto named
     fonts
   - new text defaults now resolve to `noto-sans-sc`
+  - startup now imports `apps/web/src/runtime-core-fonts.css` only; the
+    extended bundled font pool moves behind
+    `apps/web/src/runtime-font-loader.ts` and is loaded locally on demand
+  - `apps/web/src/lib/text-fonts.ts` now ensures the extended local font CSS is
+    present before measurement-sensitive lazy font loads, so startup entry CSS
+    no longer carries the entire bundled font catalog
 - Barcode, QR, and Data Matrix stage rendering now uses real encoded graphics
   instead of dashed placeholders.
 - Data Matrix encoding is normalized through `packages/core/src/data-matrix.ts`:
@@ -252,6 +276,9 @@
   - zoom controls and vertical wheel zoom clamped at 500% maximum scale
   - explicit save / save-as and successful real or demo print as the only
     history-recording events
+- Storybook coverage now includes a stable owner-facing deferred-hydration
+  runtime state through `HomeDarkDeferredHydrationPending`, alongside the light
+  and dark launch-shell stories owned by the PWA spec.
   - narrow canvas workspaces scrolling vertically so the editor-header
     dimension control remains reachable on phone-sized viewports
   - direct-print capability blocking for canvas and template sources whose
