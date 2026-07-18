@@ -16,6 +16,7 @@ import { createDraftFromUserTemplatePackage } from "./canvas-editor-model.js"
 import { ActionButton } from "./components/ui/action-button.js"
 import { PromptDialog } from "./components/ui/dialog.js"
 import { Input } from "./components/ui/input.js"
+import { SegmentedTabs } from "./components/ui/segmented-tabs.js"
 import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
 import { cn } from "./lib/utils.js"
 import { ensureExtendedRuntimeFontStyles } from "./runtime-font-loader.js"
@@ -91,7 +92,7 @@ function useTemplatesRouteState(controller: WorkbenchController) {
         kind: "user" as const,
         id: `user:${template.id}`,
         template,
-        draft: userTemplatePreviewDrafts[template.id] ?? null,
+        draft: userTemplatePreviewDrafts[template.id] ?? template.document ?? null,
       })),
     ],
     [controller.templates, controller.userTemplates, userTemplatePreviewDrafts]
@@ -114,6 +115,24 @@ function useTemplatesRouteState(controller: WorkbenchController) {
     fieldKey: string
   } | null>(null)
   const [templateNarrowStage, setTemplateNarrowStage] = React.useState<TemplateNarrowStage>("list")
+  const syncRenderOptionsFromDraft = React.useCallback(
+    (draft: CanvasDraftDocument | null) => {
+      const nextOptions = {
+        ...defaultRenderOptions,
+        ...draft?.renderOptions,
+      }
+      if (
+        controller.renderOptions.printWidthDots === nextOptions.printWidthDots &&
+        controller.renderOptions.paperType === nextOptions.paperType &&
+        controller.renderOptions.threshold === nextOptions.threshold &&
+        controller.renderOptions.xOffsetDots === nextOptions.xOffsetDots
+      ) {
+        return
+      }
+      controller.setRenderOptions(nextOptions)
+    },
+    [controller.renderOptions, controller.setRenderOptions]
+  )
 
   React.useEffect(() => {
     if (!activeTemplateEntry || !activeTemplate) {
@@ -186,13 +205,22 @@ function useTemplatesRouteState(controller: WorkbenchController) {
     if (activeTemplateEntry?.kind !== "user") {
       setActiveUserTemplateDraft(null)
       setActiveUserTemplateDraftLoading(false)
-      controller.setRenderOptions(defaultRenderOptions)
+      syncRenderOptionsFromDraft(null)
       return
     }
 
     let cancelled = false
     const templateId = activeTemplateEntry.template.id
-    setActiveUserTemplateDraft(null)
+    const cachedDraft = activeTemplateEntry.draft ?? activeTemplateEntry.template.document ?? null
+    setActiveUserTemplateDraft(cachedDraft)
+    if (cachedDraft) {
+      syncRenderOptionsFromDraft(cachedDraft)
+      setActiveUserTemplateDraftLoading(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
     setActiveUserTemplateDraftLoading(true)
     void (async () => {
       try {
@@ -204,10 +232,7 @@ function useTemplatesRouteState(controller: WorkbenchController) {
         if (!cancelled) {
           if (version) {
             setActiveUserTemplateDraft(version)
-            controller.setRenderOptions({
-              ...defaultRenderOptions,
-              ...version.renderOptions,
-            })
+            syncRenderOptionsFromDraft(version)
             return
           }
           const history = await readUserTemplateHistory(templateId)
@@ -218,10 +243,7 @@ function useTemplatesRouteState(controller: WorkbenchController) {
           if (!cancelled) {
             const draft = savedVersion?.document ?? null
             setActiveUserTemplateDraft(draft)
-            controller.setRenderOptions({
-              ...defaultRenderOptions,
-              ...draft?.renderOptions,
-            })
+            syncRenderOptionsFromDraft(draft)
           }
         }
       } finally {
@@ -234,7 +256,7 @@ function useTemplatesRouteState(controller: WorkbenchController) {
     return () => {
       cancelled = true
     }
-  }, [activeTemplateEntry, controller])
+  }, [activeTemplateEntry, syncRenderOptionsFromDraft])
 
   React.useEffect(() => {
     if (!templateRows.some((row) => row.id === selectedRowId)) {
@@ -260,6 +282,15 @@ function useTemplatesRouteState(controller: WorkbenchController) {
   const selectedTemplateRow = React.useMemo(
     () => templateRows.find((row) => row.id === selectedRowId) ?? templateRows[0] ?? null,
     [selectedRowId, templateRows]
+  )
+  const resolvedActiveUserTemplateDraft = React.useMemo(
+    () =>
+      activeTemplateEntry?.kind === "user"
+        ? (activeUserTemplateDraft ??
+          activeTemplateEntry.draft ??
+          activeTemplateEntry.template.document)
+        : null,
+    [activeTemplateEntry, activeUserTemplateDraft]
   )
   const lastAutoPreviewKeyRef = React.useRef<string | null>(null)
   const autoPreviewInFlightKeyRef = React.useRef<string | null>(null)
@@ -346,18 +377,17 @@ function useTemplatesRouteState(controller: WorkbenchController) {
       }
       const userTemplateDraftReady =
         activeTemplateEntry?.kind !== "user" ||
-        (activeUserTemplateDraft?.templateId === activeTemplateEntry.template.id &&
-          !activeUserTemplateDraftLoading)
+        (!!resolvedActiveUserTemplateDraft && !activeUserTemplateDraftLoading)
       if (!userTemplateDraftReady) {
         controller.setError("正在读取本地模板草稿，请稍后再预览。")
         return
       }
 
       const source =
-        activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
+        activeTemplateEntry?.kind === "user" && resolvedActiveUserTemplateDraft
           ? createUserTemplatePrintSource(
               activeTemplateEntry.template,
-              activeUserTemplateDraft,
+              resolvedActiveUserTemplateDraft,
               row,
               controller.renderOptions
             )
@@ -372,7 +402,7 @@ function useTemplatesRouteState(controller: WorkbenchController) {
     [
       activeTemplate,
       activeTemplateEntry,
-      activeUserTemplateDraft,
+      resolvedActiveUserTemplateDraft,
       activeUserTemplateDraftLoading,
       controller,
     ]
@@ -385,18 +415,17 @@ function useTemplatesRouteState(controller: WorkbenchController) {
       }
       const userTemplateDraftReady =
         activeTemplateEntry?.kind !== "user" ||
-        (activeUserTemplateDraft?.templateId === activeTemplateEntry.template.id &&
-          !activeUserTemplateDraftLoading)
+        (!!resolvedActiveUserTemplateDraft && !activeUserTemplateDraftLoading)
       if (!userTemplateDraftReady) {
         return
       }
       clearTemplateAutoPreviewTimer()
 
       const source =
-        activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
+        activeTemplateEntry?.kind === "user" && resolvedActiveUserTemplateDraft
           ? createUserTemplatePrintSource(
               activeTemplateEntry.template,
-              activeUserTemplateDraft,
+              resolvedActiveUserTemplateDraft,
               row,
               controller.renderOptions
             )
@@ -421,7 +450,7 @@ function useTemplatesRouteState(controller: WorkbenchController) {
     [
       activeTemplate,
       activeTemplateEntry,
-      activeUserTemplateDraft,
+      resolvedActiveUserTemplateDraft,
       activeUserTemplateDraftLoading,
       clearTemplateAutoPreviewTimer,
       controller.renderOptions,
@@ -484,17 +513,16 @@ function useTemplatesRouteState(controller: WorkbenchController) {
     }
     const userTemplateDraftReady =
       activeTemplateEntry?.kind !== "user" ||
-      (activeUserTemplateDraft?.templateId === activeTemplateEntry.template.id &&
-        !activeUserTemplateDraftLoading)
+      (!!resolvedActiveUserTemplateDraft && !activeUserTemplateDraftLoading)
     if (!userTemplateDraftReady) {
       controller.setError("正在读取本地模板草稿，请稍后再打印。")
       return
     }
     await controller.printSourceDirect(
-      activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
+      activeTemplateEntry?.kind === "user" && resolvedActiveUserTemplateDraft
         ? createUserTemplatePrintSource(
             activeTemplateEntry.template,
-            activeUserTemplateDraft,
+            resolvedActiveUserTemplateDraft,
             selectedTemplateRow,
             controller.renderOptions
           )
@@ -507,7 +535,7 @@ function useTemplatesRouteState(controller: WorkbenchController) {
   }, [
     activeTemplate,
     activeTemplateEntry,
-    activeUserTemplateDraft,
+    resolvedActiveUserTemplateDraft,
     activeUserTemplateDraftLoading,
     controller,
     selectedTemplateRow,
@@ -589,7 +617,10 @@ export default function WorkbenchTemplatesRoute({
   const showTemplatePreviewPane =
     !usesSingleOutletFlow || showsTableStage || showsDisabledPreviewRail
   const activeUserTemplatePending =
-    state.activeTemplateEntry?.kind === "user" && state.activeUserTemplateDraftLoading
+    state.activeTemplateEntry?.kind === "user" &&
+    state.activeUserTemplateDraftLoading &&
+    !state.activeTemplateEntry.draft &&
+    !state.activeTemplateEntry.template.document
   const templatePreviewDisabled =
     showsDisabledPreviewRail ||
     !state.activeTemplateEntry ||
@@ -792,16 +823,16 @@ export default function WorkbenchTemplatesRoute({
               title="模板列表"
               actions={
                 <div className="tm-template-list__header-actions">
-                  <ActionButton
-                    type="button"
-                    name={listMode === "large" ? "大图" : "列表"}
-                    icon={listMode === "large" ? LayoutGrid : LayoutList}
-                    mode="icon-text"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      setListMode((currentMode) => (currentMode === "large" ? "list" : "large"))
+                  <SegmentedTabs
+                    ariaLabel="模板列表视图"
+                    value={listMode}
+                    onValueChange={(nextMode) =>
+                      setListMode(nextMode === "list" ? "list" : "large")
                     }
+                    items={[
+                      { value: "large", name: "大图", icon: LayoutGrid },
+                      { value: "list", name: "列表", icon: LayoutList },
+                    ]}
                   />
                 </div>
               }

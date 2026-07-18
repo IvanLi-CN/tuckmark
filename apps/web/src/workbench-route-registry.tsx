@@ -154,7 +154,7 @@ export async function prepareWorkbenchRouteNavigation(pathname: string): Promise
       return
     case "/canvas": {
       const routeModule = await loadDeferredWorkbenchRouteStore(canvasRouteStore)
-      await routeModule.preloadCanvasRouteNavigation?.(pathname)
+      void routeModule.preloadCanvasRouteNavigation?.(pathname).catch(() => undefined)
       return
     }
     case "/system":

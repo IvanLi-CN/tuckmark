@@ -191,6 +191,7 @@ function buildTemplateSummary(
     width: sourceDraft?.width ?? template.width,
     height: sourceDraft?.height ?? template.height,
     fields: cloneValue(sourceDraft?.fields ?? []),
+    document: sourceDraft ? cloneValue(sourceDraft) : null,
   }
 }
 
@@ -639,7 +640,11 @@ async function saveTemplate(args: RuntimeStoreSaveTemplateArgs) {
     clearAutosaves(db, templateId)
 
     return {
-      template: { ...cloneValue(template), fields: cloneValue(document.fields) },
+      template: {
+        ...cloneValue(template),
+        fields: cloneValue(document.fields),
+        document: cloneValue(document),
+      },
       version: cloneValue(version),
       workingCopy: cloneValue(workingCopy),
     }

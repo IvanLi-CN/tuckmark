@@ -3091,7 +3091,7 @@ describe("web workbench app", () => {
     expect(document.body.textContent).not.toContain("系统模板：Stale preset draft")
   })
 
-  it("waits for a user-template working copy before allowing preview from /templates", async () => {
+  it("uses the cached user-template working copy before the async draft load settles", async () => {
     const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
     const textElement = baseDraft.elements.find((element) => element.kind === "text")
     if (!textElement) {
@@ -3132,9 +3132,15 @@ describe("web workbench app", () => {
         await flush(1)
       })
 
-      expect(queryButton("生成预览").disabled).toBe(true)
-      expect(document.body.textContent).toContain("正在读取本地模板草稿。")
-      expect(browserPayloadMocks.materializeBrowserArtifactData).not.toHaveBeenCalled()
+      expect(queryButton("生成预览").disabled).toBe(false)
+      expect(document.body.textContent).not.toContain("正在读取本地模板草稿。")
+
+      await act(async () => {
+        queryButton("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await flush(8)
+      })
+
+      expect(browserPayloadMocks.materializeBrowserArtifactData).toHaveBeenCalled()
 
       releaseHeldUserTemplateLoad()
       await flush(8)
