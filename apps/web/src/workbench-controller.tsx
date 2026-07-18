@@ -232,6 +232,29 @@ function createDefaultDataDirectoryStatus(): DataDirectoryStatus {
   }
 }
 
+function waitForPaintFrames(frameCount = 1): Promise<void> {
+  if (
+    typeof window === "undefined" ||
+    typeof window.requestAnimationFrame !== "function" ||
+    frameCount <= 0
+  ) {
+    return Promise.resolve()
+  }
+
+  return new Promise((resolve) => {
+    let remaining = frameCount
+    const step = () => {
+      remaining -= 1
+      if (remaining <= 0) {
+        resolve()
+        return
+      }
+      window.requestAnimationFrame(step)
+    }
+    window.requestAnimationFrame(step)
+  })
+}
+
 function sortPrinters(printers: Printer[]): Printer[] {
   return [...printers].sort((left, right) => {
     const leftRssi = left.rssi ?? Number.NEGATIVE_INFINITY
@@ -726,6 +749,8 @@ export function useWorkbenchController({
           } else if (initialRoutePath === "/system") {
             await refreshDataDirectoryStatus()
           }
+
+          await waitForPaintFrames(2)
 
           if (!cancelled) {
             setStartupCompletedStepIds((current) =>

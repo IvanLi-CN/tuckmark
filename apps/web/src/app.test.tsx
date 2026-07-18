@@ -817,10 +817,16 @@ async function flush(times = 3): Promise<void> {
   }
 }
 
+async function advanceAnimationFrames(frameCount = 2): Promise<void> {
+  await vi.advanceTimersByTimeAsync(Math.max(1, frameCount) * 16)
+  await flush(1)
+}
+
 async function settleWorkbenchUi(times = 8): Promise<void> {
   await act(async () => {
     await flush(1)
     await vi.dynamicImportSettled()
+    await advanceAnimationFrames(2)
     await flush(times)
   })
 }
@@ -833,6 +839,7 @@ async function waitForDeferredHydrationToFinish(maxCycles = 32): Promise<void> {
     }
 
     await act(async () => {
+      await advanceAnimationFrames(1)
       await flush(4)
     })
   }
@@ -847,6 +854,7 @@ async function waitForFetchCallCount(count: number, maxCycles = 32): Promise<voi
     }
 
     await act(async () => {
+      await advanceAnimationFrames(1)
       await flush(4)
     })
   }

@@ -4,7 +4,9 @@ import { preloadWorkbenchRoute } from "./workbench-route-registry.js"
 declare global {
   interface Window {
     __tuckmarkLaunchShell?: {
-      setPhase: (phaseId: "bootstrap-loaded" | "current-route-chunk-ready" | "current-route-data-ready") => void
+      setPhase: (
+        phaseId: "bootstrap-loaded" | "current-route-chunk-ready" | "current-route-data-ready"
+      ) => void
     }
   }
 }
