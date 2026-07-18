@@ -74,10 +74,43 @@ output.
 - Static Pages keeps browser history routing semantics and ships a `404.html`
   SPA fallback. Hash routing is not allowed.
 
+### Runtime startup and hydration contract
+
+- The owner-facing runtime starts in two phases:
+  - `critical`: enough shell, route chunk, and route-local data to make the
+    current route navigable and operable
+  - `deferred`: non-current-route data, recent state, settings hydration, and
+    non-critical offline warmup after the shell is already visible
+- The owner-facing startup overlay uses generic branded copy only. It must not
+  expose internal parallel task names as if they were a linear checklist, and
+  it should not add secondary explanatory cards that compete with the primary
+  loading message.
+- Startup-shell exit is keyed to `currentRouteReady`, not to full background
+  hydration completion.
+- `/templates`, `/canvas`, and `/system` load through route-level dynamic
+  imports; deep-link startup prefers the target route chunk instead of first
+  mounting `/`.
+- Once the current-route shell is ready, the workbench warms the other formal
+  route chunks in the background and may also preload on nav intent so normal
+  page switches do not regress into startup-like loading behavior.
+- Page-to-page navigation inside the mounted workbench must never reopen the
+  owner-facing startup overlay. If a route chunk still races the first switch,
+  the fallback stays local to the routed content area and remains visually
+  subordinate to the persistent shell.
+- Owner-triggered route switches commit after the destination route module is
+  ready, so the current page remains visible while the next workbench surface
+  is being prepared.
+- Deferred background hydration and offline warmup stay owner-facing silent
+  after mount. They must not block navigation or primary route actions, and
+  they must not surface a persistent in-shell status card or badge group.
+
 ### Visual direction
 
 - The shell, overview cards, drawer, and primary actions use the restrained
   clay surface language.
+- The shared shell, overview surfaces, workspace panels, and action clusters
+  stay legible in both light and dark color schemes while preserving the same
+  restrained clay-material family.
 - Dense work areas such as tables, property panels, and print rails keep a
   restrained professional tool appearance with stronger information density and
   lower decorative noise.
@@ -276,6 +309,9 @@ output.
   - inspector labels and selector preview
 - Bundled fonts are self-hosted and must not depend on remote CDNs or
   user-installed fonts.
+- Startup blocks only on the core bundled fonts needed for brand and body text.
+  The rest of the local font pool stays self-hosted but loads on demand when a
+  draft, preview, or font-selection workflow actually needs it.
 - Legacy draft/template values `system-sans`, `system-serif`, `system-mono`,
   and `arial` remain valid serialized inputs and continue to render, edit, and
   export without migration.
@@ -283,6 +319,9 @@ output.
   bundled-font readiness before final measurement-sensitive text rendering so
   late fallback-font replacement does not shift the same sample text across
   surfaces.
+- Entering `/canvas` may preload only the default and in-draft local font
+  families. Opening the font selector or rendering later content may lazily
+  load the rest of the local bundled font pool.
 - `browser-static` must support canvas preview and print without `/api` packet
   helpers.
 
@@ -603,6 +642,13 @@ output.
 
 - All four formal routes are reachable in `runtime`, `demo`, and
   `browser-static`.
+- The shared shell can mount and become navigable before deferred hydration of
+  templates, settings, recent activity, and offline warmup is complete.
+- Deep-link startup to `/templates`, `/canvas`, and `/system` loads the target
+  route first instead of bouncing through `/`.
+- Ordinary page switches after shell-ready keep the mounted shell in place and
+  do not reopen a startup overlay; deferred route loads resolve through warmup
+  or a route-local placeholder only.
 - The device drawer opens from any page, supports keyboard close, and restores
   focus to the trigger.
 - Browser-direct chooser cancellation and recoverable device-drawer action
@@ -630,6 +676,9 @@ output.
 - Existing drafts and templates using `system-sans`, `system-serif`,
   `system-mono`, `arial`, or `noto-sans-sc` continue to deserialize, edit,
   preview, and export without data migration.
+- Startup entry CSS does not need to synchronously include the entire bundled
+  font catalog; long-tail local fonts may be loaded lazily without breaking the
+  shared measurement contract.
 - Text rotation is edited as an integer degree value and exposes adjacent
   counterclockwise / clockwise 45-degree increment controls.
 - Text resize preserves `fontSize` unless the user explicitly edits the font
@@ -745,13 +794,25 @@ output.
   is hidden.
 - `1280×800`, `1440×900`, and `1600×1024` keep the professional three-column
   editor without horizontal overflow.
+- Switching the owner surface between light and dark color schemes preserves
+  the shared shell hierarchy and keeps the canvas paper base visually neutral.
 
 ## Visual Evidence
 
 - `1440×900` homepage shell
-
   PR: include
   ![Homepage shell](./assets/home-1440x900.png)
+
+- `1440×900` homepage shell dark theme
+
+  PR: include
+  ![Homepage shell dark theme](./assets/workbench-home-dark-state.png)
+
+- `1440×900` homepage shell dark theme with runtime mounted while deferred
+  hydration and offline warmup are still pending
+
+  PR: include
+  ![Homepage shell dark theme with deferred hydration pending](./assets/workbench-home-dark-deferred-hydration-pending.png)
 
 - `1100×820` template workspace in narrow single-outlet mode with a disabled preview/print rail before template selection
 
@@ -788,6 +849,11 @@ output.
 
   PR: include
   ![Canvas workspace](./assets/canvas-wide-1280x800.png)
+
+- `1440×900` canvas workspace dark theme in professional three-column editor mode
+
+  PR: include
+  ![Canvas workspace dark theme](./assets/workbench-canvas-dark-state.png)
 
 - `1280×800` mock-demo canvas after coarse physical-wheel zoom; the active `296%` scale
   is reflected by the enlarged label content while the three-column workbench

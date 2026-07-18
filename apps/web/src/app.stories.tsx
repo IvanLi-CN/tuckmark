@@ -267,6 +267,29 @@ export const Home: Story = {
   },
 }
 
+export const HomeDark: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/"],
+    theme: "dark",
+  },
+}
+
+export const HomeDarkDeferredHydrationPending: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/"],
+    theme: "dark",
+    hydrationStateOverride: {
+      shellReady: true,
+      currentRouteReady: true,
+      deferredHydrationPending: true,
+      offlineWarmupPending: true,
+      offlineWarmupStatus: "pending",
+    },
+  },
+}
+
 export const HomeWithStrandedPwaUpdate: Story = {
   args: {
     context: runtimeContext,
@@ -331,7 +354,9 @@ export const TemplatesWorkspace: Story = {
   ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const addTemplateButtons = canvas.getAllByRole("button", { name: "新增模板" })
+    const addTemplateButtons = canvas.getAllByRole("button", {
+      name: "新增模板",
+    })
     await expect(addTemplateButtons).toHaveLength(2)
     await expect(addTemplateButtons[1]).toHaveClass(/tm-template-list__empty-action-button/)
     await canvas.findByRole("link", { name: "GitHub" })
@@ -365,8 +390,18 @@ export const TemplatesWorkspaceImportPackage: Story = {
           description: "Agent generated module storage label",
           canvas: { width: 192, height: 96 },
           fields: [
-            { key: "part", label: "型号", defaultValue: "INA219", multiline: false },
-            { key: "bus", label: "接口", defaultValue: "I2C", multiline: false },
+            {
+              key: "part",
+              label: "型号",
+              defaultValue: "INA219",
+              multiline: false,
+            },
+            {
+              key: "bus",
+              label: "接口",
+              defaultValue: "I2C",
+              multiline: false,
+            },
           ],
           elements: [
             {
@@ -490,7 +525,9 @@ export const TemplatesListEditing: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
-    const [firstRecipientButton] = canvas.getAllByRole("button", { name: "Koha Cat" })
+    const [firstRecipientButton] = canvas.getAllByRole("button", {
+      name: "Koha Cat",
+    })
     await userEvent.click(firstRecipientButton)
   },
 }
@@ -509,7 +546,9 @@ export const TemplatesSelectableEditing: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole("tab", { name: "列表" }))
-    const [firstRecipientButton] = canvas.getAllByRole("button", { name: "Koha Cat" })
+    const [firstRecipientButton] = canvas.getAllByRole("button", {
+      name: "Koha Cat",
+    })
     await userEvent.click(firstRecipientButton)
   },
 }
@@ -609,6 +648,14 @@ export const CanvasWorkspace: Story = {
   args: {
     context: runtimeContext,
     initialEntries: ["/canvas"],
+  },
+}
+
+export const CanvasWorkspaceDark: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    theme: "dark",
   },
 }
 
@@ -1204,11 +1251,15 @@ export const CanvasWorkspaceTextReady: Story = {
     const wrapButton = await canvas.findByRole("button", { name: "自动换行" })
     await expect(wrapButton).toHaveAttribute("aria-pressed", "false")
     await expect(wrapButton).toBeDisabled()
-    const horizontalShrink = await canvas.findByRole("button", { name: "水平挤压" })
+    const horizontalShrink = await canvas.findByRole("button", {
+      name: "水平挤压",
+    })
     await expect(horizontalShrink).toHaveAttribute("aria-pressed", "true")
     const adaptive = await canvas.findByRole("button", { name: "自适应" })
     await expect(adaptive).toHaveAttribute("aria-pressed", "true")
-    const verticalShrink = await canvas.findByRole("button", { name: "垂直挤压" })
+    const verticalShrink = await canvas.findByRole("button", {
+      name: "垂直挤压",
+    })
     await expect(verticalShrink).toHaveAttribute("aria-pressed", "false")
   },
 }
@@ -1247,9 +1298,13 @@ export const CanvasWorkspaceTextSelected: Story = {
     await userEvent.keyboard("{Escape}")
     await canvas.findByRole("group", { name: "文本九宫格对齐" })
     await canvas.findByLabelText("文本左上对齐")
-    const horizontalGrow = await canvas.findByRole("button", { name: "水平拉升" })
+    const horizontalGrow = await canvas.findByRole("button", {
+      name: "水平拉升",
+    })
     await expect(horizontalGrow).toHaveAttribute("aria-pressed", "false")
-    const horizontalShrink = await canvas.findByRole("button", { name: "水平挤压" })
+    const horizontalShrink = await canvas.findByRole("button", {
+      name: "水平挤压",
+    })
     await expect(horizontalShrink).toHaveAttribute("aria-pressed", "false")
     const justifyText = await canvas.findByRole("button", { name: "两端对齐" })
     await expect(justifyText).toHaveAttribute("aria-pressed", "false")
@@ -1261,15 +1316,21 @@ export const CanvasWorkspaceTextSelected: Story = {
     await userEvent.click(horizontalShrink)
     await expect(horizontalGrow).toHaveAttribute("aria-pressed", "true")
     await expect(horizontalShrink).toHaveAttribute("aria-pressed", "true")
-    const verticalGrow = await canvas.findByRole("button", { name: "垂直拉升" })
+    const verticalGrow = await canvas.findByRole("button", {
+      name: "垂直拉升",
+    })
     await expect(verticalGrow).toHaveAttribute("aria-pressed", "false")
     await userEvent.click(verticalGrow)
     await expect(verticalGrow).toHaveAttribute("aria-pressed", "true")
-    const verticalShrink = await canvas.findByRole("button", { name: "垂直挤压" })
+    const verticalShrink = await canvas.findByRole("button", {
+      name: "垂直挤压",
+    })
     await expect(verticalShrink).toHaveAttribute("aria-pressed", "false")
     await userEvent.click(verticalShrink)
     await expect(verticalShrink).toHaveAttribute("aria-pressed", "true")
-    const verticalText = await canvas.findByRole("button", { name: "纵向文本" })
+    const verticalText = await canvas.findByRole("button", {
+      name: "纵向文本",
+    })
     await expect(verticalText).toHaveAttribute("aria-pressed", "false")
     await userEvent.click(verticalText)
     await expect(verticalText).toHaveAttribute("aria-pressed", "true")
@@ -1278,7 +1339,9 @@ export const CanvasWorkspaceTextSelected: Story = {
     const rotationInput = await canvas.findByLabelText("旋转")
     await expect(rotationInput).toHaveDisplayValue("0")
     await canvas.findByRole("button", { name: "逆时针旋转 45 度" })
-    const rotateClockwise = await canvas.findByRole("button", { name: "顺时针旋转 45 度" })
+    const rotateClockwise = await canvas.findByRole("button", {
+      name: "顺时针旋转 45 度",
+    })
     await userEvent.click(rotateClockwise)
     await expect(rotationInput).toHaveDisplayValue("45")
   },
@@ -1300,7 +1363,9 @@ export const CanvasWorkspaceTextAdaptiveSizing: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const adaptiveButton = await canvas.findByRole("button", { name: "自适应" })
+    const adaptiveButton = await canvas.findByRole("button", {
+      name: "自适应",
+    })
     const wrapButton = await canvas.findByRole("button", { name: "自动换行" })
     const fontSize = await canvas.findByLabelText("字号")
 

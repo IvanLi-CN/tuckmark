@@ -4,9 +4,898 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tuckmark</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --tm-launch-background: #faf6ef;
+        --tm-launch-surface: rgba(255, 252, 247, 0.78);
+        --tm-launch-line: rgba(154, 116, 83, 0.18);
+        --tm-launch-primary: #8a542e;
+        --tm-launch-primary-strong: #6c4022;
+        --tm-launch-ink: #2e241b;
+        --tm-launch-muted: #786757;
+        --tm-launch-page-gradients:
+          radial-gradient(
+            circle at 12% 12%,
+            rgba(255, 255, 255, 0.96),
+            transparent 24%
+          ),
+          radial-gradient(
+            circle at 82% 18%,
+            rgba(239, 222, 201, 0.52),
+            transparent 28%
+          ),
+          linear-gradient(180deg, rgba(223, 200, 172, 0.14), transparent 42%);
+        --tm-launch-ambient-left: radial-gradient(
+          circle,
+          rgba(255, 255, 255, 0.92),
+          rgba(255, 255, 255, 0)
+        );
+        --tm-launch-ambient-right: radial-gradient(
+          circle,
+          rgba(226, 199, 162, 0.46),
+          rgba(226, 199, 162, 0)
+        );
+        --tm-launch-wave-fill:
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.36),
+            rgba(255, 255, 255, 0)
+          ),
+          radial-gradient(
+            circle at top,
+            rgba(248, 236, 219, 0.52),
+            rgba(248, 236, 219, 0)
+          );
+        --tm-launch-grid-line: rgba(178, 149, 116, 0.16);
+        --tm-launch-grid-pattern: rgba(168, 134, 96, 0.09);
+        --tm-launch-register-line: rgba(122, 93, 64, 0.26);
+        --tm-launch-mark-border: rgba(255, 255, 255, 0.82);
+        --tm-launch-mark-fill:
+          radial-gradient(
+            circle at 28% 28%,
+            rgba(255, 255, 255, 0.96),
+            rgba(255, 255, 255, 0.56) 38%,
+            rgba(220, 188, 150, 0.28) 100%
+          ),
+          linear-gradient(180deg, #fbebdb 0%, #ecd0b3 100%);
+        --tm-launch-mark-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.95),
+          0 10px 24px rgba(116, 78, 44, 0.12);
+        --tm-launch-card-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.72),
+          0 18px 36px rgba(116, 78, 44, 0.08);
+        --tm-launch-progress-track: rgba(169, 136, 100, 0.16);
+        --tm-launch-progress-fill: linear-gradient(
+          90deg,
+          rgba(138, 84, 46, 0.92),
+          rgba(215, 164, 110, 0.78)
+        );
+        --tm-launch-progress-glow: rgba(186, 132, 76, 0.24);
+        --tm-launch-sheet-chip-fill: rgba(255, 255, 255, 0.42);
+        --tm-launch-sheet-chip-line: rgba(146, 113, 78, 0.18);
+        --tm-launch-sheet-meta-fill: linear-gradient(
+          90deg,
+          rgba(192, 160, 128, 0.44),
+          rgba(192, 160, 128, 0)
+        );
+        --tm-launch-label-line: rgba(164, 131, 97, 0.24);
+        --tm-launch-label-fill:
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.72),
+            rgba(255, 255, 255, 0.26)
+          ),
+          linear-gradient(
+            90deg,
+            rgba(225, 209, 189, 0.2),
+            rgba(225, 209, 189, 0)
+          );
+        --tm-launch-barcode-fill:
+          linear-gradient(90deg, rgba(56, 41, 28, 0.96) 2px, transparent 2px) 0
+            0 / 8px 100%,
+          linear-gradient(90deg, rgba(56, 41, 28, 0.84) 1px, transparent 1px) 0
+            0 / 5px 100%,
+          rgba(255, 255, 255, 0.56);
+        --tm-launch-checklist-divider: rgba(168, 134, 96, 0.12);
+        --tm-launch-checklist-dot: linear-gradient(180deg, #b96f3a, #d9a46d);
+        --tm-launch-checklist-ring: rgba(185, 111, 58, 0.1);
+        --tm-launch-checklist-state: linear-gradient(
+          90deg,
+          rgba(138, 84, 46, 0.82),
+          rgba(214, 170, 126, 0.2)
+        );
+        --tm-launch-ticket-fill: linear-gradient(
+          180deg,
+          rgba(255, 253, 249, 0.92),
+          rgba(255, 248, 238, 0.8)
+        );
+        --tm-launch-ticket-grid-pattern: rgba(166, 131, 95, 0.1);
+        --tm-launch-ticket-code-fill:
+          linear-gradient(90deg, rgba(52, 39, 28, 0.94) 3px, transparent 3px) 0
+            0 / 11px 100%,
+          linear-gradient(rgba(52, 39, 28, 0.94) 3px, transparent 3px) 0 0 /
+            100% 11px,
+          rgba(255, 255, 255, 0.66);
+        --tm-launch-ticket-code-line: rgba(120, 92, 63, 0.18);
+      }
+
+      html,
+      body {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background-color: var(--tm-launch-background);
+        background-image: var(--tm-launch-page-gradients);
+        color: var(--tm-launch-ink);
+        font-family:
+          "Inter Tight", Inter, "Noto Sans SC", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      }
+
+      #root,
+      .tm-launch-root {
+        min-height: 100vh;
+      }
+
+      .tm-launch-stage {
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+        min-height: 100vh;
+        padding: 40px;
+      }
+
+      .tm-launch-ambient,
+      .tm-launch-wave,
+      .tm-launch-grid {
+        pointer-events: none;
+        position: absolute;
+      }
+
+      .tm-launch-ambient {
+        filter: blur(12px);
+        border-radius: 999px;
+      }
+
+      .tm-launch-ambient--left {
+        left: -120px;
+        top: 120px;
+        width: 420px;
+        height: 420px;
+        background: var(--tm-launch-ambient-left);
+      }
+
+      .tm-launch-ambient--right {
+        right: -80px;
+        top: 100px;
+        width: 520px;
+        height: 360px;
+        background: var(--tm-launch-ambient-right);
+      }
+
+      .tm-launch-wave {
+        left: -8%;
+        right: 24%;
+        bottom: -20%;
+        height: 58%;
+        border-radius: 50%;
+        border: 1px solid rgba(174, 140, 102, 0.12);
+        background: var(--tm-launch-wave-fill);
+        transform: rotate(-7deg);
+      }
+
+      .tm-launch-grid {
+        top: 68px;
+        right: 48px;
+        width: min(38vw, 520px);
+        height: min(38vw, 520px);
+        border: 1px solid var(--tm-launch-grid-line);
+        border-radius: 32px;
+        background-image:
+          linear-gradient(var(--tm-launch-grid-pattern) 1px, transparent 1px),
+          linear-gradient(
+            90deg,
+            var(--tm-launch-grid-pattern) 1px,
+            transparent 1px
+          );
+        background-position: center;
+        background-size: 32px 32px;
+        mask-image: radial-gradient(
+          circle at center,
+          black 42%,
+          transparent 78%
+        );
+        opacity: 0.8;
+      }
+
+      .tm-launch-register {
+        position: absolute;
+        width: 28px;
+        height: 28px;
+        border-top: 1px solid var(--tm-launch-register-line);
+        border-left: 1px solid var(--tm-launch-register-line);
+      }
+
+      .tm-launch-register--top-left {
+        left: 34px;
+        top: 34px;
+      }
+
+      .tm-launch-register--top-right {
+        right: 34px;
+        top: 34px;
+        transform: rotate(90deg);
+      }
+
+      .tm-launch-register--bottom-right {
+        right: 34px;
+        bottom: 34px;
+        transform: rotate(180deg);
+      }
+
+      .tm-launch-layout {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        align-items: end;
+        gap: 32px;
+        min-height: calc(100vh - 80px);
+        grid-template-columns: minmax(320px, 1.05fr) minmax(300px, 0.95fr);
+      }
+
+      .tm-launch-copy-panel {
+        display: grid;
+        gap: 32px;
+        align-self: center;
+        max-width: 520px;
+      }
+
+      .tm-launch-brand {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .tm-launch-mark {
+        display: grid;
+        width: 68px;
+        height: 68px;
+        place-items: center;
+        border: 1px solid var(--tm-launch-mark-border);
+        border-radius: 22px;
+        background: var(--tm-launch-mark-fill);
+        box-shadow: var(--tm-launch-mark-shadow);
+      }
+
+      .tm-launch-mark span {
+        color: var(--tm-launch-primary-strong);
+        font-size: 30px;
+        font-weight: 900;
+        line-height: 1;
+      }
+
+      .tm-launch-copy {
+        display: grid;
+        gap: 2px;
+      }
+
+      .tm-launch-kicker,
+      .tm-launch-title,
+      .tm-launch-status,
+      .tm-launch-detail {
+        margin: 0;
+      }
+
+      .tm-launch-kicker {
+        color: var(--tm-launch-primary-strong);
+        font-size: 32px;
+        font-weight: 650;
+        letter-spacing: -0.04em;
+      }
+
+      .tm-launch-title {
+        color: var(--tm-launch-muted);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1;
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+      }
+
+      .tm-launch-message-stack {
+        display: grid;
+        gap: 28px;
+      }
+
+      .tm-launch-text-block {
+        display: grid;
+        gap: 14px;
+      }
+
+      .tm-launch-status {
+        max-width: 7em;
+        color: var(--tm-launch-ink);
+        font-size: clamp(42px, 6vw, 72px);
+        font-weight: 680;
+        line-height: 0.9;
+        letter-spacing: -0.035em;
+        text-wrap: balance;
+      }
+
+      .tm-launch-detail {
+        max-width: 26rem;
+        color: var(--tm-launch-muted);
+        font-size: 16px;
+        line-height: 1.5;
+        text-wrap: pretty;
+      }
+
+      .tm-launch-progress-block {
+        display: grid;
+        gap: 10px;
+        max-width: 280px;
+      }
+
+      .tm-launch-progress-dots {
+        display: flex;
+        gap: 10px;
+      }
+
+      .tm-launch-progress-dots span {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--tm-launch-primary) 82%, white);
+        animation: tm-launch-pulse 1.35s ease-in-out infinite;
+      }
+
+      .tm-launch-progress-dots span:nth-child(2) {
+        animation-delay: 0.16s;
+      }
+
+      .tm-launch-progress-dots span:nth-child(3) {
+        animation-delay: 0.32s;
+      }
+
+      .tm-launch-progress-rail {
+        position: relative;
+        overflow: hidden;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--tm-launch-progress-track);
+      }
+
+      .tm-launch-root--loading .tm-launch-progress-rail::after {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          color-mix(in srgb, var(--tm-launch-primary) 28%, transparent) 50%,
+          transparent 100%
+        );
+        content: "";
+        animation: tm-launch-rail-sweep 1.8s ease-in-out infinite;
+        pointer-events: none;
+      }
+
+      .tm-launch-progress-fill {
+        width: 0;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--tm-launch-progress-fill);
+        box-shadow: 0 0 18px var(--tm-launch-progress-glow);
+      }
+
+      .tm-launch-progress-fill--indeterminate {
+        width: 34%;
+        animation: tm-launch-progress-loop 1.45s ease-in-out infinite;
+        will-change: transform;
+      }
+
+      .tm-launch-art-panel {
+        position: relative;
+        min-height: 620px;
+      }
+
+      .tm-launch-sheet,
+      .tm-launch-ticket {
+        position: absolute;
+        border: 1px solid var(--tm-launch-line);
+        background: var(--tm-launch-surface);
+        box-shadow: var(--tm-launch-card-shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .tm-launch-sheet {
+        top: 42px;
+        right: 8px;
+        width: min(36vw, 480px);
+        min-width: 320px;
+        border-radius: 30px;
+        padding: 22px;
+        transform: rotate(-7deg);
+      }
+
+      .tm-launch-sheet-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 18px;
+      }
+
+      .tm-launch-sheet-chip {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1px solid var(--tm-launch-sheet-chip-line);
+        border-radius: 999px;
+        background: var(--tm-launch-sheet-chip-fill);
+        color: var(--tm-launch-primary-strong);
+      }
+
+      .tm-launch-sheet-chip strong {
+        font-size: 14px;
+      }
+
+      .tm-launch-sheet-chip span {
+        font-size: 11px;
+        color: var(--tm-launch-muted);
+      }
+
+      .tm-launch-sheet-meta {
+        width: 84px;
+        height: 12px;
+        border-radius: 999px;
+        background: var(--tm-launch-sheet-meta-fill);
+      }
+
+      .tm-launch-sheet-body {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 1.55fr 1fr;
+      }
+
+      .tm-launch-sheet-label {
+        min-height: 82px;
+        border: 1px dashed var(--tm-launch-label-line);
+        border-radius: 20px;
+        background: var(--tm-launch-label-fill);
+      }
+
+      .tm-launch-sheet-label--hero {
+        grid-row: span 2;
+        min-height: 176px;
+      }
+
+      .tm-launch-sheet-barcode {
+        height: 48px;
+        margin-top: 16px;
+        border-radius: 18px;
+        background: var(--tm-launch-barcode-fill);
+      }
+
+      .tm-launch-ticket {
+        right: 56px;
+        bottom: 20px;
+        width: 180px;
+        height: 134px;
+        border-radius: 24px;
+        padding: 18px;
+        transform: rotate(8deg);
+        background: var(--tm-launch-ticket-fill);
+      }
+
+      .tm-launch-ticket-grid {
+        position: absolute;
+        inset: 16px;
+        border-radius: 18px;
+        background-image:
+          linear-gradient(
+            var(--tm-launch-ticket-grid-pattern) 1px,
+            transparent 1px
+          ),
+          linear-gradient(
+            90deg,
+            var(--tm-launch-ticket-grid-pattern) 1px,
+            transparent 1px
+          );
+        background-size: 18px 18px;
+      }
+
+      .tm-launch-ticket-code {
+        position: absolute;
+        right: 26px;
+        bottom: 24px;
+        width: 52px;
+        height: 52px;
+        border-radius: 12px;
+        background: var(--tm-launch-ticket-code-fill);
+        box-shadow: inset 0 0 0 1px var(--tm-launch-ticket-code-line);
+      }
+
+      @keyframes tm-launch-pulse {
+        0%,
+        80%,
+        100% {
+          opacity: 0.34;
+          transform: translateY(0) scale(0.88);
+        }
+
+        40% {
+          opacity: 1;
+          transform: translateY(-2px) scale(1);
+        }
+      }
+
+      @keyframes tm-launch-rail-sweep {
+        from {
+          transform: translateX(-100%);
+        }
+
+        to {
+          transform: translateX(100%);
+        }
+      }
+
+      @keyframes tm-launch-progress-loop {
+        0% {
+          transform: translateX(-24%) scaleX(0.92);
+        }
+
+        50% {
+          transform: translateX(94%) scaleX(1);
+        }
+
+        100% {
+          transform: translateX(224%) scaleX(0.92);
+        }
+      }
+
+      @keyframes tm-launch-sweep {
+        from {
+          transform: scaleX(0.76);
+          opacity: 0.88;
+        }
+
+        to {
+          transform: scaleX(1);
+          opacity: 1;
+        }
+      }
+
+      @media (max-width: 980px) {
+        .tm-launch-stage {
+          padding: 24px;
+        }
+
+        .tm-launch-layout {
+          align-items: start;
+          grid-template-columns: 1fr;
+        }
+
+        .tm-launch-copy-panel {
+          max-width: none;
+        }
+
+        .tm-launch-status {
+          max-width: none;
+          font-size: clamp(38px, 12vw, 58px);
+        }
+
+        .tm-launch-art-panel {
+          min-height: 420px;
+        }
+
+        .tm-launch-sheet {
+          top: 18px;
+          right: 12px;
+          width: min(100%, 420px);
+          min-width: 0;
+        }
+
+        .tm-launch-ticket {
+          right: 6px;
+          bottom: 18px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .tm-launch-progress-dots span,
+        .tm-launch-progress-fill {
+          animation: none;
+          transform: none;
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --tm-launch-background: #14110f;
+          --tm-launch-surface: rgba(32, 27, 24, 0.78);
+          --tm-launch-line: rgba(236, 206, 170, 0.14);
+          --tm-launch-primary: #d89f66;
+          --tm-launch-primary-strong: #f5d0a4;
+          --tm-launch-ink: #f5eee6;
+          --tm-launch-muted: #baa895;
+          --tm-launch-page-gradients:
+            radial-gradient(
+              circle at 16% 18%,
+              rgba(70, 51, 34, 0.42),
+              transparent 24%
+            ),
+            radial-gradient(
+              circle at 84% 16%,
+              rgba(189, 129, 73, 0.16),
+              transparent 28%
+            ),
+            linear-gradient(180deg, rgba(30, 22, 17, 0.92), rgba(18, 15, 13, 1));
+          --tm-launch-ambient-left: radial-gradient(
+            circle,
+            rgba(98, 69, 44, 0.42),
+            rgba(98, 69, 44, 0)
+          );
+          --tm-launch-ambient-right: radial-gradient(
+            circle,
+            rgba(209, 144, 88, 0.18),
+            rgba(209, 144, 88, 0)
+          );
+          --tm-launch-wave-fill:
+            linear-gradient(
+              180deg,
+              rgba(52, 37, 28, 0.42),
+              rgba(18, 15, 13, 0)
+            ),
+            radial-gradient(
+              circle at top,
+              rgba(108, 69, 39, 0.32),
+              rgba(108, 69, 39, 0)
+            );
+          --tm-launch-grid-line: rgba(240, 206, 167, 0.08);
+          --tm-launch-grid-pattern: rgba(240, 206, 167, 0.06);
+          --tm-launch-register-line: rgba(225, 192, 158, 0.24);
+          --tm-launch-mark-border: rgba(255, 244, 228, 0.1);
+          --tm-launch-mark-fill:
+            radial-gradient(
+              circle at 28% 28%,
+              rgba(255, 241, 221, 0.14),
+              rgba(255, 241, 221, 0.04) 34%,
+              rgba(216, 159, 102, 0.14) 100%
+            ),
+            linear-gradient(180deg, #2d221c 0%, #1d1714 100%);
+          --tm-launch-mark-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.08),
+            0 16px 30px rgba(0, 0, 0, 0.34);
+          --tm-launch-card-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.04),
+            0 22px 40px rgba(0, 0, 0, 0.28);
+          --tm-launch-progress-track: rgba(241, 205, 164, 0.12);
+          --tm-launch-progress-fill: linear-gradient(
+            90deg,
+            rgba(216, 159, 102, 0.92),
+            rgba(247, 212, 174, 0.72)
+          );
+          --tm-launch-progress-glow: rgba(216, 159, 102, 0.22);
+          --tm-launch-sheet-chip-fill: rgba(255, 250, 243, 0.04);
+          --tm-launch-sheet-chip-line: rgba(239, 205, 166, 0.12);
+          --tm-launch-sheet-meta-fill: linear-gradient(
+            90deg,
+            rgba(244, 214, 180, 0.2),
+            rgba(244, 214, 180, 0)
+          );
+          --tm-launch-label-line: rgba(237, 202, 164, 0.12);
+          --tm-launch-label-fill:
+            linear-gradient(
+              180deg,
+              rgba(255, 249, 240, 0.04),
+              rgba(255, 249, 240, 0.01)
+            ),
+            linear-gradient(
+              90deg,
+              rgba(215, 160, 104, 0.06),
+              rgba(215, 160, 104, 0)
+            );
+          --tm-launch-barcode-fill:
+            linear-gradient(
+                90deg,
+                rgba(243, 229, 212, 0.82) 2px,
+                transparent 2px
+              )
+              0 0 / 8px 100%,
+            linear-gradient(
+                90deg,
+                rgba(243, 229, 212, 0.66) 1px,
+                transparent 1px
+              )
+              0 0 / 5px 100%,
+            rgba(255, 250, 243, 0.06);
+          --tm-launch-checklist-divider: rgba(238, 205, 167, 0.08);
+          --tm-launch-checklist-dot: linear-gradient(180deg, #d89f66, #f4c892);
+          --tm-launch-checklist-ring: rgba(216, 159, 102, 0.12);
+          --tm-launch-checklist-state: linear-gradient(
+            90deg,
+            rgba(216, 159, 102, 0.82),
+            rgba(244, 200, 146, 0.16)
+          );
+          --tm-launch-ticket-fill: linear-gradient(
+            180deg,
+            rgba(39, 32, 28, 0.94),
+            rgba(27, 22, 20, 0.82)
+          );
+          --tm-launch-ticket-grid-pattern: rgba(238, 205, 167, 0.08);
+          --tm-launch-ticket-code-fill:
+            linear-gradient(
+                90deg,
+                rgba(245, 233, 218, 0.84) 3px,
+                transparent 3px
+              )
+              0 0 / 11px 100%,
+            linear-gradient(rgba(245, 233, 218, 0.84) 3px, transparent 3px) 0
+              0 / 100% 11px,
+            rgba(255, 250, 243, 0.05);
+          --tm-launch-ticket-code-line: rgba(239, 205, 166, 0.14);
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div
+        class="tm-launch-root tm-launch-root--loading"
+        data-launch-screen="booting"
+        role="status"
+        aria-live="polite"
+        aria-label="Tuckmark 正在准备工作台"
+      >
+        <div class="tm-launch-stage">
+          <div
+            class="tm-launch-ambient tm-launch-ambient--left"
+            aria-hidden="true"
+          ></div>
+          <div
+            class="tm-launch-ambient tm-launch-ambient--right"
+            aria-hidden="true"
+          ></div>
+          <div class="tm-launch-wave" aria-hidden="true"></div>
+          <div class="tm-launch-grid" aria-hidden="true"></div>
+          <div
+            class="tm-launch-register tm-launch-register--top-left"
+            aria-hidden="true"
+          ></div>
+          <div
+            class="tm-launch-register tm-launch-register--top-right"
+            aria-hidden="true"
+          ></div>
+          <div
+            class="tm-launch-register tm-launch-register--bottom-right"
+            aria-hidden="true"
+          ></div>
+
+          <div class="tm-launch-layout">
+            <section class="tm-launch-copy-panel">
+              <div class="tm-launch-brand">
+                <div class="tm-launch-mark" aria-hidden="true">
+                  <span>T</span>
+                </div>
+                <div class="tm-launch-copy">
+                  <p class="tm-launch-kicker">Tuckmark</p>
+                  <h1 class="tm-launch-title">Label Workbench</h1>
+                </div>
+              </div>
+
+              <div class="tm-launch-message-stack">
+                <div class="tm-launch-text-block">
+                  <p class="tm-launch-status" data-launch-status-text>
+                    正在准备工作台
+                  </p>
+                  <p class="tm-launch-detail" data-launch-detail-text>
+                    当前页面就绪后会立即进入，其他资产会在后台静默补齐。
+                  </p>
+                </div>
+
+                <div class="tm-launch-progress-block">
+                  <div class="tm-launch-progress-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                  <div
+                    class="tm-launch-progress-rail tm-launch-progress-rail--indeterminate"
+                    role="progressbar"
+                    aria-label="正在准备工作台 进度"
+                    aria-valuetext="正在准备工作台"
+                    data-launch-progress-rail
+                  >
+                    <div
+                      class="tm-launch-progress-fill tm-launch-progress-fill--indeterminate"
+                      data-launch-progress-fill
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="tm-launch-art-panel" aria-hidden="true">
+              <div class="tm-launch-sheet">
+                <div class="tm-launch-sheet-header">
+                  <div class="tm-launch-sheet-chip">
+                    <strong>A6</strong>
+                    <span>105 × 148 mm</span>
+                  </div>
+                  <div class="tm-launch-sheet-meta"></div>
+                </div>
+                <div class="tm-launch-sheet-body">
+                  <div
+                    class="tm-launch-sheet-label tm-launch-sheet-label--hero"
+                  ></div>
+                  <div class="tm-launch-sheet-label"></div>
+                  <div class="tm-launch-sheet-label"></div>
+                  <div class="tm-launch-sheet-label"></div>
+                </div>
+                <div class="tm-launch-sheet-barcode"></div>
+              </div>
+
+              <div class="tm-launch-ticket">
+                <div class="tm-launch-ticket-grid"></div>
+                <div class="tm-launch-ticket-code"></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      ;(() => {
+        const launchRoot = document.querySelector("[data-launch-screen='booting']")
+        const statusTextNode = launchRoot?.querySelector("[data-launch-status-text]")
+        const detailTextNode = launchRoot?.querySelector("[data-launch-detail-text]")
+        const progressRail = launchRoot?.querySelector("[data-launch-progress-rail]")
+
+        const phaseState = {
+          "bootstrap-loaded": {
+            statusText: "正在准备工作台",
+            detailText: "正在启动运行环境并装载当前页面。",
+          },
+          "current-route-chunk-ready": {
+            statusText: "正在准备工作台",
+            detailText: "当前页面就绪后会立即进入，其他资产会在后台静默补齐。",
+          },
+          "current-route-data-ready": {
+            statusText: "正在进入工作台",
+            detailText: "已完成首屏准备，正在切换到工作台。",
+          },
+        }
+
+        function applyLaunchPhase(phaseId) {
+          const phase = phaseState[phaseId]
+          if (!phase || !launchRoot) {
+            return
+          }
+
+          launchRoot.setAttribute("aria-label", `Tuckmark ${phase.statusText}`)
+
+          if (statusTextNode) {
+            statusTextNode.textContent = phase.statusText
+          }
+          if (detailTextNode) {
+            detailTextNode.textContent = phase.detailText
+          }
+          if (progressRail) {
+            progressRail.setAttribute("aria-label", `${phase.statusText} 进度`)
+            progressRail.setAttribute("aria-valuetext", phase.statusText)
+          }
+        }
+
+        applyLaunchPhase("bootstrap-loaded")
+        window.__tuckmarkLaunchShell = {
+          setPhase: applyLaunchPhase,
+        }
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

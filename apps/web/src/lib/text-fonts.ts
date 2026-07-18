@@ -7,6 +7,7 @@ import {
   type TextFontPickerFamily,
   textFontRegistry,
 } from "../../../../packages/core/src/web.js"
+import { ensureExtendedRuntimeFontStyles } from "../runtime-font-loader.js"
 
 const FONT_PRELOAD_WEIGHTS: Partial<Record<TextFontPickerFamily, readonly number[]>> = {
   archivo: [400, 700],
@@ -62,14 +63,17 @@ export function preloadTextFontFamily(fontFamily: TextFontFamily): Promise<void>
   }
 
   const weights = FONT_PRELOAD_WEIGHTS[resolvedFontFamily] ?? [400, 700]
-  const promise = Promise.all(
-    weights.map((weight) =>
-      document.fonts.load(
-        `${weight} 16px ${getTextFontFamilyStack(resolvedFontFamily)}`,
-        definition.loadSample
+  const promise = ensureExtendedRuntimeFontStyles()
+    .then(() =>
+      Promise.all(
+        weights.map((weight) =>
+          document.fonts.load(
+            `${weight} 16px ${getTextFontFamilyStack(resolvedFontFamily)}`,
+            definition.loadSample
+          )
+        )
       )
     )
-  )
     .then(() => undefined)
     .catch(() => undefined)
 

@@ -24,6 +24,7 @@ import {
   normalizeCanvasWheelDeltas,
   normalizeTransformedElementGeometry,
   panViewportByWheel,
+  preloadCanvasWorkspaceRouteData,
   projectCanvasTransformerBoxToStage,
   projectStageTransformerBoxToCanvas,
   startClipboardPastePlacement,
@@ -34,6 +35,7 @@ import { CANVAS_DOTS_PER_MILLIMETER } from "./lib/canvas-units.js"
 import { loadRecentActivity } from "./lib/recent-activity.js"
 import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import type { AppContext, CanvasDraftElement, PreviewArtifact } from "./types.js"
+import * as userTemplateStoreModule from "./user-template-store.js"
 import {
   archiveUserTemplate,
   loadWorkingCopy,
@@ -168,6 +170,24 @@ const originalClipboardItem = globalThis.ClipboardItem
 const originalSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureContext")
 let mountedRoot: ReturnType<typeof ReactDOM.createRoot> | null = null
 let viewportWidth = 1440
+
+function queueFetchJsonResponsesByRequest(responses: Record<string, unknown | unknown[]>): void {
+  const queues = new Map<string, unknown[]>()
+  for (const [key, value] of Object.entries(responses)) {
+    queues.set(key, Array.isArray(value) ? [...value] : [value])
+  }
+
+  fetchMock.mockImplementation(async (input, init) => {
+    const method = (init?.method ?? "GET").toUpperCase()
+    const url = String(input)
+    const queue = queues.get(`${method} ${url}`) ?? queues.get(url)
+    if (!queue || queue.length === 0) {
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    }
+
+    return new Response(JSON.stringify(queue.shift()))
+  })
+}
 
 function createMemoryStorage(): Storage {
   const store = new Map<string, string>()
@@ -815,12 +835,77 @@ async function flush(times = 3): Promise<void> {
   }
 }
 
+async function advanceAnimationFrames(frameCount = 2): Promise<void> {
+  await vi.advanceTimersByTimeAsync(Math.max(1, frameCount) * 16)
+  await flush(1)
+}
+
+async function settleWorkbenchUi(times = 8): Promise<void> {
+  await act(async () => {
+    await flush(1)
+    await vi.dynamicImportSettled()
+    await advanceAnimationFrames(2)
+    await flush(times)
+  })
+}
+
+async function waitForDeferredHydrationToFinish(maxCycles = 32): Promise<void> {
+  for (let cycle = 0; cycle < maxCycles; cycle += 1) {
+    const shell = document.querySelector(".tm-shell")
+    if (shell?.getAttribute("data-deferred-hydration-pending") !== "true") {
+      return
+    }
+
+    await act(async () => {
+      await advanceAnimationFrames(1)
+      await flush(4)
+    })
+  }
+
+  throw new Error("Timed out waiting for deferred hydration to finish")
+}
+
+async function waitForFetchCallCount(count: number, maxCycles = 32): Promise<void> {
+  for (let cycle = 0; cycle < maxCycles; cycle += 1) {
+    if (fetchMock.mock.calls.length >= count) {
+      return
+    }
+
+    await act(async () => {
+      await advanceAnimationFrames(1)
+      await flush(4)
+    })
+  }
+
+  throw new Error(
+    `Timed out waiting for ${count} fetch calls (seen: ${fetchMock.mock.calls
+      .map((call) => String(call[0]))
+      .join(" | ")})`
+  )
+}
+
+async function waitForServerRuntimeReady(): Promise<void> {
+  await waitForFetchCallCount(4)
+  await waitForDeferredHydrationToFinish()
+  await act(async () => {
+    await flush(4)
+  })
+}
+
 function queryButton(label: string): HTMLButtonElement {
-  const button = Array.from(document.querySelectorAll("button")).find((item) =>
-    item.textContent?.includes(label)
-  ) as HTMLButtonElement | undefined
+  const buttons = Array.from(document.querySelectorAll("button"))
+  const button = buttons.find((item) => item.textContent?.includes(label)) as
+    | HTMLButtonElement
+    | undefined
   if (!button) {
-    throw new Error(`Missing button: ${label}`)
+    const availableButtons = buttons
+      .map((item) => item.textContent?.replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .join(" | ")
+    const bodyText = document.body.textContent?.replace(/\s+/g, " ").trim() ?? ""
+    throw new Error(
+      `Missing button: ${label} @ ${window.location.pathname} (available: ${availableButtons}) body=${bodyText}`
+    )
   }
   return button
 }
@@ -901,7 +986,20 @@ function _clickNav(label: string): Promise<void> {
   })
 }
 
+async function resetMountedRoot(): Promise<void> {
+  if (!mountedRoot) {
+    return
+  }
+
+  await act(async () => {
+    mountedRoot?.unmount()
+    await flush(1)
+  })
+  mountedRoot = null
+}
+
 async function renderApp(context: AppContext, client?: ApiClient, path = "/"): Promise<void> {
+  await resetMountedRoot()
   document.body.innerHTML = '<div id="root"></div>'
   const rootElement = document.getElementById("root")
   if (!rootElement) {
@@ -913,8 +1011,9 @@ async function renderApp(context: AppContext, client?: ApiClient, path = "/"): P
   await act(async () => {
     mountedRoot = ReactDOM.createRoot(rootElement)
     mountedRoot.render(<App context={context} client={client} />)
-    await flush()
+    await flush(1)
   })
+  await settleWorkbenchUi()
 }
 
 async function renderWorkbenchApp(
@@ -922,6 +1021,7 @@ async function renderWorkbenchApp(
   canvasScenario: Parameters<typeof WorkbenchApp>[0]["canvasScenario"],
   path = "/canvas"
 ): Promise<void> {
+  await resetMountedRoot()
   document.body.innerHTML = '<div id="root"></div>'
   const rootElement = document.getElementById("root")
   if (!rootElement) {
@@ -933,8 +1033,9 @@ async function renderWorkbenchApp(
   await act(async () => {
     mountedRoot = ReactDOM.createRoot(rootElement)
     mountedRoot.render(<WorkbenchApp context={context} canvasScenario={canvasScenario} />)
-    await flush()
+    await flush(1)
   })
+  await settleWorkbenchUi()
 }
 
 function beginHoldingUserTemplateLoad(): Promise<void> {
@@ -1033,13 +1134,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  if (mountedRoot) {
-    await act(async () => {
-      mountedRoot?.unmount()
-      await flush(1)
-    })
-  }
-  mountedRoot = null
+  await resetMountedRoot()
   globalThis.fetch = originalFetch
   globalThis.indexedDB = originalIndexedDb
   window.matchMedia = originalMatchMedia
@@ -1096,6 +1191,119 @@ describe("web workbench app", () => {
     const rightsLink = document.querySelector<HTMLAnchorElement>('a[href="https://ivanli.cc/"]')
     expect(githubLink?.textContent).toBe("GitHub")
     expect(rightsLink?.textContent).toBe("© 2026 Ivan Li")
+  })
+
+  it("keeps the runtime shell hidden while the startup overlay is still active", async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const rootElement = document.getElementById("root")
+    if (!rootElement) {
+      throw new Error("Missing root element")
+    }
+
+    window.history.replaceState({}, "", "/")
+
+    await act(async () => {
+      mountedRoot = ReactDOM.createRoot(rootElement)
+      mountedRoot.render(<App context={browserRuntimeContext} />)
+      await flush(1)
+    })
+
+    await act(async () => {
+      await vi.dynamicImportSettled()
+      await flush(1)
+    })
+
+    const shell = document.querySelector<HTMLElement>(".tm-shell")
+    expect(shell).not.toBeNull()
+    expect(shell?.getAttribute("data-shell-ready")).toBe("false")
+    expect(shell?.hidden).toBe(true)
+    expect(document.querySelector(".tm-launch-progress-rail")).not.toBeNull()
+  })
+
+  it("keeps owner-facing startup copy generic while the overlay is active", async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const rootElement = document.getElementById("root")
+    if (!rootElement) {
+      throw new Error("Missing root element")
+    }
+
+    window.history.replaceState({}, "", "/")
+
+    await act(async () => {
+      mountedRoot = ReactDOM.createRoot(rootElement)
+      mountedRoot.render(<App context={browserRuntimeContext} />)
+      await flush(1)
+    })
+
+    await act(async () => {
+      await vi.dynamicImportSettled()
+      await flush(1)
+    })
+
+    expect(document.body.textContent).toContain("正在准备工作台")
+    expect(document.body.textContent).not.toContain("启动运行时引导")
+    expect(document.body.textContent).not.toContain("装载当前页面模块")
+    expect(document.body.textContent).not.toContain("准备当前页面状态")
+    expect(document.body.textContent).not.toContain("补齐离线资源缓存")
+    expect(document.body.textContent).not.toContain("进入后继续补齐")
+    expect(document.querySelector(".tm-launch-checklist")).toBeNull()
+    expect(document.querySelector(".tm-launch-note")).toBeNull()
+  })
+
+  it("mounts a preloaded canvas route without flashing the canvas loading placeholder", async () => {
+    const path = "/canvas?source=preset-template&templateId=cable-tag"
+    await preloadCanvasWorkspaceRouteData(path)
+
+    document.body.innerHTML = '<div id="root"></div>'
+    const rootElement = document.getElementById("root")
+    if (!rootElement) {
+      throw new Error("Missing root element")
+    }
+
+    window.history.replaceState({}, "", path)
+
+    await act(async () => {
+      mountedRoot = ReactDOM.createRoot(rootElement)
+      mountedRoot.render(<App context={browserRuntimeContext} />)
+      await flush(1)
+    })
+
+    expect(document.body.textContent).not.toContain("正在读取当前画布草稿")
+    expect(document.body.textContent).not.toContain("正在读取画布")
+    expect(document.body.textContent).toContain("系统模板：Cable Tag")
+  })
+
+  it("shows phase-based startup progress while bootstrap work is still pending", async () => {
+    const actualStore = await vi.importActual<typeof import("./user-template-store.js")>(
+      "./user-template-store.js"
+    )
+    const loadPromise = beginHoldingUserTemplateLoad()
+    const listUserTemplatesSpy = vi.spyOn(userTemplateStoreModule, "listUserTemplates")
+    listUserTemplatesSpy.mockImplementation(async () => {
+      await loadPromise
+      return actualStore.listUserTemplates()
+    })
+
+    try {
+      await renderApp(browserRuntimeContext)
+
+      expect(document.body.textContent).toContain("打印工作台")
+      expect(document.body.textContent).not.toContain("工作台已就绪")
+      expect(document.body.textContent).not.toContain("正在后台补齐模板、设置与最近状态。")
+      expect(document.body.textContent).not.toContain("Deferred hydration")
+      expect(document.body.textContent).not.toContain("Offline warmup")
+
+      const shell = document.querySelector<HTMLElement>(".tm-shell")
+      expect(shell?.getAttribute("data-shell-ready")).toBe("true")
+      expect(shell?.getAttribute("data-deferred-hydration-pending")).toBe("true")
+      expect(document.querySelector(".tm-launch-progress-rail")).toBeNull()
+
+      releaseHeldUserTemplateLoad()
+      await flush(8)
+    } finally {
+      releaseHeldUserTemplateLoad()
+      vi.restoreAllMocks()
+    }
   })
 
   it("renders tagged owner-facing builds as version with build reference in tooltip only", async () => {
@@ -1235,47 +1443,41 @@ describe("web workbench app", () => {
   })
 
   it("renders template workspace and submits preview through /api on server-http runtime", async () => {
-    fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: fallbackTemplates })))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            printers: [
-              {
-                id: "printer-1",
-                name: "Mock P2",
-                capabilities: {
-                  printWidthDots: 384,
-                  supportedPaperTypes: ["continuous", "gap"],
-                },
-              },
-            ],
-          })
-        )
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ artifact: makeArtifact("artifact-1") })))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            artifactId: "artifact-1",
-            packetsJsonPath: "/tmp/artifact-1.packets.json",
-            packets: ["AA=="],
-            packetCount: 1,
-            totalBytes: 1,
-          })
-        )
-      )
+    queueFetchJsonResponsesByRequest({
+      "GET /api/templates": { templates: fallbackTemplates },
+      "GET /api/printers": {
+        printers: [
+          {
+            id: "printer-1",
+            name: "Mock P2",
+            capabilities: {
+              printWidthDots: 384,
+              supportedPaperTypes: ["continuous", "gap"],
+            },
+          },
+        ],
+      },
+      "GET /api/sync/state": { state: emptySyncState() },
+      "POST /api/sync/state": { state: emptySyncState() },
+      "POST /api/preview/template": { artifact: makeArtifact("artifact-1") },
+      "GET /api/artifacts/artifact-1/packets": {
+        artifactId: "artifact-1",
+        packetsJsonPath: "/tmp/artifact-1.packets.json",
+        packets: ["AA=="],
+        packetCount: 1,
+        totalBytes: 1,
+      },
+    })
 
     await renderApp(serverRuntimeContext)
+    await waitForServerRuntimeReady()
 
     await act(async () => {
       const nav = document.querySelector("a[href='/templates']") as HTMLAnchorElement | null
       nav?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await flush()
+      await flush(1)
     })
+    await settleWorkbenchUi()
 
     await act(async () => {
       queryButton("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
@@ -1293,49 +1495,41 @@ describe("web workbench app", () => {
   })
 
   it("auto-generates template preview when a table row is selected on server-http runtime", async () => {
-    fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: fallbackTemplates })))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            printers: [
-              {
-                id: "printer-1",
-                name: "Mock P2",
-                capabilities: {
-                  printWidthDots: 384,
-                  supportedPaperTypes: ["continuous", "gap"],
-                },
-              },
-            ],
-          })
-        )
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ artifact: makeArtifact("artifact-auto-1") }))
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            artifactId: "artifact-auto-1",
-            packetsJsonPath: "/tmp/artifact-auto-1.packets.json",
-            packets: ["AA=="],
-            packetCount: 1,
-            totalBytes: 1,
-          })
-        )
-      )
+    queueFetchJsonResponsesByRequest({
+      "GET /api/templates": { templates: fallbackTemplates },
+      "GET /api/printers": {
+        printers: [
+          {
+            id: "printer-1",
+            name: "Mock P2",
+            capabilities: {
+              printWidthDots: 384,
+              supportedPaperTypes: ["continuous", "gap"],
+            },
+          },
+        ],
+      },
+      "GET /api/sync/state": { state: emptySyncState() },
+      "POST /api/sync/state": { state: emptySyncState() },
+      "POST /api/preview/template": { artifact: makeArtifact("artifact-auto-1") },
+      "GET /api/artifacts/artifact-auto-1/packets": {
+        artifactId: "artifact-auto-1",
+        packetsJsonPath: "/tmp/artifact-auto-1.packets.json",
+        packets: ["AA=="],
+        packetCount: 1,
+        totalBytes: 1,
+      },
+    })
 
     await renderApp(serverRuntimeContext)
+    await waitForServerRuntimeReady()
 
     await act(async () => {
       const nav = document.querySelector("a[href='/templates']") as HTMLAnchorElement | null
       nav?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await flush()
+      await flush(1)
     })
+    await settleWorkbenchUi()
 
     await act(async () => {
       const firstRow = document.querySelector(".tm-table tbody tr") as HTMLTableRowElement | null
@@ -1353,63 +1547,51 @@ describe("web workbench app", () => {
   })
 
   it("debounces template preview refresh after editing the selected row", async () => {
-    fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: fallbackTemplates })))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            printers: [
-              {
-                id: "printer-1",
-                name: "Mock P2",
-                capabilities: {
-                  printWidthDots: 384,
-                  supportedPaperTypes: ["continuous", "gap"],
-                },
-              },
-            ],
-          })
-        )
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ artifact: makeArtifact("artifact-auto-1") }))
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            artifactId: "artifact-auto-1",
-            packetsJsonPath: "/tmp/artifact-auto-1.packets.json",
-            packets: ["AA=="],
-            packetCount: 1,
-            totalBytes: 1,
-          })
-        )
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ artifact: makeArtifact("artifact-auto-2") }))
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            artifactId: "artifact-auto-2",
-            packetsJsonPath: "/tmp/artifact-auto-2.packets.json",
-            packets: ["AA=="],
-            packetCount: 1,
-            totalBytes: 1,
-          })
-        )
-      )
+    queueFetchJsonResponsesByRequest({
+      "GET /api/templates": { templates: fallbackTemplates },
+      "GET /api/printers": {
+        printers: [
+          {
+            id: "printer-1",
+            name: "Mock P2",
+            capabilities: {
+              printWidthDots: 384,
+              supportedPaperTypes: ["continuous", "gap"],
+            },
+          },
+        ],
+      },
+      "GET /api/sync/state": { state: emptySyncState() },
+      "POST /api/sync/state": { state: emptySyncState() },
+      "POST /api/preview/template": [
+        { artifact: makeArtifact("artifact-auto-1") },
+        { artifact: makeArtifact("artifact-auto-2") },
+      ],
+      "GET /api/artifacts/artifact-auto-1/packets": {
+        artifactId: "artifact-auto-1",
+        packetsJsonPath: "/tmp/artifact-auto-1.packets.json",
+        packets: ["AA=="],
+        packetCount: 1,
+        totalBytes: 1,
+      },
+      "GET /api/artifacts/artifact-auto-2/packets": {
+        artifactId: "artifact-auto-2",
+        packetsJsonPath: "/tmp/artifact-auto-2.packets.json",
+        packets: ["AA=="],
+        packetCount: 1,
+        totalBytes: 1,
+      },
+    })
 
     await renderApp(serverRuntimeContext)
+    await waitForServerRuntimeReady()
 
     await act(async () => {
       const nav = document.querySelector("a[href='/templates']") as HTMLAnchorElement | null
       nav?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await flush()
+      await flush(1)
     })
+    await settleWorkbenchUi()
 
     await act(async () => {
       const firstRow = document.querySelector(".tm-table tbody tr") as HTMLTableRowElement | null
@@ -1471,38 +1653,34 @@ describe("web workbench app", () => {
   })
 
   it("keeps template editing inputs selectable while display cells stay chrome-like", async () => {
-    fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: fallbackTemplates })))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            printers: [
-              {
-                id: "printer-1",
-                name: "Mock P2",
-                capabilities: {
-                  printWidthDots: 384,
-                  supportedPaperTypes: ["continuous", "gap"],
-                },
-              },
-            ],
-          })
-        )
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: emptySyncState() })))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ artifact: makeArtifact("artifact-selectable") }))
-      )
+    queueFetchJsonResponsesByRequest({
+      "GET /api/templates": { templates: fallbackTemplates },
+      "GET /api/printers": {
+        printers: [
+          {
+            id: "printer-1",
+            name: "Mock P2",
+            capabilities: {
+              printWidthDots: 384,
+              supportedPaperTypes: ["continuous", "gap"],
+            },
+          },
+        ],
+      },
+      "GET /api/sync/state": { state: emptySyncState() },
+      "POST /api/sync/state": { state: emptySyncState() },
+      "POST /api/preview/template": { artifact: makeArtifact("artifact-selectable") },
+    })
 
     await renderApp(serverRuntimeContext)
+    await waitForServerRuntimeReady()
 
     await act(async () => {
       const nav = document.querySelector("a[href='/templates']") as HTMLAnchorElement | null
       nav?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await flush()
+      await flush(1)
     })
+    await settleWorkbenchUi()
 
     await act(async () => {
       const firstRow = document.querySelector(".tm-table tbody tr") as HTMLTableRowElement | null
@@ -2406,28 +2584,26 @@ describe("web workbench app", () => {
       canvasDraftRecords: [],
     }
 
-    fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: fallbackTemplates })))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            printers: [
-              {
-                id: "printer-1",
-                name: "Mock P2",
-                capabilities: {
-                  printWidthDots: 384,
-                  supportedPaperTypes: ["continuous", "gap"],
-                },
-              },
-            ],
-          })
-        )
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: syncedState })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: syncedState })))
+    queueFetchJsonResponsesByRequest({
+      "GET /api/templates": { templates: fallbackTemplates },
+      "GET /api/printers": {
+        printers: [
+          {
+            id: "printer-1",
+            name: "Mock P2",
+            capabilities: {
+              printWidthDots: 384,
+              supportedPaperTypes: ["continuous", "gap"],
+            },
+          },
+        ],
+      },
+      "GET /api/sync/state": { state: syncedState },
+      "POST /api/sync/state": { state: syncedState },
+    })
 
     await renderApp(serverRuntimeContext)
+    await waitForServerRuntimeReady()
     await flush(6)
 
     expect(document.body.textContent).toContain("Shipping Label")
@@ -2690,8 +2866,9 @@ describe("web workbench app", () => {
     await act(async () => {
       const nav = document.querySelector("a[href='/templates']") as HTMLAnchorElement | null
       nav?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await flush()
+      await flush(1)
     })
+    await settleWorkbenchUi()
 
     await act(async () => {
       queryButton("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
@@ -2914,7 +3091,7 @@ describe("web workbench app", () => {
     expect(document.body.textContent).not.toContain("系统模板：Stale preset draft")
   })
 
-  it("waits for a user-template working copy before allowing preview from /templates", async () => {
+  it("uses the cached user-template working copy before the async draft load settles", async () => {
     const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
     const textElement = baseDraft.elements.find((element) => element.kind === "text")
     if (!textElement) {
@@ -2930,17 +3107,14 @@ describe("web workbench app", () => {
       },
     })
 
-    const actualStore = await vi.importActual<typeof import("./user-template-store.js")>(
-      "./user-template-store.js"
-    )
     const loadPromise = beginHoldingUserTemplateLoad()
-    const originalLoadWorkingCopy = await import("./user-template-store.js")
-    const loadWorkingCopySpy = vi.spyOn(originalLoadWorkingCopy, "loadWorkingCopy")
+    const originalLoadWorkingCopy = userTemplateStoreModule.loadWorkingCopy
+    const loadWorkingCopySpy = vi.spyOn(userTemplateStoreModule, "loadWorkingCopy")
     loadWorkingCopySpy.mockImplementation(async (source) => {
       if (source.kind === "user-template" && source.templateId === saved.template.id) {
         await loadPromise
       }
-      return actualStore.loadWorkingCopy(source)
+      return originalLoadWorkingCopy(source)
     })
 
     try {
@@ -2958,9 +3132,15 @@ describe("web workbench app", () => {
         await flush(1)
       })
 
-      expect(queryButton("生成预览").disabled).toBe(true)
-      expect(document.body.textContent).toContain("正在读取本地模板草稿。")
-      expect(browserPayloadMocks.materializeBrowserArtifactData).not.toHaveBeenCalled()
+      expect(queryButton("生成预览").disabled).toBe(false)
+      expect(document.body.textContent).not.toContain("正在读取本地模板草稿。")
+
+      await act(async () => {
+        queryButton("生成预览").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await flush(8)
+      })
+
+      expect(browserPayloadMocks.materializeBrowserArtifactData).toHaveBeenCalled()
 
       releaseHeldUserTemplateLoad()
       await flush(8)
@@ -3133,17 +3313,14 @@ describe("web workbench app", () => {
   })
 
   it("blocks routed canvas interactions until the requested preset-template draft loads", async () => {
-    const actualStore = await vi.importActual<typeof import("./user-template-store.js")>(
-      "./user-template-store.js"
-    )
     const loadPromise = beginHoldingUserTemplateLoad()
-    const originalLoadWorkingCopy = await import("./user-template-store.js")
-    const loadWorkingCopySpy = vi.spyOn(originalLoadWorkingCopy, "loadWorkingCopy")
+    const originalLoadWorkingCopy = userTemplateStoreModule.loadWorkingCopy
+    const loadWorkingCopySpy = vi.spyOn(userTemplateStoreModule, "loadWorkingCopy")
     loadWorkingCopySpy.mockImplementation(async (source) => {
       if (source.kind === "preset-template" && source.presetId === "cable-tag") {
         await loadPromise
       }
-      return actualStore.loadWorkingCopy(source)
+      return originalLoadWorkingCopy(source)
     })
 
     try {
@@ -3169,16 +3346,13 @@ describe("web workbench app", () => {
   })
 
   it("surfaces route load failures instead of falling back to an unrelated draft", async () => {
-    const actualStore = await vi.importActual<typeof import("./user-template-store.js")>(
-      "./user-template-store.js"
-    )
-    const originalLoadWorkingCopy = await import("./user-template-store.js")
-    const loadWorkingCopySpy = vi.spyOn(originalLoadWorkingCopy, "loadWorkingCopy")
+    const originalLoadWorkingCopy = userTemplateStoreModule.loadWorkingCopy
+    const loadWorkingCopySpy = vi.spyOn(userTemplateStoreModule, "loadWorkingCopy")
     loadWorkingCopySpy.mockImplementation(async (source) => {
       if (source.kind === "preset-template" && source.presetId === "cable-tag") {
         throw new Error("missing requested draft")
       }
-      return actualStore.loadWorkingCopy(source)
+      return originalLoadWorkingCopy(source)
     })
 
     try {

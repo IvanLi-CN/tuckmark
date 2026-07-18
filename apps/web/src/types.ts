@@ -224,6 +224,7 @@ export type CanvasWorkingCopyIndexEntry = {
 
 export type UserTemplateSummary = UserTemplateRecord & {
   fields: CanvasDraftField[]
+  document?: CanvasDraftDocument | null
 }
 
 export type UserTemplateHistory = {

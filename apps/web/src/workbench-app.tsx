@@ -1,4 +1,3 @@
-import type { LucideIcon } from "lucide-react"
 import {
   AlertCircle,
   Archive,
@@ -48,7 +47,6 @@ import {
   Route,
   Routes,
   useLocation,
-  useNavigate,
 } from "react-router-dom"
 import {
   buildSvg,
@@ -59,6 +57,7 @@ import {
 } from "../../../packages/core/src/web.js"
 
 import type { ApiClient } from "./api-client.js"
+import { AppLaunchSplash } from "./app-launch-splash.js"
 import type { BrowserPrintSource } from "./browser-print-payload.js"
 import {
   buildTemplateFieldsFromDraft,
@@ -94,8 +93,10 @@ import { FooterBuildMeta } from "./footer-build-meta.js"
 import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
 import { canvasDotsToMillimeters, canvasMillimetersToDots } from "./lib/canvas-units.js"
 import { cn } from "./lib/utils.js"
+import { usePwaAssetWarmup } from "./pwa-asset-warmup.js"
 import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import { applyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
+import { buildStartupSplashState, type WorkbenchHydrationState } from "./startup-contract.js"
 import { SystemDataStorageCard } from "./system-data-storage-card.js"
 import type {
   AppContext,
@@ -119,12 +120,43 @@ import {
   type WorkbenchDeviceDrawerFeedback,
   type WorkbenchStoryStateOverrides,
 } from "./workbench-controller.js"
+import { preloadWorkbenchNavigationIntent, useWorkbenchNavigate } from "./workbench-navigation.js"
+import {
+  normalizeWorkbenchRoutePath,
+  preloadDeferredWorkbenchRoutes,
+  useDeferredWorkbenchRouteModule,
+} from "./workbench-route-registry.js"
 
 type AppProps = {
   client?: ApiClient
   context?: AppContext
+  bootstrapState?: {
+    currentRouteChunkReady?: boolean
+  }
   canvasScenario?: CanvasStoryScenario
   pwaUpdateSnapshot?: PwaUpdateSnapshot
+  startupShell?: "auto" | "disabled"
+  theme?: "auto" | "light" | "dark"
+}
+
+function ThemeScope({
+  theme = "auto",
+  children,
+}: {
+  theme?: "auto" | "light" | "dark"
+  children: React.ReactNode
+}) {
+  return (
+    <div
+      className={cn(
+        "tm-theme-scope",
+        theme === "light" && "tm-theme-scope--light",
+        theme === "dark" && "tm-theme-scope--dark dark"
+      )}
+    >
+      {children}
+    </div>
+  )
 }
 
 type TemplateRow = {
@@ -233,126 +265,33 @@ const CANVAS_TOOL_LABELS: Record<CanvasElement["kind"], string> = {
   datamatrix: "数据矩阵码",
 }
 
-const WIDE_TRIPLE_THRESHOLD = 1280
+export const WIDE_TRIPLE_THRESHOLD = 1280
 const SUPPORTED_MIN_WIDTH = 1024
-const TEMPLATE_STACKED_PREVIEW_THRESHOLD = 960
+export const TEMPLATE_STACKED_PREVIEW_THRESHOLD = 960
 const TEMPLATE_INDEX_COLUMN_WIDTH = 44
-const TEMPLATE_PREVIEW_DEBOUNCE_MS = 320
+export const TEMPLATE_PREVIEW_DEBOUNCE_MS = 320
 const ARCHIVE_TOAST_DURATION_MS = 5_000
-
-function useMediaQuery(query: string): boolean {
-  const getValue = React.useCallback(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return false
-    }
-    return window.matchMedia(query).matches
-  }, [query])
-
-  const [matches, setMatches] = React.useState(getValue)
-
-  React.useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return
-    }
-
-    const media = window.matchMedia(query)
-    const update = () => setMatches(media.matches)
-    update()
-    media.addEventListener("change", update)
-    return () => media.removeEventListener("change", update)
-  }, [query])
-
-  return matches
-}
-
-function useElementClientWidth<T extends HTMLElement>(element: T | null) {
-  const [width, setWidth] = React.useState<number | null>(null)
-
-  React.useEffect(() => {
-    if (!element) {
-      return
-    }
-
-    const update = () => setWidth(Math.round(element.clientWidth))
-    update()
-
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", update)
-      return () => window.removeEventListener("resize", update)
-    }
-
-    const observer = new ResizeObserver(() => update())
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [element])
-
-  return width
-}
-
-function formatRelativeTime(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-
-  const deltaMinutes = Math.round((Date.now() - date.getTime()) / 60_000)
-  if (deltaMinutes < 1) {
-    return "刚刚"
-  }
-  if (deltaMinutes < 60) {
-    return `${deltaMinutes} 分钟前`
-  }
-  const deltaHours = Math.round(deltaMinutes / 60)
-  if (deltaHours < 24) {
-    return `${deltaHours} 小时前`
-  }
-  const deltaDays = Math.round(deltaHours / 24)
-  return `${deltaDays} 天前`
-}
-
-function _formatTemplateSize(template: Template): string {
-  if (template.width && template.height) {
-    return formatCanvasDimension({
-      width: canvasDotsToMillimeters(template.width),
-      height: canvasDotsToMillimeters(template.height),
-    })
-  }
-  return "尺寸待定"
-}
-
-function formatTemplateCardSize(entry: TemplateCardEntry): string {
-  if (!entry.template.width || !entry.template.height) {
-    return "尺寸待定"
-  }
-  if (entry.kind === "user") {
-    return formatCanvasDimension({ width: entry.template.width, height: entry.template.height })
-  }
-  return formatCanvasDimension({
-    width: canvasDotsToMillimeters(entry.template.width),
-    height: canvasDotsToMillimeters(entry.template.height),
-  })
-}
+const TEMPLATE_PREVIEW_ROOT_PATTERN =
+  /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="[^"]+" height="[^"]+" viewBox="[^"]+">/
+const TEMPLATE_PREVIEW_OVERFLOW_PADDING_MM = 1.25
+const TEMPLATE_CARD_LONG_PRESS_MS = 420
+const TEMPLATE_CARD_LONG_PRESS_MOVE_TOLERANCE = 10
 
 function buildTemplateMenuActionItems(entry: TemplateCardEntry): Array<{
   kind: TemplateActionKind
   label: string
-  icon: LucideIcon
+  icon: React.ComponentType<{ className?: string }>
 }> {
   if (entry.kind === "system") {
     return [{ kind: "edit", label: "编辑", icon: SquarePen }]
   }
+
   return [
     { kind: "edit", label: "编辑", icon: SquarePen },
     { kind: "rename", label: "重命名", icon: Type },
     { kind: "archive", label: "归档", icon: Archive },
   ]
 }
-
-const TEMPLATE_PREVIEW_ROOT_PATTERN =
-  /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="[^"]+" height="[^"]+" viewBox="[^"]+">/
-const TEMPLATE_PREVIEW_OVERFLOW_PADDING_MM = 1.25
-const TEMPLATE_CARD_LONG_PRESS_MS = 420
-const TEMPLATE_CARD_LONG_PRESS_MOVE_TOLERANCE = 10
 
 type TemplatePreviewBounds = {
   left: number
@@ -444,6 +383,7 @@ function resolvePreviewDraftElements(
           value: fieldMap.get(element.binding.fieldKey) ?? element.value,
         }
       }
+
       return element
     })
 }
@@ -557,6 +497,102 @@ function buildDraftPreviewSvg(
   }
 }
 
+export function useMediaQuery(query: string): boolean {
+  const getValue = React.useCallback(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return false
+    }
+    return window.matchMedia(query).matches
+  }, [query])
+
+  const [matches, setMatches] = React.useState(getValue)
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return
+    }
+
+    const media = window.matchMedia(query)
+    const update = () => setMatches(media.matches)
+    update()
+    media.addEventListener("change", update)
+    return () => media.removeEventListener("change", update)
+  }, [query])
+
+  return matches
+}
+
+export function useElementClientWidth<T extends HTMLElement>(element: T | null) {
+  const [width, setWidth] = React.useState<number | null>(null)
+
+  React.useEffect(() => {
+    if (!element) {
+      return
+    }
+
+    const update = () => setWidth(Math.round(element.clientWidth))
+    update()
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", update)
+      return () => window.removeEventListener("resize", update)
+    }
+
+    const observer = new ResizeObserver(() => update())
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [element])
+
+  return width
+}
+
+function formatRelativeTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  const deltaMinutes = Math.round((Date.now() - date.getTime()) / 60_000)
+  if (deltaMinutes < 1) {
+    return "刚刚"
+  }
+  if (deltaMinutes < 60) {
+    return `${deltaMinutes} 分钟前`
+  }
+  const deltaHours = Math.round(deltaMinutes / 60)
+  if (deltaHours < 24) {
+    return `${deltaHours} 小时前`
+  }
+  const deltaDays = Math.round(deltaHours / 24)
+  return `${deltaDays} 天前`
+}
+
+function _formatTemplateSize(template: Template): string {
+  if (template.width && template.height) {
+    return formatCanvasDimension({
+      width: canvasDotsToMillimeters(template.width),
+      height: canvasDotsToMillimeters(template.height),
+    })
+  }
+  return "尺寸待定"
+}
+
+function formatTemplateCardSize(entry: TemplateCardEntry): string {
+  if (!entry.template.width || !entry.template.height) {
+    return "尺寸待定"
+  }
+  if (entry.kind === "user") {
+    return formatCanvasDimension({
+      width: entry.template.width,
+      height: entry.template.height,
+    })
+  }
+  return formatCanvasDimension({
+    width: canvasDotsToMillimeters(entry.template.width),
+    height: canvasDotsToMillimeters(entry.template.height),
+  })
+}
+
 function buildTemplatePreviewSvg(template: Template): string | null {
   try {
     const preset = getTemplateById(template.id)
@@ -589,7 +625,7 @@ function buildUserTemplatePreviewSvg(draft: CanvasDraftDocument | null): string 
   }
 }
 
-function toTemplateFieldList(template: Template | UserTemplateSummary): TemplateField[] {
+export function toTemplateFieldList(template: Template | UserTemplateSummary): TemplateField[] {
   if ("required" in (template.fields[0] ?? {})) {
     return template.fields as TemplateField[]
   }
@@ -603,7 +639,7 @@ function toTemplateFieldList(template: Template | UserTemplateSummary): Template
   }))
 }
 
-function toDataUrl(svg: string): string {
+export function toDataUrl(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
 }
 
@@ -614,7 +650,7 @@ function createPreviewRenderOptions(renderOptions: RenderOptions) {
   }
 }
 
-function createTemplatePrintSource(
+export function createTemplatePrintSource(
   template: Template,
   row: TemplateRow,
   renderOptions: RenderOptions
@@ -628,7 +664,7 @@ function createTemplatePrintSource(
   }
 }
 
-function createUserTemplatePrintSource(
+export function createUserTemplatePrintSource(
   template: UserTemplateSummary,
   draft: CanvasDraftDocument,
   row: TemplateRow,
@@ -790,7 +826,7 @@ function canMeasureTemplateColumnsWithCanvas() {
   return !/jsdom/i.test(navigator.userAgent)
 }
 
-function getTemplateColumnWidthRange(field: Template["fields"][number]) {
+export function getTemplateColumnWidthRange(field: Template["fields"][number]) {
   return {
     minWidth: 44,
     maxWidth: field.multiline ? 240 : 180,
@@ -825,7 +861,7 @@ function getTemplateColumnWidth(field: Template["fields"][number], rows: Templat
   return Math.min(Math.max(Math.ceil(contentWidth), minWidth), maxWidth)
 }
 
-function resolveTemplateColumnLayout(
+export function resolveTemplateColumnLayout(
   fields: Template["fields"],
   rows: TemplateRow[],
   availableTableWidth: number | null
@@ -839,7 +875,11 @@ function resolveTemplateColumnLayout(
     const targetContentWidth = Math.max(availableTableWidth - TEMPLATE_INDEX_COLUMN_WIDTH, 0)
     let remainingWidth = targetContentWidth - resolvedWidths.reduce((sum, width) => sum + width, 0)
     let expandable = resolvedWidths
-      .map((width, index) => ({ width, index, capacity: (maxWidths[index] ?? width) - width }))
+      .map((width, index) => ({
+        width,
+        index,
+        capacity: (maxWidths[index] ?? width) - width,
+      }))
       .filter((item) => item.capacity > 0.5)
 
     while (remainingWidth > 0.5 && expandable.length > 0) {
@@ -864,7 +904,11 @@ function resolveTemplateColumnLayout(
 
       remainingWidth -= consumed
       expandable = resolvedWidths
-        .map((width, index) => ({ width, index, capacity: (maxWidths[index] ?? width) - width }))
+        .map((width, index) => ({
+          width,
+          index,
+          capacity: (maxWidths[index] ?? width) - width,
+        }))
         .filter((item) => item.capacity > 0.5)
     }
   }
@@ -1023,7 +1067,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
         kind: "user" as const,
         id: `user:${template.id}`,
         template,
-        draft: userTemplatePreviewDrafts[template.id] ?? null,
+        draft: userTemplatePreviewDrafts[template.id] ?? template.document ?? null,
       })),
     ],
     [controller.templates, controller.userTemplates, userTemplatePreviewDrafts]
@@ -1048,6 +1092,24 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   } | null>(null)
   const [templateFocus, setTemplateFocus] = React.useState<TemplateFocus>("left-center")
   const [templateNarrowStage, setTemplateNarrowStage] = React.useState<TemplateNarrowStage>("list")
+  const syncRenderOptionsFromDraft = React.useCallback(
+    (draft: CanvasDraftDocument | null) => {
+      const nextOptions = {
+        ...defaultRenderOptions,
+        ...draft?.renderOptions,
+      }
+      if (
+        controller.renderOptions.printWidthDots === nextOptions.printWidthDots &&
+        controller.renderOptions.paperType === nextOptions.paperType &&
+        controller.renderOptions.threshold === nextOptions.threshold &&
+        controller.renderOptions.xOffsetDots === nextOptions.xOffsetDots
+      ) {
+        return
+      }
+      controller.setRenderOptions(nextOptions)
+    },
+    [controller.renderOptions, controller.setRenderOptions]
+  )
 
   React.useEffect(() => {
     if (!activeTemplateEntry || !activeTemplate) {
@@ -1120,22 +1182,34 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     if (activeTemplateEntry?.kind !== "user") {
       setActiveUserTemplateDraft(null)
       setActiveUserTemplateDraftLoading(false)
-      controller.setRenderOptions(defaultRenderOptions)
+      syncRenderOptionsFromDraft(null)
       return
     }
 
     let cancelled = false
     const templateId = activeTemplateEntry.template.id
-    setActiveUserTemplateDraft(null)
+    const cachedDraft = activeTemplateEntry.draft ?? activeTemplateEntry.template.document ?? null
+    setActiveUserTemplateDraft(cachedDraft)
+    if (cachedDraft) {
+      syncRenderOptionsFromDraft(cachedDraft)
+      setActiveUserTemplateDraftLoading(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
     setActiveUserTemplateDraftLoading(true)
     void (async () => {
       try {
-        const workingCopy = await loadWorkingCopy({ kind: "user-template", templateId })
+        const workingCopy = await loadWorkingCopy({
+          kind: "user-template",
+          templateId,
+        })
         const version = workingCopy?.draft ?? null
         if (!cancelled) {
           if (version) {
             setActiveUserTemplateDraft(version)
-            controller.setRenderOptions({ ...defaultRenderOptions, ...version.renderOptions })
+            syncRenderOptionsFromDraft(version)
             return
           }
           const history = await readUserTemplateHistory(templateId)
@@ -1146,7 +1220,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
           if (!cancelled) {
             const draft = savedVersion?.document ?? null
             setActiveUserTemplateDraft(draft)
-            controller.setRenderOptions({ ...defaultRenderOptions, ...draft?.renderOptions })
+            syncRenderOptionsFromDraft(draft)
           }
         }
       } finally {
@@ -1159,7 +1233,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     return () => {
       cancelled = true
     }
-  }, [activeTemplateEntry, controller.setRenderOptions])
+  }, [activeTemplateEntry, syncRenderOptionsFromDraft])
 
   React.useEffect(() => {
     if (!templateRows.some((row) => row.id === selectedRowId)) {
@@ -1185,6 +1259,15 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   const selectedTemplateRow = React.useMemo(
     () => templateRows.find((row) => row.id === selectedRowId) ?? templateRows[0] ?? null,
     [selectedRowId, templateRows]
+  )
+  const resolvedActiveUserTemplateDraft = React.useMemo(
+    () =>
+      activeTemplateEntry?.kind === "user"
+        ? (activeUserTemplateDraft ??
+          activeTemplateEntry.draft ??
+          activeTemplateEntry.template.document)
+        : null,
+    [activeTemplateEntry, activeUserTemplateDraft]
   )
   const lastAutoPreviewKeyRef = React.useRef<string | null>(null)
   const autoPreviewInFlightKeyRef = React.useRef<string | null>(null)
@@ -1323,18 +1406,17 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       }
       const userTemplateDraftReady =
         activeTemplateEntry?.kind !== "user" ||
-        (activeUserTemplateDraft?.templateId === activeTemplateEntry.template.id &&
-          !activeUserTemplateDraftLoading)
+        (!!resolvedActiveUserTemplateDraft && !activeUserTemplateDraftLoading)
       if (!userTemplateDraftReady) {
         controller.setError("正在读取本地模板草稿，请稍后再预览。")
         return
       }
 
       const source =
-        activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
+        activeTemplateEntry?.kind === "user" && resolvedActiveUserTemplateDraft
           ? createUserTemplatePrintSource(
               activeTemplateEntry.template,
-              activeUserTemplateDraft,
+              resolvedActiveUserTemplateDraft,
               row,
               controller.renderOptions
             )
@@ -1352,7 +1434,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     [
       activeTemplate,
       activeTemplateEntry,
-      activeUserTemplateDraft,
+      resolvedActiveUserTemplateDraft,
       activeUserTemplateDraftLoading,
       controller,
     ]
@@ -1365,18 +1447,17 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
       }
       const userTemplateDraftReady =
         activeTemplateEntry?.kind !== "user" ||
-        (activeUserTemplateDraft?.templateId === activeTemplateEntry.template.id &&
-          !activeUserTemplateDraftLoading)
+        (!!resolvedActiveUserTemplateDraft && !activeUserTemplateDraftLoading)
       if (!userTemplateDraftReady) {
         return
       }
       clearTemplateAutoPreviewTimer()
 
       const source =
-        activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
+        activeTemplateEntry?.kind === "user" && resolvedActiveUserTemplateDraft
           ? createUserTemplatePrintSource(
               activeTemplateEntry.template,
-              activeUserTemplateDraft,
+              resolvedActiveUserTemplateDraft,
               row,
               controller.renderOptions
             )
@@ -1401,7 +1482,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     [
       activeTemplate,
       activeTemplateEntry,
-      activeUserTemplateDraft,
+      resolvedActiveUserTemplateDraft,
       clearTemplateAutoPreviewTimer,
       controller.renderOptions,
       previewTemplateRow,
@@ -1465,17 +1546,16 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
     }
     const userTemplateDraftReady =
       activeTemplateEntry?.kind !== "user" ||
-      (activeUserTemplateDraft?.templateId === activeTemplateEntry.template.id &&
-        !activeUserTemplateDraftLoading)
+      (!!resolvedActiveUserTemplateDraft && !activeUserTemplateDraftLoading)
     if (!userTemplateDraftReady) {
       controller.setError("正在读取本地模板草稿，请稍后再打印。")
       return
     }
     await controller.printSourceDirect(
-      activeTemplateEntry?.kind === "user" && activeUserTemplateDraft
+      activeTemplateEntry?.kind === "user" && resolvedActiveUserTemplateDraft
         ? createUserTemplatePrintSource(
             activeTemplateEntry.template,
-            activeUserTemplateDraft,
+            resolvedActiveUserTemplateDraft,
             selectedTemplateRow,
             controller.renderOptions
           )
@@ -1491,7 +1571,7 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   }, [
     activeTemplate,
     activeTemplateEntry,
-    activeUserTemplateDraft,
+    resolvedActiveUserTemplateDraft,
     activeUserTemplateDraftLoading,
     controller,
     selectedTemplateRow,
@@ -1612,13 +1692,9 @@ function ArchiveUndoToast({
   toast,
   onUndo,
 }: {
-  toast: TemplateArchiveToastState | null
+  toast: TemplateArchiveToastState
   onUndo: () => void | Promise<void>
 }) {
-  if (!toast) {
-    return null
-  }
-
   return (
     <div className="tm-archive-toast" role="status" aria-live="polite" key={toast.nonce}>
       <div className="tm-archive-toast__progress" aria-hidden="true" />
@@ -1647,17 +1723,23 @@ function ArchiveUndoToast({
 
 function WorkbenchLayout({
   controller,
+  hydrationState,
+  onRouteIntent,
   pwaUpdateSnapshot,
   archiveToast,
   onUndoArchiveToast,
+  shellHidden = false,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
+  hydrationState: WorkbenchHydrationState
+  onRouteIntent: (pathname: string) => void
   pwaUpdateSnapshot?: PwaUpdateSnapshot
   archiveToast: TemplateArchiveToastState | null
   onUndoArchiveToast: () => void | Promise<void>
+  shellHidden?: boolean
 }) {
   const location = useLocation()
-  const navigate = useNavigate()
+  const navigate = useWorkbenchNavigate()
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const runtimePwaUpdate = usePwaUpdate(controller.context)
   const pwaUpdate = pwaUpdateSnapshot ?? runtimePwaUpdate
@@ -1675,9 +1757,34 @@ function WorkbenchLayout({
   const surfaceLabel =
     controller.context.surface === "server-http" ? "Server HTTP" : "Browser static"
   const modeLabel = controller.context.mode === "demo" ? "Demo mode" : "Runtime mode"
+  const handlePrimaryNavClick = React.useCallback(
+    (event: React.MouseEvent<HTMLAnchorElement>, pathname: string) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        normalizeWorkbenchRoutePath(location.pathname) === normalizeWorkbenchRoutePath(pathname)
+      ) {
+        return
+      }
+      event.preventDefault()
+      void navigate(pathname)
+    },
+    [location.pathname, navigate]
+  )
 
   return (
-    <div className={cn("tm-shell", "tm-selectable-none", isCanvasRoute && "tm-shell--canvas")}>
+    <div
+      className={cn("tm-shell", "tm-selectable-none", isCanvasRoute && "tm-shell--canvas")}
+      hidden={shellHidden}
+      aria-hidden={shellHidden}
+      data-deferred-hydration-pending={hydrationState.deferredHydrationPending ? "true" : "false"}
+      data-offline-warmup-status={hydrationState.offlineWarmupStatus}
+      data-shell-ready={hydrationState.shellReady ? "true" : "false"}
+    >
       <header className="tm-header tm-selectable-none">
         <div className="tm-header__left">
           <ProductMark />
@@ -1689,6 +1796,10 @@ function WorkbenchLayout({
                   key={item.to}
                   to={item.to}
                   end={item.to === "/"}
+                  onPointerEnter={() => onRouteIntent(item.to)}
+                  onPointerDown={() => onRouteIntent(item.to)}
+                  onFocus={() => onRouteIntent(item.to)}
+                  onClick={(event) => handlePrimaryNavClick(event, item.to)}
                   className={({ isActive }) =>
                     cn("tm-nav__link", "tm-selectable-none", isActive && "tm-nav__link--active")
                   }
@@ -2016,7 +2127,7 @@ function StatusPill({
 }
 
 function DashboardPage({ controller }: { controller: ReturnType<typeof useWorkbenchController> }) {
-  const navigate = useNavigate()
+  const navigate = useWorkbenchNavigate()
 
   return (
     <section className="tm-dashboard">
@@ -2152,7 +2263,7 @@ function TemplatesPage({
   state: ReturnType<typeof useWorkbenchPages>
   onPresentArchiveToast: (template: UserTemplateSummary) => void
 }) {
-  const navigate = useNavigate()
+  const navigate = useWorkbenchNavigate()
   const isTriple = useMediaQuery(`(min-width: ${WIDE_TRIPLE_THRESHOLD}px)`)
   const stacksPreviewBelowTable = !useMediaQuery(
     `(min-width: ${TEMPLATE_STACKED_PREVIEW_THRESHOLD}px)`
@@ -2170,7 +2281,10 @@ function TemplatesPage({
   const showTemplatePreviewPane =
     !usesSingleOutletFlow || showsTableStage || showsDisabledPreviewRail
   const activeUserTemplatePending =
-    state.activeTemplateEntry?.kind === "user" && state.activeUserTemplateDraftLoading
+    state.activeTemplateEntry?.kind === "user" &&
+    state.activeUserTemplateDraftLoading &&
+    !state.activeTemplateEntry.draft &&
+    !state.activeTemplateEntry.template.document
   const templatePreviewDisabled =
     showsDisabledPreviewRail ||
     !state.activeTemplateEntry ||
@@ -2878,7 +2992,7 @@ function CanvasPageLegacy({
   )
 }
 
-function ArchivedTemplateManagementCard({
+export function ArchivedTemplateManagementCard({
   controller,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
@@ -3037,7 +3151,7 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
   )
 }
 
-function PaneHeader({
+export function PaneHeader({
   icon: Icon,
   title,
   actions,
@@ -3059,7 +3173,7 @@ function PaneHeader({
   )
 }
 
-function TemplatesPrintRail({
+export function TemplatesPrintRail({
   controller,
   state,
   disabled = false,
@@ -3067,7 +3181,10 @@ function TemplatesPrintRail({
   onFocusRight,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
-  state: ReturnType<typeof useWorkbenchPages>
+  state: {
+    previewSelectedTemplateRow: () => Promise<void>
+    printSelectedTemplateRow: () => Promise<void>
+  }
   disabled?: boolean
   unavailableMessage?: string
   onFocusRight: () => void
@@ -3150,7 +3267,7 @@ function FocusPairSwitch({
   )
 }
 
-function EmptyMini({ children, text }: { children?: React.ReactNode; text: string }) {
+export function EmptyMini({ children, text }: { children?: React.ReactNode; text: string }) {
   return (
     <div className="tm-template-list__empty-box">
       <div>{text}</div>
@@ -3159,7 +3276,7 @@ function EmptyMini({ children, text }: { children?: React.ReactNode; text: strin
   )
 }
 
-function TemplateActionMenu({
+export function TemplateActionMenu({
   state,
   onAction,
 }: {
@@ -3453,7 +3570,7 @@ function TemplateCard({
   )
 }
 
-function TemplateGroup({
+export function TemplateGroup({
   title,
   entries,
   listMode,
@@ -3513,7 +3630,7 @@ function TemplateGroup({
   )
 }
 
-function RenderOptionsForm({
+export function RenderOptionsForm({
   controller,
   onFocusRight,
   compact = false,
@@ -3558,7 +3675,10 @@ function RenderOptionsForm({
               value={options.paperType}
               disabled={disabled}
               onValueChange={(value: "continuous" | "gap") =>
-                controller.updateRenderOptions((current) => ({ ...current, paperType: value }))
+                controller.updateRenderOptions((current) => ({
+                  ...current,
+                  paperType: value,
+                }))
               }
             >
               <SelectTrigger id="paper-type" disabled={disabled} onFocus={onFocusRight}>
@@ -3722,7 +3842,11 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   onDragEnd={(event) =>
                     state.updateCanvasElement(element.id, (current) =>
                       current.kind === "text"
-                        ? { ...current, x: event.target.x(), y: event.target.y() }
+                        ? {
+                            ...current,
+                            x: event.target.x(),
+                            y: event.target.y(),
+                          }
                         : current
                     )
                   }
@@ -3747,7 +3871,11 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   onDragEnd={(event) =>
                     state.updateCanvasElement(element.id, (current) =>
                       current.kind === "rect"
-                        ? { ...current, x: event.target.x(), y: event.target.y() }
+                        ? {
+                            ...current,
+                            x: event.target.x(),
+                            y: event.target.y(),
+                          }
                         : current
                     )
                   }
@@ -3798,7 +3926,11 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   onDragEnd={(event) =>
                     state.updateCanvasElement(element.id, (current) =>
                       current.kind === "triangle"
-                        ? { ...current, x: event.target.x(), y: event.target.y() }
+                        ? {
+                            ...current,
+                            x: event.target.x(),
+                            y: event.target.y(),
+                          }
                         : current
                     )
                   }
@@ -3850,7 +3982,11 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   onDragEnd={(event) =>
                     state.updateCanvasElement(element.id, (current) =>
                       current.kind === "barcode"
-                        ? { ...current, x: event.target.x(), y: event.target.y() }
+                        ? {
+                            ...current,
+                            x: event.target.x(),
+                            y: event.target.y(),
+                          }
                         : current
                     )
                   }
@@ -3875,7 +4011,11 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   onDragEnd={(event) =>
                     state.updateCanvasElement(element.id, (current) =>
                       current.kind === "qr"
-                        ? { ...current, x: event.target.x(), y: event.target.y() }
+                        ? {
+                            ...current,
+                            x: event.target.x(),
+                            y: event.target.y(),
+                          }
                         : current
                     )
                   }
@@ -3900,7 +4040,11 @@ function CanvasStage({ state }: { state: ReturnType<typeof useWorkbenchPages> })
                   onDragEnd={(event) =>
                     state.updateCanvasElement(element.id, (current) =>
                       current.kind === "datamatrix"
-                        ? { ...current, x: event.target.x(), y: event.target.y() }
+                        ? {
+                            ...current,
+                            x: event.target.x(),
+                            y: event.target.y(),
+                          }
                         : current
                     )
                   }
@@ -4118,17 +4262,289 @@ function CanvasInspector({ state }: { state: ReturnType<typeof useWorkbenchPages
   )
 }
 
-function WorkbenchRouter({
+function RouteLoadingPanel() {
+  return (
+    <div className="tm-route-loading" role="status" aria-live="polite" aria-label="正在打开页面">
+      <div className="tm-route-loading__line tm-route-loading__line--title" />
+      <div className="tm-route-loading__line tm-route-loading__line--body" />
+    </div>
+  )
+}
+
+function DashboardRoute({
+  controller,
+  onRouteChunkReady,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>
+  onRouteChunkReady: () => void
+}) {
+  React.useEffect(() => {
+    onRouteChunkReady()
+  }, [onRouteChunkReady])
+
+  return <DashboardPage controller={controller} />
+}
+
+function TemplatesRouteBoundary({
+  controller,
+  onPresentArchiveToast,
+  onRouteChunkReady,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>
+  onPresentArchiveToast: (template: UserTemplateSummary) => void
+  onRouteChunkReady: () => void
+}) {
+  const routeModule = useDeferredWorkbenchRouteModule("/templates")
+  if (!routeModule) {
+    return <RouteLoadingPanel />
+  }
+
+  const TemplatesRoute = routeModule.default as React.ComponentType<{
+    controller: ReturnType<typeof useWorkbenchController>
+    onPresentArchiveToast?: (template: UserTemplateSummary) => void
+    onRouteChunkReady?: () => void
+  }>
+  return (
+    <TemplatesRoute
+      controller={controller}
+      onPresentArchiveToast={onPresentArchiveToast}
+      onRouteChunkReady={onRouteChunkReady}
+    />
+  )
+}
+
+function CanvasRouteBoundary({
+  controller,
+  initialScenario,
+  onRouteChunkReady,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>
+  initialScenario?: CanvasStoryScenario
+  onRouteChunkReady: () => void
+}) {
+  const routeModule = useDeferredWorkbenchRouteModule("/canvas")
+  if (!routeModule) {
+    return <RouteLoadingPanel />
+  }
+
+  const CanvasRoute = routeModule.default as React.ComponentType<{
+    controller: ReturnType<typeof useWorkbenchController>
+    initialScenario?: CanvasStoryScenario
+    onRouteChunkReady?: () => void
+  }>
+  return (
+    <CanvasRoute
+      controller={controller}
+      initialScenario={initialScenario}
+      onRouteChunkReady={onRouteChunkReady}
+    />
+  )
+}
+
+function SystemRouteBoundary({
+  controller,
+  onRouteChunkReady,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>
+  onRouteChunkReady: () => void
+}) {
+  const routeModule = useDeferredWorkbenchRouteModule("/system")
+  if (!routeModule) {
+    return <RouteLoadingPanel />
+  }
+
+  const SystemRoute = routeModule.default as React.ComponentType<{
+    controller: ReturnType<typeof useWorkbenchController>
+    onRouteChunkReady?: () => void
+  }>
+  return <SystemRoute controller={controller} onRouteChunkReady={onRouteChunkReady} />
+}
+
+function LazyWorkbenchRouter({
   controller,
   canvasScenario,
+  hydrationState,
+  onRouteIntent,
+  onPresentArchiveToast,
+  onRouteChunkReady,
   pwaUpdateSnapshot,
+  archiveToast,
+  onUndoArchiveToast,
+  shellHidden = false,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
   canvasScenario?: CanvasStoryScenario
+  hydrationState: WorkbenchHydrationState
+  onRouteIntent: (pathname: string) => void
+  onPresentArchiveToast: (template: UserTemplateSummary) => void
+  onRouteChunkReady: () => void
   pwaUpdateSnapshot?: PwaUpdateSnapshot
+  archiveToast: TemplateArchiveToastState | null
+  onUndoArchiveToast: () => void | Promise<void>
+  shellHidden?: boolean
+}) {
+  return (
+    <Routes>
+      <Route
+        element={
+          <WorkbenchLayout
+            controller={controller}
+            hydrationState={hydrationState}
+            onRouteIntent={onRouteIntent}
+            pwaUpdateSnapshot={pwaUpdateSnapshot}
+            archiveToast={archiveToast}
+            onUndoArchiveToast={onUndoArchiveToast}
+            shellHidden={shellHidden}
+          />
+        }
+      >
+        <Route
+          path="/"
+          element={<DashboardRoute controller={controller} onRouteChunkReady={onRouteChunkReady} />}
+        />
+        <Route
+          path="/templates"
+          element={
+            <TemplatesRouteBoundary
+              controller={controller}
+              onPresentArchiveToast={onPresentArchiveToast}
+              onRouteChunkReady={onRouteChunkReady}
+            />
+          }
+        />
+        <Route
+          path="/canvas"
+          element={
+            <CanvasRouteBoundary
+              controller={controller}
+              initialScenario={canvasScenario}
+              onRouteChunkReady={onRouteChunkReady}
+            />
+          }
+        />
+        <Route
+          path="/system"
+          element={
+            <SystemRouteBoundary controller={controller} onRouteChunkReady={onRouteChunkReady} />
+          }
+        />
+      </Route>
+    </Routes>
+  )
+}
+
+function EagerWorkbenchRouter({
+  controller,
+  canvasScenario,
+  hydrationState,
+  onRouteIntent,
+  onPresentArchiveToast,
+  onRouteChunkReady,
+  pwaUpdateSnapshot,
+  archiveToast,
+  onUndoArchiveToast,
+  shellHidden = false,
+}: {
+  controller: ReturnType<typeof useWorkbenchController>
+  canvasScenario?: CanvasStoryScenario
+  hydrationState: WorkbenchHydrationState
+  onRouteIntent: (pathname: string) => void
+  onPresentArchiveToast: (template: UserTemplateSummary) => void
+  onRouteChunkReady: () => void
+  pwaUpdateSnapshot?: PwaUpdateSnapshot
+  archiveToast: TemplateArchiveToastState | null
+  onUndoArchiveToast: () => void | Promise<void>
+  shellHidden?: boolean
 }) {
   const pageState = useWorkbenchPages(controller)
+
+  return (
+    <Routes>
+      <Route
+        element={
+          <WorkbenchLayout
+            controller={controller}
+            hydrationState={hydrationState}
+            onRouteIntent={onRouteIntent}
+            pwaUpdateSnapshot={pwaUpdateSnapshot}
+            archiveToast={archiveToast}
+            onUndoArchiveToast={onUndoArchiveToast}
+            shellHidden={shellHidden}
+          />
+        }
+      >
+        <Route
+          path="/"
+          element={<DashboardRoute controller={controller} onRouteChunkReady={onRouteChunkReady} />}
+        />
+        <Route
+          path="/templates"
+          element={
+            <>
+              <RouteReadyEffect onReady={onRouteChunkReady} />
+              <TemplatesPage
+                controller={controller}
+                state={pageState}
+                onPresentArchiveToast={onPresentArchiveToast}
+              />
+            </>
+          }
+        />
+        <Route
+          path="/canvas"
+          element={
+            <>
+              <RouteReadyEffect onReady={onRouteChunkReady} />
+              <CanvasWorkspace controller={controller} initialScenario={canvasScenario} />
+            </>
+          }
+        />
+        <Route
+          path="/system"
+          element={
+            <>
+              <RouteReadyEffect onReady={onRouteChunkReady} />
+              <SystemPage controller={controller} />
+            </>
+          }
+        />
+      </Route>
+    </Routes>
+  )
+}
+
+function RouteReadyEffect({ onReady }: { onReady: () => void }) {
+  React.useEffect(() => {
+    onReady()
+  }, [onReady])
+
+  return null
+}
+
+export function WorkbenchApp({
+  bootstrapState,
+  client,
+  context,
+  canvasScenario,
+  pwaUpdateSnapshot,
+  startupShell = "disabled",
+  theme = "auto",
+}: AppProps) {
+  const initialRoutePathRef = React.useRef(
+    normalizeWorkbenchRoutePath(typeof window !== "undefined" ? window.location.pathname : "/")
+  )
+  const initialRoutePath = initialRoutePathRef.current
+  const controller = useWorkbenchController({
+    client,
+    context,
+    initialRoutePath,
+  })
+  const [currentRouteChunkReady, setCurrentRouteChunkReady] = React.useState(
+    initialRoutePath === "/" || Boolean(bootstrapState?.currentRouteChunkReady)
+  )
   const [archiveToast, setArchiveToast] = React.useState<TemplateArchiveToastState | null>(null)
+  const routeWarmupStartedRef = React.useRef(false)
+  const offlineWarmupStatus = usePwaAssetWarmup(controller.context, controller.startupSyncReady)
 
   React.useEffect(() => {
     if (!archiveToast) {
@@ -4151,7 +4567,51 @@ function WorkbenchRouter({
     }
   }, [archiveToast, controller.archivedUserTemplates])
 
-  const presentArchiveToast = React.useCallback((template: UserTemplateSummary) => {
+  React.useEffect(() => {
+    if (initialRoutePath === "/") {
+      setCurrentRouteChunkReady(true)
+      return
+    }
+    setCurrentRouteChunkReady(Boolean(bootstrapState?.currentRouteChunkReady))
+  }, [bootstrapState?.currentRouteChunkReady, initialRoutePath])
+
+  const hydrationState = React.useMemo<WorkbenchHydrationState>(
+    () => ({
+      shellReady: currentRouteChunkReady && controller.startupSyncReady,
+      currentRouteReady: currentRouteChunkReady && controller.startupSyncReady,
+      deferredHydrationPending: controller.deferredHydrationPending,
+      offlineWarmupPending: offlineWarmupStatus === "pending",
+      offlineWarmupStatus,
+    }),
+    [
+      controller.deferredHydrationPending,
+      controller.startupSyncReady,
+      currentRouteChunkReady,
+      offlineWarmupStatus,
+    ]
+  )
+  const launchSplashState = React.useMemo(
+    () =>
+      buildStartupSplashState({
+        currentRouteChunkReady,
+        currentRouteDataReady: controller.startupSyncReady,
+        deferredHydrationPending: controller.deferredHydrationPending,
+        offlineWarmupStatus,
+      }),
+    [
+      controller.deferredHydrationPending,
+      controller.startupSyncReady,
+      currentRouteChunkReady,
+      offlineWarmupStatus,
+    ]
+  )
+  const handleRouteChunkReady = React.useCallback(() => {
+    setCurrentRouteChunkReady(true)
+  }, [])
+  const handleRouteIntent = React.useCallback((pathname: string) => {
+    preloadWorkbenchNavigationIntent(pathname)
+  }, [])
+  const handlePresentArchiveToast = React.useCallback((template: UserTemplateSummary) => {
     setArchiveToast({
       nonce:
         typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -4161,8 +4621,7 @@ function WorkbenchRouter({
       templateName: template.name,
     })
   }, [])
-
-  const undoArchiveToast = React.useCallback(async () => {
+  const handleUndoArchiveToast = React.useCallback(async () => {
     if (!archiveToast) {
       return
     }
@@ -4170,81 +4629,113 @@ function WorkbenchRouter({
     setArchiveToast(null)
   }, [archiveToast, controller])
 
-  return (
-    <Routes>
-      <Route
-        element={
-          <WorkbenchLayout
-            controller={controller}
-            pwaUpdateSnapshot={pwaUpdateSnapshot}
-            archiveToast={archiveToast}
-            onUndoArchiveToast={undoArchiveToast}
-          />
-        }
-      >
-        <Route path="/" element={<DashboardPage controller={controller} />} />
-        <Route
-          path="/templates"
-          element={
-            <TemplatesPage
-              controller={controller}
-              state={pageState}
-              onPresentArchiveToast={presentArchiveToast}
-            />
-          }
-        />
-        <Route
-          path="/canvas"
-          element={<CanvasWorkspace controller={controller} initialScenario={canvasScenario} />}
-        />
-        <Route path="/system" element={<SystemPage controller={controller} />} />
-      </Route>
-    </Routes>
-  )
-}
+  React.useEffect(() => {
+    if (!hydrationState.shellReady || routeWarmupStartedRef.current) {
+      return
+    }
+    routeWarmupStartedRef.current = true
+    void preloadDeferredWorkbenchRoutes().catch(() => undefined)
+  }, [hydrationState.shellReady])
 
-export function WorkbenchApp({ client, context, canvasScenario, pwaUpdateSnapshot }: AppProps) {
-  const controller = useWorkbenchController({ client, context })
+  const shellHidden = startupShell === "auto" && !hydrationState.shellReady
+  const RouterComponent =
+    import.meta.env.MODE === "test" ? EagerWorkbenchRouter : LazyWorkbenchRouter
+
   const router = controller.context.basePath ? (
     <BrowserRouter basename={controller.context.basePath}>
-      <WorkbenchRouter
+      <RouterComponent
         controller={controller}
         canvasScenario={canvasScenario}
+        hydrationState={hydrationState}
+        onRouteIntent={handleRouteIntent}
+        onPresentArchiveToast={handlePresentArchiveToast}
+        onRouteChunkReady={handleRouteChunkReady}
         pwaUpdateSnapshot={pwaUpdateSnapshot}
+        archiveToast={archiveToast}
+        onUndoArchiveToast={handleUndoArchiveToast}
+        shellHidden={shellHidden}
       />
     </BrowserRouter>
   ) : (
     <BrowserRouter>
-      <WorkbenchRouter
+      <RouterComponent
         controller={controller}
         canvasScenario={canvasScenario}
+        hydrationState={hydrationState}
+        onRouteIntent={handleRouteIntent}
+        onPresentArchiveToast={handlePresentArchiveToast}
+        onRouteChunkReady={handleRouteChunkReady}
         pwaUpdateSnapshot={pwaUpdateSnapshot}
+        archiveToast={archiveToast}
+        onUndoArchiveToast={handleUndoArchiveToast}
+        shellHidden={shellHidden}
       />
     </BrowserRouter>
   )
 
-  return router
+  return (
+    <ThemeScope theme={theme}>
+      {router}
+      {shellHidden ? (
+        <div className="tm-startup-overlay">
+          <AppLaunchSplash
+            detailText={launchSplashState.detailText}
+            statusText={launchSplashState.statusText}
+            theme={theme}
+          />
+        </div>
+      ) : null}
+    </ThemeScope>
+  )
 }
 
 export function WorkbenchAppStory({
   client,
   context,
   canvasScenario,
+  bootstrapState,
   pwaUpdateSnapshot,
+  theme = "auto",
   initialEntries = ["/"],
+  hydrationStateOverride,
   storyStateOverrides,
 }: AppProps & {
   initialEntries?: string[]
+  hydrationStateOverride?: Partial<WorkbenchHydrationState>
   storyStateOverrides?: WorkbenchStoryStateOverrides
 }) {
-  const controller = useWorkbenchController({ client, context, storyStateOverrides })
+  const initialRoutePath = normalizeWorkbenchRoutePath(initialEntries[0] ?? "/")
+  const controller = useWorkbenchController({
+    client,
+    context,
+    initialRoutePath,
+    storyStateOverrides,
+  })
+  const hydrationState: WorkbenchHydrationState = {
+    shellReady: true,
+    currentRouteReady: true,
+    deferredHydrationPending: controller.deferredHydrationPending,
+    offlineWarmupPending: false,
+    offlineWarmupStatus: "complete",
+    ...hydrationStateOverride,
+  }
   return (
-    <MemoryRouter initialEntries={initialEntries}>
-      <WorkbenchRouter
-        controller={controller}
-        canvasScenario={canvasScenario}
-        pwaUpdateSnapshot={pwaUpdateSnapshot}
-      />
-    </MemoryRouter>
+    <ThemeScope theme={theme}>
+      <MemoryRouter initialEntries={initialEntries}>
+        <LazyWorkbenchRouter
+          controller={controller}
+          canvasScenario={canvasScenario}
+          hydrationState={hydrationState}
+          onRouteIntent={() => undefined}
+          onPresentArchiveToast={() => undefined}
+          onRouteChunkReady={() => {
+            void bootstrapState
+          }}
+          pwaUpdateSnapshot={pwaUpdateSnapshot}
+          archiveToast={null}
+          onUndoArchiveToast={() => undefined}
+        />
+      </MemoryRouter>
+    </ThemeScope>
   )
 }

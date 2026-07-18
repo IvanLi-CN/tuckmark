@@ -1,6 +1,7 @@
 import React from "react"
 
 import { type ApiClient, createApiClient, loadSetup } from "./api-client.js"
+import type { AppLaunchSplashStep } from "./app-launch-splash.js"
 import { type BrowserPrintSource, materializeBrowserArtifactData } from "./browser-print-payload.js"
 import {
   type BrowserPrintError,
@@ -113,9 +114,103 @@ export type WorkbenchStoryStateOverrides = {
   dataDirectoryBusy?: string | null
   dataDirectoryDialog?: DataDirectoryDialogState | null
   dataDirectoryStatus?: DataDirectoryStatus
+  deferredHydrationPending?: boolean
   deviceDrawerBusyAction?: DeviceDrawerAction | null
   deviceDrawerFeedback?: WorkbenchDeviceDrawerFeedback | null
   directorySetupNudgeOpen?: boolean
+}
+
+type StartupStepId =
+  | "runtime-shell"
+  | "load-runtime-setup"
+  | "load-local-state"
+  | "verify-runtime-state"
+
+type StartupSplashState = {
+  detailText: string
+  progressPercent: number
+  statusText: string
+  steps: readonly AppLaunchSplashStep[]
+}
+
+const STARTUP_STEP_ORDER = [
+  "runtime-shell",
+  "load-runtime-setup",
+  "load-local-state",
+  "verify-runtime-state",
+] as const satisfies readonly StartupStepId[]
+
+const STARTUP_STEP_LABELS: Record<StartupStepId, string> = {
+  "runtime-shell": "装载应用运行时",
+  "load-runtime-setup": "装载系统模板与设备配置",
+  "load-local-state": "读取本地模板与打印设置",
+  "verify-runtime-state": "校验离线目录与最近状态",
+}
+
+function describeStartupStatus(stepId: StartupStepId): string {
+  switch (stepId) {
+    case "runtime-shell":
+      return "正在装载应用运行时"
+    case "load-runtime-setup":
+      return "正在装载系统模板与设备配置"
+    case "load-local-state":
+      return "正在读取本地模板与打印设置"
+    default:
+      return "正在校验离线目录与最近状态"
+  }
+}
+
+function describeStartupDetail(stepId: StartupStepId, context: AppContext): string {
+  switch (stepId) {
+    case "runtime-shell":
+      return "正在装载应用运行时资源。"
+    case "load-runtime-setup":
+      return context.surface === "server-http"
+        ? "正在连接本地 API，读取系统模板、打印机与默认设备。"
+        : "正在读取系统模板与当前设备配置。"
+    case "load-local-state":
+      return "正在读取本地模板、工作草稿与默认打印设置。"
+    default:
+      return context.surface === "server-http"
+        ? "正在校验离线数据目录并同步最近状态。"
+        : "正在校验离线数据目录与最近状态。"
+  }
+}
+
+function appendCompletedStartupStep(
+  steps: readonly StartupStepId[],
+  stepId: StartupStepId
+): StartupStepId[] {
+  if (steps.includes(stepId)) {
+    return [...steps]
+  }
+  return [...steps, stepId]
+}
+
+function buildStartupSplashState(args: {
+  activeStepId: StartupStepId | null
+  completedStepIds: readonly StartupStepId[]
+  context: AppContext
+}): StartupSplashState {
+  const completedSet = new Set(args.completedStepIds)
+  const progressPercent = Math.round(
+    (args.completedStepIds.length / STARTUP_STEP_ORDER.length) * 100
+  )
+  const activeStepId =
+    args.activeStepId ?? STARTUP_STEP_ORDER.find((stepId) => !completedSet.has(stepId)) ?? null
+
+  return {
+    detailText: activeStepId
+      ? describeStartupDetail(activeStepId, args.context)
+      : "正在进入打印工作台。",
+    progressPercent,
+    statusText: activeStepId ? describeStartupStatus(activeStepId) : "启动完成",
+    steps: STARTUP_STEP_ORDER.map((stepId) => ({
+      id: stepId,
+      label: STARTUP_STEP_LABELS[stepId],
+      state: completedSet.has(stepId) ? "complete" : stepId === activeStepId ? "active" : "pending",
+    })),
+  }
 }
 
 function createDefaultDataDirectoryStatus(): DataDirectoryStatus {
@@ -139,6 +234,29 @@ function createDefaultDataDirectoryStatus(): DataDirectoryStatus {
       workingCopies: 0,
     },
   }
+}
+
+function waitForPaintFrames(frameCount = 1): Promise<void> {
+  if (
+    typeof window === "undefined" ||
+    typeof window.requestAnimationFrame !== "function" ||
+    frameCount <= 0
+  ) {
+    return Promise.resolve()
+  }
+
+  return new Promise((resolve) => {
+    let remaining = frameCount
+    const step = () => {
+      remaining -= 1
+      if (remaining <= 0) {
+        resolve()
+        return
+      }
+      window.requestAnimationFrame(step)
+    }
+    window.requestAnimationFrame(step)
+  })
 }
 
 function sortPrinters(printers: Printer[]): Printer[] {
@@ -201,10 +319,12 @@ export type WorkbenchController = ReturnType<typeof useWorkbenchController>
 export function useWorkbenchController({
   client: providedClient,
   context: providedContext,
+  initialRoutePath: providedInitialRoutePath,
   storyStateOverrides,
 }: {
   client?: ApiClient
   context?: AppContext
+  initialRoutePath?: string
   storyStateOverrides?: WorkbenchStoryStateOverrides
 } = {}) {
   const context = React.useMemo(
@@ -269,16 +389,44 @@ export function useWorkbenchController({
   const [directorySetupNudgeOpen, setDirectorySetupNudgeOpen] = React.useState(
     storyStateOverrides?.directorySetupNudgeOpen ?? false
   )
-  const [startupSyncReady, setStartupSyncReady] = React.useState(
-    !(context.surface === "server-http" && context.mode === "runtime")
+  const runtimeStartup = context.mode === "runtime"
+  const [startupSyncReady, setStartupSyncReady] = React.useState(!runtimeStartup)
+  const [deferredHydrationPending, setDeferredHydrationPending] = React.useState(runtimeStartup)
+  const [startupActiveStepId, setStartupActiveStepId] = React.useState<StartupStepId | null>(
+    runtimeStartup ? "runtime-shell" : null
   )
+  const [startupCompletedStepIds, setStartupCompletedStepIds] = React.useState<StartupStepId[]>([])
   const syncInFlightRef = React.useRef<Promise<void> | null>(null)
   const syncQueuedRef = React.useRef(false)
   const dataDirectorySyncTimerRef = React.useRef<number | null>(null)
   const coordinator = React.useMemo(() => getSharedCrossTabCoordinator(), [])
   const runtimeEventTabId = React.useMemo(() => getRuntimeStoreEventTabId(), [])
+  const startupSplash = React.useMemo(
+    () =>
+      buildStartupSplashState({
+        activeStepId: startupActiveStepId,
+        completedStepIds: startupCompletedStepIds,
+        context,
+      }),
+    [context, startupActiveStepId, startupCompletedStepIds]
+  )
 
   const browserPrintSupported = React.useMemo(() => isBrowserPrintSupported(), [])
+  const initialRoutePath = React.useMemo(() => {
+    const pathname =
+      providedInitialRoutePath ?? (typeof window !== "undefined" ? window.location.pathname : "/")
+    const normalized = pathname.replace(/\/+$/, "") || "/"
+    if (normalized.endsWith("/templates")) {
+      return "/templates"
+    }
+    if (normalized.endsWith("/canvas")) {
+      return "/canvas"
+    }
+    if (normalized.endsWith("/system")) {
+      return "/system"
+    }
+    return "/"
+  }, [providedInitialRoutePath])
   const browserDirectConfigured = context.capabilities.browserDirectPrintPath !== "disabled"
   const browserDirectAvailable = browserDirectConfigured && browserPrintSupported
   const serviceApiLive = context.capabilities.serviceApiPrintPath === "available"
@@ -633,27 +781,75 @@ export function useWorkbenchController({
   }, [coordinator, refreshDataDirectoryStatus])
 
   React.useEffect(() => {
-    setStartupSyncReady(!(context.surface === "server-http" && context.mode === "runtime"))
+    const shouldShowStartupShell = context.mode === "runtime"
+    let cancelled = false
+
+    setStartupSyncReady(!shouldShowStartupShell)
+    setDeferredHydrationPending(shouldShowStartupShell)
+    setStartupCompletedStepIds([])
+    setStartupActiveStepId(shouldShowStartupShell ? "runtime-shell" : null)
+
     void (async () => {
       try {
         await restoreRuntimeFromConfiguredDirectoryIfNeeded()
-        await Promise.all([
-          refreshSetup(),
-          refreshUserTemplates(),
-          refreshArchivedUserTemplates(),
-          refreshRenderOptionsFromStore(),
-          refreshDataDirectoryStatus(),
-        ])
-        if (context.surface === "server-http" && context.mode === "runtime") {
-          const next = await syncWebState(client, [...SYNC_PRESET_IDS])
-          setRecentActivity(next.recentActivity)
+
+        if (shouldShowStartupShell) {
+          if (initialRoutePath === "/templates") {
+            await refreshUserTemplates()
+          } else if (initialRoutePath === "/system") {
+            await refreshDataDirectoryStatus()
+          }
+
+          await waitForPaintFrames(2)
+
+          if (!cancelled) {
+            setStartupCompletedStepIds((current) =>
+              appendCompletedStartupStep(current, "runtime-shell")
+            )
+            setStartupActiveStepId(null)
+            setStartupSyncReady(true)
+          }
         }
+
+        const deferredTasks: Promise<unknown>[] = [
+          refreshSetup(),
+          refreshRenderOptionsFromStore(),
+          refreshArchivedUserTemplates(),
+        ]
+
+        if (initialRoutePath !== "/templates") {
+          deferredTasks.push(refreshUserTemplates())
+        }
+        if (initialRoutePath !== "/system") {
+          deferredTasks.push(refreshDataDirectoryStatus())
+        }
+        if (context.surface === "server-http" && context.mode === "runtime") {
+          deferredTasks.push(
+            syncWebState(client, [...SYNC_PRESET_IDS]).then((next) => {
+              if (!cancelled) {
+                setRecentActivity(next.recentActivity)
+              }
+            })
+          )
+        }
+
+        await Promise.allSettled(deferredTasks)
       } catch {
-        setTemplates(fallbackTemplates)
+        if (!cancelled) {
+          setTemplates(fallbackTemplates)
+          setStartupSyncReady(true)
+        }
       } finally {
-        setStartupSyncReady(true)
+        if (!cancelled) {
+          setStartupActiveStepId(null)
+          setDeferredHydrationPending(false)
+        }
       }
     })()
+
+    return () => {
+      cancelled = true
+    }
   }, [
     client,
     context.mode,
@@ -663,6 +859,7 @@ export function useWorkbenchController({
     refreshRenderOptionsFromStore,
     refreshSetup,
     refreshUserTemplates,
+    initialRoutePath,
   ])
 
   React.useEffect(() => {
@@ -1466,7 +1663,6 @@ export function useWorkbenchController({
     browserPrinter,
     archivedUserTemplates,
     archiveTemplate,
-    renameTemplate,
     busy,
     canvasDimensions,
     client,
@@ -1505,9 +1701,9 @@ export function useWorkbenchController({
     printCurrentPreview,
     printers,
     printResult,
+    purgeArchivedTemplate,
     printSourceDirect,
     probeResult,
-    purgeArchivedTemplate,
     probeDeviceDrawerPrinter,
     probeSelectedPrinter,
     recentActivity,
@@ -1530,8 +1726,11 @@ export function useWorkbenchController({
     setRenderOptions,
     updateRenderOptions,
     setRecentActivity,
+    deferredHydrationPending,
     startupSyncReady,
+    startupSplash,
     templates,
+    renameTemplate,
     refreshUserTemplates,
     userTemplates,
     scheduleSync,

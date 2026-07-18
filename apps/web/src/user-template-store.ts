@@ -150,6 +150,7 @@ function buildTemplateSummary(
     width: sourceDraft?.width ?? template.width,
     height: sourceDraft?.height ?? template.height,
     fields: cloneValue(sourceDraft?.fields ?? []),
+    document: sourceDraft ? cloneValue(sourceDraft) : null,
   }
 }
 
