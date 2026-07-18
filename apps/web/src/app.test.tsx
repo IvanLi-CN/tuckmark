@@ -37,6 +37,7 @@ import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import type { AppContext, CanvasDraftElement, PreviewArtifact } from "./types.js"
 import * as userTemplateStoreModule from "./user-template-store.js"
 import {
+  archiveUserTemplate,
   loadWorkingCopy,
   readUserTemplateHistory,
   replaceUserTemplateWorkingCopy,
@@ -391,6 +392,22 @@ async function readStoredClipboardText(type: string): Promise<string | null> {
 }
 
 function matchesMediaQuery(query: string, width: number) {
+  if (query.includes("(any-hover: hover)") || query.includes("(hover: hover)")) {
+    return true
+  }
+
+  if (query.includes("(any-pointer: fine)") || query.includes("(pointer: fine)")) {
+    return true
+  }
+
+  if (query.includes("(any-hover: none)") || query.includes("(hover: none)")) {
+    return false
+  }
+
+  if (query.includes("(any-pointer: coarse)") || query.includes("(pointer: coarse)")) {
+    return false
+  }
+
   const minMatch = query.match(/\(min-width:\s*(\d+)px\)/)
   if (minMatch) {
     return width >= Number(minMatch[1])
@@ -893,6 +910,39 @@ function queryButton(label: string): HTMLButtonElement {
   return button
 }
 
+function queryTemplateGroup(label: string): HTMLElement {
+  const group = Array.from(document.querySelectorAll(".tm-template-group")).find((item) =>
+    item.textContent?.includes(label)
+  ) as HTMLElement | undefined
+  if (!group) {
+    throw new Error(`Missing template group: ${label}`)
+  }
+  return group
+}
+
+function dispatchPointerLikeEvent(
+  target: Element,
+  type: string,
+  init: Record<string, number | string | boolean>
+): void {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  for (const [key, value] of Object.entries(init)) {
+    Object.defineProperty(event, key, {
+      value,
+      configurable: true,
+    })
+  }
+  target.dispatchEvent(event)
+}
+
+function decodeSvgDataUrlMarkup(dataUrl: string): string {
+  const marker = "data:image/svg+xml;charset=utf-8,"
+  if (!dataUrl.startsWith(marker)) {
+    throw new Error(`Unexpected SVG data url: ${dataUrl.slice(0, 32)}`)
+  }
+  return decodeURIComponent(dataUrl.slice(marker.length))
+}
+
 async function openDeviceDrawer(): Promise<void> {
   await act(async () => {
     const deviceButtons = Array.from(document.querySelectorAll("button")).filter((item) =>
@@ -936,7 +986,20 @@ function _clickNav(label: string): Promise<void> {
   })
 }
 
+async function resetMountedRoot(): Promise<void> {
+  if (!mountedRoot) {
+    return
+  }
+
+  await act(async () => {
+    mountedRoot?.unmount()
+    await flush(1)
+  })
+  mountedRoot = null
+}
+
 async function renderApp(context: AppContext, client?: ApiClient, path = "/"): Promise<void> {
+  await resetMountedRoot()
   document.body.innerHTML = '<div id="root"></div>'
   const rootElement = document.getElementById("root")
   if (!rootElement) {
@@ -958,6 +1021,7 @@ async function renderWorkbenchApp(
   canvasScenario: Parameters<typeof WorkbenchApp>[0]["canvasScenario"],
   path = "/canvas"
 ): Promise<void> {
+  await resetMountedRoot()
   document.body.innerHTML = '<div id="root"></div>'
   const rootElement = document.getElementById("root")
   if (!rootElement) {
@@ -1070,13 +1134,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  if (mountedRoot) {
-    await act(async () => {
-      mountedRoot?.unmount()
-      await flush(1)
-    })
-  }
-  mountedRoot = null
+  await resetMountedRoot()
   globalThis.fetch = originalFetch
   globalThis.indexedDB = originalIndexedDb
   window.matchMedia = originalMatchMedia
@@ -3420,6 +3478,362 @@ describe("web workbench app", () => {
     const recent = loadRecentActivity()
     expect(recent.templates[0]?.id).toBe(saved.template.id)
     expect(recent.templates[0]?.name).toBe("Recent User Template")
+  })
+
+  it("opens the large-grid template menu from the bottom-right icon trigger", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    await saveUserTemplate({
+      name: "Grid Menu Trigger",
+      document: {
+        ...baseDraft,
+        name: "Grid Menu Trigger",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(browserRuntimeContext, undefined, "/templates")
+    await flush(8)
+
+    const trigger = document.querySelector(
+      "button[aria-label='Grid Menu Trigger 更多操作']"
+    ) as HTMLButtonElement | null
+    expect(trigger).not.toBeNull()
+
+    await act(async () => {
+      trigger?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    const menu = document.querySelector("[role='menu']") as HTMLElement | null
+    expect(menu).not.toBeNull()
+    expect(menu?.textContent).toContain("编辑")
+    expect(menu?.textContent).toContain("重命名")
+    expect(menu?.textContent).toContain("归档")
+  })
+
+  it("opens the template menu on touch long press without relying on the native context menu", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    await saveUserTemplate({
+      name: "Touch Long Press",
+      document: {
+        ...baseDraft,
+        name: "Touch Long Press",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(browserRuntimeContext, undefined, "/templates")
+    await flush(8)
+
+    const targetCard = Array.from(document.querySelectorAll(".tm-template-card")).find((item) =>
+      item.textContent?.includes("Touch Long Press")
+    ) as HTMLElement | undefined
+    const surface = targetCard?.querySelector(
+      ".tm-template-card__surface"
+    ) as HTMLButtonElement | null
+    if (!surface) {
+      throw new Error("missing template-card surface for long press test")
+    }
+
+    await act(async () => {
+      dispatchPointerLikeEvent(surface, "pointerdown", {
+        pointerId: 7,
+        pointerType: "touch",
+        button: 0,
+        clientX: 264,
+        clientY: 332,
+        isPrimary: true,
+      })
+      await vi.advanceTimersByTimeAsync(421)
+      await flush(8)
+    })
+
+    const menu = document.querySelector("[role='menu']") as HTMLElement | null
+    expect(menu).not.toBeNull()
+    expect(menu?.textContent).toContain("重命名")
+    expect(menu?.textContent).toContain("归档")
+
+    await act(async () => {
+      dispatchPointerLikeEvent(surface, "pointerup", {
+        pointerId: 7,
+        pointerType: "touch",
+        button: 0,
+        clientX: 264,
+        clientY: 332,
+        isPrimary: true,
+      })
+      surface.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    expect(document.querySelector("[role='menu']")).not.toBeNull()
+  })
+
+  it("archives the active user template, clears selection when the group empties, and supports undo", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    await saveUserTemplate({
+      name: "Undo Archive",
+      description: "Archive this user template",
+      document: {
+        ...baseDraft,
+        name: "Undo Archive",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(browserRuntimeContext, undefined, "/templates")
+    await flush(8)
+
+    const targetCard = Array.from(document.querySelectorAll(".tm-template-card")).find((item) =>
+      item.textContent?.includes("Undo Archive")
+    ) as HTMLElement | undefined
+
+    await act(async () => {
+      const surface = targetCard?.querySelector(
+        ".tm-template-card__surface"
+      ) as HTMLButtonElement | null
+      surface?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    await act(async () => {
+      targetCard?.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          clientX: 320,
+          clientY: 320,
+        })
+      )
+      await flush(8)
+    })
+
+    await act(async () => {
+      queryButton("归档").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    const archivedUserGroup = queryTemplateGroup("我的模板")
+    expect(archivedUserGroup.querySelectorAll(".tm-template-card")).toHaveLength(0)
+    expect(document.body.textContent).toContain("已归档模板")
+    expect(document.body.textContent).toContain("Undo Archive")
+    expect(queryButton("生成预览").disabled).toBe(true)
+    expect(document.body.textContent).toContain("先选择模板后查看预览与打印。")
+
+    await act(async () => {
+      queryButton("撤销").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    const restoredUserGroup = queryTemplateGroup("我的模板")
+    expect(restoredUserGroup.querySelectorAll(".tm-template-card")).toHaveLength(1)
+    expect(restoredUserGroup.textContent).toContain("Undo Archive")
+    expect(document.body.textContent).not.toContain("已归档模板")
+  })
+
+  it("keeps template-card previews fitted to the full canvas content when text exceeds its frame", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("ops-tag"))
+    const firstText = baseDraft.elements.find(
+      (element): element is Extract<CanvasDraftElement, { kind: "text" }> => element.kind === "text"
+    )
+    if (!firstText) {
+      throw new Error("missing text element for preview overflow test")
+    }
+
+    await saveUserTemplate({
+      name: "Preview Overflow",
+      document: {
+        ...baseDraft,
+        name: "Preview Overflow",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+        elements: [
+          {
+            ...firstText,
+            x: -2,
+            y: 2,
+            width: 11,
+            height: 15.5,
+            fontSize: 7.1,
+            maxLines: 3,
+            autoWrap: false,
+            adaptiveFontSize: false,
+            value: "20kΩ\n厚膜电阻 0402\n50V 1/4W NGC",
+            meta: { ...firstText.meta, name: "预览溢出文本" },
+          },
+        ],
+      },
+    })
+
+    await renderApp(browserRuntimeContext, undefined, "/templates")
+    await flush(8)
+
+    const targetCard = Array.from(document.querySelectorAll(".tm-template-card")).find((item) =>
+      item.textContent?.includes("Preview Overflow")
+    ) as HTMLElement | undefined
+    const image = targetCard?.querySelector(".tm-template-card__image") as HTMLImageElement | null
+    if (!image) {
+      throw new Error("missing template preview image")
+    }
+
+    const svgMarkup = decodeSvgDataUrlMarkup(image.src)
+    const viewBox = svgMarkup.match(/viewBox="([^"]+)"/)?.[1]
+    if (!viewBox) {
+      throw new Error("missing preview viewBox")
+    }
+
+    const [left, top, width, height] = viewBox.split(/\s+/).map(Number)
+    expect(svgMarkup).toContain('overflow="visible"')
+    expect(svgMarkup).not.toContain('overflow="hidden"')
+    expect(left).toBeLessThan(0)
+    expect(top).toBe(0)
+    expect(width).toBeGreaterThan(240)
+    expect(height).toBeGreaterThan(160)
+  })
+
+  it("renames a user template from the template actions menu", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    await saveUserTemplate({
+      name: "Rename Me",
+      description: "Rename from templates page",
+      document: {
+        ...baseDraft,
+        name: "Rename Me",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(browserRuntimeContext, undefined, "/templates")
+    await flush(8)
+
+    await act(async () => {
+      const targetCard = Array.from(document.querySelectorAll(".tm-template-card")).find((item) =>
+        item.textContent?.includes("Rename Me")
+      ) as HTMLElement | undefined
+      targetCard?.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          clientX: 280,
+          clientY: 320,
+        })
+      )
+      await flush(8)
+    })
+
+    await act(async () => {
+      queryButton("重命名").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    const dialog = document.querySelector("[role='dialog']") as HTMLElement | null
+    const input = dialog?.querySelector("input") as HTMLInputElement | null
+    expect(input?.value).toBe("Rename Me")
+
+    await act(async () => {
+      if (!input) {
+        throw new Error("missing rename input")
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")
+      descriptor?.set?.call(input, "Renamed Template")
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+      await flush(4)
+    })
+
+    await act(async () => {
+      const saveButton = Array.from(dialog?.querySelectorAll("button") ?? []).find((item) =>
+        item.textContent?.includes("保存")
+      ) as HTMLButtonElement | undefined
+      saveButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    const userGroup = queryTemplateGroup("我的模板")
+    expect(userGroup.textContent).toContain("Renamed Template")
+    expect(userGroup.textContent).not.toContain("Rename Me")
+  })
+
+  it("restores archived templates from /system without dropping saved history or autosaves", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const firstSave = await saveUserTemplate({
+      name: "System Restore",
+      document: {
+        ...baseDraft,
+        name: "System Restore",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    const secondDraft = structuredClone(firstSave.workingCopy.draft)
+    secondDraft.name = "System Restore v2"
+    const secondSave = await saveUserTemplate({
+      name: secondDraft.name,
+      templateId: firstSave.template.id,
+      sourceVersionId: firstSave.version.id,
+      document: secondDraft,
+    })
+
+    const autosaveDraft = structuredClone(secondSave.workingCopy.draft)
+    autosaveDraft.name = "System Restore autosave"
+    await saveUserTemplateAutosave({
+      templateId: firstSave.template.id,
+      source: { kind: "user-template", templateId: firstSave.template.id },
+      document: autosaveDraft,
+      sourceVersionId: secondSave.version.id,
+    })
+
+    await archiveUserTemplate(firstSave.template.id)
+
+    await renderApp(browserRuntimeContext, undefined, "/system")
+    await flush(8)
+
+    expect(document.body.textContent).toContain("模板归档")
+    expect(document.body.textContent).toContain("System Restore")
+
+    await act(async () => {
+      queryButton("恢复模板").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    const restoredHistory = await readUserTemplateHistory(firstSave.template.id)
+    expect(restoredHistory?.saved).toHaveLength(2)
+    expect(restoredHistory?.autosaves).toHaveLength(1)
+
+    await renderApp(browserRuntimeContext, undefined, "/templates")
+    await flush(8)
+
+    const userGroup = queryTemplateGroup("我的模板")
+    expect(userGroup.textContent).toContain("System Restore")
+  })
+
+  it("purges archived templates from /system", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("ops-tag"))
+    const saved = await saveUserTemplate({
+      name: "System Purge",
+      document: {
+        ...baseDraft,
+        name: "System Purge",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await archiveUserTemplate(saved.template.id)
+
+    await renderApp(browserRuntimeContext, undefined, "/system")
+    await flush(8)
+
+    expect(document.body.textContent).toContain("System Purge")
+
+    await act(async () => {
+      queryButton("彻底删除").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(8)
+    })
+
+    expect(await readUserTemplateHistory(saved.template.id)).toBeNull()
+    expect(
+      await loadWorkingCopy({
+        kind: "user-template",
+        templateId: saved.template.id,
+      })
+    ).toBeNull()
+    expect(document.body.textContent).not.toContain("System Purge")
   })
 
   it("builds /templates columns from the user-template working copy schema", async () => {

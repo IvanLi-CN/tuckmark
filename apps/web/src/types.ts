@@ -208,6 +208,7 @@ export type UserTemplateRecord = {
   height: number
   createdAt: string
   updatedAt: string
+  archivedAt?: string | null
   currentVersionId: string
   fieldOrder: string[]
 }

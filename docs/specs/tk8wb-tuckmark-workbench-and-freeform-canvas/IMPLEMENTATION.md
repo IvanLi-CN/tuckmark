@@ -54,6 +54,9 @@
     and last error
   - attach / switch directory, request permission, sync now, backup now,
     export runtime ZIP, import runtime ZIP, and restore backup actions
+  - an archived-template management card that lists browser-local archived
+    templates newest-first and wires `恢复模板` / `彻底删除` directly into the
+    runtime store
 - Template workspace is implemented as a left template browser, center batch
   table, and right preview/print rail.
 - Template browser now weak-groups cards into:
@@ -72,7 +75,16 @@
   - preview thumbnail, name, and size metadata
   - card click entering structured print-entry on both system and
     browser-local user templates
-  - one explicit `编辑模板` secondary action on both groups
+  - no hover-only floating action chrome, bottom action strip, or row-expanded
+    inline action state in either view mode
+  - a bottom-right icon-only `更多操作` trigger in large-grid mode and a
+    right-side `...` trigger in compact-list mode
+  - one shared pointer/menu action model reused by explicit triggers,
+    `contextmenu`, and touch long press
+  - `编辑` on system cards, plus `编辑`, `重命名`, and `归档` on
+    browser-local cards
+  - one global archive undo toast with a `5` second lifetime and a background
+    countdown fill instead of stacked notifications
   - one-line title truncation with fade masking
   - a widened triple-pane left rail so `>=1280px` large-card mode keeps a
     readable two-up grid instead of collapsing card width under shell pressure
@@ -245,6 +257,9 @@
   - one-time migration of existing browser-local user templates, saved
     versions, autosaves, working copies, and compatible local settings into the
     unified runtime store
+  - configured-directory startup restore that compares the current runtime
+    snapshot against `manifest.json` and reloads the mirror snapshot before
+    page refresh when the directory copy is newer or strictly more complete
   - preset-scoped browser storage persistence for scratch drafts still feeding
     same-device sync, while scratch and preset-template working copies are also
     mirrored into the runtime store for backup / export
@@ -257,6 +272,10 @@
   - `UserTemplateRecord`
   - `UserTemplateVersionSnapshot`
   - `CanvasWorkingCopyIndexEntry`
+  - `archivedAt` persisted on template records and runtime snapshots
+  - active and archived list queries instead of destructive delete-on-remove
+  - archive / restore preserving saved versions, autosaves, and working copies
+    until explicit purge
   - saved-version retention capped at `20`
   - autosave retention capped at `10`
   - autosave interval fixed at `5` minutes
@@ -320,6 +339,15 @@
 - Browser-local user template preview/print reuses the shared canvas artifact
   seam by compiling row values into a concrete `DirectCanvasDefinition` on the
   client before preview or print dispatch.
+- Storybook coverage now includes:
+  - large-grid `更多操作` menu state
+  - compact-list `...` menu state
+  - pointer-position context menu state
+  - archive undo toast state
+  - system archived-template management state
+- Touch-first template browsing reuses the same shared action menu through a
+  long-press pointer timer on the card surface instead of relying on a
+  browser-native context-menu event.
 - Agent-generated user template packages are covered by a shared core schema
   and compiler. CLI commands can validate, preview, generate packets, and print
   packages through the existing canvas artifact seam.

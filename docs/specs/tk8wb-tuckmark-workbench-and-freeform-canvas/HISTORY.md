@@ -126,6 +126,12 @@ while the workbench was being productized:
     `server-http`
   - browser-local user templates and their version history remain intentionally
     outside that sync contract
+- A later configured-directory recovery fix tightened reload behavior for
+  browser-local user templates:
+  - workbench startup now compares the configured directory manifest against
+    the current runtime snapshot before page refresh
+  - a newer or strictly more complete directory mirror is restored back into
+    the runtime store so reload does not strand directory-backed template data
 - A later interaction-hardening round tightened text-selection behavior across
   the entire workbench:
   - shared shell and workspace chrome now default to non-selectable behavior
@@ -228,6 +234,28 @@ while the workbench was being productized:
   - adaptive sizing disables effective auto-wrap, locks the `字号` field in the
     inspector, and writes back corrected font sizes through one shared layout
     path used by the stage, inline editor, preview, and print
+- Template browsing was later hardened from one-shot remove affordances into a
+  true browser-local archive model:
+  - `我的模板` cards gained a non-destructive `归档` action instead of
+    immediate destructive delete
+  - the first archive-management pass introduced large-grid hover/click action
+    strips plus a compact-list `...` trigger around one shared context menu
+  - archive removal now shows one global undo toast for `5` seconds instead of
+    mutating the UI silently
+  - `/system` became the owner-facing restore / permanent-delete surface for
+    archived browser-local templates
+  - runtime snapshots and browser-local reloads now preserve archived template
+    state together with saved versions, autosaves, and working copies
+- A follow-on requirement override then simplified template browsing into the
+  final menu-first contract:
+  - template cards no longer expose bottom operation areas, hover-only action
+    strips, or row-expanded inline action states
+  - large-grid cards keep a bottom-right icon-only `更多操作` trigger while
+    compact-list cards keep the right-side `...` trigger
+  - touch surfaces open the same shared menu through a reliable long-press
+    gesture
+  - browser-local user templates gained `重命名` in the shared menu, and
+    `归档` became the destructive-styled menu action
 - The marquee-selection affordance was later tightened to match screen-space
   editor chrome expectations:
   - the drag-selection rectangle is projected into stage space instead of

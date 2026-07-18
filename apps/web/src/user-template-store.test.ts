@@ -8,16 +8,22 @@ import {
   toggleElementBinding,
 } from "./canvas-editor-model.js"
 import {
+  archiveUserTemplate,
   clearTemplateAutosaves,
   exportRuntimeSnapshot,
   getAutosaveIntervalMs,
+  listArchivedUserTemplates,
+  listUserTemplates,
   loadRuntimeAppSettings,
   loadWorkingCopy,
+  purgeUserTemplate,
   readUserTemplate,
   readUserTemplateHistory,
+  renameUserTemplate,
   replaceRuntimeSnapshot,
   replaceUserTemplateWorkingCopy,
   resetUserTemplateStoreForTest,
+  restoreUserTemplate,
   saveRuntimeAppSettings,
   saveUserTemplate,
   saveUserTemplateAutosave,
@@ -252,6 +258,95 @@ describe("user-template-store", () => {
     expect(template?.fields[0]?.label).toBe("收件人（草稿）")
   })
 
+  it("archives user templates without dropping their saved history or working copy", async () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Archive Preserve",
+      document: draft,
+    })
+
+    const autosaveDraft = structuredClone(saved.workingCopy.draft)
+    autosaveDraft.name = "Archive Preserve draft"
+    await saveUserTemplateAutosave({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: autosaveDraft,
+      sourceVersionId: saved.version.id,
+    })
+
+    expect(await listUserTemplates()).toHaveLength(1)
+    expect(await listArchivedUserTemplates()).toHaveLength(0)
+
+    const archived = await archiveUserTemplate(saved.template.id)
+    expect(archived?.archivedAt).toBeTruthy()
+    expect(await listUserTemplates()).toHaveLength(0)
+    expect(await listArchivedUserTemplates()).toEqual([
+      expect.objectContaining({
+        id: saved.template.id,
+        archivedAt: archived?.archivedAt,
+      }),
+    ])
+
+    const archivedTemplate = await readUserTemplate(saved.template.id)
+    expect(archivedTemplate?.archivedAt).toBe(archived?.archivedAt ?? null)
+
+    const archivedHistory = await readUserTemplateHistory(saved.template.id)
+    expect(archivedHistory?.saved).toHaveLength(1)
+    expect(archivedHistory?.autosaves).toHaveLength(1)
+
+    const archivedWorkingCopy = await loadWorkingCopy({
+      kind: "user-template",
+      templateId: saved.template.id,
+    })
+    expect(archivedWorkingCopy?.draft.name).toBe("Archive Preserve draft")
+
+    const restored = await restoreUserTemplate(saved.template.id)
+    expect(restored?.archivedAt).toBeNull()
+    expect(await listArchivedUserTemplates()).toHaveLength(0)
+    expect(await listUserTemplates()).toEqual([
+      expect.objectContaining({
+        id: saved.template.id,
+        archivedAt: null,
+      }),
+    ])
+
+    const restoredHistory = await readUserTemplateHistory(saved.template.id)
+    expect(restoredHistory?.saved).toHaveLength(1)
+    expect(restoredHistory?.autosaves).toHaveLength(1)
+  })
+
+  it("renames user templates without creating a saved version or dropping the working copy", async () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Rename Source",
+      document: draft,
+    })
+
+    const autosaveDraft = structuredClone(saved.workingCopy.draft)
+    autosaveDraft.name = "Rename Source draft"
+    await replaceUserTemplateWorkingCopy({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: autosaveDraft,
+      sourceVersionId: saved.version.id,
+    })
+
+    const renamed = await renameUserTemplate(saved.template.id, "Rename Target")
+    expect(renamed?.name).toBe("Rename Target")
+
+    const history = await readUserTemplateHistory(saved.template.id)
+    expect(history?.template.name).toBe("Rename Target")
+    expect(history?.saved).toHaveLength(1)
+    expect(history?.saved[0]?.document.name).toBe("Rename Source")
+
+    const workingCopy = await loadWorkingCopy({
+      kind: "user-template",
+      templateId: saved.template.id,
+    })
+    expect(workingCopy?.draft.name).toBe("Rename Target")
+    expect(workingCopy?.baseVersionId).toBe(saved.version.id)
+  })
+
   it("persists runtime app settings independently from document snapshots", async () => {
     const initialSettings = await loadRuntimeAppSettings()
     expect(initialSettings.permissionNudgeSeen).toBe(false)
@@ -278,6 +373,15 @@ describe("user-template-store", () => {
       name: "Archive Candidate",
       document: draft,
     })
+    const autosaveDraft = structuredClone(saved.workingCopy.draft)
+    autosaveDraft.name = "Archive Candidate draft"
+    await saveUserTemplateAutosave({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: autosaveDraft,
+      sourceVersionId: saved.version.id,
+    })
+    const archived = await archiveUserTemplate(saved.template.id)
 
     await saveRuntimeAppSettings({
       permissionNudgeSeen: true,
@@ -285,7 +389,8 @@ describe("user-template-store", () => {
 
     const snapshot = await exportRuntimeSnapshot()
     expect(snapshot.templates).toHaveLength(1)
-    expect(snapshot.versions).toHaveLength(1)
+    expect(snapshot.templates[0]?.archivedAt).toBe(archived?.archivedAt ?? null)
+    expect(snapshot.versions).toHaveLength(2)
     expect(snapshot.workingCopies).toHaveLength(1)
     expect(snapshot.settings.permissionNudgeSeen).toBe(true)
 
@@ -294,15 +399,58 @@ describe("user-template-store", () => {
 
     const restoredTemplate = await readUserTemplate(saved.template.id)
     expect(restoredTemplate?.name).toBe("Archive Candidate")
+    expect(restoredTemplate?.archivedAt).toBe(archived?.archivedAt ?? null)
+    expect(await listUserTemplates()).toHaveLength(0)
+    expect(await listArchivedUserTemplates()).toEqual([
+      expect.objectContaining({
+        id: saved.template.id,
+        archivedAt: archived?.archivedAt,
+      }),
+    ])
 
     const restoredWorkingCopy = await loadWorkingCopy({
       kind: "user-template",
       templateId: saved.template.id,
     })
-    expect(restoredWorkingCopy?.draft.name).toBe("Archive Candidate")
+    expect(restoredWorkingCopy?.draft.name).toBe("Archive Candidate draft")
+
+    const restoredHistory = await readUserTemplateHistory(saved.template.id)
+    expect(restoredHistory?.saved).toHaveLength(1)
+    expect(restoredHistory?.autosaves).toHaveLength(1)
 
     const restoredSettings = await loadRuntimeAppSettings()
     expect(restoredSettings.permissionNudgeSeen).toBe(true)
+  })
+
+  it("purges archived templates together with their version history and working copy", async () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Archive Purge",
+      document: draft,
+    })
+
+    const autosaveDraft = structuredClone(saved.workingCopy.draft)
+    autosaveDraft.name = "Archive Purge draft"
+    await saveUserTemplateAutosave({
+      templateId: saved.template.id,
+      source: { kind: "user-template", templateId: saved.template.id },
+      document: autosaveDraft,
+      sourceVersionId: saved.version.id,
+    })
+
+    await archiveUserTemplate(saved.template.id)
+    await purgeUserTemplate(saved.template.id)
+
+    expect(await listUserTemplates()).toHaveLength(0)
+    expect(await listArchivedUserTemplates()).toHaveLength(0)
+    expect(await readUserTemplate(saved.template.id)).toBeNull()
+    expect(await readUserTemplateHistory(saved.template.id)).toBeNull()
+    expect(
+      await loadWorkingCopy({
+        kind: "user-template",
+        templateId: saved.template.id,
+      })
+    ).toBeNull()
   })
 
   it("keeps saved version numbers monotonic after retention trimming", async () => {

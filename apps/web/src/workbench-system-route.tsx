@@ -5,7 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Button } from "./components/ui/button.js"
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card.js"
 import { SystemDataStorageCard } from "./system-data-storage-card.js"
-import { EmptyMini, RenderOptionsForm } from "./workbench-app.js"
+import { ArchivedTemplateManagementCard, EmptyMini, RenderOptionsForm } from "./workbench-app.js"
 import type { WorkbenchController } from "./workbench-controller.js"
 
 export default function WorkbenchSystemRoute({
@@ -39,6 +39,8 @@ export default function WorkbenchSystemRoute({
           onSyncNow={() => void controller.syncDataDirectoryNow()}
           onTakeOverWrites={controller.takeOverDataDirectoryWrites}
         />
+
+        <ArchivedTemplateManagementCard controller={controller} />
 
         <Card className="tm-panel">
           <CardHeader>

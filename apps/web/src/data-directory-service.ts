@@ -112,6 +112,73 @@ function toRuntimeSummary(snapshot: RuntimeStoreSnapshot): RuntimeSnapshotSummar
   }
 }
 
+function hasSnapshotData(summary: RuntimeSnapshotSummary): boolean {
+  return summary.templates > 0 || summary.versions > 0 || summary.workingCopies > 0
+}
+
+function parseTimestamp(value: string | null): number | null {
+  if (!value) {
+    return null
+  }
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function compareSnapshotFreshness(left: string | null, right: string | null): number {
+  const leftValue = parseTimestamp(left)
+  const rightValue = parseTimestamp(right)
+  if (leftValue === null && rightValue === null) {
+    return 0
+  }
+  if (leftValue === null) {
+    return -1
+  }
+  if (rightValue === null) {
+    return 1
+  }
+  return leftValue === rightValue ? 0 : leftValue > rightValue ? 1 : -1
+}
+
+function manifestDominatesRuntime(
+  manifest: DataDirectoryManifestV1,
+  runtimeSummary: RuntimeSnapshotSummary
+): boolean {
+  const counts = manifest.counts
+  const matchesOrExceeds =
+    counts.templates >= runtimeSummary.templates &&
+    counts.versions >= runtimeSummary.versions &&
+    counts.workingCopies >= runtimeSummary.workingCopies
+  if (!matchesOrExceeds) {
+    return false
+  }
+  return (
+    counts.templates > runtimeSummary.templates ||
+    counts.versions > runtimeSummary.versions ||
+    counts.workingCopies > runtimeSummary.workingCopies
+  )
+}
+
+function shouldRestoreRuntimeFromDirectoryManifest(args: {
+  manifest: DataDirectoryManifestV1
+  runtimeSnapshot: RuntimeStoreSnapshot
+  runtimeSummary: RuntimeSnapshotSummary
+}): boolean {
+  if (!hasSnapshotData(args.runtimeSummary)) {
+    return args.manifest.counts.templates > 0 || args.manifest.counts.versions > 0
+  }
+  const freshness = compareSnapshotFreshness(
+    args.manifest.snapshotUpdatedAt,
+    args.runtimeSnapshot.snapshotUpdatedAt
+  )
+  if (freshness > 0) {
+    return true
+  }
+  if (freshness < 0) {
+    return false
+  }
+  return manifestDominatesRuntime(args.manifest, args.runtimeSummary)
+}
+
 function createArchiveName(prefix: string): string {
   const stamp = new Date().toISOString().replaceAll(":", "-")
   return `${prefix}-${stamp}.zip`
@@ -640,6 +707,31 @@ export async function attachDataDirectory(args: {
 
 export async function detachDataDirectory(): Promise<void> {
   await clearStoredDataDirectoryHandle()
+}
+
+export async function restoreRuntimeFromConfiguredDirectoryIfNeeded(): Promise<
+  "restored" | "skipped"
+> {
+  const handle = await loadConfiguredHandle()
+  if (!handle) {
+    return "skipped"
+  }
+  const permission = await ensureReadWritePermission(handle, false)
+  if (permission !== "granted") {
+    return "skipped"
+  }
+  const manifest = await readManifestIfPresent(handle)
+  if (!manifest) {
+    return "skipped"
+  }
+  const runtimeSnapshot = await exportRuntimeSnapshot()
+  const runtimeSummary = toRuntimeSummary(runtimeSnapshot)
+  if (!shouldRestoreRuntimeFromDirectoryManifest({ manifest, runtimeSnapshot, runtimeSummary })) {
+    return "skipped"
+  }
+  const directorySnapshot = await readSnapshotFromDirectory(handle)
+  await replaceRuntimeSnapshot(directorySnapshot)
+  return "restored"
 }
 
 export async function requestConfiguredDirectoryPermission(requestIfNeeded = true): Promise<void> {

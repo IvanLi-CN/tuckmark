@@ -142,6 +142,8 @@ output.
   - default print settings
   - local data directory status, permission state, writer-lease state, and
     last-sync health
+  - archived browser-local template management with restore and permanent
+    delete actions
   - directory attach / switch actions plus manual sync, manual backup, whole
     dataset restore, whole dataset import, and whole dataset export
   - device management and probe actions
@@ -560,7 +562,28 @@ output.
   - clicking a system-template card enters the structured print-entry flow
   - clicking a browser-local user-template card enters the structured
     print-entry flow
-  - both groups keep an explicit `编辑模板` route into `/canvas`
+  - both groups keep an explicit `编辑` route into `/canvas`
+  - template cards do not expose bottom action strips, hover-only operation
+    areas, or row-expansion action states in either view mode
+  - large-grid cards keep a bottom-right icon-only `更多操作` trigger aligned
+    to the metadata row; compact-list cards keep a right-side `...` trigger
+  - large-grid right click, compact-list right click, touch long press on the
+    card surface, large-grid `更多操作`, and compact-list `...` all open one
+    shared action menu model
+  - shared template action menus keep system templates limited to `编辑`;
+    browser-local user templates expose `编辑`, `重命名`, and `归档`
+  - `归档` is styled as the destructive action inside the shared context menu
+  - archiving a browser-local user template removes it from `我的模板`
+    immediately, keeps its saved versions / autosaves / working copy intact,
+    and shows one global `5` second undo toast; a newer archive replaces the
+    older toast instead of stacking
+  - archiving the currently selected browser-local user template falls back to
+    the nearest remaining browser-local sibling when available; when
+    `我的模板` becomes empty, selection clears instead of jumping to the first
+    system template
+  - runtime snapshots, whole-dataset ZIP export/import, and configured
+    directory mirrors preserve template `archivedAt` state together with saved
+    versions, autosaves, and working copies
   - browser-local user template rows compile client-side into a concrete canvas
     definition before preview or print, so `browser-static` and `server-http`
     reuse the existing canvas artifact seam without a new template persistence
@@ -714,8 +737,30 @@ output.
 - Preview remains available when the canvas width exceeds the current print
   target, but direct print is blocked with a width mismatch error.
 - `/templates` displays both `系统模板` and `我的模板`; browser-local templates
-  support structured row editing, preview, print, and an edit jump back to
-  `/canvas`.
+  support structured row editing, preview, print, an edit jump back to
+  `/canvas`, a browser-local archive action, and an undoable archive removal
+  path.
+- Large-grid cards do not reveal any hover-only or click-expanded bottom
+  action strip.
+- Large-grid mode exposes a bottom-right icon-only `更多操作` trigger on each
+  card; compact-list mode exposes a right-side `...` trigger on each card.
+- Shared template action menus opened from right click, touch long press, or
+  either explicit trigger keep system templates limited to `编辑` and
+  browser-local user templates limited to `编辑`, `重命名`, and `归档`.
+- The shared context menu styles `归档` as the destructive action.
+- Archiving a browser-local user template removes it from `我的模板`
+  immediately, keeps its saved history restorable for at least `5` seconds via
+  one global undo toast, and still leaves the template restorable from
+  `/system` after the toast expires.
+- Archiving the active browser-local user template falls back only within
+  `我的模板`; when no browser-local templates remain, structured row entry and
+  preview/print rails enter the empty disabled state instead of auto-selecting
+  a system template.
+- `/system` lists archived browser-local templates in newest-archived-first
+  order and supports both restore and immediate permanent delete without route
+  breakage.
+- Whole-dataset export/import and browser-local reload keep archived template
+  state, saved versions, autosaves, and working copies intact.
 - Invalid barcode, QR, or Data Matrix payloads surface as user-visible errors.
 - `server-http` startup restores recent activity from the merged sync snapshot.
 - Scratch canvas drafts can be restored from the merged same-device sync
@@ -910,6 +955,45 @@ output.
 
   PR: include
   ![Template grouped user templates](./assets/templates-user-groups-1280x800.png)
+
+- `1440×1200` template workspace in large-grid mode with a browser-local card
+  using the bottom-right icon-only `更多操作` trigger to open the shared
+  template action menu
+
+  PR: include
+  ![Template large-grid more menu](./assets/templates-large-grid-more-menu-1440x1200.png)
+
+- `430×980` mobile template workspace with a browser-local card opened
+  through touch long press, reusing the same shared template action menu model
+
+  PR: include
+  ![Template touch long press menu](./assets/templates-touch-long-press-menu-430x980.png)
+
+- `1440×1200` template workspace in list mode with the right-side `...` trigger
+  opening the shared template action menu for a browser-local card
+
+  PR: include
+  ![Template list more menu](./assets/templates-list-more-menu-1440x1200.png)
+
+- `1440×1200` template workspace with a browser-local card opened through the
+  pointer-position context menu, reusing the same action model as the list
+  `...` trigger
+
+  PR: include
+  ![Template context menu](./assets/templates-context-menu-1440x1200.png)
+
+- `1440×1200` template workspace immediately after archiving a browser-local
+  user template, showing the emptied `我的模板` group plus the single global
+  undo toast
+
+  PR: include
+  ![Template archive undo toast](./assets/templates-archive-toast-1440x1200.png)
+
+- `1440×1200` system workspace showing the archived-template management card
+  with restore and permanent-delete actions
+
+  PR: include
+  ![System archived template management](./assets/system-archive-management-1440x1200.png)
 
 - `1440×900` homepage shell with non-selectable shared chrome and selectable status/value fields preserved where copying matters
 

@@ -26,6 +26,7 @@ import {
   pickDataDirectory,
   requestConfiguredDirectoryPermission,
   restoreConfiguredBackup,
+  restoreRuntimeFromConfiguredDirectoryIfNeeded,
   supportsDataDirectoryFeatures,
   syncConfiguredDataDirectory,
   tryBackgroundMirrorSync,
@@ -61,8 +62,13 @@ import type {
   UserTemplateSummary,
 } from "./types.js"
 import {
+  archiveUserTemplate,
+  listArchivedUserTemplates,
   listUserTemplates,
   loadRuntimeAppSettings,
+  purgeUserTemplate,
+  renameUserTemplate,
+  restoreUserTemplate,
   saveRuntimeAppSettings,
 } from "./user-template-store.js"
 import {
@@ -363,6 +369,9 @@ export function useWorkbenchController({
   )
   const [canvasDimensions, setCanvasDimensions] = React.useState(() => loadRecentCanvasDimensions())
   const [userTemplates, setUserTemplates] = React.useState<UserTemplateSummary[]>([])
+  const [archivedUserTemplates, setArchivedUserTemplates] = React.useState<UserTemplateSummary[]>(
+    []
+  )
   const [dataDirectoryStatus, setDataDirectoryStatus] = React.useState<DataDirectoryStatus>(
     () => storyStateOverrides?.dataDirectoryStatus ?? createDefaultDataDirectoryStatus()
   )
@@ -628,6 +637,47 @@ export function useWorkbenchController({
     return nextTemplates
   }, [])
 
+  const refreshArchivedUserTemplates = React.useCallback(async () => {
+    const nextTemplates = await listArchivedUserTemplates()
+    setArchivedUserTemplates(nextTemplates)
+    return nextTemplates
+  }, [])
+
+  const archiveTemplate = React.useCallback(
+    async (templateId: string) => {
+      const archived = await archiveUserTemplate(templateId)
+      await Promise.all([refreshUserTemplates(), refreshArchivedUserTemplates()])
+      return archived
+    },
+    [refreshArchivedUserTemplates, refreshUserTemplates]
+  )
+
+  const renameTemplate = React.useCallback(
+    async (templateId: string, name: string) => {
+      const renamed = await renameUserTemplate(templateId, name)
+      await Promise.all([refreshUserTemplates(), refreshArchivedUserTemplates()])
+      return renamed
+    },
+    [refreshArchivedUserTemplates, refreshUserTemplates]
+  )
+
+  const restoreArchivedTemplate = React.useCallback(
+    async (templateId: string) => {
+      const restored = await restoreUserTemplate(templateId)
+      await Promise.all([refreshUserTemplates(), refreshArchivedUserTemplates()])
+      return restored
+    },
+    [refreshArchivedUserTemplates, refreshUserTemplates]
+  )
+
+  const purgeArchivedTemplate = React.useCallback(
+    async (templateId: string) => {
+      await purgeUserTemplate(templateId)
+      await Promise.all([refreshUserTemplates(), refreshArchivedUserTemplates()])
+    },
+    [refreshArchivedUserTemplates, refreshUserTemplates]
+  )
+
   const refreshRenderOptionsFromStore = React.useCallback(async () => {
     const settings = await loadRuntimeAppSettings()
     setRenderOptionsState(settings.defaultRenderOptions)
@@ -743,6 +793,8 @@ export function useWorkbenchController({
 
     void (async () => {
       try {
+        await restoreRuntimeFromConfiguredDirectoryIfNeeded()
+
         if (shouldShowStartupShell) {
           if (initialRoutePath === "/templates") {
             await refreshUserTemplates()
@@ -761,7 +813,11 @@ export function useWorkbenchController({
           }
         }
 
-        const deferredTasks: Promise<unknown>[] = [refreshSetup(), refreshRenderOptionsFromStore()]
+        const deferredTasks: Promise<unknown>[] = [
+          refreshSetup(),
+          refreshRenderOptionsFromStore(),
+          refreshArchivedUserTemplates(),
+        ]
 
         if (initialRoutePath !== "/templates") {
           deferredTasks.push(refreshUserTemplates())
@@ -801,6 +857,7 @@ export function useWorkbenchController({
     context.mode,
     context.surface,
     refreshDataDirectoryStatus,
+    refreshArchivedUserTemplates,
     refreshRenderOptionsFromStore,
     refreshSetup,
     refreshUserTemplates,
@@ -811,6 +868,7 @@ export function useWorkbenchController({
     const unsubscribe = subscribeRuntimeStoreMutations((event) => {
       if (event.originTabId !== runtimeEventTabId) {
         void refreshUserTemplates()
+        void refreshArchivedUserTemplates()
         void refreshRenderOptionsFromStore()
       }
       scheduleDataDirectorySync(event.reason)
@@ -824,6 +882,7 @@ export function useWorkbenchController({
     }
   }, [
     refreshDataDirectoryStatus,
+    refreshArchivedUserTemplates,
     refreshRenderOptionsFromStore,
     refreshUserTemplates,
     runtimeEventTabId,
@@ -1604,6 +1663,8 @@ export function useWorkbenchController({
     browserDirectConfigured,
     browserPrintSupported,
     browserPrinter,
+    archivedUserTemplates,
+    archiveTemplate,
     busy,
     canvasDimensions,
     client,
@@ -1642,6 +1703,7 @@ export function useWorkbenchController({
     printCurrentPreview,
     printers,
     printResult,
+    purgeArchivedTemplate,
     printSourceDirect,
     probeResult,
     probeDeviceDrawerPrinter,
@@ -1652,7 +1714,9 @@ export function useWorkbenchController({
     rememberPrinterSelection,
     renderOptions,
     refreshDataDirectoryStatus,
+    refreshArchivedUserTemplates,
     resetDeviceDrawerState,
+    restoreArchivedTemplate,
     selectedPrinter,
     serverPrinterSelectionMode,
     serviceApiLive,
@@ -1668,6 +1732,7 @@ export function useWorkbenchController({
     startupSyncReady,
     startupSplash,
     templates,
+    renameTemplate,
     refreshUserTemplates,
     userTemplates,
     scheduleSync,

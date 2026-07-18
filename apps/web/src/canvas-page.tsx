@@ -2798,6 +2798,7 @@ async function loadDraftForSource(source: CanvasDraftSource): Promise<LoadedCanv
     return {
       draft: {
         ...cloneDraft(currentVersion.document),
+        name: versionHistory.template.name,
         source,
         templateId: source.templateId,
         baseVersionId: currentVersion.id,
@@ -4799,21 +4800,6 @@ function CanvasOutput({
 
 type CanvasElementGroup = Konva.Group & {
   __tuckmarkOriginalGetClientRect?: Konva.Group["getClientRect"]
-}
-
-function alignOffset(
-  containerSize: number,
-  contentSize: number,
-  align: "start" | "middle" | "end"
-) {
-  switch (align) {
-    case "middle":
-      return (containerSize - contentSize) / 2
-    case "end":
-      return containerSize - contentSize
-    case "start":
-      return 0
-  }
 }
 
 let textMeasureContext: CanvasRenderingContext2D | null | undefined

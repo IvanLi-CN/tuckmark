@@ -15,6 +15,7 @@ import { parseUserTemplatePackage } from "../../../packages/core/src/web.js"
 import { createDraftFromUserTemplatePackage } from "./canvas-editor-model.js"
 import { ActionButton } from "./components/ui/action-button.js"
 import { Input } from "./components/ui/input.js"
+import { PromptDialog } from "./components/ui/dialog.js"
 import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
 import { cn } from "./lib/utils.js"
 import { ensureExtendedRuntimeFontStyles } from "./runtime-font-loader.js"
@@ -33,6 +34,7 @@ import {
   resolveTemplateColumnLayout,
   TEMPLATE_PREVIEW_DEBOUNCE_MS,
   TEMPLATE_STACKED_PREVIEW_THRESHOLD,
+  TemplateActionMenu,
   TemplateGroup,
   TemplatesPrintRail,
   toTemplateFieldList,
@@ -63,6 +65,12 @@ type TemplateCardEntry =
 
 type TemplateListMode = "large" | "list"
 type TemplateNarrowStage = "list" | "table"
+type TemplateActionKind = "edit" | "rename" | "archive"
+type TemplateActionMenuState = {
+  entry: TemplateCardEntry
+  x: number
+  y: number
+}
 
 function toSingleLineFieldValue(value: string): string {
   return value.replace(/\s+/g, " ").trimStart()
@@ -90,8 +98,7 @@ function useTemplatesRouteState(controller: WorkbenchController) {
   )
   const [templateEntryId, setTemplateEntryId] = React.useState(() => templateEntries[0]?.id ?? "")
   const activeTemplateEntry = React.useMemo(
-    () =>
-      templateEntries.find((entry) => entry.id === templateEntryId) ?? templateEntries[0] ?? null,
+    () => templateEntries.find((entry) => entry.id === templateEntryId) ?? null,
     [templateEntries, templateEntryId]
   )
   const activeTemplate = activeTemplateEntry?.template ?? null
@@ -506,11 +513,34 @@ function useTemplatesRouteState(controller: WorkbenchController) {
     selectedTemplateRow,
   ])
 
+  const archiveTemplateEntry = React.useCallback(
+    async (entryId: string) => {
+      const entry = templateEntries.find((item) => item.id === entryId)
+      if (entry?.kind !== "user") {
+        return null
+      }
+
+      if (templateEntryId === entryId) {
+        const visibleUserEntries = templateEntries.filter((item) => item.kind === "user")
+        const currentIndex = visibleUserEntries.findIndex((item) => item.id === entryId)
+        const fallbackEntry =
+          visibleUserEntries[currentIndex + 1] ?? visibleUserEntries[currentIndex - 1] ?? null
+        setTemplateEntryId(fallbackEntry?.id ?? "")
+      }
+
+      setTemplateNarrowStage("list")
+      setEditingTemplateCell(null)
+      return controller.archiveTemplate(entry.template.id)
+    },
+    [controller, templateEntries, templateEntryId]
+  )
+
   return {
     activeTemplate,
     activeTemplateEntry,
     activeUserTemplateDraftLoading,
     addTemplateRow,
+    archiveTemplateEntry,
     autoPreviewTemplateRow,
     deleteTemplateRow,
     duplicateTemplateRow,
@@ -533,9 +563,11 @@ function useTemplatesRouteState(controller: WorkbenchController) {
 
 export default function WorkbenchTemplatesRoute({
   controller,
+  onPresentArchiveToast,
   onRouteChunkReady,
 }: {
   controller: WorkbenchController
+  onPresentArchiveToast?: (template: UserTemplateSummary) => void
   onRouteChunkReady?: () => void
 }) {
   const navigate = useWorkbenchNavigate()
@@ -564,12 +596,25 @@ export default function WorkbenchTemplatesRoute({
     !state.selectedTemplateRow ||
     activeUserTemplatePending
   const [listMode, setListMode] = React.useState<TemplateListMode>("large")
+  const [actionMenu, setActionMenu] = React.useState<TemplateActionMenuState | null>(null)
+  const [renameDialog, setRenameDialog] = React.useState<{
+    templateId: string
+    currentName: string
+  } | null>(null)
   const importInputId = React.useId()
   const importInputRef = React.useRef<HTMLInputElement | null>(null)
   const [importStatus, setImportStatus] = React.useState("")
   const [tableShellElement, setTableShellElement] = React.useState<HTMLDivElement | null>(null)
   const tableShellWidth = useElementClientWidth(tableShellElement)
   const activeTemplateFields = state.activeTemplate ? toTemplateFieldList(state.activeTemplate) : []
+  const systemEntries = React.useMemo(
+    () => state.templateEntries.filter((entry) => entry.kind === "system"),
+    [state.templateEntries]
+  )
+  const userEntries = React.useMemo(
+    () => state.templateEntries.filter((entry) => entry.kind === "user"),
+    [state.templateEntries]
+  )
   const templateColumnLayout = React.useMemo(
     () => resolveTemplateColumnLayout(activeTemplateFields, state.templateRows, tableShellWidth),
     [activeTemplateFields, state.templateRows, tableShellWidth]
@@ -578,8 +623,44 @@ export default function WorkbenchTemplatesRoute({
   React.useEffect(() => {
     onRouteChunkReady?.()
     void ensureExtendedRuntimeFontStyles()
-    void controller.refreshUserTemplates()
+    void Promise.all([controller.refreshUserTemplates(), controller.refreshArchivedUserTemplates()])
   }, [controller, onRouteChunkReady])
+
+  React.useEffect(() => {
+    if (actionMenu && !state.templateEntries.some((entry) => entry.id === actionMenu.entry.id)) {
+      setActionMenu(null)
+    }
+  }, [actionMenu, state.templateEntries])
+
+  React.useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof HTMLElement)) {
+        return
+      }
+      if (
+        target.closest(".tm-template-card") ||
+        target.closest(".tm-template-action-menu") ||
+        target.closest("[role='dialog']")
+      ) {
+        return
+      }
+      setActionMenu(null)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setActionMenu(null)
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [])
 
   const importTemplatePackage = React.useCallback(
     async (file: File) => {
@@ -591,7 +672,10 @@ export default function WorkbenchTemplatesRoute({
           description: templatePackage.description,
           document: draft,
         })
-        await controller.refreshUserTemplates()
+        await Promise.all([
+          controller.refreshUserTemplates(),
+          controller.refreshArchivedUserTemplates(),
+        ])
         setImportStatus(`已导入 ${templatePackage.name}`)
       } catch (error) {
         setImportStatus(error instanceof Error ? `导入失败：${error.message}` : "导入失败。")
@@ -602,6 +686,90 @@ export default function WorkbenchTemplatesRoute({
       }
     },
     [controller]
+  )
+
+  const editTemplateEntry = React.useCallback(
+    (entryId: string) => {
+      const entry = state.templateEntries.find((item) => item.id === entryId)
+      if (!entry) {
+        return
+      }
+      navigate(
+        entry.kind === "system"
+          ? `/canvas?source=preset-template&templateId=${entry.template.id}`
+          : `/canvas?source=user-template&templateId=${entry.template.id}`
+      )
+    },
+    [navigate, state.templateEntries]
+  )
+
+  const archiveTemplateEntry = React.useCallback(
+    async (entryId: string) => {
+      const archived = await state.archiveTemplateEntry(entryId)
+      if (!archived) {
+        return
+      }
+      setActionMenu(null)
+      onPresentArchiveToast?.(archived)
+    },
+    [onPresentArchiveToast, state]
+  )
+
+  const openRenameTemplateDialog = React.useCallback((entry: TemplateCardEntry) => {
+    if (entry.kind !== "user") {
+      return
+    }
+    setActionMenu(null)
+    setRenameDialog({
+      templateId: entry.template.id,
+      currentName: entry.template.name,
+    })
+  }, [])
+
+  const handleTemplateAction = React.useCallback(
+    async (entry: TemplateCardEntry, action: TemplateActionKind) => {
+      if (action === "edit") {
+        editTemplateEntry(entry.id)
+        setActionMenu(null)
+        return
+      }
+      if (action === "rename") {
+        openRenameTemplateDialog(entry)
+        return
+      }
+      await archiveTemplateEntry(entry.id)
+    },
+    [archiveTemplateEntry, editTemplateEntry, openRenameTemplateDialog]
+  )
+
+  const handleTemplateSelect = React.useCallback(
+    (entryId: string) => {
+      state.setTemplateEntryId(entryId)
+      if (usesSingleOutletFlow) {
+        state.setTemplateNarrowStage("table")
+      }
+    },
+    [state, usesSingleOutletFlow]
+  )
+
+  const openTemplateActionMenu = React.useCallback(
+    (entry: TemplateCardEntry, position: { x: number; y: number }) => {
+      state.setTemplateEntryId(entry.id)
+      setActionMenu({
+        entry,
+        x: position.x,
+        y: position.y,
+      })
+    },
+    [state]
+  )
+
+  const handleTemplateContextMenu = React.useCallback(
+    (entry: TemplateCardEntry, event: React.MouseEvent<HTMLElement>) => {
+      event.preventDefault()
+      openTemplateActionMenu(entry, { x: event.clientX, y: event.clientY })
+    },
+    [openTemplateActionMenu]
   )
 
   return (
@@ -681,26 +849,16 @@ export default function WorkbenchTemplatesRoute({
             >
               <TemplateGroup
                 title="系统模板"
-                entries={state.templateEntries.filter((entry) => entry.kind === "system")}
+                entries={systemEntries}
                 listMode={listMode}
                 activeEntryId={state.activeTemplateEntry?.id ?? ""}
-                onSelect={(entryId) => {
-                  state.setTemplateEntryId(entryId)
-                  if (usesSingleOutletFlow) {
-                    state.setTemplateNarrowStage("table")
-                  }
-                }}
-                onEdit={(entryId) => {
-                  const entry = state.templateEntries.find((item) => item.id === entryId)
-                  if (entry?.kind !== "system") {
-                    return
-                  }
-                  navigate(`/canvas?source=preset-template&templateId=${entry.template.id}`)
-                }}
+                onSelect={handleTemplateSelect}
+                onContextMenu={handleTemplateContextMenu}
+                onOpenMenu={openTemplateActionMenu}
               />
               <TemplateGroup
                 title="我的模板"
-                entries={state.templateEntries.filter((entry) => entry.kind === "user")}
+                entries={userEntries}
                 listMode={listMode}
                 activeEntryId={state.activeTemplateEntry?.id ?? ""}
                 emptyText="还没有保存到浏览器本地的用户模板。"
@@ -716,19 +874,9 @@ export default function WorkbenchTemplatesRoute({
                     onClick={() => navigate("/canvas")}
                   />
                 }
-                onSelect={(entryId) => {
-                  state.setTemplateEntryId(entryId)
-                  if (usesSingleOutletFlow) {
-                    state.setTemplateNarrowStage("table")
-                  }
-                }}
-                onEdit={(entryId) => {
-                  const entry = state.templateEntries.find((item) => item.id === entryId)
-                  if (entry?.kind !== "user") {
-                    return
-                  }
-                  navigate(`/canvas?source=user-template&templateId=${entry.template.id}`)
-                }}
+                onSelect={handleTemplateSelect}
+                onContextMenu={handleTemplateContextMenu}
+                onOpenMenu={openTemplateActionMenu}
               />
               {importStatus ? (
                 <div className="tm-template-list__status" role="status">
@@ -736,6 +884,30 @@ export default function WorkbenchTemplatesRoute({
                 </div>
               ) : null}
             </div>
+            <TemplateActionMenu state={actionMenu} onAction={handleTemplateAction} />
+            <PromptDialog
+              open={renameDialog !== null}
+              title="重命名模板"
+              description="更新模板名称，不影响现有版本历史与归档状态。"
+              label="模板名称"
+              defaultValue={renameDialog?.currentName ?? ""}
+              confirmLabel="保存"
+              requiredMessage="请输入模板名称。"
+              onOpenChange={(open) => {
+                if (!open) {
+                  setRenameDialog(null)
+                }
+              }}
+              onConfirm={(value) => {
+                if (!renameDialog) {
+                  return
+                }
+                if (value === renameDialog.currentName) {
+                  return
+                }
+                void controller.renameTemplate(renameDialog.templateId, value)
+              }}
+            />
           </aside>
         ) : null}
 
