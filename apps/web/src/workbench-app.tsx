@@ -1394,10 +1394,12 @@ function WorkbenchLayout({
   controller,
   hydrationState,
   pwaUpdateSnapshot,
+  shellHidden = false,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
   hydrationState: WorkbenchHydrationState
   pwaUpdateSnapshot?: PwaUpdateSnapshot
+  shellHidden?: boolean
 }) {
   const location = useLocation()
   const navigate = useNavigate()
@@ -1422,6 +1424,8 @@ function WorkbenchLayout({
   return (
     <div
       className={cn("tm-shell", "tm-selectable-none", isCanvasRoute && "tm-shell--canvas")}
+      hidden={shellHidden}
+      aria-hidden={shellHidden}
       data-deferred-hydration-pending={hydrationState.deferredHydrationPending ? "true" : "false"}
       data-offline-warmup-status={hydrationState.offlineWarmupStatus}
       data-shell-ready={hydrationState.shellReady ? "true" : "false"}
@@ -3511,12 +3515,14 @@ function LazyWorkbenchRouter({
   hydrationState,
   onRouteChunkReady,
   pwaUpdateSnapshot,
+  shellHidden = false,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
   canvasScenario?: CanvasStoryScenario
   hydrationState: WorkbenchHydrationState
   onRouteChunkReady: () => void
   pwaUpdateSnapshot?: PwaUpdateSnapshot
+  shellHidden?: boolean
 }) {
   return (
     <Routes>
@@ -3526,6 +3532,7 @@ function LazyWorkbenchRouter({
             controller={controller}
             hydrationState={hydrationState}
             pwaUpdateSnapshot={pwaUpdateSnapshot}
+            shellHidden={shellHidden}
           />
         }
       >
@@ -3572,12 +3579,14 @@ function EagerWorkbenchRouter({
   hydrationState,
   onRouteChunkReady,
   pwaUpdateSnapshot,
+  shellHidden = false,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
   canvasScenario?: CanvasStoryScenario
   hydrationState: WorkbenchHydrationState
   onRouteChunkReady: () => void
   pwaUpdateSnapshot?: PwaUpdateSnapshot
+  shellHidden?: boolean
 }) {
   const pageState = useWorkbenchPages(controller)
 
@@ -3589,6 +3598,7 @@ function EagerWorkbenchRouter({
             controller={controller}
             hydrationState={hydrationState}
             pwaUpdateSnapshot={pwaUpdateSnapshot}
+            shellHidden={shellHidden}
           />
         }
       >
@@ -3699,6 +3709,7 @@ export function WorkbenchApp({
   const handleRouteChunkReady = React.useCallback(() => {
     setCurrentRouteChunkReady(true)
   }, [])
+  const shellHidden = startupShell === "auto" && !hydrationState.shellReady
   const RouterComponent =
     import.meta.env.MODE === "test" ? EagerWorkbenchRouter : LazyWorkbenchRouter
 
@@ -3710,6 +3721,7 @@ export function WorkbenchApp({
         hydrationState={hydrationState}
         onRouteChunkReady={handleRouteChunkReady}
         pwaUpdateSnapshot={pwaUpdateSnapshot}
+        shellHidden={shellHidden}
       />
     </BrowserRouter>
   ) : (
@@ -3720,6 +3732,7 @@ export function WorkbenchApp({
         hydrationState={hydrationState}
         onRouteChunkReady={handleRouteChunkReady}
         pwaUpdateSnapshot={pwaUpdateSnapshot}
+        shellHidden={shellHidden}
       />
     </BrowserRouter>
   )
@@ -3727,7 +3740,7 @@ export function WorkbenchApp({
   return (
     <ThemeScope theme={theme}>
       {router}
-      {startupShell === "auto" && !hydrationState.shellReady ? (
+      {shellHidden ? (
         <div className="tm-startup-overlay">
           <AppLaunchSplash
             detailText={launchSplashState.detailText}

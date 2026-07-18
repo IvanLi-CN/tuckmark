@@ -1134,6 +1134,33 @@ describe("web workbench app", () => {
     expect(rightsLink?.textContent).toBe("© 2026 Ivan Li")
   })
 
+  it("keeps the runtime shell hidden while the startup overlay is still active", async () => {
+    document.body.innerHTML = '<div id="root"></div>'
+    const rootElement = document.getElementById("root")
+    if (!rootElement) {
+      throw new Error("Missing root element")
+    }
+
+    window.history.replaceState({}, "", "/")
+
+    await act(async () => {
+      mountedRoot = ReactDOM.createRoot(rootElement)
+      mountedRoot.render(<App context={browserRuntimeContext} />)
+      await flush(1)
+    })
+
+    await act(async () => {
+      await vi.dynamicImportSettled()
+      await flush(1)
+    })
+
+    const shell = document.querySelector<HTMLElement>(".tm-shell")
+    expect(shell).not.toBeNull()
+    expect(shell?.getAttribute("data-shell-ready")).toBe("false")
+    expect(shell?.hidden).toBe(true)
+    expect(document.querySelector(".tm-launch-progress-rail")).not.toBeNull()
+  })
+
   it("shows phase-based startup progress while bootstrap work is still pending", async () => {
     const actualStore = await vi.importActual<typeof import("./user-template-store.js")>(
       "./user-template-store.js"

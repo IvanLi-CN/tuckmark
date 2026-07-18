@@ -87,6 +87,8 @@ and a reproducible worktree bootstrap path.
   installation.
 - Browser-static builds ship an owner-facing launch shell in `index.html` so
   installed-PWA cold starts do not expose a blank body before JavaScript boot.
+- While that launch shell is visible, the routed runtime shell must remain
+  hidden instead of peeking through underneath the startup surface.
 - The browser-static launch shell stays legible and branded in both light and
   dark color schemes.
 - Installed-PWA startup reaches a navigable current-route shell before

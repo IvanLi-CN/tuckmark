@@ -56,6 +56,10 @@
   - `current-route-chunk-ready`
   - `current-route-data-ready`
   - `offline-warmup`
+- `apps/web/src/workbench-app.tsx` keeps the routed runtime shell mounted for
+  code-loading continuity, but hides it with the platform `hidden` contract
+  until `shellReady` flips true so the startup overlay never reveals the
+  workbench underneath before the current route is actually ready.
 - `apps/web/vite.config.ts` now classifies browser-static assets into
   `shell`, `route`, and `feature` tiers. The emitted service worker precaches
   only `shell + route` during `install`, bypasses `version.json`, and accepts

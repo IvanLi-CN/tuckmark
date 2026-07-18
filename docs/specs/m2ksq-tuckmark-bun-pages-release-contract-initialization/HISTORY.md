@@ -45,3 +45,9 @@ bootstrap, reports task-phase startup progress instead of fake 25/50/75/100
 download placeholders, precaches only shell-plus-route assets during service
 worker install, and silently warms the remaining feature assets after the
 current route shell is already usable.
+
+That startup contract was later corrected again after verification showed the
+runtime workbench could still peek through underneath the owner-facing launch
+surface during the `current route data ready` phase. The routed shell now stays
+hidden until `shellReady` is true, so installed-PWA startup no longer feels
+like it has already entered the app before the startup shell exits.

@@ -28,7 +28,9 @@
     work in the background
   - `apps/web/src/workbench-app.tsx` exposes runtime shell state through
     `shellReady`, `currentRouteReady`, `deferredHydrationPending`, and
-    `offlineWarmupStatus`
+    `offlineWarmupStatus`, while keeping the mounted shell hidden until
+    `shellReady` is true so the startup overlay does not reveal the workbench
+    prematurely
 - The `/system` page now combines existing app / print settings with a route
   owned `SystemDataStorageCard` that surfaces:
   - browser capability state for `File System Access API` + `OPFS`
