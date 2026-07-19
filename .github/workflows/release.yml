@@ -53,6 +53,14 @@ jobs:
         run: node .github/scripts/release-notes.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - name: Upload release context artifact
+        if: steps.release-notes.outputs.skipped != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.release-notes.outputs.artifact_name }}
+          path: |
+            work/release/release-context.json
+            work/release/release-notes.md
       - name: Check out release commit
         run: |
           MERGE_SHA="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).merge_sha")"
@@ -66,14 +74,6 @@ jobs:
           mkdir -p work/release/bundles
           tar -czf work/release/bundles/tuckmark-runtime-bundle.tgz packages packages/server package.json bun.lock README.md PRODUCT.md DESIGN.md CONTEXT.md
           tar -czf work/release/bundles/tuckmark-cli-bundle.tgz packages/cli packages/core package.json bun.lock README.md
-      - name: Upload release context artifact
-        if: steps.release-notes.outputs.skipped != 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.release-notes.outputs.artifact_name }}
-          path: |
-            work/release/release-context.json
-            work/release/release-notes.md
       - name: Publish GitHub Release
         run: |
           VERSION="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).release_version")"

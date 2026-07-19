@@ -252,6 +252,9 @@ describe("Release workflow Pages redeploy", () => {
     expect(releaseWorkflow).toContain("steps.release-notes.outputs.artifact_name")
     expect(releaseWorkflow).toContain("work/release/release-context.json")
     expect(releaseWorkflow).toContain("work/release/release-notes.md")
+    expect(releaseWorkflow.indexOf("Upload release context artifact")).toBeLessThan(
+      releaseWorkflow.indexOf("Check out release commit")
+    )
   })
 
   it("lets release failure notification read release context artifacts when they exist", () => {
