@@ -69,3 +69,10 @@ fallback that felt like the app was cold-starting twice. Deferred route chunks
 now warm immediately after `shellReady`, nav intent preloads the likely target
 route, and any remaining route race falls back to a small local skeleton
 instead of a startup-like loading screen.
+
+The release publication contract was later tightened again after published
+GitHub Releases were observed to ship a one-line placeholder body. Release
+publication now derives human-readable notes from the verified release snapshot
+and merged PR metadata, uploads a durable `release-context-<merge_sha>`
+artifact for failure analysis, and fails before `gh release create` whenever
+that release context cannot produce the required notes sections.
