@@ -68,6 +68,7 @@ export type {
   Printer,
   PrinterProbeResult,
   RenderOptions,
+  ResolvedTextLayout,
   SafeTextLabelInput,
   TemplateDefinition,
   TemplateElement,

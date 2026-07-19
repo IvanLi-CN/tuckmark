@@ -147,6 +147,7 @@ function createSnapshot(args: {
         xOffsetDots: 0,
       },
       permissionNudgeSeen: true,
+      showTextBoundingBoxes: false,
     },
     templates,
     versions,

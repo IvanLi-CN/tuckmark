@@ -53,6 +53,7 @@ export type TextLayoutLine = {
     x: number;
     y: number;
     width: number;
+    visualWidth: number;
     letterSpacing: number;
 };
 export type TextLayoutGlyph = {

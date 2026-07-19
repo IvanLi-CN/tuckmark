@@ -204,6 +204,49 @@ describe("svg text rendering", () => {
     expect(svg.match(/<text/g)?.length).toBe(4)
   })
 
+  it("uses precomputed text layout when a canvas export provides it", () => {
+    const svg = buildSvg(
+      160,
+      60,
+      [
+        {
+          kind: "text",
+          key: "label",
+          x: 8,
+          y: 10,
+          width: 96,
+          height: 24,
+          fontSize: 10,
+          fontWeight: "bold",
+          align: "left",
+          value: "AB",
+          rotation: 0,
+          resolvedLayout: {
+            lineLayouts: [{ text: "AB", x: 0, y: 8, width: 18, visualWidth: 16, letterSpacing: 0 }],
+            glyphs: [],
+            verticalText: false,
+            resolvedFontSize: 10,
+            lineHeight: 12,
+            contentX: 3,
+            contentY: 4,
+            contentWidth: 18,
+            contentHeight: 10,
+            textOffsetX: 0,
+            textOffsetY: 0,
+            baselineOffsetY: 8,
+            scaleX: 5,
+            scaleY: 2,
+          },
+        },
+      ],
+      {}
+    )
+
+    expect(svg).toContain('transform="translate(3 4) scale(5 2)"')
+    expect(svg).toContain('<text x="0" y="8"')
+    expect(svg).toContain('textLength="16" lengthAdjust="spacingAndGlyphs"')
+  })
+
   it("renders Data Matrix elements as square module grids", () => {
     const svg = buildSvg(
       80,

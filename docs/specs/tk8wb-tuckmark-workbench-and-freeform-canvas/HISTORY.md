@@ -7,6 +7,12 @@ It also records the decision that the freeform canvas is an editor surface, not
 an independent print truth source, and that preview and print continue to flow
 through the shared artifact seam.
 
+The latest canvas parity pass keeps the stage-only text BBOX opt-in and
+persisted with a default-off migration path. Preview compilation now carries
+the browser-measured resolved text layout, including visible ink width, into
+the shared SVG renderer so horizontal fitting uses the same geometry as the
+editor stage.
+
 This spec also records the follow-up UI convergence decisions that happened
 while the workbench was being productized:
 

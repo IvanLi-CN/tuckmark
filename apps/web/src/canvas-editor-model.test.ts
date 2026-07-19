@@ -621,6 +621,57 @@ describe("canvas-editor-model monochrome contract", () => {
     })
   })
 
+  it("embeds measured text layout into canvas print sources for preview parity", () => {
+    const draft = createDraftFromPreset(getPresetById("ops-tag"))
+    const text = draft.elements.find((element) => element.kind === "text")
+    if (text?.kind !== "text") {
+      throw new Error("expected text element")
+    }
+
+    draft.elements = [
+      {
+        ...text,
+        value: "AB",
+        width: 20,
+        height: 8,
+        fontSize: 4,
+        stretchXGrow: true,
+        stretchXShrink: false,
+        autoWrap: false,
+        adaptiveFontSize: false,
+      },
+    ]
+
+    const source = toCanvasPrintSource(
+      draft,
+      {
+        paperType: "gap",
+        threshold: 150,
+        xOffsetDots: 0,
+        printWidthDots: 384,
+      },
+      {
+        measureText: ({ text, fontSize }) => ({
+          width: text === "AB" ? fontSize * 1.4 : fontSize,
+        }),
+      }
+    )
+
+    expect(source.kind).toBe("canvas")
+    if (source.kind !== "canvas") {
+      throw new Error("expected canvas print source")
+    }
+
+    const compiledText = source.canvas.elements[0]
+    expect(compiledText?.kind).toBe("text")
+    if (compiledText?.kind !== "text") {
+      throw new Error("expected compiled text element")
+    }
+
+    expect(compiledText.resolvedLayout?.contentWidth).toBeCloseTo(44.8, 3)
+    expect(compiledText.resolvedLayout?.scaleX).toBeCloseTo(20 / 5.6, 3)
+  })
+
   it("stores canvas draft geometry in millimeters and compiles printable output to dots", () => {
     const draft = createDraftFromPreset(getPresetById("shipping-wide"))
     const rect = draft.elements.find((element) => element.kind === "rect")

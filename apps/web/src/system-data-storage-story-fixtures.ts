@@ -66,6 +66,7 @@ function createArchiveInspection(
           xOffsetDots: 0,
         },
         permissionNudgeSeen: true,
+        showTextBoundingBoxes: false,
       },
       templates: [],
       versions: [],

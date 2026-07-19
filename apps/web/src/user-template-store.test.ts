@@ -350,9 +350,11 @@ describe("user-template-store", () => {
   it("persists runtime app settings independently from document snapshots", async () => {
     const initialSettings = await loadRuntimeAppSettings()
     expect(initialSettings.permissionNudgeSeen).toBe(false)
+    expect(initialSettings.showTextBoundingBoxes).toBe(false)
 
     const updatedSettings = await saveRuntimeAppSettings({
       permissionNudgeSeen: true,
+      showTextBoundingBoxes: true,
       defaultRenderOptions: {
         ...initialSettings.defaultRenderOptions,
         threshold: 144,
@@ -360,10 +362,12 @@ describe("user-template-store", () => {
     })
 
     expect(updatedSettings.permissionNudgeSeen).toBe(true)
+    expect(updatedSettings.showTextBoundingBoxes).toBe(true)
     expect(updatedSettings.defaultRenderOptions.threshold).toBe(144)
 
     const reloaded = await loadRuntimeAppSettings()
     expect(reloaded.permissionNudgeSeen).toBe(true)
+    expect(reloaded.showTextBoundingBoxes).toBe(true)
     expect(reloaded.defaultRenderOptions.threshold).toBe(144)
   })
 
@@ -385,6 +389,7 @@ describe("user-template-store", () => {
 
     await saveRuntimeAppSettings({
       permissionNudgeSeen: true,
+      showTextBoundingBoxes: true,
     })
 
     const snapshot = await exportRuntimeSnapshot()
@@ -393,6 +398,7 @@ describe("user-template-store", () => {
     expect(snapshot.versions).toHaveLength(2)
     expect(snapshot.workingCopies).toHaveLength(1)
     expect(snapshot.settings.permissionNudgeSeen).toBe(true)
+    expect(snapshot.settings.showTextBoundingBoxes).toBe(true)
 
     await resetUserTemplateStoreForTest()
     await replaceRuntimeSnapshot(snapshot)
@@ -420,6 +426,7 @@ describe("user-template-store", () => {
 
     const restoredSettings = await loadRuntimeAppSettings()
     expect(restoredSettings.permissionNudgeSeen).toBe(true)
+    expect(restoredSettings.showTextBoundingBoxes).toBe(true)
   })
 
   it("purges archived templates together with their version history and working copy", async () => {

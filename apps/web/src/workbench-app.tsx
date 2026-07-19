@@ -3102,6 +3102,21 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
                 {controller.selectedPrinter?.name ?? controller.browserPrinter?.name ?? "未选择"}
               </strong>
             </div>
+            <div className="tm-list-item">
+              <div className="grid gap-1">
+                <span>文字 BBOX</span>
+                <span className="text-xs text-muted-foreground">控制画布里的红色虚线文字框。</span>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant={controller.showTextBoundingBoxes ? "default" : "outline"}
+                aria-pressed={controller.showTextBoundingBoxes}
+                onClick={() => controller.updateShowTextBoundingBoxes((current) => !current)}
+              >
+                {controller.showTextBoundingBoxes ? "隐藏文字 BBOX" : "显示文字 BBOX"}
+              </Button>
+            </div>
           </CardContent>
         </Card>
 

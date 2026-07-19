@@ -1347,6 +1347,40 @@ export const CanvasWorkspaceTextSelected: Story = {
   },
 }
 
+export const CanvasWorkspaceTextSelectedBounds: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-selected",
+    storyStateOverrides: {
+      showTextBoundingBoxes: true,
+    },
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "Shows the canvas-only text BBOX overlay used to inspect measured text bounds without affecting the printable preview pipeline.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await canvas.findByText("当前草稿")
+    const stageShell = canvasElement.querySelector("[data-testid='canvas-stage-shell']")
+    if (!(stageShell instanceof HTMLElement)) {
+      throw new Error("Missing canvas stage shell")
+    }
+    await expect(stageShell).toHaveAttribute("data-show-text-bounding-boxes", "true")
+  },
+}
+
 export const CanvasWorkspaceTextAdaptiveSizing: Story = {
   args: {
     context: runtimeContext,
@@ -1406,6 +1440,28 @@ export const CanvasWorkspaceTextFontMetrics: Story = {
     const canvas = within(canvasElement)
     await canvas.findByDisplayValue("Noto Sans SC BBOX")
     await canvas.findByText("字体")
+  },
+}
+
+export const CanvasWorkspaceTextFontMetricsStatic: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "text-font-metrics",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "Static text font metrics canvas scenario without Storybook play interactions. Useful for manual preview parity checks.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
   },
 }
 

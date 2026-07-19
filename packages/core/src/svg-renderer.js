@@ -42,7 +42,7 @@ function renderTextElement(element, input) {
                 return element.x;
         }
     })();
-    const layout = resolveTextLayout({
+    const layout = element.resolvedLayout ?? resolveTextLayout({
         text: resolved,
         fontSize: element.fontSize,
         width,
@@ -83,10 +83,14 @@ function renderTextElement(element, input) {
             .join("")
         : layout.lineLayouts
             .map((line) => {
+            const visualWidth = line.visualWidth ?? line.width;
+            const widthLockAttrs = element.resolvedLayout && visualWidth > 0
+                ? ` textLength="${formatNumber(visualWidth)}" lengthAdjust="spacingAndGlyphs"`
+                : "";
             const justifyAttrs = line.letterSpacing > 0
                 ? ` textLength="${formatNumber(width)}" lengthAdjust="spacing"`
                 : "";
-            return `<text x="${formatNumber(line.x)}" y="${formatNumber(line.y)}" font-size="${formatNumber(layout.resolvedFontSize)}" font-weight="${element.fontWeight}" text-anchor="start" font-family="${fontFamily}" fill="#111111"${justifyAttrs}>${escapeXml(line.text)}</text>`;
+            return `<text x="${formatNumber(line.x)}" y="${formatNumber(line.y)}" font-size="${formatNumber(layout.resolvedFontSize)}" font-weight="${element.fontWeight}" text-anchor="start" font-family="${fontFamily}" fill="#111111"${justifyAttrs || widthLockAttrs}>${escapeXml(line.text)}</text>`;
         })
             .join("");
     const contentMarkup = `<g transform="${transform}">${textMarkup}</g>`;

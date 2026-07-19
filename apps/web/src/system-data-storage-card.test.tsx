@@ -130,6 +130,7 @@ describe("SystemDataStorageCard", () => {
                 xOffsetDots: 0,
               },
               permissionNudgeSeen: true,
+              showTextBoundingBoxes: false,
             },
             templates: [],
             versions: [],

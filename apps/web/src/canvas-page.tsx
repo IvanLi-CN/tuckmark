@@ -4498,7 +4498,10 @@ function CanvasOutput({
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   const source = React.useMemo(
-    () => toCanvasPrintSource(state.draft, controller.renderOptions),
+    () =>
+      toCanvasPrintSource(state.draft, controller.renderOptions, {
+        measureText: measureCanvasTextLine,
+      }),
     [controller.renderOptions, state.draft]
   )
 
@@ -4829,8 +4832,10 @@ const measureCanvasTextLine: TextMeasureFunction = ({ text, fontSize, fontFamily
 
 function CanvasTextElementNode({
   element,
+  showTextBoundingBoxes,
 }: {
   element: Extract<CanvasDraftElement, { kind: "text" }>
+  showTextBoundingBoxes: boolean
 }) {
   const textRef = React.useRef<Konva.Text>(null)
   const layout = resolveTextLayout({
@@ -4870,7 +4875,7 @@ function CanvasTextElementNode({
   const visibleContentHeight = Math.max(0, visibleContentBottom - visibleContentTop)
   return (
     <Group clipX={0} clipY={0} clipWidth={element.width} clipHeight={element.height}>
-      {visibleContentWidth > 0 && visibleContentHeight > 0 ? (
+      {showTextBoundingBoxes && visibleContentWidth > 0 && visibleContentHeight > 0 ? (
         <KonvaRect
           x={visibleContentLeft}
           y={visibleContentTop}
@@ -4921,12 +4926,17 @@ function CanvasTextElementNode({
   )
 }
 
-function renderElementNode(element: CanvasDraftElement): React.ReactNode {
+function renderElementNode(
+  element: CanvasDraftElement,
+  showTextBoundingBoxes: boolean
+): React.ReactNode {
   const issue = getElementIssue(element)
 
   switch (element.kind) {
     case "text":
-      return <CanvasTextElementNode element={element} />
+      return (
+        <CanvasTextElementNode element={element} showTextBoundingBoxes={showTextBoundingBoxes} />
+      )
     case "rect":
       return (
         <KonvaRect
@@ -5136,6 +5146,7 @@ function CanvasStageView({
   state,
   readOnly,
   initialSnapGuides,
+  showTextBoundingBoxes,
   onChange,
   onViewportSizeChange,
   onPointerChange,
@@ -5143,6 +5154,7 @@ function CanvasStageView({
   state: CanvasPageState
   readOnly: boolean
   initialSnapGuides: CanvasSnapGuide[]
+  showTextBoundingBoxes: boolean
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
   onViewportSizeChange: (size: StageViewportSize) => void
   onPointerChange: (point: { x: number; y: number } | null) => void
@@ -5559,6 +5571,7 @@ function CanvasStageView({
     <div
       className="tm-stage-shell"
       data-snap-guides={snapGuides.length}
+      data-show-text-bounding-boxes={showTextBoundingBoxes ? "true" : "false"}
       data-snap-guide-signature={
         snapGuides.length > 0
           ? snapGuides.map((guide) => `${guide.axis}:${guide.coordinate}:${guide.kind}`).join("|")
@@ -5694,252 +5707,263 @@ function CanvasStageView({
               scaleX={state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER}
               scaleY={state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER}
             >
-              {state.draft.elements.map((element) => {
-                if (!element.meta.visible) {
-                  return null
-                }
-                const geometry = getElementGeometry(element)
-                const bounds = geometry.bounds
-                return (
-                  <Group
-                    key={element.id}
-                    id={element.id}
-                    ref={(node) => {
-                      nodeRefs.current[element.id] = node
-                      if (!node) {
-                        return
-                      }
-                      const elementNode = node as CanvasElementGroup
-                      if (typeof elementNode.getClientRect !== "function") {
-                        return
-                      }
-                      elementNode.__tuckmarkOriginalGetClientRect ??=
-                        elementNode.getClientRect.bind(elementNode) as Konva.Group["getClientRect"]
-                      if (element.kind === "text") {
-                        elementNode.getClientRect = (config) => {
-                          if (config?.skipTransform) {
-                            return {
-                              x: geometry.localBounds.x,
-                              y: geometry.localBounds.y,
-                              width: geometry.localBounds.width,
-                              height: geometry.localBounds.height,
-                            }
-                          }
-                          return (
-                            elementNode.__tuckmarkOriginalGetClientRect?.(config) ?? {
-                              x: geometry.localBounds.x,
-                              y: geometry.localBounds.y,
-                              width: geometry.localBounds.width,
-                              height: geometry.localBounds.height,
-                            }
-                          )
+              <Group
+                clipX={0}
+                clipY={0}
+                clipWidth={state.draft.width}
+                clipHeight={state.draft.height}
+              >
+                {state.draft.elements.map((element) => {
+                  if (!element.meta.visible) {
+                    return null
+                  }
+                  const geometry = getElementGeometry(element)
+                  const bounds = geometry.bounds
+                  return (
+                    <Group
+                      key={element.id}
+                      id={element.id}
+                      ref={(node) => {
+                        nodeRefs.current[element.id] = node
+                        if (!node) {
+                          return
                         }
-                      } else if (elementNode.__tuckmarkOriginalGetClientRect) {
-                        elementNode.getClientRect = elementNode.__tuckmarkOriginalGetClientRect
-                      }
-                    }}
-                    x={geometry.stagePosition.x}
-                    y={geometry.stagePosition.y}
-                    offsetX={geometry.rotationOrigin.x}
-                    offsetY={geometry.rotationOrigin.y}
-                    rotation={"rotation" in element ? (element.rotation ?? 0) : 0}
-                    draggable={
-                      !readOnly &&
-                      !state.pendingPaste &&
-                      !element.meta.locked &&
-                      !state.spacePressed &&
-                      !state.editingId
-                    }
-                    dragBoundFunc={(position) => {
-                      const session = elementDragSessionRef.current
-                      const baseDraft = session?.baseDraft ?? state.liveDraft
-                      const movedIds =
-                        session?.movedIds ??
-                        (state.selectedIds.includes(element.id) ? state.selectedIds : [element.id])
-                      return getSnappedDragAbsolutePosition(
-                        baseDraft,
-                        element.id,
-                        movedIds,
-                        position,
-                        session?.rotationOrigin ?? geometry.rotationOrigin,
-                        state.viewport,
-                        state.snapEnabled
-                      )
-                    }}
-                    onClick={(event) => {
-                      if (state.pendingPaste) {
-                        return
-                      }
-                      onChange((current) => ({
-                        ...setSelection(
-                          current,
-                          element.id,
-                          event.evt.shiftKey || event.evt.metaKey || event.evt.ctrlKey
-                        ),
-                        focus: "center-right",
-                        activePanel: "attributes",
-                      }))
-                    }}
-                    onTap={(event) => {
-                      if (state.pendingPaste) {
-                        return
-                      }
-                      onChange((current) => ({
-                        ...setSelection(
-                          current,
-                          element.id,
-                          event.evt.shiftKey || event.evt.metaKey || event.evt.ctrlKey
-                        ),
-                        focus: "center-right",
-                        activePanel: "attributes",
-                      }))
-                    }}
-                    onDblClick={() =>
-                      readOnly || state.pendingPaste || element.meta.locked
-                        ? undefined
-                        : onChange((current) => ({
-                            ...current,
-                            editingId: element.kind === "text" ? element.id : current.editingId,
-                            selectedIds: [element.id],
-                          }))
-                    }
-                    onDragStart={(event) => {
-                      if (isTransformerInteractionTarget(event.target)) {
-                        return
-                      }
-                      if (readOnly || state.pendingPaste) {
-                        return
-                      }
-                      event.cancelBubble = true
-                      const movedIds = state.selectedIds.includes(element.id)
-                        ? state.selectedIds
-                        : [element.id]
-                      elementDragSessionRef.current = {
-                        baseDraft: cloneDraft(state.liveDraft),
-                        draggedId: element.id,
-                        movedIds,
-                        rotationOrigin: geometry.rotationOrigin,
-                        lastDeltaX: 0,
-                        lastDeltaY: 0,
-                      }
-                      onChange((current) => ({
-                        ...current,
-                        selectedIds: movedIds,
-                        editingId: null,
-                        focus: "center-right",
-                        activePanel: "attributes",
-                      }))
-                    }}
-                    onDragMove={(event) => {
-                      if (isTransformerInteractionTarget(event.target)) {
-                        return
-                      }
-                      if (readOnly || state.pendingPaste) {
-                        return
-                      }
-                      event.cancelBubble = true
-                      const session = elementDragSessionRef.current
-                      if (!session || session.draggedId !== element.id) {
-                        return
-                      }
-                      const preview = previewElementDragSelection(session, {
-                        x: event.target.x(),
-                        y: event.target.y(),
-                      })
-                      if (!preview) {
-                        return
-                      }
-                      updateSnapGuides(preview.guides)
-                      if (
-                        Math.abs(preview.deltaX - session.lastDeltaX) < 0.001 &&
-                        Math.abs(preview.deltaY - session.lastDeltaY) < 0.001
-                      ) {
-                        return
-                      }
-                      session.lastDeltaX = preview.deltaX
-                      session.lastDeltaY = preview.deltaY
-                      onChange((current) => ({
-                        ...current,
-                        liveDraft: preview.draft,
-                        draft: preview.draft,
-                        selectedIds: preview.movedIds,
-                        editingId: null,
-                        storageMode: "persisted",
-                      }))
-                    }}
-                    onDragEnd={(event) => {
-                      if (isTransformerInteractionTarget(event.target)) {
-                        return
-                      }
-                      if (readOnly || state.pendingPaste) {
-                        return
-                      }
-                      event.cancelBubble = true
-                      const session = elementDragSessionRef.current
-                      elementDragSessionRef.current = null
-                      updateSnapGuides([])
-                      if (!session || session.draggedId !== element.id) {
-                        onChange((current) =>
-                          (() => {
-                            const preview = createSelectionDragPreview(
-                              current.liveDraft,
-                              element.id,
-                              [element.id],
-                              { x: event.target.x(), y: event.target.y() },
-                              geometry.rotationOrigin,
-                              current.viewport,
-                              current.snapEnabled
+                        const elementNode = node as CanvasElementGroup
+                        if (typeof elementNode.getClientRect !== "function") {
+                          return
+                        }
+                        elementNode.__tuckmarkOriginalGetClientRect ??=
+                          elementNode.getClientRect.bind(
+                            elementNode
+                          ) as Konva.Group["getClientRect"]
+                        if (element.kind === "text") {
+                          elementNode.getClientRect = (config) => {
+                            if (config?.skipTransform) {
+                              return {
+                                x: geometry.localBounds.x,
+                                y: geometry.localBounds.y,
+                                width: geometry.localBounds.width,
+                                height: geometry.localBounds.height,
+                              }
+                            }
+                            return (
+                              elementNode.__tuckmarkOriginalGetClientRect?.(config) ?? {
+                                x: geometry.localBounds.x,
+                                y: geometry.localBounds.y,
+                                width: geometry.localBounds.width,
+                                height: geometry.localBounds.height,
+                              }
                             )
-                            return preview
-                              ? applyDraftUpdate(current, () => preview.draft)
-                              : current
-                          })()
+                          }
+                        } else if (elementNode.__tuckmarkOriginalGetClientRect) {
+                          elementNode.getClientRect = elementNode.__tuckmarkOriginalGetClientRect
+                        }
+                      }}
+                      x={geometry.stagePosition.x}
+                      y={geometry.stagePosition.y}
+                      offsetX={geometry.rotationOrigin.x}
+                      offsetY={geometry.rotationOrigin.y}
+                      rotation={"rotation" in element ? (element.rotation ?? 0) : 0}
+                      draggable={
+                        !readOnly &&
+                        !state.pendingPaste &&
+                        !element.meta.locked &&
+                        !state.spacePressed &&
+                        !state.editingId
+                      }
+                      dragBoundFunc={(position) => {
+                        const session = elementDragSessionRef.current
+                        const baseDraft = session?.baseDraft ?? state.liveDraft
+                        const movedIds =
+                          session?.movedIds ??
+                          (state.selectedIds.includes(element.id)
+                            ? state.selectedIds
+                            : [element.id])
+                        return getSnappedDragAbsolutePosition(
+                          baseDraft,
+                          element.id,
+                          movedIds,
+                          position,
+                          session?.rotationOrigin ?? geometry.rotationOrigin,
+                          state.viewport,
+                          state.snapEnabled
                         )
-                        return
+                      }}
+                      onClick={(event) => {
+                        if (state.pendingPaste) {
+                          return
+                        }
+                        onChange((current) => ({
+                          ...setSelection(
+                            current,
+                            element.id,
+                            event.evt.shiftKey || event.evt.metaKey || event.evt.ctrlKey
+                          ),
+                          focus: "center-right",
+                          activePanel: "attributes",
+                        }))
+                      }}
+                      onTap={(event) => {
+                        if (state.pendingPaste) {
+                          return
+                        }
+                        onChange((current) => ({
+                          ...setSelection(
+                            current,
+                            element.id,
+                            event.evt.shiftKey || event.evt.metaKey || event.evt.ctrlKey
+                          ),
+                          focus: "center-right",
+                          activePanel: "attributes",
+                        }))
+                      }}
+                      onDblClick={() =>
+                        readOnly || state.pendingPaste || element.meta.locked
+                          ? undefined
+                          : onChange((current) => ({
+                              ...current,
+                              editingId: element.kind === "text" ? element.id : current.editingId,
+                              selectedIds: [element.id],
+                            }))
                       }
-                      const preview = previewElementDragSelection(session, {
-                        x: event.target.x(),
-                        y: event.target.y(),
-                      })
-                      if (!preview) {
-                        return
-                      }
-                      if (Math.abs(preview.deltaX) < 0.001 && Math.abs(preview.deltaY) < 0.001) {
+                      onDragStart={(event) => {
+                        if (isTransformerInteractionTarget(event.target)) {
+                          return
+                        }
+                        if (readOnly || state.pendingPaste) {
+                          return
+                        }
+                        event.cancelBubble = true
+                        const movedIds = state.selectedIds.includes(element.id)
+                          ? state.selectedIds
+                          : [element.id]
+                        elementDragSessionRef.current = {
+                          baseDraft: cloneDraft(state.liveDraft),
+                          draggedId: element.id,
+                          movedIds,
+                          rotationOrigin: geometry.rotationOrigin,
+                          lastDeltaX: 0,
+                          lastDeltaY: 0,
+                        }
                         onChange((current) => ({
                           ...current,
-                          selectedIds: preview.movedIds,
+                          selectedIds: movedIds,
                           editingId: null,
                           focus: "center-right",
                           activePanel: "attributes",
                         }))
-                        return
-                      }
-                      onChange((current) => {
-                        const next = pushHistory(current, preview.draft)
-                        return {
-                          ...next,
+                      }}
+                      onDragMove={(event) => {
+                        if (isTransformerInteractionTarget(event.target)) {
+                          return
+                        }
+                        if (readOnly || state.pendingPaste) {
+                          return
+                        }
+                        event.cancelBubble = true
+                        const session = elementDragSessionRef.current
+                        if (!session || session.draggedId !== element.id) {
+                          return
+                        }
+                        const preview = previewElementDragSelection(session, {
+                          x: event.target.x(),
+                          y: event.target.y(),
+                        })
+                        if (!preview) {
+                          return
+                        }
+                        updateSnapGuides(preview.guides)
+                        if (
+                          Math.abs(preview.deltaX - session.lastDeltaX) < 0.001 &&
+                          Math.abs(preview.deltaY - session.lastDeltaY) < 0.001
+                        ) {
+                          return
+                        }
+                        session.lastDeltaX = preview.deltaX
+                        session.lastDeltaY = preview.deltaY
+                        onChange((current) => ({
+                          ...current,
+                          liveDraft: preview.draft,
+                          draft: preview.draft,
                           selectedIds: preview.movedIds,
                           editingId: null,
-                          focus: "center-right",
-                          activePanel: "attributes",
                           storageMode: "persisted",
+                        }))
+                      }}
+                      onDragEnd={(event) => {
+                        if (isTransformerInteractionTarget(event.target)) {
+                          return
                         }
-                      })
-                    }}
-                  >
-                    <KonvaRect
-                      x={geometry.localBounds.x}
-                      y={geometry.localBounds.y}
-                      width={Math.max(bounds.width, 1)}
-                      height={Math.max(bounds.height, 1)}
-                      fill="rgba(255,255,255,0.001)"
-                    />
-                    {state.editingId === element.id && element.kind === "text"
-                      ? null
-                      : renderElementNode(element)}
-                  </Group>
-                )
-              })}
+                        if (readOnly || state.pendingPaste) {
+                          return
+                        }
+                        event.cancelBubble = true
+                        const session = elementDragSessionRef.current
+                        elementDragSessionRef.current = null
+                        updateSnapGuides([])
+                        if (!session || session.draggedId !== element.id) {
+                          onChange((current) =>
+                            (() => {
+                              const preview = createSelectionDragPreview(
+                                current.liveDraft,
+                                element.id,
+                                [element.id],
+                                { x: event.target.x(), y: event.target.y() },
+                                geometry.rotationOrigin,
+                                current.viewport,
+                                current.snapEnabled
+                              )
+                              return preview
+                                ? applyDraftUpdate(current, () => preview.draft)
+                                : current
+                            })()
+                          )
+                          return
+                        }
+                        const preview = previewElementDragSelection(session, {
+                          x: event.target.x(),
+                          y: event.target.y(),
+                        })
+                        if (!preview) {
+                          return
+                        }
+                        if (Math.abs(preview.deltaX) < 0.001 && Math.abs(preview.deltaY) < 0.001) {
+                          onChange((current) => ({
+                            ...current,
+                            selectedIds: preview.movedIds,
+                            editingId: null,
+                            focus: "center-right",
+                            activePanel: "attributes",
+                          }))
+                          return
+                        }
+                        onChange((current) => {
+                          const next = pushHistory(current, preview.draft)
+                          return {
+                            ...next,
+                            selectedIds: preview.movedIds,
+                            editingId: null,
+                            focus: "center-right",
+                            activePanel: "attributes",
+                            storageMode: "persisted",
+                          }
+                        })
+                      }}
+                    >
+                      <KonvaRect
+                        x={geometry.localBounds.x}
+                        y={geometry.localBounds.y}
+                        width={Math.max(bounds.width, 1)}
+                        height={Math.max(bounds.height, 1)}
+                        fill="rgba(255,255,255,0.001)"
+                      />
+                      {state.editingId === element.id && element.kind === "text"
+                        ? null
+                        : renderElementNode(element, showTextBoundingBoxes)}
+                    </Group>
+                  )
+                })}
+              </Group>
 
               {editingTextElement && editingTextGeometry ? (
                 <KonvaRect
@@ -7187,6 +7211,7 @@ export function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps
                 state={state}
                 readOnly={interactionLocked}
                 initialSnapGuides={initialSnapGuides}
+                showTextBoundingBoxes={controller.showTextBoundingBoxes}
                 onChange={setState}
                 onViewportSizeChange={setStageViewportSize}
                 onPointerChange={handleStagePointerChange}

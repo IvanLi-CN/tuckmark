@@ -169,7 +169,12 @@ describe("text layout", () => {
     expect(layout.textOffsetX).toBe(0.5)
     expect(layout.textOffsetY).toBe(-2)
     expect(layout.baselineOffsetY).toBe(7)
-    expect(layout.lineLayouts[0]).toMatchObject({ x: 0.5, y: 7, width: 24 })
+    expect(layout.lineLayouts[0]).toMatchObject({
+      x: 0.5,
+      y: 7,
+      width: 24,
+      visualWidth: 24,
+    })
   })
 
   it("wraps latin text by estimated visual width when the container is narrow", () => {
