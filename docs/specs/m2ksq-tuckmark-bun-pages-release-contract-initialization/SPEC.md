@@ -77,6 +77,14 @@ and a reproducible worktree bootstrap path.
 
 - PR labels are the release-intent source of truth.
 - Mainline release uses a durable snapshot and supports backfill.
+- Published GitHub Releases must include human-readable release notes generated
+  from the verified release snapshot and merged PR metadata.
+- Releasable snapshots fail publication before `gh release create` when PR
+  context is missing or the generated release notes do not satisfy the required
+  `Included Change`, `Release Metadata`, and `Bundles` sections.
+- Release publication emits a `release-context-<merge_sha>` artifact containing
+  `release-context.json` and `release-notes.md` for failure analysis and
+  rerun context.
 - Pages deployment is separate from GitHub Release publication.
 - Published GitHub Releases and automated release publication trigger a fresh
   Pages deployment with release tag metadata so the browser-static footer shows
@@ -122,6 +130,8 @@ and a reproducible worktree bootstrap path.
 - `version.json` stays aligned with the active Pages build metadata and is not
   precached by the service worker.
 - Release can publish stable and preview bundles from durable snapshots
+- Release notes show the merged PR title/link, release type/channel, merge SHA,
+  and published bundles instead of a one-line placeholder body
 - Pages redeploys after release publication display the published release tag
   in footer metadata and expose `build <shortsha>` via tooltip
 - Untagged `main` Pages deploys display `build <shortsha>` only in footer

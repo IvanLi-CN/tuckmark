@@ -99,8 +99,20 @@
 - `.github/workflows/pages.yml` runs on `main` pushes, manual dispatch, and
   published GitHub Releases. Release-triggered runs check out the published tag.
   Manual dispatch can also receive a `release_tag` input.
+- `.github/scripts/release-notes.mjs` reads `work/release/release-plan.json`,
+  loads the merged PR metadata, writes `work/release/release-context.json` and
+  `work/release/release-notes.md`, and rejects releasable snapshots that cannot
+  produce the required `Included Change`, `Release Metadata`, and `Bundles`
+  sections.
 - `.github/workflows/release.yml` dispatches `pages.yml` with the newly published
-  release tag after `gh release create` succeeds. Pages always injects
-  `TUCKMARK_BUILD_REF`, and tagged deploys also inject `TUCKMARK_APP_VERSION`,
-  so the browser-static footer metadata matches the release/build that
-  triggered the redeploy.
+  release tag after `gh release create` succeeds. The workflow also uploads a
+  `release-context-<merge_sha>` artifact and publishes through
+  `--notes-file work/release/release-notes.md` instead of an inline placeholder
+  body. Pages always injects `TUCKMARK_BUILD_REF`, and tagged deploys also
+  inject `TUCKMARK_APP_VERSION`, so the browser-static footer metadata matches
+  the release/build that triggered the redeploy.
+- `.github/workflows/notify-release-failure.yml` attempts to download the
+  release-context artifact from the failed release run and includes the release
+  version, PR number, channel, type label, merge SHA, and run URL when that
+  context is available. If the artifact is unavailable, the notifier still
+  emits the workflow run id and URL instead of failing a second time.
