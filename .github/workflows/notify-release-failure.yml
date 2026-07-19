@@ -10,8 +10,34 @@ jobs:
     if: github.event.workflow_run.conclusion != 'success'
     name: Notify Release Failure
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     steps:
+      - name: Download release context artifact
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          pattern: release-context-*
+          merge-multiple: true
+          path: work/release-context
       - name: Emit failure context
         run: |
           echo "Release workflow failed for run ${{ github.event.workflow_run.id }}"
           echo "URL: ${{ github.event.workflow_run.html_url }}"
+          if [ -f work/release-context/release-context.json ]; then
+            node -e '
+              const fs = require("fs")
+              const context = JSON.parse(fs.readFileSync("work/release-context/release-context.json", "utf8"))
+              console.log(`Release version: ${context.release_version}`)
+              console.log(`Pull request: #${context.pr_number}`)
+              console.log(`Release type: ${context.type_label}`)
+              console.log(`Channel: ${context.channel_label}`)
+              console.log(`Merge commit: ${context.merge_sha}`)
+            '
+          else
+            echo "Release context artifact unavailable"
+          fi

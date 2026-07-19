@@ -53,6 +53,29 @@ publishes:
 - `stable`: `vX.Y.Z`
 - `preview`: `vX.Y.Z-preview.<n>`
 
+Published GitHub Releases must include human-readable release notes generated
+from the verified release snapshot and its merged pull request context. A
+single-line placeholder body is not a valid release.
+
+The generated release notes follow one contract:
+
+- an opening summary line states the release class, release type, version, and
+  merged PR title
+- `Included Change` lists the merged PR link and title
+- `Release Metadata` lists the release version, `channel:*`, `type:*`,
+  `merge_sha`, and PR link
+- `Bundles` lists the published release artifacts
+
+Before publication, the release workflow must also emit a durable
+`release-context-<merge_sha>` artifact containing:
+
+- `release-context.json`
+- `release-notes.md`
+
+If a releasable snapshot is missing PR context, the PR metadata cannot be
+loaded, or any required release-notes section is absent, the release workflow
+must fail before `gh release create`.
+
 Preview releases are GitHub prereleases and must not override the owner-facing
 Pages deployment accidentally through an arbitrary non-contract workflow path.
 
@@ -65,6 +88,7 @@ The release workflow uploads:
 
 - `runtime bundle`
 - `CLI bundle`
+- `release-context-<merge_sha>` artifact with release notes and release context
 
 `workflow_dispatch` can backfill pending snapshots without recomputing release
 intent from a PR head.
