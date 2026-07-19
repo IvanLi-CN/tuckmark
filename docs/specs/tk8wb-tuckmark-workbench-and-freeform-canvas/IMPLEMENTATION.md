@@ -421,6 +421,9 @@
   - the shared text layout resolves a natural visible text BBOX, then aligns
     that BBOX inside the element container according to the selected
     horizontal and vertical alignment
+  - the stage-only red dashed text BBOX is controlled by the persisted
+    `文字 BBOX` system setting, which defaults to hidden and is not part of
+    printable output
   - adaptive sizing forces `effectiveAutoWrap=false`, measures natural text
     height through the shared layout, and writes a corrected `fontSize` back
     after a second measurement pass so Konva, inline editing, SVG preview, and
@@ -451,6 +454,11 @@
   - the editor grid is rendered above that paper and never enters print output
   - printable content is rendered from the same normalized SVG semantics used
     by preview generation
+  - preview compilation resolves text with the browser's canvas measurement
+    function, scales that layout into output dots, and passes visible ink width
+    to SVG `textLength` fitting so adaptive horizontal stretch matches the stage
+- Runtime app settings migrate older records to the current schema while
+  preserving the default-off `文字 BBOX` setting for existing profiles.
 - Web now self-hosts the bundled canvas text fonts through local Fontsource
   packages instead of depending on browser-default availability:
   - `styles.css` imports the bundled families directly from npm packages
@@ -485,6 +493,7 @@
   - selected text
   - flat text-font selector preview with the expanded named-font pool
   - text-font metrics comparison for `Noto Sans SC`
+  - selected text with the persisted text BBOX overlay explicitly enabled
   - selected rect with radius editing
   - selected line with endpoint editing
   - selected barcode

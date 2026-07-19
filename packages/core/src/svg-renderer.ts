@@ -91,27 +91,29 @@ function renderTextElement(
         return element.x
     }
   })()
-  const layout = resolveTextLayout({
-    text: resolved,
-    fontSize: element.fontSize,
-    width,
-    height,
-    lineHeight: element.lineHeight,
-    fontFamily: element.fontFamily,
-    fontWeight: element.fontWeight,
-    align: element.align,
-    maxLines: element.maxLines,
-    verticalAlign: element.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN,
-    stretchXGrow: element.stretchXGrow,
-    stretchXShrink: element.stretchXShrink,
-    stretchYGrow: element.stretchYGrow,
-    stretchYShrink: element.stretchYShrink,
-    stretchX: element.stretchX ?? false,
-    stretchY: element.stretchY ?? false,
-    autoWrap: element.autoWrap ?? true,
-    adaptiveFontSize: element.adaptiveFontSize ?? false,
-    verticalText: element.verticalText ?? false,
-  })
+  const layout =
+    element.resolvedLayout ??
+    resolveTextLayout({
+      text: resolved,
+      fontSize: element.fontSize,
+      width,
+      height,
+      lineHeight: element.lineHeight,
+      fontFamily: element.fontFamily,
+      fontWeight: element.fontWeight,
+      align: element.align,
+      maxLines: element.maxLines,
+      verticalAlign: element.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN,
+      stretchXGrow: element.stretchXGrow,
+      stretchXShrink: element.stretchXShrink,
+      stretchYGrow: element.stretchYGrow,
+      stretchYShrink: element.stretchYShrink,
+      stretchX: element.stretchX ?? false,
+      stretchY: element.stretchY ?? false,
+      autoWrap: element.autoWrap ?? true,
+      adaptiveFontSize: element.adaptiveFontSize ?? false,
+      verticalText: element.verticalText ?? false,
+    })
   const containerY =
     element.height === undefined && !layout.verticalText
       ? element.y - layout.baselineOffsetY
@@ -138,11 +140,16 @@ function renderTextElement(
         .join("")
     : layout.lineLayouts
         .map((line) => {
+          const visualWidth = line.visualWidth ?? line.width
+          const widthLockAttrs =
+            element.resolvedLayout && visualWidth > 0
+              ? ` textLength="${formatNumber(visualWidth)}" lengthAdjust="spacingAndGlyphs"`
+              : ""
           const justifyAttrs =
             line.letterSpacing > 0
               ? ` textLength="${formatNumber(width)}" lengthAdjust="spacing"`
               : ""
-          return `<text x="${formatNumber(line.x)}" y="${formatNumber(line.y)}" font-size="${formatNumber(layout.resolvedFontSize)}" font-weight="${element.fontWeight}" text-anchor="start" font-family="${fontFamily}" fill="#111111"${justifyAttrs}>${escapeXml(line.text)}</text>`
+          return `<text x="${formatNumber(line.x)}" y="${formatNumber(line.y)}" font-size="${formatNumber(layout.resolvedFontSize)}" font-weight="${element.fontWeight}" text-anchor="start" font-family="${fontFamily}" fill="#111111"${justifyAttrs || widthLockAttrs}>${escapeXml(line.text)}</text>`
         })
         .join("")
   const contentMarkup = `<g transform="${transform}">${textMarkup}</g>`

@@ -4,6 +4,7 @@ import { normalizeCanvasDraftDocumentUnits } from "./lib/canvas-units.js"
 import {
   createDefaultRuntimeAppSettings,
   normalizeRuntimeAppSettings,
+  requiresRuntimeAppSettingsMigration,
   withUpdatedRuntimeAppSettings,
 } from "./runtime-app-settings.js"
 import type {
@@ -1072,13 +1073,21 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
   }
 
   override async loadAppSettings(): Promise<RuntimeStoreAppSettings> {
-    const settings = await this.transaction([APP_SETTINGS_STORE], "readonly", async (stores) => {
-      const record = await readOne<{ key: string; payload: RuntimeStoreAppSettings }>(
+    const record = await this.transaction([APP_SETTINGS_STORE], "readonly", async (stores) => {
+      return await readOne<{ key: string; payload: RuntimeStoreAppSettings }>(
         stores[APP_SETTINGS_STORE],
         APP_SETTINGS_KEY
       )
-      return normalizeRuntimeAppSettings(record?.payload)
     })
+    const settings = normalizeRuntimeAppSettings(record?.payload)
+    if (record?.payload && requiresRuntimeAppSettingsMigration(record.payload)) {
+      await this.transaction([APP_SETTINGS_STORE], "readwrite", async (stores) => {
+        await put(stores[APP_SETTINGS_STORE], {
+          key: APP_SETTINGS_KEY,
+          payload: settings,
+        })
+      })
+    }
     return settings
   }
 

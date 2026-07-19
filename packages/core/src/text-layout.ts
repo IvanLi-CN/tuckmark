@@ -85,6 +85,7 @@ export type TextLayoutLine = {
   x: number
   y: number
   width: number
+  visualWidth: number
   letterSpacing: number
 }
 
@@ -635,6 +636,7 @@ function resolveTextLayoutForFontSize(
             ? baselineOffset - visualTop + index * lineHeight
             : resolvedFontSize * TEXT_VISUAL_ASCENT_RATIO + index * lineHeight,
           width,
+          visualWidth: Math.max(metrics.visualRight - metrics.visualLeft, 0.0001),
           letterSpacing,
         }
       })

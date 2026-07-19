@@ -4,6 +4,7 @@ import { normalizeCanvasDraftDocumentUnits } from "./lib/canvas-units.js"
 import {
   createDefaultRuntimeAppSettings,
   normalizeRuntimeAppSettings,
+  requiresRuntimeAppSettingsMigration,
   withUpdatedRuntimeAppSettings,
 } from "./runtime-app-settings.js"
 import type {
@@ -848,7 +849,15 @@ async function clearTemplateAutosaves(templateId: string) {
 
 async function loadAppSettings() {
   const db = await resolveDb()
-  return readSettingsRecord(db)
+  const row = db.selectObject("select payload from app_settings where key = ?1", [
+    SQLITE_SETTINGS_KEY,
+  ])
+  const stored = row?.payload ? parseJsonColumn<RuntimeStoreAppSettings>(row.payload) : null
+  const settings = normalizeRuntimeAppSettings(stored)
+  if (stored && requiresRuntimeAppSettingsMigration(stored)) {
+    writeSettingsRecord(db, settings)
+  }
+  return settings
 }
 
 async function saveAppSettings(

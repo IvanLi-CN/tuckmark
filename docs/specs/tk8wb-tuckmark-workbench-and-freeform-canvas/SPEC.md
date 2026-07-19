@@ -266,6 +266,8 @@ output.
   - vertical text lays out glyphs top-to-bottom in columns and uses the same
     container clipping, BBOX alignment, wrapping, and stretch contracts as
     horizontal text
+  - the stage-only red dashed text BBOX is controlled by a persisted system
+    setting and defaults to hidden for new and migrated runtime profiles
   - grow and shrink are tracked independently on each axis:
     grow expands natural content only when the container has extra room, and
     shrink compresses it only when the natural content would overflow
@@ -693,6 +695,9 @@ output.
 - Named-font rendering stays aligned across Storybook, browser-static, the
   Konva stage, and SVG/output preview for mixed content such as `20kΩ`, mixed
   Chinese/Latin text, digits, symbols, and mono-width labels.
+- Browser preview compilation carries the browser-measured resolved text layout,
+  including visible ink width, into the normalized canvas definition so SVG
+  fitting uses the same resolved glyph geometry as the editor stage.
 - Canvas workspace exposes type-correct geometry editing: rectangles can adjust
   corner radius, rectangular elements can resize width and height independently,
   triangles resize width and height independently, QR and circle elements stay

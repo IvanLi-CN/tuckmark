@@ -53,6 +53,35 @@ export const templateFieldSchema = z.object({
     multiline: z.boolean().default(false),
     defaultValue: z.string().optional(),
 });
+const resolvedTextLayoutLineSchema = z.object({
+    text: z.string(),
+    x: z.number(),
+    y: z.number(),
+    width: z.number().nonnegative(),
+    visualWidth: z.number().nonnegative().optional(),
+    letterSpacing: z.number(),
+});
+const resolvedTextLayoutGlyphSchema = z.object({
+    text: z.string(),
+    x: z.number(),
+    y: z.number(),
+});
+export const resolvedTextLayoutSchema = z.object({
+    lineLayouts: z.array(resolvedTextLayoutLineSchema),
+    glyphs: z.array(resolvedTextLayoutGlyphSchema),
+    verticalText: z.boolean(),
+    resolvedFontSize: z.number().positive(),
+    lineHeight: z.number().positive(),
+    contentX: z.number(),
+    contentY: z.number(),
+    contentWidth: z.number().nonnegative(),
+    contentHeight: z.number().nonnegative(),
+    textOffsetX: z.number(),
+    textOffsetY: z.number(),
+    baselineOffsetY: z.number(),
+    scaleX: z.number().positive(),
+    scaleY: z.number().positive(),
+});
 export const textElementSchema = z.object({
     kind: z.literal("text"),
     key: z.string().min(1),
@@ -79,6 +108,7 @@ export const textElementSchema = z.object({
     value: z.string().optional(),
     maxLines: z.number().int().positive().optional(),
     rotation: z.number().default(0),
+    resolvedLayout: resolvedTextLayoutSchema.optional(),
 });
 export const rectElementSchema = z.object({
     kind: z.literal("rect"),

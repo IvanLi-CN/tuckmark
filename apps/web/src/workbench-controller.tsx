@@ -83,6 +83,8 @@ import {
 type UiPrintResult = PrintResult | BrowserPrintResult
 const SYNC_PRESET_IDS = ["shipping-wide", "ops-tag", "compact-note"] as const
 const DATA_DIRECTORY_DEBOUNCE_MS = 900
+const STARTUP_RESTORE_SOFT_TIMEOUT_MS = 1500
+const PAINT_FRAME_FALLBACK_TIMEOUT_MS = 120
 type DeviceDrawerAction = "connect-browser-printer" | "probe-printer" | "refresh-setup"
 type DeviceDrawerSection = "browser-direct" | "service-api"
 
@@ -118,6 +120,7 @@ export type WorkbenchStoryStateOverrides = {
   deviceDrawerBusyAction?: DeviceDrawerAction | null
   deviceDrawerFeedback?: WorkbenchDeviceDrawerFeedback | null
   directorySetupNudgeOpen?: boolean
+  showTextBoundingBoxes?: boolean
 }
 
 type StartupStepId =
@@ -246,10 +249,20 @@ function waitForPaintFrames(frameCount = 1): Promise<void> {
   }
 
   return new Promise((resolve) => {
+    let settled = false
     let remaining = frameCount
+    const timeoutId = window.setTimeout(() => {
+      settled = true
+      resolve()
+    }, frameCount * PAINT_FRAME_FALLBACK_TIMEOUT_MS)
     const step = () => {
+      if (settled) {
+        return
+      }
       remaining -= 1
       if (remaining <= 0) {
+        window.clearTimeout(timeoutId)
+        settled = true
         resolve()
         return
       }
@@ -345,6 +358,9 @@ export function useWorkbenchController({
   >("none")
   const [preferredPrinterName, setPreferredPrinterName] = React.useState("")
   const [renderOptions, setRenderOptionsState] = React.useState<RenderOptions>(defaultRenderOptions)
+  const [showTextBoundingBoxes, setShowTextBoundingBoxes] = React.useState(
+    storyStateOverrides?.showTextBoundingBoxes ?? false
+  )
   const [preview, setPreview] = React.useState<PreviewResult | null>(null)
   const [artifactData, setArtifactData] = React.useState<ArtifactData | null>(null)
   const [previewPrintSource, setPreviewPrintSource] = React.useState<BrowserPrintSource | null>(
@@ -472,6 +488,9 @@ export function useWorkbenchController({
     if ("directorySetupNudgeOpen" in storyStateOverrides) {
       setDirectorySetupNudgeOpen(Boolean(storyStateOverrides.directorySetupNudgeOpen))
     }
+    if ("showTextBoundingBoxes" in storyStateOverrides) {
+      setShowTextBoundingBoxes(Boolean(storyStateOverrides.showTextBoundingBoxes))
+    }
   }, [storyStateOverrides])
 
   const setRenderOptions = React.useCallback((next: React.SetStateAction<RenderOptions>) => {
@@ -483,6 +502,16 @@ export function useWorkbenchController({
       const resolved = typeof next === "function" ? next(current) : next
       void saveRuntimeAppSettings({
         defaultRenderOptions: resolved,
+      })
+      return resolved
+    })
+  }, [])
+
+  const updateShowTextBoundingBoxes = React.useCallback((next: React.SetStateAction<boolean>) => {
+    setShowTextBoundingBoxes((current) => {
+      const resolved = typeof next === "function" ? next(current) : next
+      void saveRuntimeAppSettings({
+        showTextBoundingBoxes: resolved,
       })
       return resolved
     })
@@ -679,8 +708,11 @@ export function useWorkbenchController({
   const refreshRenderOptionsFromStore = React.useCallback(async () => {
     const settings = await loadRuntimeAppSettings()
     setRenderOptionsState(settings.defaultRenderOptions)
+    if (!("showTextBoundingBoxes" in (storyStateOverrides ?? {}))) {
+      setShowTextBoundingBoxes(settings.showTextBoundingBoxes)
+    }
     return settings
-  }, [])
+  }, [storyStateOverrides])
 
   const runDataDirectoryTask = React.useCallback(
     async <T,>(key: string, task: () => Promise<T>): Promise<T | undefined> => {
@@ -791,7 +823,25 @@ export function useWorkbenchController({
 
     void (async () => {
       try {
-        await restoreRuntimeFromConfiguredDirectoryIfNeeded()
+        const restoreTask = restoreRuntimeFromConfiguredDirectoryIfNeeded()
+          .then(async (result) => {
+            if (result === "restored" && !cancelled) {
+              await Promise.allSettled([
+                refreshUserTemplates(),
+                refreshArchivedUserTemplates(),
+                refreshRenderOptionsFromStore(),
+                refreshDataDirectoryStatus(),
+              ])
+            }
+            return result
+          })
+          .catch(() => "skipped" as const)
+        await Promise.race([
+          restoreTask,
+          new Promise<"timeout">((resolve) => {
+            window.setTimeout(() => resolve("timeout"), STARTUP_RESTORE_SOFT_TIMEOUT_MS)
+          }),
+        ])
 
         if (shouldShowStartupShell) {
           if (initialRoutePath === "/templates") {
@@ -1711,6 +1761,7 @@ export function useWorkbenchController({
     refreshSetup,
     rememberPrinterSelection,
     renderOptions,
+    showTextBoundingBoxes,
     refreshDataDirectoryStatus,
     refreshArchivedUserTemplates,
     resetDeviceDrawerState,
@@ -1725,6 +1776,7 @@ export function useWorkbenchController({
     setProbeResult,
     setRenderOptions,
     updateRenderOptions,
+    updateShowTextBoundingBoxes,
     setRecentActivity,
     deferredHydrationPending,
     startupSyncReady,

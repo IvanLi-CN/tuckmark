@@ -6,9 +6,12 @@ import {
   getTextNaturalHeight,
   normalizeTextLineHeight,
   presetTemplateData,
+  type ResolvedTextLayout,
   resolveTextAxisFit,
   resolveTextLayout,
   type TemplateDefinition,
+  type TextLayout,
+  type TextMeasureFunction,
   type UserTemplatePackage,
 } from "../../../packages/core/src/web.js"
 
@@ -691,6 +694,36 @@ function inferLayerNameFromTemplateElement(
       .replace(/\b\w/g, (token) => token.toUpperCase())
   }
   return CANVAS_TOOL_LABELS[element.kind]
+}
+
+function scaleResolvedTextLayout(layout: TextLayout, factor: number): ResolvedTextLayout {
+  return {
+    lineLayouts: layout.lineLayouts.map((line) => ({
+      text: line.text,
+      x: line.x * factor,
+      y: line.y * factor,
+      width: line.width * factor,
+      visualWidth: line.visualWidth * factor,
+      letterSpacing: line.letterSpacing * factor,
+    })),
+    glyphs: layout.glyphs.map((glyph) => ({
+      text: glyph.text,
+      x: glyph.x * factor,
+      y: glyph.y * factor,
+    })),
+    verticalText: layout.verticalText,
+    resolvedFontSize: layout.resolvedFontSize * factor,
+    lineHeight: layout.lineHeight * factor,
+    contentX: layout.contentX * factor,
+    contentY: layout.contentY * factor,
+    contentWidth: layout.contentWidth * factor,
+    contentHeight: layout.contentHeight * factor,
+    textOffsetX: layout.textOffsetX * factor,
+    textOffsetY: layout.textOffsetY * factor,
+    baselineOffsetY: layout.baselineOffsetY * factor,
+    scaleX: layout.scaleX,
+    scaleY: layout.scaleY,
+  }
 }
 
 export function createDraftFromSystemTemplate(template: TemplateDefinition): CanvasDraftDocument {
@@ -1536,14 +1569,46 @@ export function translateElement(
 }
 
 export function compileDraftElement(
-  element: CanvasDraftElement
+  element: CanvasDraftElement,
+  options?: {
+    measureText?: TextMeasureFunction
+    layoutScaleFactor?: number
+    layoutSourceElement?: CanvasDraftElement
+  }
 ): DirectCanvasDefinition["elements"][number] {
   const normalized = normalizeMonochromeElement(element)
   const resolvedKey =
     isBindableKind(normalized) && normalized.binding ? normalized.binding.fieldKey : normalized.id
 
   switch (normalized.kind) {
-    case "text":
+    case "text": {
+      const layoutSource =
+        options?.layoutSourceElement?.kind === "text" ? options.layoutSourceElement : normalized
+      const resolvedLayout = scaleResolvedTextLayout(
+        resolveTextLayout({
+          text: layoutSource.value,
+          fontSize: layoutSource.fontSize,
+          width: layoutSource.width,
+          height: layoutSource.height,
+          lineHeight: layoutSource.lineHeight,
+          fontFamily: layoutSource.fontFamily,
+          fontWeight: layoutSource.fontWeight,
+          align: layoutSource.align,
+          maxLines: layoutSource.maxLines,
+          verticalAlign: layoutSource.verticalAlign,
+          stretchXGrow: layoutSource.stretchXGrow,
+          stretchXShrink: layoutSource.stretchXShrink,
+          stretchYGrow: layoutSource.stretchYGrow,
+          stretchYShrink: layoutSource.stretchYShrink,
+          stretchX: layoutSource.stretchX,
+          stretchY: layoutSource.stretchY,
+          autoWrap: layoutSource.autoWrap,
+          adaptiveFontSize: layoutSource.adaptiveFontSize,
+          verticalText: layoutSource.verticalText,
+          measureText: options?.measureText,
+        }),
+        options?.layoutScaleFactor ?? 1
+      )
       return {
         kind: "text",
         key: resolvedKey,
@@ -1568,7 +1633,9 @@ export function compileDraftElement(
         value: normalized.value,
         maxLines: normalized.maxLines,
         rotation: normalizeRotation(normalized.rotation),
+        resolvedLayout,
       }
+    }
     case "rect":
       return {
         kind: "rect",
@@ -1652,54 +1719,74 @@ export function compileDraftElement(
 }
 
 export function compileDraftToCanvasDefinition(
-  document: CanvasDraftDocument
+  document: CanvasDraftDocument,
+  options?: {
+    measureText?: TextMeasureFunction
+  }
 ): DirectCanvasDefinition {
   const dotsDocument = canvasDraftDocumentToDots(document)
+  const visibleSourceElements = document.elements.filter((element) => element.meta.visible)
+  const visibleDotsElements = dotsDocument.elements.filter((element) => element.meta.visible)
   return {
     id: dotsDocument.id,
     name: dotsDocument.name,
     width: dotsDocument.width,
     height: dotsDocument.height,
-    elements: dotsDocument.elements
-      .filter((element) => element.meta.visible)
-      .map((element) => compileDraftElement(element)),
+    elements: visibleDotsElements.map((element, index) =>
+      compileDraftElement(element, {
+        measureText: options?.measureText,
+        layoutScaleFactor: CANVAS_DOTS_PER_MILLIMETER,
+        layoutSourceElement: visibleSourceElements[index],
+      })
+    ),
   }
 }
 
 export function compileDraftToFilledCanvasDefinition(
   document: CanvasDraftDocument,
-  input: Record<string, string>
+  input: Record<string, string>,
+  options?: {
+    measureText?: TextMeasureFunction
+  }
 ): DirectCanvasDefinition {
   const dotsDocument = canvasDraftDocumentToDots(document)
   const fieldMap = new Map(
     dotsDocument.fields.map((field) => [field.key, input[field.key] ?? field.defaultValue ?? ""])
   )
+  const visibleSourceElements = document.elements.filter((element) => element.meta.visible)
+  const visibleDotsElements = dotsDocument.elements.filter((element) => element.meta.visible)
 
   return {
     id: dotsDocument.id,
     name: dotsDocument.name,
     width: dotsDocument.width,
     height: dotsDocument.height,
-    elements: dotsDocument.elements
-      .filter((element) => element.meta.visible)
-      .map((element) => {
-        const compiled = compileDraftElement(element)
-        if (
-          (compiled.kind === "text" ||
-            compiled.kind === "barcode" ||
-            compiled.kind === "qr" ||
-            compiled.kind === "datamatrix") &&
-          isBindableKind(element) &&
-          element.binding
-        ) {
-          const resolvedValue = fieldMap.get(element.binding.fieldKey) ?? element.value
-          return {
-            ...compiled,
+    elements: visibleDotsElements.map((element, index) => {
+      const sourceElement = visibleSourceElements[index]
+      if (isBindableKind(element) && element.binding) {
+        const resolvedValue = fieldMap.get(element.binding.fieldKey) ?? element.value
+        const resolvedSourceElement =
+          sourceElement && isBindableKind(sourceElement)
+            ? { ...sourceElement, value: resolvedValue }
+            : sourceElement
+        return compileDraftElement(
+          {
+            ...element,
             value: resolvedValue,
+          },
+          {
+            measureText: options?.measureText,
+            layoutScaleFactor: CANVAS_DOTS_PER_MILLIMETER,
+            layoutSourceElement: resolvedSourceElement,
           }
-        }
-        return compiled
-      }),
+        )
+      }
+      return compileDraftElement(element, {
+        measureText: options?.measureText,
+        layoutScaleFactor: CANVAS_DOTS_PER_MILLIMETER,
+        layoutSourceElement: sourceElement,
+      })
+    }),
   }
 }
 
@@ -1723,11 +1810,14 @@ function createPreviewRenderOptions(renderOptions: RenderOptions) {
 
 export function toCanvasPrintSource(
   document: CanvasDraftDocument,
-  renderOptions: RenderOptions
+  renderOptions: RenderOptions,
+  options?: {
+    measureText?: TextMeasureFunction
+  }
 ): BrowserPrintSource {
   return {
     kind: "canvas",
-    canvas: compileDraftToCanvasDefinition(document),
+    canvas: compileDraftToCanvasDefinition(document, options),
     renderOptions: createPreviewRenderOptions({
       ...document.renderOptions,
       ...renderOptions,

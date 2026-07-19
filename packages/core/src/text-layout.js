@@ -358,12 +358,13 @@ function resolveTextLayoutForFontSize(input, resolvedFontSize, axisFit, effectiv
             return {
                 text: line,
                 x: hasMeasuredMetrics ? -visualLeft : 0,
-                y: hasMeasuredMetrics
-                    ? baselineOffset - visualTop + index * lineHeight
-                    : resolvedFontSize * TEXT_VISUAL_ASCENT_RATIO + index * lineHeight,
-                width,
-                letterSpacing,
-            };
+            y: hasMeasuredMetrics
+                ? baselineOffset - visualTop + index * lineHeight
+                : resolvedFontSize * TEXT_VISUAL_ASCENT_RATIO + index * lineHeight,
+            width,
+            visualWidth: Math.max(metrics.visualRight - metrics.visualLeft, 0.0001),
+            letterSpacing,
+        };
         });
     const glyphs = verticalText
         ? renderedLines.flatMap((line, columnIndex) => Array.from(line).map((char, rowIndex) => ({
