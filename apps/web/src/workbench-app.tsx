@@ -1650,6 +1650,8 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   return {
     activeTemplateEntry,
     activeUserTemplateDraft,
+    activeUserTemplatePreviewReady:
+      activeTemplateEntry?.kind !== "user" || resolvedActiveUserTemplateDraft !== null,
     activeTemplate,
     addCanvasElement,
     addTemplateRow,
@@ -2290,11 +2292,13 @@ function TemplatesPage({
     state.activeUserTemplateDraftLoading &&
     !state.activeTemplateEntry.draft &&
     !state.activeTemplateEntry.template.document
+  const activeUserTemplateUnavailable =
+    state.activeTemplateEntry?.kind === "user" && !state.activeUserTemplatePreviewReady
   const templatePreviewDisabled =
     showsDisabledPreviewRail ||
     !state.activeTemplateEntry ||
     !state.selectedTemplateRow ||
-    activeUserTemplatePending
+    activeUserTemplateUnavailable
   const [listMode, setListMode] = React.useState<TemplateListMode>("large")
   const [actionMenu, setActionMenu] = React.useState<TemplateActionMenuState | null>(null)
   const [renameDialog, setRenameDialog] = React.useState<{
@@ -2795,6 +2799,8 @@ function TemplatesPage({
               unavailableMessage={
                 activeUserTemplatePending
                   ? "正在读取本地模板草稿。"
+                  : activeUserTemplateUnavailable
+                    ? "当前用户模板缺少可预览草稿。"
                   : "先选择模板后查看预览与打印。"
               }
               onFocusRight={() => state.setTemplateFocus("center-right")}
@@ -2811,6 +2817,8 @@ function TemplatesPage({
               unavailableMessage={
                 activeUserTemplatePending
                   ? "正在读取本地模板草稿。"
+                  : activeUserTemplateUnavailable
+                    ? "当前用户模板缺少可预览草稿。"
                   : "先选择模板后查看预览与打印。"
               }
               onFocusRight={() => state.setTemplateFocus("center-right")}
