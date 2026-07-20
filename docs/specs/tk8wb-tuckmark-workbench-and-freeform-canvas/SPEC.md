@@ -820,6 +820,32 @@ output.
   PR: include
   ![Homepage shell dark theme with deferred hydration pending](./assets/workbench-home-dark-deferred-hydration-pending.png)
 
+- `1440×900` navigation hold keeps the previous homepage visible while the top
+  progress bar starts immediately and interaction stays locked during the first
+  reveal window
+
+  PR: include
+  ![Navigation hold on the homepage](./assets/navigation-home-hold-1440x900.png)
+
+- `1440×900` top-level route pending switches to the shared pending surface
+  after the hold window while the staged progress bar remains visible
+
+  PR: include
+  ![Shared pending surface during template navigation](./assets/navigation-templates-pending-1440x900.png)
+
+- `1440×900` template route reveal shows the destination shell as soon as
+  placeholder content is allowed, while the top progress bar stays active until
+  the route settles
+
+  PR: include
+  ![Template route revealed with placeholder content](./assets/navigation-templates-revealed-1440x900.png)
+
+- `1440×900` template route loaded state closes the navigation transition after
+  cached data and initial refresh work finish
+
+  PR: include
+  ![Template route loaded after navigation settles](./assets/navigation-templates-loaded-1440x900.png)
+
 - `1100×820` template workspace in narrow single-outlet mode with a disabled preview/print rail before template selection
 
   PR: include

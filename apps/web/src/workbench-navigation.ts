@@ -1,25 +1,37 @@
+import { useNavigate, useRouterState } from "@tanstack/react-router"
 import React from "react"
-import { type NavigateOptions, useNavigate } from "react-router-dom"
 
-import {
-  preloadWorkbenchRoute,
-  prepareWorkbenchRouteNavigation,
-} from "./workbench-route-registry.js"
-
-export function preloadWorkbenchNavigationIntent(pathname: string): void {
-  void preloadWorkbenchRoute(pathname).catch(() => undefined)
+type WorkbenchNavigateOptions = {
+  replace?: boolean
 }
 
 export function useWorkbenchNavigate() {
   const navigate = useNavigate()
 
   return React.useCallback(
-    async (to: string, options?: NavigateOptions) => {
-      await prepareWorkbenchRouteNavigation(to).catch(() => undefined)
-      React.startTransition(() => {
-        navigate(to, options)
+    async (to: string, options?: WorkbenchNavigateOptions) => {
+      await navigate({
+        href: to,
+        replace: options?.replace,
       })
     },
     [navigate]
   )
+}
+
+export function useWorkbenchPathname() {
+  return useRouterState({
+    select: (state) => state.location.pathname,
+  })
+}
+
+export function useWorkbenchHref() {
+  return useRouterState({
+    select: (state) => state.location.href,
+  })
+}
+
+export function useWorkbenchSearchParams() {
+  const href = useWorkbenchHref()
+  return React.useMemo(() => new URL(href, "https://tuckmark.local").searchParams, [href])
 }

@@ -75,6 +75,13 @@ now warm immediately after `shellReady`, nav intent preloads the likely target
 route, and any remaining route race falls back to a small local skeleton
 instead of a startup-like loading screen.
 
+That same client-side routing seam was later migrated again from the earlier
+React Router shell to a TanStack Router + TanStack Query combination so the
+browser-static Pages runtime could keep the same deep-link and basepath
+contract while gaining typed routes, route-scoped cache reuse, and one
+consistent navigation-pending experience across in-app clicks and history
+navigation.
+
 The release publication contract was later tightened again after published
 GitHub Releases were observed to ship a one-line placeholder body. Release
 publication now derives human-readable notes from the verified release snapshot

@@ -303,10 +303,15 @@
 .tm-route-loading {
   display: grid;
   align-content: start;
+  justify-items: start;
   gap: 0.625rem;
-  margin: 32px;
-  padding-top: 0.75rem;
-  width: min(100%, 20rem);
+  min-height: 100%;
+  width: 100%;
+  padding: 1.5rem 1.75rem;
+  border: 1px solid var(--tm-chrome-border);
+  border-radius: 1.75rem;
+  background: var(--tm-hero-surface);
+  box-shadow: var(--tm-hero-shadow);
 }
 
 .tm-route-loading__line {
@@ -338,12 +343,6 @@
   width: min(100%, 16rem);
   height: 0.5rem;
   opacity: 0.74;
-}
-
-@media (max-width: 900px) {
-  .tm-route-loading {
-    margin: 20px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1122,9 +1121,25 @@
 
   .tm-shell {
     @apply min-h-screen px-4 py-4 md:px-5 lg:px-6;
+    --tm-shell-inline-padding: 1rem;
+    --tm-shell-block-padding: 1rem;
     display: grid;
+    position: relative;
     grid-template-rows: auto 1fr auto;
+    align-content: start;
     gap: 1rem;
+  }
+
+  @media (min-width: 768px) {
+    .tm-shell {
+      --tm-shell-inline-padding: 1.25rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .tm-shell {
+      --tm-shell-inline-padding: 1.5rem;
+    }
   }
 
   .tm-shell--canvas {
@@ -1199,6 +1214,43 @@
 
   .tm-nav__link--active svg {
     color: var(--tm-nav-active-icon);
+  }
+
+  .tm-nav-progress {
+    pointer-events: none;
+    position: absolute;
+    inset-block-start: var(--tm-shell-block-padding);
+    inset-inline: var(--tm-shell-inline-padding);
+    z-index: 70;
+    height: 0.25rem;
+    opacity: 0;
+    transition: opacity 180ms ease;
+  }
+
+  .tm-nav-progress--active {
+    opacity: 1;
+  }
+
+  .tm-nav-progress__bar {
+    height: 100%;
+    width: 100%;
+    border-radius: 999px;
+    transform-origin: left center;
+    transition: transform 220ms ease;
+    background: var(--tm-launch-progress-fill);
+    box-shadow: 0 0 14px var(--tm-launch-progress-glow);
+  }
+
+  .tm-shell--nav-holding .tm-header,
+  .tm-shell--nav-holding .tm-main,
+  .tm-shell--nav-holding .tm-footer {
+    pointer-events: none;
+  }
+
+  .tm-shell--nav-holding .tm-header,
+  .tm-shell--nav-holding .tm-main {
+    opacity: 0.92;
+    filter: saturate(0.9);
   }
 
   .tm-main {

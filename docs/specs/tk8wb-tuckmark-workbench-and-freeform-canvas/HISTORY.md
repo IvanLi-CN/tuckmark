@@ -154,6 +154,16 @@ while the workbench was being productized:
   - CLI validates and renders packages through the same canvas artifact seam
   - Web import saves packages as browser-local user templates without changing
     the service sync boundary
+- The top-level workbench routing contract was later rebuilt again around
+  navigation responsiveness:
+  - the app shell moved from the older React Router stack onto TanStack Router
+  - shared async read state moved onto TanStack Query session-memory caches
+  - top-level page switches now hold the previous page briefly, escalate to one
+    shared pending surface only when needed, and keep a staged top progress bar
+    visible until route plus background query work settle
+  - stale reveal is allowed for list-like routes, but `/canvas` keeps its more
+    cautious minimum-ready gate so one template's editable draft is not
+    misrepresented as another route having already loaded
 - Free canvas dimensions were later generalized from scratch presets into a
   shared document editing affordance:
   - dimensions became explicit positive-integer draft properties on scratch,

@@ -110,6 +110,21 @@ export default meta
 
 type Story = StoryObj<typeof WorkbenchAppStory>
 
+function buildNavigationStateOverride(args: {
+  fromPath: "/" | "/templates" | "/canvas" | "/system"
+  phase: "holding" | "pending" | "revealed" | "settling"
+  toPath: "/" | "/templates" | "/canvas" | "/system"
+}) {
+  return {
+    active: true,
+    fromPath: args.fromPath,
+    id: 1,
+    phase: args.phase,
+    startedAt: Date.parse("2026-07-20T12:00:00.000Z"),
+    toPath: args.toPath,
+  } as const
+}
+
 async function seedUserTemplateFixtures() {
   await resetUserTemplateStoreForTest()
 
@@ -313,6 +328,62 @@ export const HomeWithStrandedPwaUpdate: Story = {
     initialEntries: ["/"],
     pwaUpdateSnapshot: strandedPwaUpdateSnapshot,
   },
+}
+
+export const HomeNavigationHold: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/"],
+    navigationStateOverride: buildNavigationStateOverride({
+      fromPath: "/",
+      phase: "holding",
+      toPath: "/templates",
+    }),
+  },
+}
+
+export const TemplatesNavigationPending: Story = {
+  args: {
+    context: runtimeContext,
+    forcePendingContent: true,
+    initialEntries: ["/templates"],
+    navigationStateOverride: buildNavigationStateOverride({
+      fromPath: "/",
+      phase: "pending",
+      toPath: "/templates",
+    }),
+  },
+}
+
+export const TemplatesNavigationRevealed: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+    navigationStateOverride: buildNavigationStateOverride({
+      fromPath: "/",
+      phase: "revealed",
+      toPath: "/templates",
+    }),
+  },
+  loaders: [
+    async () => {
+      await seedUserTemplateFixtures()
+      return {}
+    },
+  ],
+}
+
+export const TemplatesNavigationLoaded: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+  },
+  loaders: [
+    async () => {
+      await seedUserTemplateFixtures()
+      return {}
+    },
+  ],
 }
 
 export const HomeSelectableContract: Story = {

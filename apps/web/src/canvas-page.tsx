@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query"
 import JsBarcode from "jsbarcode"
 import type Konva from "konva"
 import {
@@ -42,7 +43,6 @@ import {
   Stage,
   Transformer,
 } from "react-konva"
-import { useSearchParams } from "react-router-dom"
 import {
   DEFAULT_TEXT_FONT_FAMILY,
   DEFAULT_TEXT_LINE_HEIGHT,
@@ -87,6 +87,14 @@ import {
   translateElement,
   updateBoundElementValue,
 } from "./canvas-editor-model.js"
+import {
+  createRestoredDraftFromVersion,
+  type LoadedCanvasRouteData,
+  loadCanvasRouteData,
+  resolveCanvasSource,
+  resolveCanvasStatus,
+  resolveInitialCanvasPanel,
+} from "./canvas-route-data.js"
 import {
   type CanvasSnapGuide,
   type CanvasTransformBox,
@@ -154,18 +162,19 @@ import type {
 import {
   clearTemplateAutosaves,
   clearWorkingCopy,
-  loadWorkingCopy,
   readUserTemplateHistory,
   replaceUserTemplateWorkingCopy,
   saveUserTemplate,
   saveUserTemplateAutosave,
 } from "./user-template-store.js"
 import type { WorkbenchController } from "./workbench-controller.js"
-import { useWorkbenchNavigate } from "./workbench-navigation.js"
+import { useWorkbenchNavigate, useWorkbenchSearchParams } from "./workbench-navigation.js"
+import { canvasRouteDataQueryOptions } from "./workbench-query.js"
 
 type CanvasPageProps = {
   controller: WorkbenchController
   initialScenario?: CanvasStoryScenario
+  initialLoadedRouteData?: LoadedCanvasRouteData
 }
 
 const INSPECTOR_SELECT_TRIGGER_CLASS = "tm-inspector-select h-7 rounded-sm px-2 py-0 text-xs"
@@ -2642,80 +2651,6 @@ function useElementSize<T extends HTMLElement>(element: T | null): StageViewport
   return size
 }
 
-function resolveCanvasSource(searchParams: URLSearchParams): CanvasDraftSource {
-  const rawSource = searchParams.get("source")
-  if (rawSource === "preset-template") {
-    return {
-      kind: "preset-template",
-      presetId: searchParams.get("templateId") ?? getSystemTemplateById("shipping-compact").id,
-    }
-  }
-  if (rawSource === "user-template") {
-    const templateId = searchParams.get("templateId")
-    if (templateId) {
-      return {
-        kind: "user-template",
-        templateId,
-      }
-    }
-  }
-  return {
-    kind: "scratch",
-    presetId: searchParams.get("presetId") ?? getPresetById("shipping-wide").id,
-  }
-}
-
-function resolveInitialCanvasPanel(searchParams: URLSearchParams): CanvasPageState["activePanel"] {
-  return searchParams.get("panel") === "output" ? "output" : "attributes"
-}
-
-function resolveCanvasStatus(searchParams: URLSearchParams): string {
-  const status = searchParams.get("status")
-  if (status === "saved") {
-    return "已保存新版本。"
-  }
-  if (status === "created") {
-    return "已保存为用户模板。"
-  }
-  return ""
-}
-
-type LoadedCanvasRouteData = {
-  draft: CanvasDraftDocument
-  versionHistory: UserTemplateHistory | null
-}
-
-type PreloadedCanvasRouteEntry = {
-  data: LoadedCanvasRouteData | null
-  promise: Promise<LoadedCanvasRouteData>
-}
-
-const preloadedCanvasRouteEntries = new Map<string, PreloadedCanvasRouteEntry>()
-
-function buildCanvasRouteSourceCacheKey(source: CanvasDraftSource): string {
-  switch (source.kind) {
-    case "user-template":
-      return `user-template:${source.templateId}`
-    case "preset-template":
-      return `preset-template:${source.presetId}`
-    default:
-      return `scratch:${source.presetId}`
-  }
-}
-
-function parseCanvasRouteSearchParams(pathname: string): URLSearchParams {
-  return new URL(pathname, "https://tuckmark.local").searchParams
-}
-
-function consumePreloadedCanvasRouteData(source: CanvasDraftSource): LoadedCanvasRouteData | null {
-  const cacheKey = buildCanvasRouteSourceCacheKey(source)
-  const cached = preloadedCanvasRouteEntries.get(cacheKey)?.data ?? null
-  if (cached) {
-    preloadedCanvasRouteEntries.delete(cacheKey)
-  }
-  return cached
-}
-
 function resolveLoadedCanvasStatus(source: CanvasDraftSource, initialStatus: string): string {
   if (initialStatus) {
     return initialStatus
@@ -2748,135 +2683,8 @@ function createCanvasStateFromLoadedRouteData(
 }
 
 export async function preloadCanvasWorkspaceRouteData(pathname: string): Promise<void> {
-  const routeSource = resolveCanvasSource(parseCanvasRouteSearchParams(pathname))
-  const cacheKey = buildCanvasRouteSourceCacheKey(routeSource)
-  const existingEntry = preloadedCanvasRouteEntries.get(cacheKey)
-
-  if (existingEntry && existingEntry.data === null) {
-    await existingEntry.promise
-    return
-  }
-
-  const nextEntry: PreloadedCanvasRouteEntry = {
-    data: null,
-    promise: loadDraftForSource(routeSource)
-      .then((loaded) => {
-        nextEntry.data = loaded
-        return loaded
-      })
-      .catch((error) => {
-        if (preloadedCanvasRouteEntries.get(cacheKey) === nextEntry) {
-          preloadedCanvasRouteEntries.delete(cacheKey)
-        }
-        throw error
-      }),
-  }
-
-  preloadedCanvasRouteEntries.set(cacheKey, nextEntry)
-  await nextEntry.promise
-}
-
-async function loadDraftForSource(source: CanvasDraftSource): Promise<LoadedCanvasRouteData> {
-  if (source.kind === "user-template") {
-    const versionHistory = await readUserTemplateHistory(source.templateId)
-    if (!versionHistory) {
-      throw new Error("当前用户模板不存在，可能已经被浏览器本地数据清理。")
-    }
-    const workingCopy = await loadWorkingCopy(source)
-    if (workingCopy?.draft) {
-      return {
-        draft: workingCopy.draft,
-        versionHistory,
-      }
-    }
-    const currentVersion =
-      versionHistory.saved.find(
-        (version) => version.id === versionHistory.template.currentVersionId
-      ) ?? versionHistory.saved[0]
-    if (!currentVersion) {
-      throw new Error("当前用户模板缺少已保存版本。")
-    }
-    return {
-      draft: {
-        ...cloneDraft(currentVersion.document),
-        name: versionHistory.template.name,
-        source,
-        templateId: source.templateId,
-        baseVersionId: currentVersion.id,
-      },
-      versionHistory,
-    }
-  }
-
-  if (source.kind === "preset-template") {
-    const legacyDraft = loadStoredDraftDocument(source.presetId)
-    if (legacyDraft) {
-      return {
-        draft: {
-          ...legacyDraft,
-          source,
-        },
-        versionHistory: null,
-      }
-    }
-    const workingCopy = await loadWorkingCopy(source)
-    if (workingCopy?.draft) {
-      return {
-        draft: {
-          ...workingCopy.draft,
-          source,
-        },
-        versionHistory: null,
-      }
-    }
-    return {
-      draft: createDraftFromSystemTemplate(getSystemTemplateById(source.presetId)),
-      versionHistory: null,
-    }
-  }
-
-  const legacyDraft = loadStoredDraftDocument(source.presetId)
-  if (legacyDraft) {
-    return {
-      draft: {
-        ...legacyDraft,
-        source,
-      },
-      versionHistory: null,
-    }
-  }
-
-  const workingCopy = await loadWorkingCopy(source)
-  if (workingCopy?.draft) {
-    return {
-      draft: {
-        ...workingCopy.draft,
-        source,
-      },
-      versionHistory: null,
-    }
-  }
-
-  return {
-    draft: createDraftFromPreset(getPresetById(source.presetId)),
-    versionHistory: null,
-  }
-}
-
-function createRestoredDraftFromVersion(
-  version: UserTemplateVersionSnapshot,
-  templateId: string
-): CanvasDraftDocument {
-  return {
-    ...cloneDraft(version.document),
-    source: {
-      kind: "user-template",
-      templateId,
-    },
-    templateId,
-    baseVersionId: version.id,
-    lastSavedAt: undefined,
-  }
+  const routeSource = resolveCanvasSource(new URL(pathname, "https://tuckmark.local").searchParams)
+  await loadCanvasRouteData(routeSource)
 }
 
 function getAutosaveBaselineDraft(args: {
@@ -6315,17 +6123,22 @@ function CanvasVersionsPanel({
   )
 }
 
-export function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps) {
+export function CanvasWorkspace({
+  controller,
+  initialScenario,
+  initialLoadedRouteData,
+}: CanvasPageProps) {
   const navigate = useWorkbenchNavigate()
-  const [searchParams] = useSearchParams()
+  const queryClient = useQueryClient()
+  const searchParams = useWorkbenchSearchParams()
   const routeSource = React.useMemo(() => resolveCanvasSource(searchParams), [searchParams])
+  const routeDataQueryOptions = React.useMemo(
+    () => canvasRouteDataQueryOptions(controller.context, routeSource),
+    [controller.context, routeSource]
+  )
   const initialPanel = React.useMemo(() => resolveInitialCanvasPanel(searchParams), [searchParams])
   const initialStatus = React.useMemo(() => resolveCanvasStatus(searchParams), [searchParams])
   const versionsOpen = searchParams.get("panel") === "versions"
-  const preloadedRouteData = React.useMemo(
-    () => (initialScenario ? null : consumePreloadedCanvasRouteData(routeSource)),
-    [initialScenario, routeSource]
-  )
   const initialSnapGuides = React.useMemo(
     () => (initialScenario ? getScenarioSnapGuides(initialScenario) : []),
     [initialScenario]
@@ -6335,11 +6148,18 @@ export function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps
     controller.context.surface === "server-http" &&
     controller.context.mode === "runtime" &&
     !controller.startupSyncReady
+  const seededInitialLoadedRouteData = React.useMemo(
+    () =>
+      initialLoadedRouteData ??
+      queryClient.getQueryData<LoadedCanvasRouteData>(routeDataQueryOptions.queryKey) ??
+      null,
+    [initialLoadedRouteData, queryClient, routeDataQueryOptions]
+  )
   const [state, setState] = React.useState<CanvasPageState>(() =>
     initialScenario
       ? createCanvasState(CANVAS_PRESETS[0]?.id ?? "shipping-wide", initialScenario)
-      : preloadedRouteData
-        ? createCanvasStateFromLoadedRouteData(preloadedRouteData, {
+      : seededInitialLoadedRouteData
+        ? createCanvasStateFromLoadedRouteData(seededInitialLoadedRouteData, {
             activePanel: initialPanel,
             initialStatus,
             routeSource,
@@ -6439,13 +6259,13 @@ export function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps
       return
     }
 
-    if (preloadedRouteData) {
+    if (seededInitialLoadedRouteData) {
       controller.setDocumentRenderOptions({
         ...defaultDraftRenderOptions,
-        ...preloadedRouteData.draft.renderOptions,
+        ...seededInitialLoadedRouteData.draft.renderOptions,
       })
       setState(
-        createCanvasStateFromLoadedRouteData(preloadedRouteData, {
+        createCanvasStateFromLoadedRouteData(seededInitialLoadedRouteData, {
           activePanel: initialPanel,
           initialStatus,
           routeSource,
@@ -6458,7 +6278,7 @@ export function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps
     let cancelled = false
     void (async () => {
       try {
-        const loaded = await loadDraftForSource(routeSource)
+        const loaded = await queryClient.fetchQuery(routeDataQueryOptions)
         if (cancelled) {
           return
         }
@@ -6521,8 +6341,10 @@ export function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps
     initialPanel,
     initialScenario,
     initialStatus,
-    preloadedRouteData,
+    queryClient,
     routeSource,
+    routeDataQueryOptions,
+    seededInitialLoadedRouteData,
     startupSyncPending,
     versionsOpen,
   ])
