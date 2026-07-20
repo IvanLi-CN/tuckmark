@@ -24,6 +24,11 @@ version and build reference are now separate fields, so tagged deploys show
 untagged mainline deploys show `build <shortsha>` only instead of masquerading
 as a published version.
 
+That tagged footer metadata later became a release-support deep link too:
+tagged builds now open the repository's OctoRill public releases list with the
+current release highlighted, while preserving the existing tooltip contract for
+the exact build reference.
+
 The PWA update contract was tightened again after stranded installed clients
 were observed to miss prompts unless a waiting worker was already visible.
 Browser-static Pages builds now publish same-origin runtime metadata through
