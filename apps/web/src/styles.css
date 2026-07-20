@@ -1211,12 +1211,11 @@
     display: flex;
     align-items: flex-end;
     height: calc(env(safe-area-inset-top, 0px) + 0.25rem);
-    background:
-      linear-gradient(
-        to bottom,
-        transparent calc(100% - 0.25rem),
-        var(--tm-nav-hover-surface) calc(100% - 0.25rem)
-      );
+    background: linear-gradient(
+      to bottom,
+      transparent calc(100% - 0.25rem),
+      var(--tm-nav-hover-surface) calc(100% - 0.25rem)
+    );
     opacity: 0;
     transition: opacity 180ms ease;
   }
