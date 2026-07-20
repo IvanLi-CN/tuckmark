@@ -121,14 +121,14 @@ describe("SystemDataStorageCard", () => {
             exportedAt: new Date().toISOString(),
             snapshotUpdatedAt: new Date().toISOString(),
             settings: {
-              version: 1,
+              version: 2,
               updatedAt: new Date().toISOString(),
-              defaultRenderOptions: {
-                printWidthDots: 384,
+              documentDefaults: {
                 paperType: "gap",
                 threshold: 128,
-                xOffsetDots: 0,
               },
+              printerModelPresets: {},
+              printerDeviceCalibrations: {},
               permissionNudgeSeen: true,
               showTextBoundingBoxes: false,
             },

@@ -8,10 +8,17 @@ import {
 export const paperTypeSchema = z.enum(["continuous", "gap"])
 export type PaperType = z.infer<typeof paperTypeSchema>
 
+export const printStrengthLevelSchema = z.number().int().min(-2).max(2).default(0)
+export type PrintStrengthLevel = z.infer<typeof printStrengthLevelSchema>
+
 export const renderOptionsSchema = z.object({
+  printerModel: z.string().min(1).default("generic"),
+  printerDpi: z.number().int().positive().default(203),
   printWidthDots: z.number().int().positive().default(384),
   threshold: z.number().int().min(0).max(255).default(150),
   xOffsetDots: z.number().int().default(0),
+  yOffsetDots: z.number().int().default(0),
+  printStrengthLevel: printStrengthLevelSchema,
   paperType: paperTypeSchema.default("gap"),
   previewScale: z.number().int().min(1).max(16).default(4),
 })
@@ -29,6 +36,7 @@ export type PrinterCapabilities = z.infer<typeof printerCapabilitiesSchema>
 export const printerSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
+  model: z.string().optional(),
   rssi: z.number().int().optional(),
   capabilities: printerCapabilitiesSchema,
 })

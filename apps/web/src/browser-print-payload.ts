@@ -1,15 +1,16 @@
-import type {
-  ArtifactPackets,
-  DirectCanvasDefinition,
-  PreviewArtifact,
-  RenderOptions,
-  SafeTextLabelInput,
-} from "../../../packages/core/src/web.js"
+import type { DirectCanvasDefinition, SafeTextLabelInput } from "../../../packages/core/src/web.js"
 import { buildSvg, getTemplateById } from "../../../packages/core/src/web.js"
 import { encodeBrowserPngMessages } from "./browser-print-wasm.js"
-import type { ArtifactData } from "./types.js"
+import { resolvePositionedPrintFrame } from "./output-settings.js"
+import type { ArtifactData, ArtifactPackets, PreviewArtifact, RenderOptions } from "./types.js"
 
 type BrowserRenderOptions = PreviewArtifact["renderOptions"]
+type BrowserPacketRenderOptions = Pick<
+  BrowserRenderOptions,
+  "threshold" | "xOffsetDots" | "yOffsetDots" | "printWidthDots" | "paperType"
+> & {
+  printStrengthLevel: number
+}
 
 type TemplatePrintSource = {
   kind: "template"
@@ -140,6 +141,20 @@ async function canvasToPngBytes(canvas: HTMLCanvasElement): Promise<Uint8Array> 
   return new Uint8Array(await blob.arrayBuffer())
 }
 
+async function loadImageFromBlob(blob: Blob, errorMessage: string): Promise<HTMLImageElement> {
+  const blobUrl = URL.createObjectURL(blob)
+  try {
+    return await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image()
+      image.onload = () => resolve(image)
+      image.onerror = () => reject(new Error(errorMessage))
+      image.src = blobUrl
+    })
+  } finally {
+    URL.revokeObjectURL(blobUrl)
+  }
+}
+
 async function drawSvgToPngBytes(
   svg: string,
   width: number,
@@ -175,6 +190,48 @@ async function drawSvgToPngBytes(
   } finally {
     URL.revokeObjectURL(blobUrl)
   }
+}
+
+async function composePositionedPrintPngBytes(
+  pngBytes: Uint8Array,
+  artifactWidth: number,
+  artifactHeight: number,
+  renderOptions: BrowserPacketRenderOptions
+): Promise<Uint8Array> {
+  const placement = resolvePositionedPrintFrame(renderOptions, artifactWidth, artifactHeight)
+  if (
+    placement.frameWidthDots === artifactWidth &&
+    placement.frameHeightDots === artifactHeight &&
+    placement.contentLeftDots === 0 &&
+    placement.contentTopDots === 0
+  ) {
+    return pngBytes
+  }
+
+  const stableBytes = new Uint8Array(pngBytes.byteLength)
+  stableBytes.set(pngBytes)
+  const image = await loadImageFromBlob(
+    new Blob([stableBytes.buffer], { type: "image/png" }),
+    "浏览器打印定位图层渲染失败。"
+  )
+  const canvas = document.createElement("canvas")
+  canvas.width = placement.frameWidthDots
+  canvas.height = placement.frameHeightDots
+  const context = canvas.getContext("2d")
+  if (!context) {
+    throw new Error("当前浏览器无法创建打印定位 Canvas。")
+  }
+
+  context.fillStyle = "#ffffff"
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  context.drawImage(
+    image,
+    Math.round(placement.contentLeftDots),
+    Math.round(placement.contentTopDots),
+    artifactWidth,
+    artifactHeight
+  )
+  return canvasToPngBytes(canvas)
 }
 
 function pixelIsBlack(
@@ -297,7 +354,7 @@ function encodePacketBase64(message: Uint8Array): string {
 }
 
 export async function encodeBrowserPngBytes(
-  renderOptions: BrowserRenderOptions,
+  renderOptions: BrowserPacketRenderOptions,
   pngBytes: Uint8Array
 ): Promise<ArtifactPackets> {
   const messages = await encodeBrowserPngMessages(pngBytes, renderOptions)
@@ -406,14 +463,27 @@ export async function materializeBrowserArtifactData(
 ): Promise<BrowserArtifactMaterialization> {
   const preview = await materializeBrowserPreview(source)
   const svg = decodeURIComponent(preview.dataUrl.split(",", 2)[1] ?? "")
-  const pngBytes = await drawSvgToPngBytes(
+  const sourcePngBytes = await drawSvgToPngBytes(
     svg,
     preview.artifact.width,
     preview.artifact.height,
     preview.artifact.renderOptions.threshold,
     preview.artifact.renderOptions.paperType
   )
-  const packets = await encodeBrowserPngBytes(preview.artifact.renderOptions, pngBytes)
+  const positionedPngBytes = await composePositionedPrintPngBytes(
+    sourcePngBytes,
+    preview.artifact.width,
+    preview.artifact.height,
+    preview.artifact.renderOptions
+  )
+  const packets = await encodeBrowserPngBytes(
+    {
+      ...preview.artifact.renderOptions,
+      xOffsetDots: 0,
+      yOffsetDots: 0,
+    },
+    positionedPngBytes
+  )
 
   packets.artifactId = preview.artifact.id
 

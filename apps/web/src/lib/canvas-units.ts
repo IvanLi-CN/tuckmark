@@ -15,6 +15,10 @@ export function canvasMillimetersToDots(millimeters: number): number {
   return Math.round(millimeters * CANVAS_DOTS_PER_MILLIMETER)
 }
 
+export function millimetersToDotsAtDensity(millimeters: number, dotsPerMillimeter: number): number {
+  return Math.round(millimeters * dotsPerMillimeter)
+}
+
 function scaleValue(value: number, scale: number): number {
   return roundPhysicalUnit(value * scale)
 }
@@ -84,6 +88,75 @@ export function scaleDraftElementGeometry(
         x: scaleValue(element.x, scale),
         y: scaleValue(element.y, scale),
         size: scaleValue(element.size, scale),
+      }
+  }
+}
+
+function scaleDraftElementGeometryToDots(
+  element: CanvasDraftElement,
+  dotsPerMillimeter: number
+): CanvasDraftElement {
+  switch (element.kind) {
+    case "text":
+      return {
+        ...element,
+        x: millimetersToDotsAtDensity(element.x, dotsPerMillimeter),
+        y: millimetersToDotsAtDensity(element.y, dotsPerMillimeter),
+        width: millimetersToDotsAtDensity(element.width, dotsPerMillimeter),
+        height: millimetersToDotsAtDensity(element.height, dotsPerMillimeter),
+        fontSize: millimetersToDotsAtDensity(element.fontSize, dotsPerMillimeter),
+      }
+    case "rect":
+      return {
+        ...element,
+        x: millimetersToDotsAtDensity(element.x, dotsPerMillimeter),
+        y: millimetersToDotsAtDensity(element.y, dotsPerMillimeter),
+        width: millimetersToDotsAtDensity(element.width, dotsPerMillimeter),
+        height: millimetersToDotsAtDensity(element.height, dotsPerMillimeter),
+        strokeWidth: millimetersToDotsAtDensity(element.strokeWidth, dotsPerMillimeter),
+        radius: millimetersToDotsAtDensity(element.radius, dotsPerMillimeter),
+      }
+    case "circle":
+      return {
+        ...element,
+        x: millimetersToDotsAtDensity(element.x, dotsPerMillimeter),
+        y: millimetersToDotsAtDensity(element.y, dotsPerMillimeter),
+        size: millimetersToDotsAtDensity(element.size, dotsPerMillimeter),
+        strokeWidth: millimetersToDotsAtDensity(element.strokeWidth, dotsPerMillimeter),
+      }
+    case "triangle":
+      return {
+        ...element,
+        x: millimetersToDotsAtDensity(element.x, dotsPerMillimeter),
+        y: millimetersToDotsAtDensity(element.y, dotsPerMillimeter),
+        width: millimetersToDotsAtDensity(element.width, dotsPerMillimeter),
+        height: millimetersToDotsAtDensity(element.height, dotsPerMillimeter),
+        strokeWidth: millimetersToDotsAtDensity(element.strokeWidth, dotsPerMillimeter),
+      }
+    case "line":
+      return {
+        ...element,
+        x: millimetersToDotsAtDensity(element.x, dotsPerMillimeter),
+        y: millimetersToDotsAtDensity(element.y, dotsPerMillimeter),
+        x2: millimetersToDotsAtDensity(element.x2, dotsPerMillimeter),
+        y2: millimetersToDotsAtDensity(element.y2, dotsPerMillimeter),
+        strokeWidth: millimetersToDotsAtDensity(element.strokeWidth, dotsPerMillimeter),
+      }
+    case "barcode":
+      return {
+        ...element,
+        x: millimetersToDotsAtDensity(element.x, dotsPerMillimeter),
+        y: millimetersToDotsAtDensity(element.y, dotsPerMillimeter),
+        width: millimetersToDotsAtDensity(element.width, dotsPerMillimeter),
+        height: millimetersToDotsAtDensity(element.height, dotsPerMillimeter),
+      }
+    case "qr":
+    case "datamatrix":
+      return {
+        ...element,
+        x: millimetersToDotsAtDensity(element.x, dotsPerMillimeter),
+        y: millimetersToDotsAtDensity(element.y, dotsPerMillimeter),
+        size: millimetersToDotsAtDensity(element.size, dotsPerMillimeter),
       }
   }
 }
@@ -177,13 +250,20 @@ export function normalizeCanvasDraftDocumentUnits(
 }
 
 export function canvasDraftDocumentToDots(document: CanvasDraftDocument): CanvasDraftDocument {
+  return canvasDraftDocumentToDotsAtDensity(document, CANVAS_DOTS_PER_MILLIMETER)
+}
+
+export function canvasDraftDocumentToDotsAtDensity(
+  document: CanvasDraftDocument,
+  dotsPerMillimeter: number
+): CanvasDraftDocument {
   const normalized = normalizeCanvasDraftDocumentUnits(document)
   return {
     ...normalized,
-    width: canvasMillimetersToDots(normalized.width),
-    height: canvasMillimetersToDots(normalized.height),
+    width: millimetersToDotsAtDensity(normalized.width, dotsPerMillimeter),
+    height: millimetersToDotsAtDensity(normalized.height, dotsPerMillimeter),
     elements: normalized.elements.map((element) =>
-      scaleDraftElementGeometry(element, CANVAS_DOTS_PER_MILLIMETER)
+      scaleDraftElementGeometryToDots(element, dotsPerMillimeter)
     ),
   }
 }

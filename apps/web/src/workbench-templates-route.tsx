@@ -17,7 +17,7 @@ import { ActionButton } from "./components/ui/action-button.js"
 import { PromptDialog } from "./components/ui/dialog.js"
 import { Input } from "./components/ui/input.js"
 import { SegmentedTabs } from "./components/ui/segmented-tabs.js"
-import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
+import { buildInputFromTemplate, defaultDraftRenderOptions } from "./demo-data.js"
 import { cn } from "./lib/utils.js"
 import { ensureExtendedRuntimeFontStyles } from "./runtime-font-loader.js"
 import type { CanvasDraftDocument, Template, UserTemplateSummary } from "./types.js"
@@ -118,20 +118,18 @@ function useTemplatesRouteState(controller: WorkbenchController) {
   const syncRenderOptionsFromDraft = React.useCallback(
     (draft: CanvasDraftDocument | null) => {
       const nextOptions = {
-        ...defaultRenderOptions,
+        ...defaultDraftRenderOptions,
         ...draft?.renderOptions,
       }
       if (
-        controller.renderOptions.printWidthDots === nextOptions.printWidthDots &&
-        controller.renderOptions.paperType === nextOptions.paperType &&
-        controller.renderOptions.threshold === nextOptions.threshold &&
-        controller.renderOptions.xOffsetDots === nextOptions.xOffsetDots
+        controller.documentRenderOptions.paperType === nextOptions.paperType &&
+        controller.documentRenderOptions.threshold === nextOptions.threshold
       ) {
         return
       }
-      controller.setRenderOptions(nextOptions)
+      controller.setDocumentRenderOptions(nextOptions)
     },
-    [controller.renderOptions, controller.setRenderOptions]
+    [controller.documentRenderOptions, controller.setDocumentRenderOptions]
   )
 
   React.useEffect(() => {
@@ -566,6 +564,8 @@ function useTemplatesRouteState(controller: WorkbenchController) {
   return {
     activeTemplate,
     activeTemplateEntry,
+    activeUserTemplatePreviewReady:
+      activeTemplateEntry?.kind !== "user" || resolvedActiveUserTemplateDraft !== null,
     activeUserTemplateDraftLoading,
     addTemplateRow,
     archiveTemplateEntry,
@@ -621,11 +621,13 @@ export default function WorkbenchTemplatesRoute({
     state.activeUserTemplateDraftLoading &&
     !state.activeTemplateEntry.draft &&
     !state.activeTemplateEntry.template.document
+  const activeUserTemplateUnavailable =
+    state.activeTemplateEntry?.kind === "user" && !state.activeUserTemplatePreviewReady
   const templatePreviewDisabled =
     showsDisabledPreviewRail ||
     !state.activeTemplateEntry ||
     !state.selectedTemplateRow ||
-    activeUserTemplatePending
+    activeUserTemplateUnavailable
   const [listMode, setListMode] = React.useState<TemplateListMode>("large")
   const [actionMenu, setActionMenu] = React.useState<TemplateActionMenuState | null>(null)
   const [renameDialog, setRenameDialog] = React.useState<{
@@ -1129,7 +1131,9 @@ export default function WorkbenchTemplatesRoute({
               unavailableMessage={
                 activeUserTemplatePending
                   ? "正在读取本地模板草稿。"
-                  : "先选择模板后查看预览与打印。"
+                  : activeUserTemplateUnavailable
+                    ? "当前用户模板缺少可预览草稿。"
+                    : "先选择模板后查看预览与打印。"
               }
               onFocusRight={() => state.setTemplateFocus("center-right")}
             />

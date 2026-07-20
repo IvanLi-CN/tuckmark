@@ -58,6 +58,7 @@ import {
 
 import type { ApiClient } from "./api-client.js"
 import { AppLaunchSplash } from "./app-launch-splash.js"
+import { formatPrintPathStateLabel, getPrintPathStateTone } from "./browser-direct-path.js"
 import type { BrowserPrintSource } from "./browser-print-payload.js"
 import {
   buildTemplateFieldsFromDraft,
@@ -88,11 +89,12 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
 import { DataDirectoryNudgeToast } from "./data-directory-nudge-toast.js"
-import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
+import { buildInputFromTemplate, defaultDraftRenderOptions } from "./demo-data.js"
 import { FooterBuildMeta } from "./footer-build-meta.js"
 import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
 import { canvasDotsToMillimeters, canvasMillimetersToDots } from "./lib/canvas-units.js"
 import { cn } from "./lib/utils.js"
+import { OutputSettingsControls, PositionedPreview } from "./output-settings-ui.js"
 import { usePwaAssetWarmup } from "./pwa-asset-warmup.js"
 import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import { applyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
@@ -672,7 +674,9 @@ export function createUserTemplatePrintSource(
 ): BrowserPrintSource {
   return {
     kind: "canvas",
-    canvas: compileDraftToFilledCanvasDefinition(draft, row.values),
+    canvas: compileDraftToFilledCanvasDefinition(draft, row.values, {
+      printerDpi: renderOptions.printerDpi,
+    }),
     renderOptions: createPreviewRenderOptions(renderOptions),
     templateUsage: {
       id: template.id,
@@ -1095,20 +1099,18 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   const syncRenderOptionsFromDraft = React.useCallback(
     (draft: CanvasDraftDocument | null) => {
       const nextOptions = {
-        ...defaultRenderOptions,
+        ...defaultDraftRenderOptions,
         ...draft?.renderOptions,
       }
       if (
-        controller.renderOptions.printWidthDots === nextOptions.printWidthDots &&
-        controller.renderOptions.paperType === nextOptions.paperType &&
-        controller.renderOptions.threshold === nextOptions.threshold &&
-        controller.renderOptions.xOffsetDots === nextOptions.xOffsetDots
+        controller.documentRenderOptions.paperType === nextOptions.paperType &&
+        controller.documentRenderOptions.threshold === nextOptions.threshold
       ) {
         return
       }
-      controller.setRenderOptions(nextOptions)
+      controller.setDocumentRenderOptions(nextOptions)
     },
-    [controller.renderOptions, controller.setRenderOptions]
+    [controller.documentRenderOptions, controller.setDocumentRenderOptions]
   )
 
   React.useEffect(() => {
@@ -1648,6 +1650,8 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   return {
     activeTemplateEntry,
     activeUserTemplateDraft,
+    activeUserTemplatePreviewReady:
+      activeTemplateEntry?.kind !== "user" || resolvedActiveUserTemplateDraft !== null,
     activeTemplate,
     addCanvasElement,
     addTemplateRow,
@@ -1843,9 +1847,11 @@ function WorkbenchLayout({
           <span>{location.pathname}</span>
         </div>
         <div className="tm-footer__row tm-footer__row--right">
-          <span>Service API: {controller.serviceApiUsable ? "available" : "disabled"}</span>
           <span>
-            Browser direct: {controller.browserDirectConfigured ? "available" : "disabled"}
+            Service API: {formatPrintPathStateLabel(controller.serviceApiPathState, "en")}
+          </span>
+          <span>
+            Browser direct: {formatPrintPathStateLabel(controller.browserDirectPathState, "en")}
           </span>
           <a
             className="tm-footer__link"
@@ -1966,13 +1972,13 @@ function DeviceDrawer({
             <CardContent className="grid gap-3">
               <StatusPill
                 label="Service API"
-                value={controller.serviceApiUsable ? "已启用" : "不可用"}
-                tone={controller.serviceApiUsable ? "ok" : "muted"}
+                value={formatPrintPathStateLabel(controller.serviceApiPathState, "zh")}
+                tone={getPrintPathStateTone(controller.serviceApiPathState)}
               />
               <StatusPill
                 label="Browser Direct"
-                value={controller.browserDirectConfigured ? "已配置" : "已关闭"}
-                tone={controller.browserDirectConfigured ? "ok" : "muted"}
+                value={formatPrintPathStateLabel(controller.browserDirectPathState, "zh")}
+                tone={getPrintPathStateTone(controller.browserDirectPathState)}
               />
               <StatusPill
                 label="Probe"
@@ -2240,13 +2246,13 @@ function DashboardPage({ controller }: { controller: ReturnType<typeof useWorkbe
           <CardContent className="grid gap-3">
             <StatusPill
               label="Service API"
-              value={controller.serviceApiUsable ? "available" : "disabled"}
-              tone={controller.serviceApiUsable ? "ok" : "muted"}
+              value={formatPrintPathStateLabel(controller.serviceApiPathState, "en")}
+              tone={getPrintPathStateTone(controller.serviceApiPathState)}
             />
             <StatusPill
               label="Browser Direct"
-              value={controller.browserDirectConfigured ? "available" : "disabled"}
-              tone={controller.browserDirectConfigured ? "ok" : "muted"}
+              value={formatPrintPathStateLabel(controller.browserDirectPathState, "en")}
+              tone={getPrintPathStateTone(controller.browserDirectPathState)}
             />
           </CardContent>
         </Card>
@@ -2286,11 +2292,13 @@ function TemplatesPage({
     state.activeUserTemplateDraftLoading &&
     !state.activeTemplateEntry.draft &&
     !state.activeTemplateEntry.template.document
+  const activeUserTemplateUnavailable =
+    state.activeTemplateEntry?.kind === "user" && !state.activeUserTemplatePreviewReady
   const templatePreviewDisabled =
     showsDisabledPreviewRail ||
     !state.activeTemplateEntry ||
     !state.selectedTemplateRow ||
-    activeUserTemplatePending
+    activeUserTemplateUnavailable
   const [listMode, setListMode] = React.useState<TemplateListMode>("large")
   const [actionMenu, setActionMenu] = React.useState<TemplateActionMenuState | null>(null)
   const [renameDialog, setRenameDialog] = React.useState<{
@@ -2791,7 +2799,9 @@ function TemplatesPage({
               unavailableMessage={
                 activeUserTemplatePending
                   ? "正在读取本地模板草稿。"
-                  : "先选择模板后查看预览与打印。"
+                  : activeUserTemplateUnavailable
+                    ? "当前用户模板缺少可预览草稿。"
+                    : "先选择模板后查看预览与打印。"
               }
               onFocusRight={() => state.setTemplateFocus("center-right")}
             />
@@ -2807,7 +2817,9 @@ function TemplatesPage({
               unavailableMessage={
                 activeUserTemplatePending
                   ? "正在读取本地模板草稿。"
-                  : "先选择模板后查看预览与打印。"
+                  : activeUserTemplateUnavailable
+                    ? "当前用户模板缺少可预览草稿。"
+                    : "先选择模板后查看预览与打印。"
               }
               onFocusRight={() => state.setTemplateFocus("center-right")}
             />
@@ -3657,8 +3669,6 @@ export function RenderOptionsForm({
   compact?: boolean
   disabled?: boolean
 }) {
-  const options = controller.renderOptions
-
   return (
     <Card className="tm-panel">
       <CardHeader className={compact ? "pb-4" : undefined}>
@@ -3667,79 +3677,23 @@ export function RenderOptionsForm({
         </CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
-        <div className={cn("tm-form-grid", compact && "tm-form-grid--compact")}>
-          <div className="grid gap-2">
-            <Label htmlFor="print-width">宽度 dots</Label>
-            <Input
-              id="print-width"
-              type="number"
-              value={String(options.printWidthDots)}
-              disabled={disabled}
-              onFocus={onFocusRight}
-              onChange={(event) => {
-                const rawValue = event.currentTarget.value
-                controller.updateRenderOptions((current) => ({
-                  ...current,
-                  printWidthDots: Number(rawValue || current.printWidthDots),
-                }))
-              }}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="paper-type">纸张类型</Label>
-            <Select
-              value={options.paperType}
-              disabled={disabled}
-              onValueChange={(value: "continuous" | "gap") =>
-                controller.updateRenderOptions((current) => ({
-                  ...current,
-                  paperType: value,
-                }))
-              }
-            >
-              <SelectTrigger id="paper-type" disabled={disabled} onFocus={onFocusRight}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="continuous">continuous</SelectItem>
-                <SelectItem value="gap">gap</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="threshold">Threshold</Label>
-            <Input
-              id="threshold"
-              type="number"
-              value={String(options.threshold)}
-              disabled={disabled}
-              onFocus={onFocusRight}
-              onChange={(event) => {
-                const rawValue = event.currentTarget.value
-                controller.updateRenderOptions((current) => ({
-                  ...current,
-                  threshold: Number(rawValue || current.threshold),
-                }))
-              }}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="x-offset">X offset</Label>
-            <Input
-              id="x-offset"
-              type="number"
-              value={String(options.xOffsetDots)}
-              disabled={disabled}
-              onFocus={onFocusRight}
-              onChange={(event) => {
-                const rawValue = event.currentTarget.value
-                controller.updateRenderOptions((current) => ({
-                  ...current,
-                  xOffsetDots: Number(rawValue || current.xOffsetDots),
-                }))
-              }}
-            />
-          </div>
+        <div onFocusCapture={onFocusRight}>
+          <OutputSettingsControls
+            disabled={disabled}
+            paperType={controller.documentRenderOptions.paperType}
+            onPaperTypeChange={(paperType) =>
+              controller.updateDocumentRenderOptions((current) => ({
+                ...current,
+                paperType,
+              }))
+            }
+            deviceCalibration={controller.resolvedPrinterDeviceCalibration}
+            onDeviceCalibrationChange={controller.updatePrinterDeviceCalibration}
+            printerIdentity={controller.resolvedPrinterIdentity}
+            appliedModelPreset={controller.resolvedPrinterModelPreset}
+            recommendedModelPreset={controller.recommendedPrinterModelPreset}
+            onSaveModelPreset={controller.savePrinterModelPreset}
+          />
         </div>
       </CardContent>
     </Card>
@@ -3785,17 +3739,17 @@ function PreviewCard({
       </CardHeader>
       <CardContent className="grid gap-3">
         {!disabled && controller.artifactData ? (
-          <div className="tm-preview-shell">
-            <img
-              alt="preview artifact"
-              className="tm-preview-image"
-              src={
-                controller.artifactData.preview.kind === "url"
-                  ? controller.artifactData.preview.url
-                  : controller.artifactData.preview.dataUrl
-              }
-            />
-          </div>
+          <PositionedPreview
+            previewUrl={
+              controller.artifactData.preview.kind === "url"
+                ? controller.artifactData.preview.url
+                : controller.artifactData.preview.dataUrl
+            }
+            artifactWidth={controller.preview?.artifact.width}
+            artifactHeight={controller.preview?.artifact.height}
+            renderOptions={controller.renderOptions}
+            emptyText={emptyText}
+          />
         ) : (
           <EmptyMini text={emptyText} />
         )}
@@ -4738,7 +4692,7 @@ export function WorkbenchAppStory({
   return (
     <ThemeScope theme={theme}>
       <MemoryRouter initialEntries={initialEntries}>
-        <LazyWorkbenchRouter
+        <EagerWorkbenchRouter
           controller={controller}
           canvasScenario={canvasScenario}
           hydrationState={hydrationState}

@@ -48,10 +48,14 @@ describe("encodeBrowserPngBytes", () => {
         note: "Packet diff",
       },
       {
+        printerModel: "P2",
+        printerDpi: 203,
         paperType: "gap",
         threshold: 150,
         printWidthDots: 384,
         xOffsetDots: 0,
+        yOffsetDots: 0,
+        printStrengthLevel: 0,
       }
     )
     const tempDir = createTempDir()
@@ -98,10 +102,14 @@ describe("encodeBrowserPngBytes", () => {
         location: "Rack A",
       },
       {
+        printerModel: "P2",
+        printerDpi: 203,
         paperType: "continuous",
         threshold: 150,
         printWidthDots: 384,
         xOffsetDots: 0,
+        yOffsetDots: 0,
+        printStrengthLevel: 0,
       }
     )
     const tempDir = createTempDir()
@@ -142,10 +150,14 @@ describe("encodeBrowserPngBytes", () => {
       text: "Tuckmark\nPrint OK",
       title: "Safe Text Label",
       renderOptions: {
+        printerModel: "P2",
+        printerDpi: 203,
         paperType: "continuous",
         threshold: 150,
         printWidthDots: 384,
         xOffsetDots: 0,
+        yOffsetDots: 0,
+        printStrengthLevel: 0,
         previewScale: 4,
       },
     })

@@ -138,14 +138,14 @@ function createSnapshot(args: {
     exportedAt: "2026-07-17T07:00:00.000Z",
     snapshotUpdatedAt: args.updatedAt,
     settings: {
-      version: 1,
+      version: 2,
       updatedAt: args.updatedAt ?? "1970-01-01T00:00:00.000Z",
-      defaultRenderOptions: {
-        printWidthDots: 384,
+      documentDefaults: {
         paperType: "continuous",
         threshold: 150,
-        xOffsetDots: 0,
       },
+      printerModelPresets: {},
+      printerDeviceCalibrations: {},
       permissionNudgeSeen: true,
       showTextBoundingBoxes: false,
     },

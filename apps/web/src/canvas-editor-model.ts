@@ -19,7 +19,7 @@ import type { BrowserPrintSource } from "./browser-print-payload.js"
 import {
   CANVAS_DOTS_PER_MILLIMETER,
   canvasDotsToMillimeters,
-  canvasDraftDocumentToDots,
+  canvasDraftDocumentToDotsAtDensity,
   normalizeCanvasDraftDocumentUnits,
   scaleTemplateElementGeometry,
 } from "./lib/canvas-units.js"
@@ -1722,9 +1722,13 @@ export function compileDraftToCanvasDefinition(
   document: CanvasDraftDocument,
   options?: {
     measureText?: TextMeasureFunction
+    printerDpi?: number
   }
 ): DirectCanvasDefinition {
-  const dotsDocument = canvasDraftDocumentToDots(document)
+  const dotsDocument = canvasDraftDocumentToDotsAtDensity(
+    document,
+    (options?.printerDpi ?? 203) / 25.4
+  )
   const visibleSourceElements = document.elements.filter((element) => element.meta.visible)
   const visibleDotsElements = dotsDocument.elements.filter((element) => element.meta.visible)
   return {
@@ -1747,9 +1751,13 @@ export function compileDraftToFilledCanvasDefinition(
   input: Record<string, string>,
   options?: {
     measureText?: TextMeasureFunction
+    printerDpi?: number
   }
 ): DirectCanvasDefinition {
-  const dotsDocument = canvasDraftDocumentToDots(document)
+  const dotsDocument = canvasDraftDocumentToDotsAtDensity(
+    document,
+    (options?.printerDpi ?? 203) / 25.4
+  )
   const fieldMap = new Map(
     dotsDocument.fields.map((field) => [field.key, input[field.key] ?? field.defaultValue ?? ""])
   )
@@ -1817,7 +1825,10 @@ export function toCanvasPrintSource(
 ): BrowserPrintSource {
   return {
     kind: "canvas",
-    canvas: compileDraftToCanvasDefinition(document, options),
+    canvas: compileDraftToCanvasDefinition(document, {
+      ...options,
+      printerDpi: renderOptions.printerDpi,
+    }),
     renderOptions: createPreviewRenderOptions({
       ...document.renderOptions,
       ...renderOptions,

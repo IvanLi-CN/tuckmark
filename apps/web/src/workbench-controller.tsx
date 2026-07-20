@@ -2,6 +2,10 @@ import React from "react"
 
 import { type ApiClient, createApiClient, loadSetup } from "./api-client.js"
 import type { AppLaunchSplashStep } from "./app-launch-splash.js"
+import {
+  getBrowserDirectPathStateMessage,
+  resolveEffectiveBrowserDirectPathState,
+} from "./browser-direct-path.js"
 import { type BrowserPrintSource, materializeBrowserArtifactData } from "./browser-print-payload.js"
 import {
   type BrowserPrintError,
@@ -36,7 +40,7 @@ import type {
   DataDirectoryBackupEntry,
   DataDirectoryStatus,
 } from "./data-directory-types.js"
-import { buildInputFromTemplate, defaultRenderOptions, fallbackTemplates } from "./demo-data.js"
+import { buildInputFromTemplate, fallbackTemplates } from "./demo-data.js"
 import {
   type CanvasDimension,
   getCanvasDotsCapabilityMessage,
@@ -45,7 +49,17 @@ import {
 } from "./lib/canvas-dimensions.js"
 import { canvasDotsToMillimeters, canvasMillimetersToDots } from "./lib/canvas-units.js"
 import { loadRecentActivity, type RecentActivityState } from "./lib/recent-activity.js"
+import {
+  clampModelPresetToCapability,
+  defaultDocumentRenderOptions,
+  normalizePrintStrengthLevel,
+  pickDocumentRenderOptions,
+  resolveOutputSettings,
+  snapOffsetMillimeters,
+} from "./output-settings.js"
 import { resolveAppContext } from "./runtime.js"
+import { createDefaultRuntimeAppSettings } from "./runtime-app-settings.js"
+import type { RuntimeStoreAppSettings } from "./runtime-store-contract.js"
 import {
   getRuntimeStoreEventTabId,
   type RuntimeStoreMutationReason,
@@ -54,8 +68,11 @@ import {
 import type {
   AppContext,
   ArtifactData,
+  DocumentRenderOptions,
   PreviewResult,
   Printer,
+  PrinterDeviceCalibration,
+  PrinterModelPreset,
   PrintResult,
   RenderOptions,
   Template,
@@ -71,6 +88,7 @@ import {
   restoreUserTemplate,
   saveRuntimeAppSettings,
 } from "./user-template-store.js"
+import detongerWasmStatus from "./wasm/pkg/detonger_wasm_status.js"
 import {
   applySyncStateToBrowser,
   deleteCanvasDraftLocally,
@@ -324,7 +342,9 @@ function summarizeSourceTitle(source: BrowserPrintSource): string {
 }
 
 function getPrintTargetWidth(source: BrowserPrintSource, printer: Printer | null): number {
-  return printer?.capabilities.printWidthDots ?? source.renderOptions.printWidthDots
+  return printer?.capabilities.printWidthDots
+    ? Math.min(printer.capabilities.printWidthDots, source.renderOptions.printWidthDots)
+    : source.renderOptions.printWidthDots
 }
 
 export type WorkbenchController = ReturnType<typeof useWorkbenchController>
@@ -357,10 +377,14 @@ export function useWorkbenchController({
     "none" | "auto" | "explicit"
   >("none")
   const [preferredPrinterName, setPreferredPrinterName] = React.useState("")
-  const [renderOptions, setRenderOptionsState] = React.useState<RenderOptions>(defaultRenderOptions)
   const [showTextBoundingBoxes, setShowTextBoundingBoxes] = React.useState(
     storyStateOverrides?.showTextBoundingBoxes ?? false
   )
+  const [runtimeSettings, setRuntimeSettings] = React.useState<RuntimeStoreAppSettings>(
+    createDefaultRuntimeAppSettings()
+  )
+  const [documentRenderOptions, setDocumentRenderOptionsState] =
+    React.useState<DocumentRenderOptions>(defaultDocumentRenderOptions)
   const [preview, setPreview] = React.useState<PreviewResult | null>(null)
   const [artifactData, setArtifactData] = React.useState<ArtifactData | null>(null)
   const [previewPrintSource, setPreviewPrintSource] = React.useState<BrowserPrintSource | null>(
@@ -443,18 +467,38 @@ export function useWorkbenchController({
     }
     return "/"
   }, [providedInitialRoutePath])
-  const browserDirectConfigured = context.capabilities.browserDirectPrintPath !== "disabled"
-  const browserDirectAvailable = browserDirectConfigured && browserPrintSupported
-  const serviceApiLive = context.capabilities.serviceApiPrintPath === "available"
-  const serviceApiUsable =
-    context.capabilities.serviceApiPrintPath === "available" ||
-    context.capabilities.serviceApiPrintPath === "mocked"
+  const serviceApiPathState = context.capabilities.serviceApiPrintPath
+  const browserDirectPathState = resolveEffectiveBrowserDirectPathState(
+    context.capabilities.browserDirectPrintPath,
+    context.mode,
+    browserPrintSupported
+  )
+  const browserDirectConfigured = browserDirectPathState !== "disabled"
+  const browserDirectAvailable = browserDirectPathState === "available"
+  const serviceApiLive = serviceApiPathState === "available"
+  const serviceApiUsable = serviceApiPathState === "available" || serviceApiPathState === "mocked"
   const hasServerPrinterFlow = context.capabilities.serviceApiPrintPath === "available"
+  const browserDirectPathMessage = React.useMemo(
+    () => getBrowserDirectPathStateMessage(browserDirectPathState, detongerWasmStatus.reason),
+    [browserDirectPathState]
+  )
 
   const selectedPrinter = React.useMemo(
     () => printers.find((printer) => printer.id === printerId) ?? null,
     [printerId, printers]
   )
+  const resolvedOutputSettings = React.useMemo(
+    () =>
+      resolveOutputSettings({
+        documentDefaults: documentRenderOptions,
+        printerModelPresets: runtimeSettings.printerModelPresets,
+        printerDeviceCalibrations: runtimeSettings.printerDeviceCalibrations,
+        selectedPrinter,
+        browserPrinter,
+      }),
+    [browserPrinter, documentRenderOptions, runtimeSettings, selectedPrinter]
+  )
+  const renderOptions = resolvedOutputSettings.renderOptions
 
   const refreshDataDirectoryStatus = React.useCallback(async () => {
     if (storyStateOverrides?.dataDirectoryStatus) {
@@ -493,19 +537,95 @@ export function useWorkbenchController({
     }
   }, [storyStateOverrides])
 
-  const setRenderOptions = React.useCallback((next: React.SetStateAction<RenderOptions>) => {
-    setRenderOptionsState(next)
-  }, [])
-
-  const updateRenderOptions = React.useCallback((next: React.SetStateAction<RenderOptions>) => {
-    setRenderOptionsState((current) => {
-      const resolved = typeof next === "function" ? next(current) : next
-      void saveRuntimeAppSettings({
-        defaultRenderOptions: resolved,
+  const setRenderOptions = React.useCallback(
+    (next: React.SetStateAction<RenderOptions>) => {
+      setDocumentRenderOptionsState((current) => {
+        const resolved = typeof next === "function" ? next({ ...renderOptions, ...current }) : next
+        return pickDocumentRenderOptions(resolved)
       })
-      return resolved
-    })
-  }, [])
+    },
+    [renderOptions]
+  )
+
+  const setDocumentRenderOptions = React.useCallback(
+    (next: React.SetStateAction<DocumentRenderOptions>) => {
+      setDocumentRenderOptionsState((current) => {
+        const resolved = typeof next === "function" ? next(current) : next
+        return pickDocumentRenderOptions(resolved)
+      })
+    },
+    []
+  )
+
+  const updateDocumentRenderOptions = React.useCallback(
+    (next: React.SetStateAction<DocumentRenderOptions>) => {
+      setDocumentRenderOptionsState((current) => {
+        const resolved = typeof next === "function" ? next(current) : next
+        const normalized = pickDocumentRenderOptions(resolved)
+        void saveRuntimeAppSettings({
+          documentDefaults: normalized,
+        }).then(setRuntimeSettings)
+        return normalized
+      })
+    },
+    []
+  )
+
+  const updateRenderOptions = React.useCallback(
+    (next: React.SetStateAction<RenderOptions>) => {
+      setDocumentRenderOptionsState((current) => {
+        const resolved = typeof next === "function" ? next({ ...renderOptions, ...current }) : next
+        const normalized = pickDocumentRenderOptions(resolved)
+        void saveRuntimeAppSettings({
+          documentDefaults: normalized,
+        }).then(setRuntimeSettings)
+        return normalized
+      })
+    },
+    [renderOptions]
+  )
+
+  const updatePrinterDeviceCalibration = React.useCallback(
+    (next: React.SetStateAction<PrinterDeviceCalibration>) => {
+      const deviceKey = resolvedOutputSettings.printerIdentity.deviceKey
+      if (!deviceKey) {
+        return
+      }
+      const currentCalibration = resolvedOutputSettings.appliedDeviceCalibration
+      const resolved = typeof next === "function" ? next(currentCalibration) : next
+      const normalized: PrinterDeviceCalibration = {
+        xOffsetMm: snapOffsetMillimeters(resolved.xOffsetMm),
+        yOffsetMm: snapOffsetMillimeters(resolved.yOffsetMm),
+        printStrengthLevel: normalizePrintStrengthLevel(resolved.printStrengthLevel),
+      }
+      void saveRuntimeAppSettings((current) => ({
+        printerDeviceCalibrations: {
+          ...current.printerDeviceCalibrations,
+          [deviceKey]: normalized,
+        },
+      })).then(setRuntimeSettings)
+    },
+    [resolvedOutputSettings]
+  )
+
+  const savePrinterModelPreset = React.useCallback(
+    async (next: PrinterModelPreset) => {
+      const printerModel = resolvedOutputSettings.printerIdentity.printerModel
+      const normalized = clampModelPresetToCapability(
+        next,
+        resolvedOutputSettings.printerIdentity.capabilityPrintWidthDots
+      )
+      const settings = await saveRuntimeAppSettings((current) => ({
+        printerModelPresets: {
+          ...current.printerModelPresets,
+          [printerModel]: normalized,
+        },
+      }))
+      setRuntimeSettings(settings)
+      return settings
+    },
+    [resolvedOutputSettings]
+  )
 
   const updateShowTextBoundingBoxes = React.useCallback((next: React.SetStateAction<boolean>) => {
     setShowTextBoundingBoxes((current) => {
@@ -707,7 +827,8 @@ export function useWorkbenchController({
 
   const refreshRenderOptionsFromStore = React.useCallback(async () => {
     const settings = await loadRuntimeAppSettings()
-    setRenderOptionsState(settings.defaultRenderOptions)
+    setRuntimeSettings(settings)
+    setDocumentRenderOptionsState(settings.documentDefaults)
     if (!("showTextBoundingBoxes" in (storyStateOverrides ?? {}))) {
       setShowTextBoundingBoxes(settings.showTextBoundingBoxes)
     }
@@ -1137,6 +1258,9 @@ export function useWorkbenchController({
           }
 
           if (browserDirectConfigured || context.surface === "browser-static") {
+            if (browserDirectPathState !== "available") {
+              throw new Error(browserDirectPathMessage)
+            }
             await syncBrowserArtifact(source)
             return null
           }
@@ -1152,6 +1276,8 @@ export function useWorkbenchController({
     },
     [
       browserDirectConfigured,
+      browserDirectPathMessage,
+      browserDirectPathState,
       context.mode,
       context.surface,
       executeServerPreview,
@@ -1382,6 +1508,7 @@ export function useWorkbenchController({
               id: selectedPrinter?.id ?? browserPrinter?.deviceId ?? "demo-printer",
               name: selectedPrinter?.name ?? browserPrinter?.name ?? "Demo printer",
               capabilities: {
+                dpi: source.renderOptions.printerDpi,
                 printWidthDots: source.renderOptions.printWidthDots,
                 supportedPaperTypes: ["continuous", "gap"],
               },
@@ -1469,6 +1596,16 @@ export function useWorkbenchController({
       })
       return
     }
+    if (browserDirectPathState === "unavailable" || browserDirectPathState === "unsupported") {
+      setDeviceDrawerFeedback({
+        section: "browser-direct",
+        action: "connect-browser-printer",
+        tone: "error",
+        title: "连接失败",
+        message: browserDirectPathMessage,
+      })
+      return
+    }
     if (context.mode === "demo") {
       setDeviceDrawerFeedback({
         section: "browser-direct",
@@ -1495,7 +1632,14 @@ export function useWorkbenchController({
     if (result) {
       setBrowserPrinter(result)
     }
-  }, [browserDirectConfigured, browserPrintSupported, context.mode, runDeviceDrawerTask])
+  }, [
+    browserDirectConfigured,
+    browserDirectPathMessage,
+    browserDirectPathState,
+    browserPrintSupported,
+    context.mode,
+    runDeviceDrawerTask,
+  ])
 
   const refreshDeviceDrawerSetup = React.useCallback(async () => {
     const result = await runDeviceDrawerTask("service-api", "refresh-setup", async () => {
@@ -1709,6 +1853,7 @@ export function useWorkbenchController({
     artifactData,
     browserDirectAvailable,
     browserDirectConfigured,
+    browserDirectPathState,
     browserPrintSupported,
     browserPrinter,
     archivedUserTemplates,
@@ -1742,6 +1887,7 @@ export function useWorkbenchController({
     directorySetupNudgeOpen,
     dismissDirectorySetupNudge,
     handleImportantUserDataSaved,
+    documentRenderOptions,
     error,
     hasServerPrinterFlow,
     preview,
@@ -1767,16 +1913,25 @@ export function useWorkbenchController({
     resetDeviceDrawerState,
     restoreArchivedTemplate,
     selectedPrinter,
+    resolvedPrinterDeviceCalibration: resolvedOutputSettings.appliedDeviceCalibration,
+    resolvedPrinterIdentity: resolvedOutputSettings.printerIdentity,
+    resolvedPrinterModelPreset: resolvedOutputSettings.appliedModelPreset,
+    recommendedPrinterModelPreset: resolvedOutputSettings.recommendedModelPreset,
     serverPrinterSelectionMode,
     serviceApiLive,
+    serviceApiPathState,
     serviceApiUsable,
     setError,
     setPreview,
     setPreviewPrintSource,
     setProbeResult,
+    setDocumentRenderOptions,
     setRenderOptions,
     updateRenderOptions,
     updateShowTextBoundingBoxes,
+    updateDocumentRenderOptions,
+    updatePrinterDeviceCalibration,
+    savePrinterModelPreset,
     setRecentActivity,
     deferredHydrationPending,
     startupSyncReady,

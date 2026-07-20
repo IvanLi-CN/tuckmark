@@ -35,6 +35,10 @@ export async function encodeArtifactWithDetongerRustPreview(
     String(artifact.renderOptions.threshold),
     "--x-offset",
     String(artifact.renderOptions.xOffsetDots),
+    "--y-offset",
+    String(artifact.renderOptions.yOffsetDots),
+    "--print-strength",
+    String(artifact.renderOptions.printStrengthLevel),
     "--paper-type",
     artifact.renderOptions.paperType,
   ]

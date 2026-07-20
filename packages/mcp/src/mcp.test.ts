@@ -22,9 +22,13 @@ function createArtifact(root: string): PreviewArtifact {
     templateId: "shipping-compact",
     createdAt: "2026-06-18T00:00:00.000Z",
     renderOptions: {
+      printerModel: "P2",
+      printerDpi: 203,
       printWidthDots: 384,
       threshold: 150,
       xOffsetDots: 0,
+      yOffsetDots: 0,
+      printStrengthLevel: 0,
       paperType: "continuous",
       previewScale: 4,
     },
