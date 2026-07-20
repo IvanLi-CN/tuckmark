@@ -9,6 +9,9 @@
   - a shared status footer with route/runtime state, GitHub repository link,
     build-time release/build metadata, site rights notice, and print-path
     readiness
+    - tagged release metadata parses the configured GitHub repository URL and
+      deep-links `v<release-version>` into the repository's OctoRill public
+      releases list while keeping `build <shortsha>` in tooltip metadata
   - one right-side device drawer reused across runtime, browser-static, and
     demo surfaces
   - drawer-local feedback state for device actions so browser-direct

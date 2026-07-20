@@ -1320,9 +1320,13 @@ describe("web workbench app", () => {
 
     expect(document.body.textContent).toContain("v0.2.0-preview.11")
     expect(document.body.textContent).not.toContain("build e499426")
-    const taggedFooterMeta = document.querySelector<HTMLElement>(".tm-footer__meta")
+    const taggedFooterMeta = document.querySelector<HTMLAnchorElement>(".tm-footer__meta")
     expect(taggedFooterMeta?.textContent).toContain("v0.2.0-preview.11")
-    expect(taggedFooterMeta?.getAttribute("tabindex")).toBe("0")
+    expect(taggedFooterMeta?.getAttribute("href")).toBe(
+      "https://octo-rill.ivanli.cc/IvanLi-CN/tuckmark/releases?highlight=tag%3Av0.2.0-preview.11&highlight_active=tag%3Av0.2.0-preview.11"
+    )
+    expect(taggedFooterMeta?.getAttribute("target")).toBe("_blank")
+    expect(taggedFooterMeta?.getAttribute("rel")).toBe("noreferrer")
 
     await act(async () => {
       taggedFooterMeta?.focus()
@@ -1351,6 +1355,28 @@ describe("web workbench app", () => {
     expect(document.body.textContent).not.toContain("v0.1.0")
     const untaggedFooterMeta = document.querySelector<HTMLElement>(".tm-footer__meta")
     expect(untaggedFooterMeta?.getAttribute("tabindex")).toBeNull()
+    expect(untaggedFooterMeta?.tagName).toBe("SPAN")
+  })
+
+  it("keeps tagged owner-facing builds unlinked when the repository URL cannot be mapped", async () => {
+    Object.defineProperty(globalThis, "__TUCKMARK_APP_VERSION__", {
+      value: "0.2.0-preview.11",
+      configurable: true,
+    })
+    Object.defineProperty(globalThis, "__TUCKMARK_BUILD_REF__", {
+      value: "e499426",
+      configurable: true,
+    })
+    Object.defineProperty(globalThis, "__TUCKMARK_REPOSITORY_URL__", {
+      value: "https://example.test/not-github",
+      configurable: true,
+    })
+
+    await renderApp(browserRuntimeContext)
+
+    const taggedFooterMeta = document.querySelector<HTMLElement>(".tm-footer__meta")
+    expect(taggedFooterMeta?.textContent).toContain("v0.2.0-preview.11")
+    expect(taggedFooterMeta?.tagName).toBe("SPAN")
   })
 
   it("shows a non-blocking PWA update prompt when a new browser-static version is ready", async () => {

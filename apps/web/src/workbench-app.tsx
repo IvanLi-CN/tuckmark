@@ -1859,6 +1859,7 @@ function WorkbenchLayout({
           <FooterBuildMeta
             appVersion={__TUCKMARK_APP_VERSION__}
             buildRef={__TUCKMARK_BUILD_REF__}
+            repositoryUrl={__TUCKMARK_REPOSITORY_URL__}
           />
           <a href={__TUCKMARK_RIGHTS_URL__} target="_blank" rel="noreferrer">
             © 2026 Ivan Li

@@ -41,6 +41,9 @@ Owner-facing footer metadata follows one contract:
 
 - tagged deploys show the published release version and keep the build ref in
   tooltip metadata
+- tagged deploys link that release version to the repository's OctoRill public
+  releases list with `highlight=tag:<release-version>` and
+  `highlight_active=tag:<release-version>`
 - untagged mainline deploys show `build <shortsha>` only
 
 ## Release Contract
