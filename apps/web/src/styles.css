@@ -1121,25 +1121,11 @@
 
   .tm-shell {
     @apply min-h-screen px-4 py-4 md:px-5 lg:px-6;
-    --tm-shell-inline-padding: 1rem;
-    --tm-shell-block-padding: 1rem;
     display: grid;
     position: relative;
     grid-template-rows: auto 1fr auto;
     align-content: start;
     gap: 1rem;
-  }
-
-  @media (min-width: 768px) {
-    .tm-shell {
-      --tm-shell-inline-padding: 1.25rem;
-    }
-  }
-
-  @media (min-width: 1024px) {
-    .tm-shell {
-      --tm-shell-inline-padding: 1.5rem;
-    }
   }
 
   .tm-shell--canvas {
@@ -1218,11 +1204,19 @@
 
   .tm-nav-progress {
     pointer-events: none;
-    position: absolute;
-    inset-block-start: var(--tm-shell-block-padding);
-    inset-inline: var(--tm-shell-inline-padding);
-    z-index: 70;
-    height: 0.25rem;
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline: 0;
+    z-index: 90;
+    display: flex;
+    align-items: flex-end;
+    height: calc(env(safe-area-inset-top, 0px) + 0.25rem);
+    background:
+      linear-gradient(
+        to bottom,
+        transparent calc(100% - 0.25rem),
+        var(--tm-nav-hover-surface) calc(100% - 0.25rem)
+      );
     opacity: 0;
     transition: opacity 180ms ease;
   }
@@ -1232,9 +1226,9 @@
   }
 
   .tm-nav-progress__bar {
-    height: 100%;
+    height: 0.25rem;
     width: 100%;
-    border-radius: 999px;
+    border-radius: 0;
     transform-origin: left center;
     transition: transform 220ms ease;
     background: var(--tm-launch-progress-fill);

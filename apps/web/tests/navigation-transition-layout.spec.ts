@@ -16,6 +16,39 @@ test.describe("navigation transition layout", () => {
     await page.setViewportSize({ width: 1440, height: 900 })
   })
 
+  test("renders the progress bar as a viewport-wide top overlay", async ({ page }) => {
+    for (const story of STORYBOOK_STORIES) {
+      await page.goto(`/iframe.html?viewMode=story&id=${story.id}`)
+      await expect(page.locator(".tm-shell")).toBeVisible()
+
+      const metrics = await page.evaluate(() => {
+        const progress = document.querySelector<HTMLElement>(".tm-nav-progress")
+        const bar = document.querySelector<HTMLElement>(".tm-nav-progress__bar")
+        if (!progress || !bar) {
+          return null
+        }
+        const rect = progress.getBoundingClientRect()
+        return {
+          top: Math.round(rect.top),
+          left: Math.round(rect.left),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          viewportWidth: window.innerWidth,
+          position: window.getComputedStyle(progress).position,
+          barRadius: window.getComputedStyle(bar).borderTopLeftRadius,
+        }
+      })
+
+      expect(metrics).not.toBeNull()
+      expect(metrics?.position).toBe("fixed")
+      expect(metrics?.top).toBe(0)
+      expect(metrics?.left).toBe(0)
+      expect(Math.abs((metrics?.width ?? 0) - (metrics?.viewportWidth ?? 0))).toBeLessThanOrEqual(1)
+      expect(metrics?.height ?? 0).toBeGreaterThan(0)
+      expect(metrics?.barRadius).toBe("0px")
+    }
+  })
+
   test("does not shift the shell layout when the progress bar appears", async ({ page }) => {
     const measureShellAnchors = async (storyId: string) => {
       await page.goto(`/iframe.html?viewMode=story&id=${storyId}`)
