@@ -92,7 +92,10 @@ export function resolveGitHubRepositoryCoordinates(
 
   const protocol = url.protocol.toLowerCase()
   const hostname = url.hostname.toLowerCase()
-  if (!["http:", "https:"].includes(protocol) || !["github.com", "www.github.com"].includes(hostname)) {
+  if (
+    !["http:", "https:"].includes(protocol) ||
+    !["github.com", "www.github.com"].includes(hostname)
+  ) {
     return null
   }
 

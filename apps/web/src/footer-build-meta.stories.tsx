@@ -49,7 +49,11 @@ function OverviewCard({
         {label}
       </span>
       <div className="tm-footer max-w-fit px-4 py-2">
-        <FooterBuildMeta appVersion={appVersion} buildRef={buildRef} repositoryUrl={repositoryUrl} />
+        <FooterBuildMeta
+          appVersion={appVersion}
+          buildRef={buildRef}
+          repositoryUrl={repositoryUrl}
+        />
       </div>
     </div>
   )

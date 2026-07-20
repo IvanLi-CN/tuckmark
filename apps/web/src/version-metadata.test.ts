@@ -6,8 +6,8 @@ import {
   normalizeBuildRef,
   normalizeRuntimeBuildMetadata,
   normalizeVersionTag,
-  resolveGitHubRepositoryCoordinates,
   resolveFooterVersionMetadata,
+  resolveGitHubRepositoryCoordinates,
 } from "./version-metadata.js"
 
 describe("version metadata helpers", () => {
@@ -108,17 +108,24 @@ describe("version metadata helpers", () => {
       owner: "IvanLi-CN",
       repo: "tuckmark",
     })
-    expect(
-      resolveGitHubRepositoryCoordinates("https://github.com/IvanLi-CN/tuckmark.git")
-    ).toEqual({
-      owner: "IvanLi-CN",
-      repo: "tuckmark",
-    })
+    expect(resolveGitHubRepositoryCoordinates("https://github.com/IvanLi-CN/tuckmark.git")).toEqual(
+      {
+        owner: "IvanLi-CN",
+        repo: "tuckmark",
+      }
+    )
   })
 
   it("rejects non-standard repository URLs when building OctoRill release links", () => {
-    expect(buildOctoRillReleaseUrl({ repositoryUrl: "git@github.com:IvanLi-CN/tuckmark.git", tag: "0.2.0" })).toBeNull()
-    expect(buildOctoRillReleaseUrl({ repositoryUrl: "https://github.com/IvanLi-CN", tag: "0.2.0" })).toBeNull()
+    expect(
+      buildOctoRillReleaseUrl({
+        repositoryUrl: "git@github.com:IvanLi-CN/tuckmark.git",
+        tag: "0.2.0",
+      })
+    ).toBeNull()
+    expect(
+      buildOctoRillReleaseUrl({ repositoryUrl: "https://github.com/IvanLi-CN", tag: "0.2.0" })
+    ).toBeNull()
   })
 
   it("URL-encodes the highlighted release tag for OctoRill deep links", () => {
