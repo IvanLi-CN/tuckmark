@@ -18,8 +18,9 @@
 - `apps/web/vite.config.ts` and `apps/web/build-metadata.ts` now split
   owner-facing footer metadata into `TUCKMARK_APP_VERSION` and
   `TUCKMARK_BUILD_REF`.
-  - tagged builds render `v<release-version>` and keep `build <shortsha>` in
-    tooltip metadata
+  - tagged builds render a clickable `v<release-version>`, parse the configured
+    GitHub repository URL into an OctoRill highlight deep link, and keep
+    `build <shortsha>` in tooltip metadata
   - untagged owner-facing builds render `build <shortsha>` only
   - local no-build-ref fallback can still use the root package version so local
     previews do not go blank
@@ -109,8 +110,8 @@
   `release-context-<merge_sha>` artifact and publishes through
   `--notes-file work/release/release-notes.md` instead of an inline placeholder
   body. Pages always injects `TUCKMARK_BUILD_REF`, and tagged deploys also
-  inject `TUCKMARK_APP_VERSION`, so the browser-static footer metadata matches
-  the release/build that triggered the redeploy.
+  inject `TUCKMARK_APP_VERSION`, so the browser-static footer metadata and its
+  OctoRill deep link match the release/build that triggered the redeploy.
 - `.github/workflows/notify-release-failure.yml` attempts to download the
   release-context artifact from the failed release run and includes the release
   version, PR number, channel, type label, merge SHA, and run URL when that

@@ -66,9 +66,10 @@ output.
     rights notice, Service API readiness, and browser-direct print readiness
 - Footer version and repository metadata must come from build-time metadata with
   environment overrides, not from hard-coded component literals.
-- Tagged owner-facing builds show `v<release-version>` only and expose
-  `build <shortsha>` in tooltip metadata; untagged owner-facing builds show
-  `build <shortsha>` only.
+- Tagged owner-facing builds show a clickable `v<release-version>` that opens
+  the repository's OctoRill public releases list with that tag highlighted, and
+  expose `build <shortsha>` in tooltip metadata; untagged owner-facing builds
+  show `build <shortsha>` only.
 - `browser-static`, `server-http`, and `demo` reuse the same route tree and the
   same page components.
 - Static Pages keeps browser history routing semantics and ships a `404.html`
@@ -849,6 +850,10 @@ output.
 - `1280×800` template workspace footer showing GitHub repository, current app version, site rights notice, and runtime diagnostics together
 
   ![Template footer metadata](./assets/templates-footer-metadata-1280x800.png)
+
+  Tagged release metadata remains visually compact in the shared footer while
+  opening the repository's OctoRill release list in a new tab and preserving
+  `build <shortsha>` as hover/focus tooltip metadata.
 
 - `1280×800` canvas workspace in professional three-column editor mode
 

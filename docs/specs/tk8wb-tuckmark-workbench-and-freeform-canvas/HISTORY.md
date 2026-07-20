@@ -218,7 +218,8 @@ while the workbench was being productized:
     developer tools
   - the displayed owner-facing release/build metadata is injected from build
     metadata with environment overrides
-  - tagged builds show `v<release-version>` and keep `build <shortsha>` in
+  - tagged builds show `v<release-version>`, deep-link that tag into the
+    repository's OctoRill public releases list, and keep `build <shortsha>` in
     tooltip metadata, while untagged owner-facing builds fall back to
     `build <shortsha>` only
   - Service API and browser-direct readiness stay visible beside the support

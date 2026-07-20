@@ -89,7 +89,8 @@ and a reproducible worktree bootstrap path.
 - Published GitHub Releases and automated release publication trigger a fresh
   Pages deployment with release tag metadata so the browser-static footer shows
   the published release version while the build reference remains available in
-  tooltip metadata.
+  tooltip metadata and the visible release tag deep-links into the repository's
+  OctoRill public releases list with that tag highlighted.
 - Untagged mainline Pages deploys must expose `build <shortsha>` only instead
   of reusing stale package or release version text.
 - Repository settings must align with repo-local declarations.
@@ -133,7 +134,8 @@ and a reproducible worktree bootstrap path.
 - Release notes show the merged PR title/link, release type/channel, merge SHA,
   and published bundles instead of a one-line placeholder body
 - Pages redeploys after release publication display the published release tag
-  in footer metadata and expose `build <shortsha>` via tooltip
+  in clickable footer metadata, open the repository's OctoRill public releases
+  list with that tag highlighted, and expose `build <shortsha>` via tooltip
 - Untagged `main` Pages deploys display `build <shortsha>` only in footer
   metadata
 - GitHub labels, protection, and Pages settings align with repository truth
@@ -193,13 +195,14 @@ PR: include
 The footer build-metadata contract is captured from Storybook canvas so release
 and untagged states can be reviewed without relying on a live deployment.
 Tagged builds keep the published release version visible while exposing the
-exact build reference in tooltip metadata for operator support.
+exact build reference in tooltip metadata for operator support and routing the
+visible tag into the repository's OctoRill release list.
 
 PR: include
 ![Tagged footer build metadata](./assets/footer-build-meta-tagged.png)
 
-Hovering the tagged footer metadata reveals the build reference without turning
-it into always-visible footer text.
+Hovering or focusing the tagged footer metadata reveals the build reference
+without turning it into always-visible footer text.
 
 PR: include
 ![Tagged footer build metadata tooltip](./assets/footer-build-meta-tagged-tooltip.png)
