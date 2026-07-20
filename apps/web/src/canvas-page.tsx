@@ -106,6 +106,7 @@ import { PromptDialog } from "./components/ui/dialog.js"
 import { Input } from "./components/ui/input.js"
 import { Label } from "./components/ui/label.js"
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "./components/ui/popover.js"
+import { SegmentedTabs } from "./components/ui/segmented-tabs.js"
 import {
   Select,
   SelectContent,
@@ -113,7 +114,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select.js"
-import { SegmentedTabs } from "./components/ui/segmented-tabs.js"
 import {
   Sheet,
   SheetContent,
@@ -4563,21 +4563,21 @@ function CanvasOutput({
     <div className="grid gap-4">
       <section className="tm-editor-section">
         <div className="tm-editor-section__body">
-        <OutputSettingsControls
-          paperType={controller.documentRenderOptions.paperType}
-          onPaperTypeChange={(paperType) =>
-            controller.updateDocumentRenderOptions((current) => ({
-              ...current,
-              paperType,
-            }))
-          }
-          deviceCalibration={controller.resolvedPrinterDeviceCalibration}
-          onDeviceCalibrationChange={controller.updatePrinterDeviceCalibration}
-          printerIdentity={controller.resolvedPrinterIdentity}
-          appliedModelPreset={controller.resolvedPrinterModelPreset}
-          recommendedModelPreset={controller.recommendedPrinterModelPreset}
-          onSaveModelPreset={controller.savePrinterModelPreset}
-        />
+          <OutputSettingsControls
+            paperType={controller.documentRenderOptions.paperType}
+            onPaperTypeChange={(paperType) =>
+              controller.updateDocumentRenderOptions((current) => ({
+                ...current,
+                paperType,
+              }))
+            }
+            deviceCalibration={controller.resolvedPrinterDeviceCalibration}
+            onDeviceCalibrationChange={controller.updatePrinterDeviceCalibration}
+            printerIdentity={controller.resolvedPrinterIdentity}
+            appliedModelPreset={controller.resolvedPrinterModelPreset}
+            recommendedModelPreset={controller.recommendedPrinterModelPreset}
+            onSaveModelPreset={controller.savePrinterModelPreset}
+          />
         </div>
       </section>
 

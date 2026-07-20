@@ -379,6 +379,7 @@ dependencies = [
  "base64",
  "clap",
  "detonger-protocol",
+ "image",
  "serde",
  "serde_json",
 ]

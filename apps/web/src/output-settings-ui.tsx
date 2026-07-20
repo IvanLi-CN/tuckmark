@@ -23,6 +23,7 @@ import {
   dotsToMillimetersAtDpi,
   millimetersToDotsAtDpi,
   OFFSET_RANGE_MM,
+  resolvePositionedPrintFrame,
   snapOffsetMillimeters,
 } from "./output-settings.js"
 import type {
@@ -33,6 +34,7 @@ import type {
 } from "./types.js"
 
 const PRINT_STRENGTH_OPTIONS = [-2, -1, 0, 1, 2] as const
+const OFFSET_HANDLE_RADIUS_PX = 7
 
 function formatStrengthLabel(value: number): string {
   if (value > 0) {
@@ -130,8 +132,8 @@ function OffsetPad({
         <div
           className="pointer-events-none absolute size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/80 bg-primary shadow-[0_0_0_4px_rgba(196,138,91,0.18)]"
           style={{
-            left: `${((calibration.xOffsetMm / OFFSET_RANGE_MM + 1) / 2) * 100}%`,
-            top: `${((calibration.yOffsetMm / OFFSET_RANGE_MM + 1) / 2) * 100}%`,
+            left: `clamp(${OFFSET_HANDLE_RADIUS_PX}px, ${((calibration.xOffsetMm / OFFSET_RANGE_MM + 1) / 2) * 100}%, calc(100% - ${OFFSET_HANDLE_RADIUS_PX}px))`,
+            top: `clamp(${OFFSET_HANDLE_RADIUS_PX}px, ${((calibration.yOffsetMm / OFFSET_RANGE_MM + 1) / 2) * 100}%, calc(100% - ${OFFSET_HANDLE_RADIUS_PX}px))`,
           }}
         />
         <div className="pointer-events-none absolute left-3 top-2.5 text-[10px] font-medium text-muted-foreground">
@@ -233,16 +235,20 @@ function AdvancedSettingsSheet({
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="rounded-lg" disabled={disabled}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="rounded-lg"
+          disabled={disabled}
+        >
           高级设置
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="flex w-full flex-col sm:max-w-[26rem]">
         <SheetHeader className="border-b border-border/70 px-6 pb-4">
           <SheetTitle>{printerModel} 高级设置</SheetTitle>
-          <SheetDescription>
-            型号级参数。只有点击保存后才会应用到后续预览和打印。
-          </SheetDescription>
+          <SheetDescription>型号级参数。只有点击保存后才会应用到后续预览和打印。</SheetDescription>
         </SheetHeader>
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="grid gap-4">
@@ -336,7 +342,8 @@ function AdvancedSettingsSheet({
               </div>
 
               <p className="text-xs leading-5 text-muted-foreground">
-                宽度保存不能超过 {capabilityPrintWidthDots} dots；实际生效取型号值与设备能力的较小者。
+                宽度保存不能超过 {capabilityPrintWidthDots}{" "}
+                dots；实际生效取型号值与设备能力的较小者。
               </p>
             </div>
 
@@ -405,12 +412,15 @@ export function OutputSettingsControls({
   printerIdentity: {
     printerModel: string
     deviceDisplayName: string
+    deviceKey: string | null
     capabilityPrintWidthDots: number
   }
   appliedModelPreset: PrinterModelPreset
   recommendedModelPreset: PrinterModelPreset
   onSaveModelPreset: (preset: PrinterModelPreset) => Promise<unknown> | unknown
 }) {
+  const calibrationDisabled = disabled || printerIdentity.deviceKey === null
+
   return (
     <div className="grid gap-3">
       <section className="rounded-[1.25rem] border border-border/70 bg-background/80 p-3.5 shadow-sm">
@@ -453,7 +463,9 @@ export function OutputSettingsControls({
             <div className="grid gap-2">
               <div className="flex items-center justify-between gap-2">
                 <Label className="text-xs text-muted-foreground">打印强度</Label>
-                <span className="text-[11px] text-muted-foreground">仅影响实打</span>
+                <span className="text-[11px] text-muted-foreground">
+                  {printerIdentity.deviceKey ? "仅影响实打" : "选择设备后可调"}
+                </span>
               </div>
               <div className="grid grid-cols-5 gap-1.5">
                 {PRINT_STRENGTH_OPTIONS.map((level) => (
@@ -462,7 +474,7 @@ export function OutputSettingsControls({
                     type="button"
                     size="sm"
                     variant={deviceCalibration.printStrengthLevel === level ? "default" : "outline"}
-                    disabled={disabled}
+                    disabled={calibrationDisabled}
                     className="rounded-lg px-0"
                     onClick={() =>
                       onDeviceCalibrationChange((current) => ({
@@ -485,12 +497,14 @@ export function OutputSettingsControls({
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2">
               <Label>二维偏移</Label>
-              <span className="text-[11px] text-muted-foreground">{formatOffsetSummary(deviceCalibration)}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {formatOffsetSummary(deviceCalibration)}
+              </span>
             </div>
           </div>
           <OffsetPad
             calibration={deviceCalibration}
-            disabled={disabled}
+            disabled={calibrationDisabled}
             onChange={onDeviceCalibrationChange}
           />
         </div>
@@ -521,13 +535,18 @@ export function PositionedPreview({
     )
   }
 
-  const frameWidth = Math.max(renderOptions.printWidthDots, 1)
-  const frameHeight = Math.max(artifactHeight, 1)
+  const placement = resolvePositionedPrintFrame(renderOptions, artifactWidth, artifactHeight)
+  const frameWidth = placement.frameWidthDots
+  const frameHeight = placement.frameHeightDots
   const frameWidthMillimeters = dotsToMillimetersAtDpi(frameWidth, renderOptions.printerDpi)
-  const xOffsetMillimeters = dotsToMillimetersAtDpi(renderOptions.xOffsetDots, renderOptions.printerDpi)
-  const yOffsetMillimeters = dotsToMillimetersAtDpi(renderOptions.yOffsetDots, renderOptions.printerDpi)
-  const contentLeft = (frameWidth - artifactWidth) / 2 + renderOptions.xOffsetDots
-  const contentTop = renderOptions.yOffsetDots
+  const xOffsetMillimeters = dotsToMillimetersAtDpi(
+    renderOptions.xOffsetDots,
+    renderOptions.printerDpi
+  )
+  const yOffsetMillimeters = dotsToMillimetersAtDpi(
+    renderOptions.yOffsetDots,
+    renderOptions.printerDpi
+  )
 
   return (
     <div className="tm-preview-shell">
@@ -545,8 +564,8 @@ export function PositionedPreview({
             style={{
               width: `${(artifactWidth / frameWidth) * 100}%`,
               height: `${(artifactHeight / frameHeight) * 100}%`,
-              left: `${(contentLeft / frameWidth) * 100}%`,
-              top: `${(contentTop / frameHeight) * 100}%`,
+              left: `${(placement.contentLeftDots / frameWidth) * 100}%`,
+              top: `${(placement.contentTopDots / frameHeight) * 100}%`,
             }}
           />
         </div>

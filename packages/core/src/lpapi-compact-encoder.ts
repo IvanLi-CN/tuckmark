@@ -14,7 +14,8 @@ function shiftImageDataToPrinterWidth(
   imageData: { data: Uint8ClampedArray; width: number; height: number },
   printerWidth: number,
   xOffsetDots: number,
-  yOffsetDots: number
+  yOffsetDots: number,
+  paperType: PreviewArtifact["renderOptions"]["paperType"]
 ): { data: Uint8ClampedArray; width: number; height: number } {
   const width = Number(printerWidth)
   if (!Number.isFinite(width) || width <= 0) {
@@ -25,12 +26,17 @@ function shiftImageDataToPrinterWidth(
   const dx = Math.trunc(Number(xOffsetDots ?? 0))
   const dy = Math.trunc(Number(yOffsetDots ?? 0))
   const baseX = Math.trunc((width - src.width) / 2)
-  const dst = new Uint8ClampedArray(width * src.height * 4)
+  const appliesBitmapYOffset = paperType === "continuous"
+  const frameTop = appliesBitmapYOffset ? Math.min(0, dy) : 0
+  const frameBottom = appliesBitmapYOffset ? Math.max(src.height, src.height + dy) : src.height
+  const frameHeight = Math.max(frameBottom - frameTop, 1)
+  const contentTop = appliesBitmapYOffset ? dy - frameTop : 0
+  const dst = new Uint8ClampedArray(width * frameHeight * 4)
   dst.fill(255)
 
   for (let y = 0; y < src.height; y += 1) {
-    const destY = y + dy
-    if (destY < 0 || destY >= src.height) {
+    const destY = y + contentTop
+    if (destY < 0 || destY >= frameHeight) {
       continue
     }
     for (let x = 0; x < width; x += 1) {
@@ -47,7 +53,7 @@ function shiftImageDataToPrinterWidth(
     }
   }
 
-  return { data: dst, width, height: src.height }
+  return { data: dst, width, height: frameHeight }
 }
 
 function ensureGlobalsForLpapiBle(): void {
@@ -127,6 +133,31 @@ type PrinterHistoryRecord = {
   mSupportedMotorModes?: number[]
 }
 
+type CompactPrinterInfo = {
+  printerDPI: number
+  printerWidth: number
+  hardwareFlags: number
+  softwareFlags: number
+  softwareVersion: string
+  deviceName: string
+  deviceVersion: string
+  manufacturer?: string | undefined
+  paperWidth?: number | undefined
+  printerLocateArea?: number | undefined
+  seriesName?: string | undefined
+  devIntName?: string | undefined
+  batteryCount?: number | undefined
+  peripheralFlags?: number | undefined
+  printDarkness?: number | undefined
+  printSpeed?: number | undefined
+  gapType?: number | undefined
+  gapLength?: number | undefined
+  motorMode?: number | undefined
+  autoPowerOffMins?: number | undefined
+  printable: number
+  isPrPageKey: number
+}
+
 async function loadLpapiModule(): Promise<LpapiModule> {
   if (!lpapiModulePromise) {
     ensureGlobalsForLpapiBle()
@@ -135,7 +166,7 @@ async function loadLpapiModule(): Promise<LpapiModule> {
   return lpapiModulePromise
 }
 
-function defaultPrinterInfo(printWidthDots: number) {
+function defaultPrinterInfo(printWidthDots: number): CompactPrinterInfo {
   return {
     printerDPI: 203,
     printerWidth: printWidthDots,
@@ -166,7 +197,7 @@ function loadPrinterHistory(): PrinterHistoryRecord | undefined {
   }
 }
 
-function buildPrinterInfo(printWidthDots: number) {
+function buildPrinterInfo(printWidthDots: number): CompactPrinterInfo {
   const history = loadPrinterHistory()
   if (!history) {
     return defaultPrinterInfo(printWidthDots)
@@ -227,7 +258,8 @@ export async function encodeArtifactWithLpapiCompact(artifact: PreviewArtifact):
     rawImageData,
     printerInfo.printerWidth,
     artifact.renderOptions.xOffsetDots,
-    artifact.renderOptions.yOffsetDots
+    artifact.renderOptions.yOffsetDots,
+    artifact.renderOptions.paperType
   )
 
   const { PrintPackage } = await loadLpapiModule()

@@ -1,4 +1,9 @@
+import {
+  type DetongerWasmStatus,
+  resolveConfiguredBrowserDirectPathState,
+} from "./browser-direct-path.js"
 import type { AppContext, AppSurface } from "./types.js"
+import detongerWasmStatus from "./wasm/pkg/detonger_wasm_status.js"
 
 declare const __TUCKMARK_WEB_SURFACE__: AppSurface
 
@@ -61,13 +66,17 @@ export function resolveAppContext(
     | {
         search: string
       }
-    | undefined = typeof window !== "undefined" ? window.location : undefined
+    | undefined = typeof window !== "undefined" ? window.location : undefined,
+  overrides?: {
+    detongerWasmStatus?: DetongerWasmStatus
+  }
 ): AppContext {
   const surface = resolveSurface(env)
   const mode = parseDemoParam(locationLike?.search ?? "")
   const basePath = resolveBasePath(env)
   const browserDirectEnabled = envFlagEnabled(env, "TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT", true)
   const serviceApiEnabled = envFlagEnabled(env, "TUCKMARK_ENABLE_SERVER_SIDE_PRINT", false)
+  const resolvedDetongerWasmStatus = overrides?.detongerWasmStatus ?? detongerWasmStatus
 
   return {
     apiBasePath: surface === "server-http" ? "/api" : "",
@@ -75,8 +84,11 @@ export function resolveAppContext(
     mode,
     surface,
     capabilities: {
-      browserDirectPrintPath:
-        mode === "demo" ? "mocked" : browserDirectEnabled ? "available" : "disabled",
+      browserDirectPrintPath: resolveConfiguredBrowserDirectPathState(
+        mode,
+        browserDirectEnabled,
+        resolvedDetongerWasmStatus
+      ),
       serviceApiPrintPath:
         mode === "demo"
           ? "mocked"

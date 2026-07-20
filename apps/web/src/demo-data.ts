@@ -1,7 +1,4 @@
-import {
-  defaultDocumentRenderOptions,
-  defaultResolvedRenderOptions,
-} from "./output-settings.js"
+import { defaultDocumentRenderOptions, defaultResolvedRenderOptions } from "./output-settings.js"
 import type { DocumentRenderOptions, Printer, RenderOptions, Template } from "./types.js"
 
 export const fallbackTemplates: Template[] = [

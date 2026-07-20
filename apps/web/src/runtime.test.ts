@@ -29,12 +29,15 @@ describe("resolveBasePath", () => {
 })
 
 describe("resolveAppContext", () => {
+  const availableWasm = { available: true, reason: null }
+
   it("defaults to runtime mode with browser-static surface when no demo param is present", () => {
     const context = resolveAppContext(
       { TUCKMARK_WEB_SURFACE: "browser-static" },
       {
         search: "",
-      }
+      },
+      { detongerWasmStatus: availableWasm }
     )
 
     expect(context.mode).toBe("runtime")
@@ -49,7 +52,8 @@ describe("resolveAppContext", () => {
       { TUCKMARK_WEB_SURFACE: "browser-static" },
       {
         search: "?demo=true",
-      }
+      },
+      { detongerWasmStatus: availableWasm }
     )
 
     expect(context.mode).toBe("demo")
@@ -62,7 +66,8 @@ describe("resolveAppContext", () => {
       { TUCKMARK_WEB_SURFACE: "server-http" },
       {
         search: "",
-      }
+      },
+      { detongerWasmStatus: availableWasm }
     )
 
     expect(context.mode).toBe("runtime")
@@ -80,7 +85,8 @@ describe("resolveAppContext", () => {
       },
       {
         search: "",
-      }
+      },
+      { detongerWasmStatus: availableWasm }
     )
 
     expect(context.mode).toBe("runtime")
@@ -99,7 +105,8 @@ describe("resolveAppContext", () => {
       },
       {
         search: "",
-      }
+      },
+      { detongerWasmStatus: availableWasm }
     )
 
     expect(context.capabilities.browserDirectPrintPath).toBe("disabled")
@@ -114,10 +121,29 @@ describe("resolveAppContext", () => {
       },
       {
         search: "",
-      }
+      },
+      { detongerWasmStatus: availableWasm }
     )
 
     expect(context.capabilities.browserDirectPrintPath).toBe("available")
+    expect(context.capabilities.serviceApiPrintPath).toBe("disabled")
+  })
+
+  it("marks browser direct unavailable when startup downgraded detonger-wasm", () => {
+    const context = resolveAppContext(
+      { TUCKMARK_WEB_SURFACE: "browser-static" },
+      {
+        search: "",
+      },
+      {
+        detongerWasmStatus: {
+          available: false,
+          reason: "missing detonger submodule",
+        },
+      }
+    )
+
+    expect(context.capabilities.browserDirectPrintPath).toBe("unavailable")
     expect(context.capabilities.serviceApiPrintPath).toBe("disabled")
   })
 })

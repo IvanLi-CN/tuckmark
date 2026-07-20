@@ -874,6 +874,19 @@ output.
   PR: include
   ![Canvas advanced output settings](./assets/canvas-output-advanced-settings-1280x800.png)
 
+- `1280×800` canvas output preview with `连续纸` and `Y = +5.00 mm`; the preview
+  keeps the content shifted downward instead of cropping it.
+
+  PR: include
+  ![Canvas continuous-paper Y offset](./assets/canvas-output-continuous-y-offset-1280x800.png)
+
+- `1280×800` canvas output preview with the same `Y = +5.00 mm` after switching
+  to `间隙纸`; the preview ignores bitmap `Y` placement and keeps the content
+  fully inside the label frame.
+
+  PR: include
+  ![Canvas gap-paper Y ignored](./assets/canvas-output-gap-y-ignored-1280x800.png)
+
 - `1280×800` mock-demo canvas after coarse physical-wheel zoom; the active `296%` scale
   is reflected by the enlarged label content while the three-column workbench
   remains usable.

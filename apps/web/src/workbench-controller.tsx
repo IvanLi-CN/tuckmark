@@ -2,6 +2,10 @@ import React from "react"
 
 import { type ApiClient, createApiClient, loadSetup } from "./api-client.js"
 import type { AppLaunchSplashStep } from "./app-launch-splash.js"
+import {
+  getBrowserDirectPathStateMessage,
+  resolveEffectiveBrowserDirectPathState,
+} from "./browser-direct-path.js"
 import { type BrowserPrintSource, materializeBrowserArtifactData } from "./browser-print-payload.js"
 import {
   type BrowserPrintError,
@@ -84,6 +88,7 @@ import {
   restoreUserTemplate,
   saveRuntimeAppSettings,
 } from "./user-template-store.js"
+import detongerWasmStatus from "./wasm/pkg/detonger_wasm_status.js"
 import {
   applySyncStateToBrowser,
   deleteCanvasDraftLocally,
@@ -462,13 +467,21 @@ export function useWorkbenchController({
     }
     return "/"
   }, [providedInitialRoutePath])
-  const browserDirectConfigured = context.capabilities.browserDirectPrintPath !== "disabled"
-  const browserDirectAvailable = browserDirectConfigured && browserPrintSupported
-  const serviceApiLive = context.capabilities.serviceApiPrintPath === "available"
-  const serviceApiUsable =
-    context.capabilities.serviceApiPrintPath === "available" ||
-    context.capabilities.serviceApiPrintPath === "mocked"
+  const serviceApiPathState = context.capabilities.serviceApiPrintPath
+  const browserDirectPathState = resolveEffectiveBrowserDirectPathState(
+    context.capabilities.browserDirectPrintPath,
+    context.mode,
+    browserPrintSupported
+  )
+  const browserDirectConfigured = browserDirectPathState !== "disabled"
+  const browserDirectAvailable = browserDirectPathState === "available"
+  const serviceApiLive = serviceApiPathState === "available"
+  const serviceApiUsable = serviceApiPathState === "available" || serviceApiPathState === "mocked"
   const hasServerPrinterFlow = context.capabilities.serviceApiPrintPath === "available"
+  const browserDirectPathMessage = React.useMemo(
+    () => getBrowserDirectPathStateMessage(browserDirectPathState, detongerWasmStatus.reason),
+    [browserDirectPathState]
+  )
 
   const selectedPrinter = React.useMemo(
     () => printers.find((printer) => printer.id === printerId) ?? null,
@@ -1245,6 +1258,9 @@ export function useWorkbenchController({
           }
 
           if (browserDirectConfigured || context.surface === "browser-static") {
+            if (browserDirectPathState !== "available") {
+              throw new Error(browserDirectPathMessage)
+            }
             await syncBrowserArtifact(source)
             return null
           }
@@ -1260,6 +1276,8 @@ export function useWorkbenchController({
     },
     [
       browserDirectConfigured,
+      browserDirectPathMessage,
+      browserDirectPathState,
       context.mode,
       context.surface,
       executeServerPreview,
@@ -1578,6 +1596,16 @@ export function useWorkbenchController({
       })
       return
     }
+    if (browserDirectPathState === "unavailable" || browserDirectPathState === "unsupported") {
+      setDeviceDrawerFeedback({
+        section: "browser-direct",
+        action: "connect-browser-printer",
+        tone: "error",
+        title: "连接失败",
+        message: browserDirectPathMessage,
+      })
+      return
+    }
     if (context.mode === "demo") {
       setDeviceDrawerFeedback({
         section: "browser-direct",
@@ -1604,7 +1632,14 @@ export function useWorkbenchController({
     if (result) {
       setBrowserPrinter(result)
     }
-  }, [browserDirectConfigured, browserPrintSupported, context.mode, runDeviceDrawerTask])
+  }, [
+    browserDirectConfigured,
+    browserDirectPathMessage,
+    browserDirectPathState,
+    browserPrintSupported,
+    context.mode,
+    runDeviceDrawerTask,
+  ])
 
   const refreshDeviceDrawerSetup = React.useCallback(async () => {
     const result = await runDeviceDrawerTask("service-api", "refresh-setup", async () => {
@@ -1818,6 +1853,7 @@ export function useWorkbenchController({
     artifactData,
     browserDirectAvailable,
     browserDirectConfigured,
+    browserDirectPathState,
     browserPrintSupported,
     browserPrinter,
     archivedUserTemplates,
@@ -1883,6 +1919,7 @@ export function useWorkbenchController({
     recommendedPrinterModelPreset: resolvedOutputSettings.recommendedModelPreset,
     serverPrinterSelectionMode,
     serviceApiLive,
+    serviceApiPathState,
     serviceApiUsable,
     setError,
     setPreview,

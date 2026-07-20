@@ -127,6 +127,9 @@
     the resolved model DPI before preview/print and carries resolved printer
     identity, centered effective width, `Y` offset, and print-strength inputs
     through browser-direct, Rust preview encoding, and lpapi compatibility
+  - `间隙纸` currently ignores bitmap-level `Y` placement during preview and
+    print compilation, while `连续纸` still applies `Y` as an origin-relative
+    shift without cropping the rendered content
 - a workbench-wide selectable contract that suppresses accidental text
   selection on static chrome while keeping editable and copy-relevant values
   explicitly selectable

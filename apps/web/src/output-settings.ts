@@ -58,6 +58,13 @@ export type ResolvedOutputSettings = {
   appliedDeviceCalibration: PrinterDeviceCalibration
 }
 
+export type PositionedPrintFrame = {
+  frameWidthDots: number
+  frameHeightDots: number
+  contentLeftDots: number
+  contentTopDots: number
+}
+
 function normalizePaperType(value: unknown): PaperType {
   return value === "gap" ? "gap" : "continuous"
 }
@@ -104,6 +111,30 @@ export function dotsToMillimetersAtDpi(dots: number, dpi: number): number {
   return Number(((dots * 25.4) / dpi).toFixed(2))
 }
 
+export function resolvePositionedPrintFrame(
+  renderOptions: Pick<
+    RenderOptions,
+    "paperType" | "printWidthDots" | "xOffsetDots" | "yOffsetDots"
+  >,
+  artifactWidthDots: number,
+  artifactHeightDots: number
+): PositionedPrintFrame {
+  const frameWidthDots = Math.max(renderOptions.printWidthDots, 1)
+  const appliesBitmapYOffset = renderOptions.paperType === "continuous"
+  const minTopDots = appliesBitmapYOffset ? Math.min(0, renderOptions.yOffsetDots) : 0
+  const maxBottomDots = appliesBitmapYOffset
+    ? Math.max(artifactHeightDots, artifactHeightDots + renderOptions.yOffsetDots)
+    : artifactHeightDots
+  const frameHeightDots = Math.max(maxBottomDots - minTopDots, 1)
+
+  return {
+    frameWidthDots,
+    frameHeightDots,
+    contentLeftDots: (frameWidthDots - artifactWidthDots) / 2 + renderOptions.xOffsetDots,
+    contentTopDots: appliesBitmapYOffset ? renderOptions.yOffsetDots - minTopDots : 0,
+  }
+}
+
 export function pickDocumentRenderOptions(
   value: Partial<RenderOptions> | Partial<DocumentRenderOptions> | null | undefined
 ): DocumentRenderOptions {
@@ -111,6 +142,15 @@ export function pickDocumentRenderOptions(
     paperType: normalizePaperType(value?.paperType),
     threshold: normalizeThreshold(value?.threshold),
   }
+}
+
+function pickDocumentRenderOptionsPatch(
+  value: Partial<RenderOptions> | Partial<DocumentRenderOptions> | null | undefined
+): Partial<DocumentRenderOptions> {
+  if (!value) {
+    return {}
+  }
+  return pickDocumentRenderOptions(value)
 }
 
 export function parsePrinterModelFromName(name: string | null | undefined): string {
@@ -230,15 +270,17 @@ export function resolveOutputSettings(args: {
     normalizeModelPreset(modelPresetCandidate, recommendedModelPreset),
     printerIdentity.capabilityPrintWidthDots
   )
+  const hasConcreteDevice = printerIdentity.deviceKey !== null
   const deviceCalibrationCandidate =
-    (printerIdentity.deviceKey
+    (hasConcreteDevice && printerIdentity.deviceKey
       ? args.printerDeviceCalibrations[printerIdentity.deviceKey]
-      : undefined) ?? args.printerDeviceCalibrations[LEGACY_DEVICE_CALIBRATION_KEY]
+      : undefined) ??
+    (hasConcreteDevice ? args.printerDeviceCalibrations[LEGACY_DEVICE_CALIBRATION_KEY] : undefined)
   const appliedDeviceCalibration = normalizeDeviceCalibration(deviceCalibrationCandidate)
   const documentRenderOptions = {
     ...defaultDocumentRenderOptions,
-    ...pickDocumentRenderOptions(args.documentDefaults),
-    ...pickDocumentRenderOptions(args.draftRenderOptions),
+    ...pickDocumentRenderOptionsPatch(args.documentDefaults),
+    ...pickDocumentRenderOptionsPatch(args.draftRenderOptions),
   }
 
   return {

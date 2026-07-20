@@ -58,6 +58,7 @@ import {
 
 import type { ApiClient } from "./api-client.js"
 import { AppLaunchSplash } from "./app-launch-splash.js"
+import { formatPrintPathStateLabel, getPrintPathStateTone } from "./browser-direct-path.js"
 import type { BrowserPrintSource } from "./browser-print-payload.js"
 import {
   buildTemplateFieldsFromDraft,
@@ -1844,9 +1845,11 @@ function WorkbenchLayout({
           <span>{location.pathname}</span>
         </div>
         <div className="tm-footer__row tm-footer__row--right">
-          <span>Service API: {controller.serviceApiUsable ? "available" : "disabled"}</span>
           <span>
-            Browser direct: {controller.browserDirectConfigured ? "available" : "disabled"}
+            Service API: {formatPrintPathStateLabel(controller.serviceApiPathState, "en")}
+          </span>
+          <span>
+            Browser direct: {formatPrintPathStateLabel(controller.browserDirectPathState, "en")}
           </span>
           <a
             className="tm-footer__link"
@@ -1966,13 +1969,13 @@ function DeviceDrawer({
             <CardContent className="grid gap-3">
               <StatusPill
                 label="Service API"
-                value={controller.serviceApiUsable ? "已启用" : "不可用"}
-                tone={controller.serviceApiUsable ? "ok" : "muted"}
+                value={formatPrintPathStateLabel(controller.serviceApiPathState, "zh")}
+                tone={getPrintPathStateTone(controller.serviceApiPathState)}
               />
               <StatusPill
                 label="Browser Direct"
-                value={controller.browserDirectConfigured ? "已配置" : "已关闭"}
-                tone={controller.browserDirectConfigured ? "ok" : "muted"}
+                value={formatPrintPathStateLabel(controller.browserDirectPathState, "zh")}
+                tone={getPrintPathStateTone(controller.browserDirectPathState)}
               />
               <StatusPill
                 label="Probe"
@@ -2240,13 +2243,13 @@ function DashboardPage({ controller }: { controller: ReturnType<typeof useWorkbe
           <CardContent className="grid gap-3">
             <StatusPill
               label="Service API"
-              value={controller.serviceApiUsable ? "available" : "disabled"}
-              tone={controller.serviceApiUsable ? "ok" : "muted"}
+              value={formatPrintPathStateLabel(controller.serviceApiPathState, "en")}
+              tone={getPrintPathStateTone(controller.serviceApiPathState)}
             />
             <StatusPill
               label="Browser Direct"
-              value={controller.browserDirectConfigured ? "available" : "disabled"}
-              tone={controller.browserDirectConfigured ? "ok" : "muted"}
+              value={formatPrintPathStateLabel(controller.browserDirectPathState, "en")}
+              tone={getPrintPathStateTone(controller.browserDirectPathState)}
             />
           </CardContent>
         </Card>
