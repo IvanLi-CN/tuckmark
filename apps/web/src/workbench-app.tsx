@@ -2801,7 +2801,7 @@ function TemplatesPage({
                   ? "正在读取本地模板草稿。"
                   : activeUserTemplateUnavailable
                     ? "当前用户模板缺少可预览草稿。"
-                  : "先选择模板后查看预览与打印。"
+                    : "先选择模板后查看预览与打印。"
               }
               onFocusRight={() => state.setTemplateFocus("center-right")}
             />
@@ -2819,7 +2819,7 @@ function TemplatesPage({
                   ? "正在读取本地模板草稿。"
                   : activeUserTemplateUnavailable
                     ? "当前用户模板缺少可预览草稿。"
-                  : "先选择模板后查看预览与打印。"
+                    : "先选择模板后查看预览与打印。"
               }
               onFocusRight={() => state.setTemplateFocus("center-right")}
             />
