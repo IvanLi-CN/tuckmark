@@ -39,7 +39,9 @@ test("preset templates can be saved into browser-local user templates and reused
   await activeInput.press("Enter")
   await expect(firstRow.getByRole("button", { name: "LAN-01" })).toBeVisible()
 
-  await page.getByRole("button", { name: "生成预览" }).click()
+  const previewButton = page.getByRole("button", { name: "生成预览" })
+  await expect(previewButton).toBeEnabled()
+  await previewButton.click()
   await expect(page.locator("img[alt='preview artifact']")).toBeVisible({ timeout: 15_000 })
 
   await userCard.getByRole("button", { name: "E2E Cable Tag 更多操作" }).click()
