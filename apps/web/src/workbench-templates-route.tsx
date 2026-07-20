@@ -17,7 +17,7 @@ import { ActionButton } from "./components/ui/action-button.js"
 import { PromptDialog } from "./components/ui/dialog.js"
 import { Input } from "./components/ui/input.js"
 import { SegmentedTabs } from "./components/ui/segmented-tabs.js"
-import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
+import { buildInputFromTemplate, defaultDraftRenderOptions } from "./demo-data.js"
 import { cn } from "./lib/utils.js"
 import { ensureExtendedRuntimeFontStyles } from "./runtime-font-loader.js"
 import type { CanvasDraftDocument, Template, UserTemplateSummary } from "./types.js"
@@ -118,20 +118,18 @@ function useTemplatesRouteState(controller: WorkbenchController) {
   const syncRenderOptionsFromDraft = React.useCallback(
     (draft: CanvasDraftDocument | null) => {
       const nextOptions = {
-        ...defaultRenderOptions,
+        ...defaultDraftRenderOptions,
         ...draft?.renderOptions,
       }
       if (
-        controller.renderOptions.printWidthDots === nextOptions.printWidthDots &&
-        controller.renderOptions.paperType === nextOptions.paperType &&
-        controller.renderOptions.threshold === nextOptions.threshold &&
-        controller.renderOptions.xOffsetDots === nextOptions.xOffsetDots
+        controller.documentRenderOptions.paperType === nextOptions.paperType &&
+        controller.documentRenderOptions.threshold === nextOptions.threshold
       ) {
         return
       }
-      controller.setRenderOptions(nextOptions)
+      controller.setDocumentRenderOptions(nextOptions)
     },
-    [controller.renderOptions, controller.setRenderOptions]
+    [controller.documentRenderOptions, controller.setDocumentRenderOptions]
   )
 
   React.useEffect(() => {

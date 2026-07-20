@@ -32,6 +32,12 @@ struct PreviewPacketsArgs {
     #[arg(long = "x-offset", default_value_t = 0, allow_hyphen_values = true)]
     x_offset: i16,
 
+    #[arg(long = "y-offset", default_value_t = 0, allow_hyphen_values = true)]
+    y_offset: i16,
+
+    #[arg(long = "print-strength", default_value_t = 0, allow_hyphen_values = true)]
+    print_strength: i8,
+
     #[arg(long, default_value_t = 150)]
     threshold: u8,
 
@@ -75,6 +81,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts = PrintOptions {
         threshold: cli.args.threshold,
         x_offset_dots: cli.args.x_offset,
+        y_offset_dots: cli.args.y_offset,
+        print_strength_level: cli.args.print_strength.clamp(-2, 2),
         paper_type: cli.args.paper_type.into(),
     };
 

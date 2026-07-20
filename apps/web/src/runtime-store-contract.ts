@@ -2,7 +2,10 @@ import type {
   CanvasDraftDocument,
   CanvasDraftSource,
   CanvasWorkingCopyIndexEntry,
-  RenderOptions,
+  DocumentRenderOptions,
+  PrinterDeviceCalibration,
+  PrinterModelPreset,
+  PrintStrengthLevel,
   UserTemplateHistory,
   UserTemplateSummary,
   UserTemplateVersionSnapshot,
@@ -11,9 +14,25 @@ import type {
 export type RuntimeStoreAppSettings = {
   version: 1 | 2
   updatedAt: string
-  defaultRenderOptions: RenderOptions
+  documentDefaults: DocumentRenderOptions
+  printerModelPresets: Record<string, PrinterModelPreset>
+  printerDeviceCalibrations: Record<string, PrinterDeviceCalibration>
   permissionNudgeSeen: boolean
   showTextBoundingBoxes: boolean
+}
+
+export type LegacyRuntimeStoreAppSettings = {
+  version?: 1
+  updatedAt?: string
+  defaultRenderOptions?: Partial<{
+    printerDpi: number
+    printWidthDots: number
+    paperType: DocumentRenderOptions["paperType"]
+    threshold: number
+    xOffsetDots: number
+    printStrengthLevel: PrintStrengthLevel
+  }>
+  permissionNudgeSeen?: boolean
 }
 
 export type RuntimeStoreSnapshot = {

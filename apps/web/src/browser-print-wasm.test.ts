@@ -61,6 +61,8 @@ describe("encodeBrowserPngMessages", () => {
         printWidthDots: 384,
         threshold: 150,
         xOffsetDots: 0,
+        yOffsetDots: 0,
+        printStrengthLevel: 0,
       })
     ).rejects.toThrow("transient wasm init failure")
 
@@ -70,6 +72,8 @@ describe("encodeBrowserPngMessages", () => {
         printWidthDots: 384,
         threshold: 150,
         xOffsetDots: 0,
+        yOffsetDots: 0,
+        printStrengthLevel: 0,
       })
     ).resolves.toEqual([new Uint8Array([1, 2, 3])])
 

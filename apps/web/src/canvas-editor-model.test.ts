@@ -452,7 +452,7 @@ describe("canvas-editor-model monochrome contract", () => {
         },
       ],
       sampleInput: { part: "INA219", bus: "I2C" },
-      renderOptions: { paperType: "gap", printWidthDots: 384 },
+      renderOptions: { paperType: "gap" },
       tags: ["electronics"],
     })
 
@@ -461,7 +461,7 @@ describe("canvas-editor-model monochrome contract", () => {
     expect(draft.unit).toBe("mm")
     expect(draft.width).toBe(24)
     expect(draft.height).toBe(12)
-    expect(draft.renderOptions).toMatchObject({ paperType: "gap", printWidthDots: 384 })
+    expect(draft.renderOptions).toMatchObject({ paperType: "gap" })
     expect(draft.fields.map((field) => field.key)).toEqual(["part", "bus"])
     expect(draft.fields[0]).toMatchObject({
       key: "part",
@@ -496,7 +496,7 @@ describe("canvas-editor-model monochrome contract", () => {
         },
       ],
       sampleInput: {},
-      renderOptions: { paperType: "gap", printWidthDots: 384 },
+      renderOptions: { paperType: "gap" },
       tags: ["electronics"],
     })
 
@@ -530,7 +530,7 @@ describe("canvas-editor-model monochrome contract", () => {
         },
       ],
       sampleInput: { asset: "TM-0002" },
-      renderOptions: { paperType: "gap", printWidthDots: 384 },
+      renderOptions: { paperType: "gap" },
       tags: ["ops"],
     })
 
@@ -564,7 +564,7 @@ describe("canvas-editor-model monochrome contract", () => {
         },
       ],
       sampleInput: { asset: "TM-0001" },
-      renderOptions: { paperType: "gap", printWidthDots: 384 },
+      renderOptions: { paperType: "gap" },
       tags: ["ops"],
     })
 
@@ -602,14 +602,18 @@ describe("canvas-editor-model monochrome contract", () => {
         },
       ],
       sampleInput: { part: "INA219" },
-      renderOptions: { paperType: "continuous", threshold: 80, printWidthDots: 192 },
+      renderOptions: { paperType: "continuous", threshold: 80 },
       tags: ["electronics"],
     })
 
     const source = toCanvasPrintSource(draft, {
+      printerModel: "P2",
+      printerDpi: 203,
       paperType: "gap",
       threshold: 150,
       xOffsetDots: 0,
+      yOffsetDots: 0,
+      printStrengthLevel: 0,
       printWidthDots: 384,
     })
 
@@ -645,10 +649,14 @@ describe("canvas-editor-model monochrome contract", () => {
     const source = toCanvasPrintSource(
       draft,
       {
+        printerModel: "P2",
+        printerDpi: 203,
         paperType: "gap",
         threshold: 150,
-        xOffsetDots: 0,
         printWidthDots: 384,
+        xOffsetDots: 0,
+        yOffsetDots: 0,
+        printStrengthLevel: 0,
       },
       {
         measureText: ({ text, fontSize }) => ({

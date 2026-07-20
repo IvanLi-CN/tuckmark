@@ -57,14 +57,14 @@ function createArchiveInspection(
       exportedAt: STORY_TIMESTAMP,
       snapshotUpdatedAt: STORY_TIMESTAMP,
       settings: {
-        version: 1,
+        version: 2,
         updatedAt: STORY_TIMESTAMP,
-        defaultRenderOptions: {
-          printWidthDots: 384,
+        documentDefaults: {
           paperType: "gap",
           threshold: 128,
-          xOffsetDots: 0,
         },
+        printerModelPresets: {},
+        printerDeviceCalibrations: {},
         permissionNudgeSeen: true,
         showTextBoundingBoxes: false,
       },

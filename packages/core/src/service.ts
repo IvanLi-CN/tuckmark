@@ -85,9 +85,14 @@ export class TuckmarkService {
   }
 
   private ensurePrintable(caps: PrinterCapabilities, artifact: PreviewArtifact): void {
-    if (artifact.width > caps.printWidthDots) {
+    if (artifact.renderOptions.printWidthDots > caps.printWidthDots) {
       throw new Error(
-        `Artifact width ${artifact.width} exceeds printer width ${caps.printWidthDots}`
+        `Configured print width ${artifact.renderOptions.printWidthDots} exceeds printer width ${caps.printWidthDots}`
+      )
+    }
+    if (artifact.width > artifact.renderOptions.printWidthDots) {
+      throw new Error(
+        `Artifact width ${artifact.width} exceeds effective print width ${artifact.renderOptions.printWidthDots}`
       )
     }
     if (!caps.supportedPaperTypes.includes(artifact.renderOptions.paperType)) {

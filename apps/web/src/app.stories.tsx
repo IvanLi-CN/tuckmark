@@ -61,6 +61,23 @@ const longTitleDemoClient = Object.assign(Object.create(longTitleDemoBaseClient)
     return longTitleTemplates
   },
 }) as ApiClient
+const outputSettingsDemoBaseClient = new DemoApiClient(demoContext)
+const outputSettingsDemoClient = Object.assign(Object.create(outputSettingsDemoBaseClient), {
+  async listPrinters() {
+    return [
+      {
+        id: "printer-p2-y404125469",
+        name: "P2-Y404125469",
+        model: "P2",
+        capabilities: {
+          dpi: 203,
+          printWidthDots: 384,
+          supportedPaperTypes: ["continuous", "gap"],
+        },
+      },
+    ]
+  },
+}) as ApiClient
 
 const strandedPwaUpdateSnapshot: PwaUpdateSnapshot = {
   status: "ready",
@@ -430,7 +447,7 @@ export const TemplatesWorkspaceImportPackage: Story = {
             },
           ],
           sampleInput: { part: "INA219", bus: "I2C" },
-          renderOptions: { paperType: "gap", printWidthDots: 384 },
+          renderOptions: { paperType: "gap" },
         }),
       ],
       "ina219.package.json",
@@ -1804,6 +1821,45 @@ export const CanvasWorkspaceOutputTab: Story = {
   },
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+}
+
+export const CanvasWorkspaceOutputSettings: Story = {
+  args: {
+    client: outputSettingsDemoClient,
+    context: demoContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "output-tab",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+}
+
+export const CanvasWorkspaceAdvancedOutputSettings: Story = {
+  args: {
+    client: outputSettingsDemoClient,
+    context: demoContext,
+    initialEntries: ["/canvas"],
+    canvasScenario: "output-tab",
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async () => {
+    const body = within(document.body)
+    await userEvent.click(body.getByRole("button", { name: "高级设置" }))
+    await body.findByRole("heading", { name: "高级设置" })
   },
 }
 

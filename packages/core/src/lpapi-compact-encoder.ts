@@ -13,30 +13,33 @@ function loadPng(filePath: string): PNG {
 function shiftImageDataToPrinterWidth(
   imageData: { data: Uint8ClampedArray; width: number; height: number },
   printerWidth: number,
-  xOffsetDots: number
+  xOffsetDots: number,
+  yOffsetDots: number
 ): { data: Uint8ClampedArray; width: number; height: number } {
-  const dx = Number(xOffsetDots ?? 0)
-  if (!Number.isFinite(dx) || dx === 0) {
-    return imageData
-  }
-
   const width = Number(printerWidth)
   if (!Number.isFinite(width) || width <= 0) {
-    throw new Error(`Invalid printerWidth for x-offset: ${printerWidth}`)
+    throw new Error(`Invalid printerWidth for printer framing: ${printerWidth}`)
   }
 
   const src = imageData
+  const dx = Math.trunc(Number(xOffsetDots ?? 0))
+  const dy = Math.trunc(Number(yOffsetDots ?? 0))
+  const baseX = Math.trunc((width - src.width) / 2)
   const dst = new Uint8ClampedArray(width * src.height * 4)
   dst.fill(255)
 
   for (let y = 0; y < src.height; y += 1) {
+    const destY = y + dy
+    if (destY < 0 || destY >= src.height) {
+      continue
+    }
     for (let x = 0; x < width; x += 1) {
-      const sx = x - dx
+      const sx = x - baseX - dx
       if (sx < 0 || sx >= src.width) {
         continue
       }
       const sIdx = (src.width * y + sx) << 2
-      const dIdx = (width * y + x) << 2
+      const dIdx = (width * destY + x) << 2
       dst[dIdx] = src.data[sIdx] ?? 255
       dst[dIdx + 1] = src.data[sIdx + 1] ?? 255
       dst[dIdx + 2] = src.data[sIdx + 2] ?? 255
@@ -197,6 +200,14 @@ function buildPrinterInfo(printWidthDots: number) {
   }
 }
 
+function resolvePrintDarkness(base: number | undefined, level: number): number | undefined {
+  const normalizedLevel = Math.max(-2, Math.min(2, Math.trunc(level)))
+  if (!Number.isFinite(base ?? Number.NaN)) {
+    return normalizedLevel === 0 ? undefined : 8 + normalizedLevel
+  }
+  return Math.max(1, Math.min(15, Math.trunc(base ?? 8) + normalizedLevel))
+}
+
 export async function encodeArtifactWithLpapiCompact(artifact: PreviewArtifact): Promise<{
   blobPath: string
   packetsJsonPath: string
@@ -215,7 +226,8 @@ export async function encodeArtifactWithLpapiCompact(artifact: PreviewArtifact):
   const imageData = shiftImageDataToPrinterWidth(
     rawImageData,
     printerInfo.printerWidth,
-    artifact.renderOptions.xOffsetDots
+    artifact.renderOptions.xOffsetDots,
+    artifact.renderOptions.yOffsetDots
   )
 
   const { PrintPackage } = await loadLpapiModule()
@@ -224,6 +236,10 @@ export async function encodeArtifactWithLpapiCompact(artifact: PreviewArtifact):
     ...printerInfo,
     imageData,
     threshold: artifact.renderOptions.threshold,
+    printDarkness: resolvePrintDarkness(
+      typeof printerInfo.printDarkness === "number" ? printerInfo.printDarkness : undefined,
+      artifact.renderOptions.printStrengthLevel
+    ),
     orientation: 0,
     pageKey: 1,
     pageNo: 1,

@@ -113,6 +113,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select.js"
+import { SegmentedTabs } from "./components/ui/segmented-tabs.js"
 import {
   Sheet,
   SheetContent,
@@ -122,7 +123,7 @@ import {
   SheetTrigger,
 } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
-import { defaultRenderOptions } from "./demo-data.js"
+import { defaultDraftRenderOptions } from "./demo-data.js"
 import {
   buildCanvasDimensionOptions,
   type CanvasDimension,
@@ -141,6 +142,8 @@ import {
 import { recordTextFontRecentUse, recordTextFontUsageDuration } from "./lib/text-font-usage.js"
 import { preloadCanvasTextFonts } from "./lib/text-fonts.js"
 import { cn } from "./lib/utils.js"
+import { pickDocumentRenderOptions } from "./output-settings.js"
+import { OutputSettingsControls, PositionedPreview } from "./output-settings-ui.js"
 import type {
   CanvasDraftDocument,
   CanvasDraftElement,
@@ -274,10 +277,6 @@ const TRANSFORMER_ALL_ANCHORS = [
   "middle-left",
 ]
 const TRANSFORMER_CORNER_ANCHORS = ["top-left", "top-right", "bottom-left", "bottom-right"]
-const PAPER_TYPE_LABELS: Record<"continuous" | "gap", string> = {
-  continuous: "连续纸",
-  gap: "间隙纸",
-}
 
 type LineEndpoint = "start" | "end"
 
@@ -488,7 +487,7 @@ function toComparableDraft(draft: CanvasDraftDocument) {
     id: undefined,
     presetId: undefined,
     renderOptions: {
-      ...defaultRenderOptions,
+      ...defaultDraftRenderOptions,
       ...draft.renderOptions,
     },
     source: undefined,
@@ -1964,10 +1963,12 @@ function resizeCanvasDraft(
 }
 
 function getPrintTargetWidth(controller: WorkbenchController): number {
-  return (
-    controller.selectedPrinter?.capabilities.printWidthDots ??
-    controller.renderOptions.printWidthDots
-  )
+  return controller.selectedPrinter?.capabilities.printWidthDots
+    ? Math.min(
+        controller.selectedPrinter.capabilities.printWidthDots,
+        controller.renderOptions.printWidthDots
+      )
+    : controller.renderOptions.printWidthDots
 }
 
 function getCanvasCapabilityWarning(draft: CanvasDraftDocument, controller: WorkbenchController) {
@@ -4533,14 +4534,12 @@ function CanvasOutput({
   const draftIssues = React.useMemo(() => getVisibleDraftIssues(state.draft), [state.draft])
   const draftWarnings = React.useMemo(() => getVisibleDraftWarnings(state.draft), [state.draft])
   const capabilityWarning = getCanvasCapabilityWarning(state.draft, controller)
-  const selectedPrinterName =
-    controller.selectedPrinter?.name ?? controller.browserPrinter?.name ?? "未选择输出设备"
   const canSubmitOutput = draftIssues.length === 0
   const outputHint = canSubmitOutput
     ? readOnly
-      ? "当前打开的是历史快照。若要继续输出，请先恢复到当前草稿。"
-      : "先生成预览，确认单色内容与编码结果，再执行打印。"
-    : "当前画布存在无法输出的编码内容，请先修正后再继续。"
+      ? "历史快照只读，恢复当前草稿后才能继续输出。"
+      : "先预览，确认位置后再打印。"
+    : "先修正输出问题。"
   const [issueBubbleOpen, setIssueBubbleOpen] = React.useState(false)
   const [errorBubbleOpen, setErrorBubbleOpen] = React.useState(false)
 
@@ -4562,90 +4561,28 @@ function CanvasOutput({
 
   return (
     <div className="grid gap-4">
-      <CanvasSection
-        title="输出参数"
-        description="这些参数会进入预览与最终打印。"
-        aside={
-          <Badge variant="outline" className="tm-chip">
-            {selectedPrinterName}
-          </Badge>
-        }
-      >
-        <div className="tm-form-grid">
-          <div className="grid gap-2">
-            <Label htmlFor="print-width">打印宽度（dots）</Label>
-            <Input
-              id="print-width"
-              type="number"
-              value={String(controller.renderOptions.printWidthDots)}
-              onChange={(event) => {
-                const rawValue = event.currentTarget.value
-                controller.updateRenderOptions((current) => ({
-                  ...current,
-                  printWidthDots: Number(rawValue || current.printWidthDots),
-                }))
-              }}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="paper-type">纸张类型</Label>
-            <Select
-              value={controller.renderOptions.paperType}
-              onValueChange={(value: "continuous" | "gap") =>
-                controller.updateRenderOptions((current) => ({ ...current, paperType: value }))
-              }
-            >
-              <SelectTrigger id="paper-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="continuous">{PAPER_TYPE_LABELS.continuous}</SelectItem>
-                <SelectItem value="gap">{PAPER_TYPE_LABELS.gap}</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">选择与当前标签纸匹配的走纸方式。</p>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="threshold">黑白阈值</Label>
-            <Input
-              id="threshold"
-              type="number"
-              value={String(controller.renderOptions.threshold)}
-              onChange={(event) => {
-                const rawValue = event.currentTarget.value
-                controller.updateRenderOptions((current) => ({
-                  ...current,
-                  threshold: Number(rawValue || current.threshold),
-                }))
-              }}
-            />
-            <p className="text-xs text-muted-foreground">
-              阈值越低，更多灰度会被视为黑色。通常无需频繁调整。
-            </p>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="x-offset">横向补偿（dots）</Label>
-            <Input
-              id="x-offset"
-              type="number"
-              value={String(controller.renderOptions.xOffsetDots)}
-              onChange={(event) => {
-                const rawValue = event.currentTarget.value
-                controller.updateRenderOptions((current) => ({
-                  ...current,
-                  xOffsetDots: Number(rawValue || current.xOffsetDots),
-                }))
-              }}
-            />
-            <p className="text-xs text-muted-foreground">
-              用于修正打印头横向偏移；没有偏移时保持 0 即可。
-            </p>
-          </div>
+      <section className="tm-editor-section">
+        <div className="tm-editor-section__body">
+        <OutputSettingsControls
+          paperType={controller.documentRenderOptions.paperType}
+          onPaperTypeChange={(paperType) =>
+            controller.updateDocumentRenderOptions((current) => ({
+              ...current,
+              paperType,
+            }))
+          }
+          deviceCalibration={controller.resolvedPrinterDeviceCalibration}
+          onDeviceCalibrationChange={controller.updatePrinterDeviceCalibration}
+          printerIdentity={controller.resolvedPrinterIdentity}
+          appliedModelPreset={controller.resolvedPrinterModelPreset}
+          recommendedModelPreset={controller.recommendedPrinterModelPreset}
+          onSaveModelPreset={controller.savePrinterModelPreset}
+        />
         </div>
-      </CanvasSection>
+      </section>
 
       <CanvasSection
-        title="预览与动作"
+        title="预览"
         description={outputHint}
         aside={
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -4761,15 +4698,17 @@ function CanvasOutput({
             </Alert>
           ) : null}
           {previewUrl ? (
-            <div className="tm-preview-shell">
-              <img alt="canvas preview" className="tm-preview-image" src={previewUrl} />
-            </div>
+            <PositionedPreview
+              previewUrl={previewUrl}
+              artifactWidth={controller.preview?.artifact.width}
+              artifactHeight={controller.preview?.artifact.height}
+              renderOptions={controller.renderOptions}
+              emptyText="先生成预览，确认位置后再打印。"
+            />
           ) : (
             <div className="tm-empty-state">
               <p className="tm-empty-state__title">还没有预览</p>
-              <p className="tm-empty-state__body">
-                先生成一个预览。舞台中的条码和二维码已经使用与最终打印一致的编码语义。
-              </p>
+              <p className="tm-empty-state__body">先生成预览，确认位置后再打印。</p>
             </div>
           )}
           <div className="flex flex-wrap gap-2">
@@ -6484,12 +6423,12 @@ export function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps
   const draftWithCurrentRenderOptions = React.useCallback(
     (draft: CanvasDraftDocument): CanvasDraftDocument => ({
       ...cloneDraft(draft),
-      renderOptions: {
+      renderOptions: pickDocumentRenderOptions({
         ...draft.renderOptions,
-        ...controller.renderOptions,
-      },
+        ...controller.documentRenderOptions,
+      }),
     }),
-    [controller.renderOptions]
+    [controller.documentRenderOptions]
   )
 
   React.useEffect(() => {
@@ -6501,8 +6440,8 @@ export function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps
     }
 
     if (preloadedRouteData) {
-      controller.setRenderOptions({
-        ...defaultRenderOptions,
+      controller.setDocumentRenderOptions({
+        ...defaultDraftRenderOptions,
         ...preloadedRouteData.draft.renderOptions,
       })
       setState(
@@ -6523,7 +6462,10 @@ export function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps
         if (cancelled) {
           return
         }
-        controller.setRenderOptions({ ...defaultRenderOptions, ...loaded.draft.renderOptions })
+        controller.setDocumentRenderOptions({
+          ...defaultDraftRenderOptions,
+          ...loaded.draft.renderOptions,
+        })
         setState(
           createCanvasStateFromLoadedRouteData(loaded, {
             activePanel: initialPanel,
@@ -6575,7 +6517,7 @@ export function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps
       cancelled = true
     }
   }, [
-    controller.setRenderOptions,
+    controller.setDocumentRenderOptions,
     initialPanel,
     initialScenario,
     initialStatus,
@@ -7237,34 +7179,23 @@ export function CanvasWorkspace({ controller, initialScenario }: CanvasPageProps
               </p>
             </div>
             <div className="tm-pane__tabs">
-              <Button
+              <SegmentedTabs
+                ariaLabel="右侧面板切换"
+                mode="text"
                 size="sm"
-                variant={state.activePanel === "attributes" ? "default" : "outline"}
-                disabled={state.loading}
-                onClick={() =>
+                value={state.activePanel}
+                onValueChange={(nextPanel) =>
                   setState((current) => ({
                     ...current,
-                    activePanel: "attributes",
+                    activePanel: nextPanel === "output" ? "output" : "attributes",
                     focus: "center-right",
                   }))
                 }
-              >
-                属性
-              </Button>
-              <Button
-                size="sm"
-                variant={state.activePanel === "output" ? "default" : "outline"}
-                disabled={state.loading}
-                onClick={() =>
-                  setState((current) => ({
-                    ...current,
-                    activePanel: "output",
-                    focus: "center-right",
-                  }))
-                }
-              >
-                输出
-              </Button>
+                items={[
+                  { value: "attributes", name: "属性", disabled: state.loading },
+                  { value: "output", name: "输出", disabled: state.loading },
+                ]}
+              />
             </div>
           </div>
           <div className="tm-pane__body">

@@ -6,11 +6,27 @@ import type {
 
 export type PaperType = "continuous" | "gap"
 
+export type PrintStrengthLevel = -2 | -1 | 0 | 1 | 2
+
 export type RenderOptions = {
+  printerModel: string
+  printerDpi: number
   printWidthDots: number
   paperType: PaperType
   threshold: number
   xOffsetDots: number
+  yOffsetDots: number
+  printStrengthLevel: PrintStrengthLevel
+}
+
+export type DocumentRenderOptions = Pick<RenderOptions, "paperType" | "threshold">
+
+export type PrinterModelPreset = Pick<RenderOptions, "printerDpi" | "printWidthDots">
+
+export type PrinterDeviceCalibration = {
+  xOffsetMm: number
+  yOffsetMm: number
+  printStrengthLevel: PrintStrengthLevel
 }
 
 export type TemplateField = {
@@ -245,7 +261,7 @@ export type CanvasDraftDocument = {
   lastSavedAt?: string
   width: number
   height: number
-  renderOptions?: Partial<RenderOptions>
+  renderOptions?: Partial<DocumentRenderOptions>
   fields: CanvasDraftField[]
   elements: CanvasDraftElement[]
   editor: {
@@ -265,8 +281,10 @@ export type CanvasDocumentPreset = {
 export type Printer = {
   id: string
   name?: string
+  model?: string
   rssi?: number
   capabilities: {
+    dpi?: number
     printWidthDots: number
     supportedPaperTypes: PaperType[]
   }
@@ -283,6 +301,9 @@ export type PreviewArtifact = {
     previewScale: number
   }
   input?: Record<string, string>
+  pngPath: string
+  bitmapPath: string
+  svgPath: string
   width: number
   height: number
   createdAt: string

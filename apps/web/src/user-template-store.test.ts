@@ -141,7 +141,7 @@ describe("user-template-store", () => {
       name: "Render Options Template",
       document: {
         ...draft,
-        renderOptions: { paperType: "gap", threshold: 80, printWidthDots: 192 },
+        renderOptions: { paperType: "gap", threshold: 80 },
       },
     })
 
@@ -161,7 +161,6 @@ describe("user-template-store", () => {
     expect(updated.version.document.renderOptions).toMatchObject({
       paperType: "gap",
       threshold: 150,
-      printWidthDots: 192,
     })
   })
 
@@ -355,20 +354,20 @@ describe("user-template-store", () => {
     const updatedSettings = await saveRuntimeAppSettings({
       permissionNudgeSeen: true,
       showTextBoundingBoxes: true,
-      defaultRenderOptions: {
-        ...initialSettings.defaultRenderOptions,
+      documentDefaults: {
+        ...initialSettings.documentDefaults,
         threshold: 144,
       },
     })
 
     expect(updatedSettings.permissionNudgeSeen).toBe(true)
     expect(updatedSettings.showTextBoundingBoxes).toBe(true)
-    expect(updatedSettings.defaultRenderOptions.threshold).toBe(144)
+    expect(updatedSettings.documentDefaults.threshold).toBe(144)
 
     const reloaded = await loadRuntimeAppSettings()
     expect(reloaded.permissionNudgeSeen).toBe(true)
     expect(reloaded.showTextBoundingBoxes).toBe(true)
-    expect(reloaded.defaultRenderOptions.threshold).toBe(144)
+    expect(reloaded.documentDefaults.threshold).toBe(144)
   })
 
   it("exports and restores the runtime snapshot as a whole dataset", async () => {

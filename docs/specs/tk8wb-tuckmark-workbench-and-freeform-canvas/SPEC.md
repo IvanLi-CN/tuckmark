@@ -860,6 +860,20 @@ output.
   PR: include
   ![Canvas workspace dark theme](./assets/workbench-canvas-dark-state.png)
 
+- `1280×800` canvas output tab shows document-level paper type, device-level
+  print strength, 2D offset calibration, and separate model / device identity
+  in the owner-facing output controls
+
+  PR: include
+  ![Canvas output settings](./assets/canvas-output-settings-1280x800.png)
+
+- `1280×800` canvas output tab advanced settings drawer keeps model-level
+  `DPI / 宽度 dots / 宽度 mm` linked together behind explicit `保存 / 取消 /
+  重置`
+
+  PR: include
+  ![Canvas advanced output settings](./assets/canvas-output-advanced-settings-1280x800.png)
+
 - `1280×800` mock-demo canvas after coarse physical-wheel zoom; the active `296%` scale
   is reflected by the enlarged label content while the three-column workbench
   remains usable.

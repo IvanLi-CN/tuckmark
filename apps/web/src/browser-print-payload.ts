@@ -1,15 +1,15 @@
-import type {
-  ArtifactPackets,
-  DirectCanvasDefinition,
-  PreviewArtifact,
-  RenderOptions,
-  SafeTextLabelInput,
-} from "../../../packages/core/src/web.js"
+import type { DirectCanvasDefinition, SafeTextLabelInput } from "../../../packages/core/src/web.js"
 import { buildSvg, getTemplateById } from "../../../packages/core/src/web.js"
 import { encodeBrowserPngMessages } from "./browser-print-wasm.js"
-import type { ArtifactData } from "./types.js"
+import type { ArtifactData, ArtifactPackets, PreviewArtifact, RenderOptions } from "./types.js"
 
 type BrowserRenderOptions = PreviewArtifact["renderOptions"]
+type BrowserPacketRenderOptions = Pick<
+  BrowserRenderOptions,
+  "threshold" | "xOffsetDots" | "yOffsetDots" | "printWidthDots" | "paperType"
+> & {
+  printStrengthLevel: number
+}
 
 type TemplatePrintSource = {
   kind: "template"
@@ -297,7 +297,7 @@ function encodePacketBase64(message: Uint8Array): string {
 }
 
 export async function encodeBrowserPngBytes(
-  renderOptions: BrowserRenderOptions,
+  renderOptions: BrowserPacketRenderOptions,
   pngBytes: Uint8Array
 ): Promise<ArtifactPackets> {
   const messages = await encodeBrowserPngMessages(pngBytes, renderOptions)

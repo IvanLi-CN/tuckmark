@@ -116,9 +116,20 @@
     right-rail history panel
   - terminology aligned to product-facing Chinese labels instead of mixed
     engineering English
-  - a workbench-wide selectable contract that suppresses accidental text
-    selection on static chrome while keeping editable and copy-relevant values
-    explicitly selectable
+  - output settings resolved through three explicit scopes:
+    document-level `paperType` / hidden compatibility `threshold`, model-level
+    `printerDpi` / `printWidthDots`, and device-level `x/y` calibration plus
+    discrete `printStrengthLevel`
+  - owner-facing output chrome reduced to `纸张类型`, discrete `打印强度`,
+    2D `X/Y` offset control, and one `高级设置` drawer that stages model-level
+    DPI/width edits behind explicit `保存 / 取消 / 重置`
+  - freeform-canvas output compilation now converts document millimeters with
+    the resolved model DPI before preview/print and carries resolved printer
+    identity, centered effective width, `Y` offset, and print-strength inputs
+    through browser-direct, Rust preview encoding, and lpapi compatibility
+- a workbench-wide selectable contract that suppresses accidental text
+  selection on static chrome while keeping editable and copy-relevant values
+  explicitly selectable
 - Canvas stage is implemented with `react-konva` editing for `text`, `rect`,
   `circle`, `triangle`, `line`, `barcode`, `qr`, and `datamatrix`.
 - Stage interaction coverage includes:

@@ -16,6 +16,17 @@ const CONTINUOUS_TARGET_DARK_BITS = 220
 const CONTINUOUS_MIN_RUN_LENGTH = 64
 const CONTINUOUS_EDGE_PRESERVE_DOTS = 12
 
+function createArtifactRenderOptions(
+  renderOptions: RenderOptions,
+  overrides?: Partial<RenderOptions>
+): PreviewArtifact["renderOptions"] {
+  return {
+    ...renderOptions,
+    ...overrides,
+    previewScale: 4,
+  }
+}
+
 function createArtifactId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID()
@@ -346,15 +357,24 @@ async function resolveArtifactStore() {
             id: "__ping__",
             name: "__ping__",
             createdAt: new Date(0).toISOString(),
+            pngPath: "browser://preview.png",
+            bitmapPath: "browser://preview.bin",
+            svgPath: "browser://preview.svg",
             width: 1,
             height: 1,
-            renderOptions: {
-              printWidthDots: 384,
-              previewScale: 4,
-              paperType: "gap",
-              threshold: 150,
-              xOffsetDots: 0,
-            },
+            renderOptions: createArtifactRenderOptions(
+              {
+                printerModel: "generic",
+                printerDpi: 203,
+                printWidthDots: 384,
+                paperType: "gap",
+                threshold: 150,
+                xOffsetDots: 0,
+                yOffsetDots: 0,
+                printStrengthLevel: 0,
+              },
+              {}
+            ),
           },
           data: {
             preview: { kind: "data-url", dataUrl: "data:image/gif;base64,R0lGODlhAQABAAAAACw=" },
@@ -455,13 +475,7 @@ export async function previewTemplateInBrowser(input: {
 }): Promise<{ artifact: PreviewArtifact }> {
   const template = getTemplateById(input.templateId)
   const normalizedInput = normalizeTemplateInput(template, input.input)
-  const renderOptions = {
-    printWidthDots: input.renderOptions.printWidthDots,
-    previewScale: 4,
-    paperType: input.renderOptions.paperType,
-    threshold: input.renderOptions.threshold,
-    xOffsetDots: input.renderOptions.xOffsetDots,
-  }
+  const renderOptions = createArtifactRenderOptions(input.renderOptions)
   const svg = buildSvg(template.width, template.height, template.elements, normalizedInput)
   const normalizedImage = normalizeContinuousPaperImageData(
     await svgToImageData(svg, template.width, template.height),
@@ -473,6 +487,9 @@ export async function previewTemplateInBrowser(input: {
     name: template.name,
     templateId: template.id,
     createdAt: new Date().toISOString(),
+    pngPath: "browser://preview.png",
+    bitmapPath: "browser://preview.bin",
+    svgPath: "browser://preview.svg",
     width: template.width,
     height: template.height,
     renderOptions,
@@ -487,13 +504,7 @@ export async function previewCanvasInBrowser(input: {
   canvas: DirectCanvasDefinition
   renderOptions: RenderOptions
 }): Promise<{ artifact: PreviewArtifact }> {
-  const renderOptions = {
-    printWidthDots: input.renderOptions.printWidthDots,
-    previewScale: 4,
-    paperType: input.renderOptions.paperType,
-    threshold: input.renderOptions.threshold,
-    xOffsetDots: input.renderOptions.xOffsetDots,
-  }
+  const renderOptions = createArtifactRenderOptions(input.renderOptions)
   const svg = buildSvg(input.canvas.width, input.canvas.height, input.canvas.elements, {})
   const normalizedImage = normalizeContinuousPaperImageData(
     await svgToImageData(svg, input.canvas.width, input.canvas.height),
@@ -505,6 +516,9 @@ export async function previewCanvasInBrowser(input: {
     name: input.canvas.name,
     templateId: input.canvas.id,
     createdAt: new Date().toISOString(),
+    pngPath: "browser://preview.png",
+    bitmapPath: "browser://preview.bin",
+    svgPath: "browser://preview.svg",
     width: input.canvas.width,
     height: input.canvas.height,
     renderOptions,
@@ -520,13 +534,9 @@ export async function previewSafeTextInBrowser(input: {
   title: string
   renderOptions: RenderOptions
 }): Promise<{ artifact: PreviewArtifact }> {
-  const renderOptions = {
-    printWidthDots: input.renderOptions.printWidthDots,
-    previewScale: 4,
-    paperType: "continuous" as const,
-    threshold: input.renderOptions.threshold,
-    xOffsetDots: input.renderOptions.xOffsetDots,
-  }
+  const renderOptions = createArtifactRenderOptions(input.renderOptions, {
+    paperType: "continuous",
+  })
   const { svg, width, height } = renderSafeTextSvg(input.text, renderOptions)
   const normalizedImage = normalizeContinuousPaperImageData(
     await svgToImageData(svg, width, height),
@@ -538,6 +548,9 @@ export async function previewSafeTextInBrowser(input: {
     name: input.title,
     templateId: "safe-text-label",
     createdAt: new Date().toISOString(),
+    pngPath: "browser://preview.png",
+    bitmapPath: "browser://preview.bin",
+    svgPath: "browser://preview.svg",
     width,
     height,
     renderOptions,

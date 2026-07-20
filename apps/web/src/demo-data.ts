@@ -1,4 +1,8 @@
-import type { Printer, RenderOptions, Template } from "./types.js"
+import {
+  defaultDocumentRenderOptions,
+  defaultResolvedRenderOptions,
+} from "./output-settings.js"
+import type { DocumentRenderOptions, Printer, RenderOptions, Template } from "./types.js"
 
 export const fallbackTemplates: Template[] = [
   {
@@ -42,11 +46,10 @@ export const fallbackInputs: Record<string, Record<string, string>> = {
   },
 }
 
-export const defaultRenderOptions: RenderOptions = {
-  printWidthDots: 384,
-  paperType: "continuous",
-  threshold: 150,
-  xOffsetDots: 0,
+export const defaultRenderOptions: RenderOptions = { ...defaultResolvedRenderOptions }
+
+export const defaultDraftRenderOptions: DocumentRenderOptions = {
+  ...defaultDocumentRenderOptions,
 }
 
 export const seededPrinters: Printer[] = [
@@ -55,6 +58,7 @@ export const seededPrinters: Printer[] = [
     name: "Studio P2",
     rssi: -48,
     capabilities: {
+      dpi: 203,
       printWidthDots: 384,
       supportedPaperTypes: ["continuous", "gap"],
     },

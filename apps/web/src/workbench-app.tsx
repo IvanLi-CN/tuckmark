@@ -88,11 +88,12 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
 import { DataDirectoryNudgeToast } from "./data-directory-nudge-toast.js"
-import { buildInputFromTemplate, defaultRenderOptions } from "./demo-data.js"
+import { buildInputFromTemplate, defaultDraftRenderOptions } from "./demo-data.js"
 import { FooterBuildMeta } from "./footer-build-meta.js"
 import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
 import { canvasDotsToMillimeters, canvasMillimetersToDots } from "./lib/canvas-units.js"
 import { cn } from "./lib/utils.js"
+import { OutputSettingsControls, PositionedPreview } from "./output-settings-ui.js"
 import { usePwaAssetWarmup } from "./pwa-asset-warmup.js"
 import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
 import { applyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
@@ -672,7 +673,9 @@ export function createUserTemplatePrintSource(
 ): BrowserPrintSource {
   return {
     kind: "canvas",
-    canvas: compileDraftToFilledCanvasDefinition(draft, row.values),
+    canvas: compileDraftToFilledCanvasDefinition(draft, row.values, {
+      printerDpi: renderOptions.printerDpi,
+    }),
     renderOptions: createPreviewRenderOptions(renderOptions),
     templateUsage: {
       id: template.id,
@@ -1095,20 +1098,18 @@ function useWorkbenchPages(controller: ReturnType<typeof useWorkbenchController>
   const syncRenderOptionsFromDraft = React.useCallback(
     (draft: CanvasDraftDocument | null) => {
       const nextOptions = {
-        ...defaultRenderOptions,
+        ...defaultDraftRenderOptions,
         ...draft?.renderOptions,
       }
       if (
-        controller.renderOptions.printWidthDots === nextOptions.printWidthDots &&
-        controller.renderOptions.paperType === nextOptions.paperType &&
-        controller.renderOptions.threshold === nextOptions.threshold &&
-        controller.renderOptions.xOffsetDots === nextOptions.xOffsetDots
+        controller.documentRenderOptions.paperType === nextOptions.paperType &&
+        controller.documentRenderOptions.threshold === nextOptions.threshold
       ) {
         return
       }
-      controller.setRenderOptions(nextOptions)
+      controller.setDocumentRenderOptions(nextOptions)
     },
-    [controller.renderOptions, controller.setRenderOptions]
+    [controller.documentRenderOptions, controller.setDocumentRenderOptions]
   )
 
   React.useEffect(() => {
@@ -3656,8 +3657,6 @@ export function RenderOptionsForm({
   compact?: boolean
   disabled?: boolean
 }) {
-  const options = controller.renderOptions
-
   return (
     <Card className="tm-panel">
       <CardHeader className={compact ? "pb-4" : undefined}>
@@ -3666,79 +3665,23 @@ export function RenderOptionsForm({
         </CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
-        <div className={cn("tm-form-grid", compact && "tm-form-grid--compact")}>
-          <div className="grid gap-2">
-            <Label htmlFor="print-width">宽度 dots</Label>
-            <Input
-              id="print-width"
-              type="number"
-              value={String(options.printWidthDots)}
-              disabled={disabled}
-              onFocus={onFocusRight}
-              onChange={(event) => {
-                const rawValue = event.currentTarget.value
-                controller.updateRenderOptions((current) => ({
-                  ...current,
-                  printWidthDots: Number(rawValue || current.printWidthDots),
-                }))
-              }}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="paper-type">纸张类型</Label>
-            <Select
-              value={options.paperType}
-              disabled={disabled}
-              onValueChange={(value: "continuous" | "gap") =>
-                controller.updateRenderOptions((current) => ({
-                  ...current,
-                  paperType: value,
-                }))
-              }
-            >
-              <SelectTrigger id="paper-type" disabled={disabled} onFocus={onFocusRight}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="continuous">continuous</SelectItem>
-                <SelectItem value="gap">gap</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="threshold">Threshold</Label>
-            <Input
-              id="threshold"
-              type="number"
-              value={String(options.threshold)}
-              disabled={disabled}
-              onFocus={onFocusRight}
-              onChange={(event) => {
-                const rawValue = event.currentTarget.value
-                controller.updateRenderOptions((current) => ({
-                  ...current,
-                  threshold: Number(rawValue || current.threshold),
-                }))
-              }}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="x-offset">X offset</Label>
-            <Input
-              id="x-offset"
-              type="number"
-              value={String(options.xOffsetDots)}
-              disabled={disabled}
-              onFocus={onFocusRight}
-              onChange={(event) => {
-                const rawValue = event.currentTarget.value
-                controller.updateRenderOptions((current) => ({
-                  ...current,
-                  xOffsetDots: Number(rawValue || current.xOffsetDots),
-                }))
-              }}
-            />
-          </div>
+        <div onFocusCapture={onFocusRight}>
+          <OutputSettingsControls
+            disabled={disabled}
+            paperType={controller.documentRenderOptions.paperType}
+            onPaperTypeChange={(paperType) =>
+              controller.updateDocumentRenderOptions((current) => ({
+                ...current,
+                paperType,
+              }))
+            }
+            deviceCalibration={controller.resolvedPrinterDeviceCalibration}
+            onDeviceCalibrationChange={controller.updatePrinterDeviceCalibration}
+            printerIdentity={controller.resolvedPrinterIdentity}
+            appliedModelPreset={controller.resolvedPrinterModelPreset}
+            recommendedModelPreset={controller.recommendedPrinterModelPreset}
+            onSaveModelPreset={controller.savePrinterModelPreset}
+          />
         </div>
       </CardContent>
     </Card>
@@ -3784,17 +3727,17 @@ function PreviewCard({
       </CardHeader>
       <CardContent className="grid gap-3">
         {!disabled && controller.artifactData ? (
-          <div className="tm-preview-shell">
-            <img
-              alt="preview artifact"
-              className="tm-preview-image"
-              src={
-                controller.artifactData.preview.kind === "url"
-                  ? controller.artifactData.preview.url
-                  : controller.artifactData.preview.dataUrl
-              }
-            />
-          </div>
+          <PositionedPreview
+            previewUrl={
+              controller.artifactData.preview.kind === "url"
+                ? controller.artifactData.preview.url
+                : controller.artifactData.preview.dataUrl
+            }
+            artifactWidth={controller.preview?.artifact.width}
+            artifactHeight={controller.preview?.artifact.height}
+            renderOptions={controller.renderOptions}
+            emptyText={emptyText}
+          />
         ) : (
           <EmptyMini text={emptyText} />
         )}
@@ -4737,7 +4680,7 @@ export function WorkbenchAppStory({
   return (
     <ThemeScope theme={theme}>
       <MemoryRouter initialEntries={initialEntries}>
-        <LazyWorkbenchRouter
+        <EagerWorkbenchRouter
           controller={controller}
           canvasScenario={canvasScenario}
           hydrationState={hydrationState}
