@@ -1,3 +1,11 @@
+import {
+  type InventoryDirectorySnapshot,
+  inventoryAdjustmentSchema,
+  inventoryDirectorySnapshotSchema,
+  inventoryMaterialSchema,
+  sortInventoryAdjustmentsNewestFirst,
+  sortInventoryMaterialsByName,
+} from "@tuckmark/inventory"
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate"
 
 import type { CrossTabCoordinator, CrossTabLeaseState } from "./cross-tab-coordinator.js"
@@ -29,6 +37,9 @@ import { exportRuntimeSnapshot, replaceRuntimeSnapshot } from "./user-template-s
 const APP_SETTINGS_PATH = "settings/app-settings.json"
 const BACKUPS_DIR = "backups"
 const DRAFTS_DIR = "drafts"
+const INVENTORY_DIR = "inventory"
+const MATERIALS_DIR = `${INVENTORY_DIR}/materials`
+const ADJUSTMENTS_DIR = `${INVENTORY_DIR}/adjustments`
 const MANIFEST_PATH = "manifest.json"
 const MANUAL_BACKUPS_DIR = `${BACKUPS_DIR}/manual`
 const PROTECTION_BACKUPS_DIR = `${BACKUPS_DIR}/protection`
@@ -44,9 +55,15 @@ type PersistedStatus = {
   lastError: string | null
 }
 
+type ManagedDirectoryState = {
+  snapshot: RuntimeStoreSnapshot
+  inventorySnapshot: InventoryDirectorySnapshot
+}
+
 export type DataArchiveInspection = {
   label: string
   snapshot: RuntimeStoreSnapshot
+  inventorySnapshot: InventoryDirectorySnapshot
   summary: RuntimeSnapshotSummary
 }
 
@@ -102,13 +119,36 @@ function rememberSyncError(error: unknown): void {
   })
 }
 
-function toRuntimeSummary(snapshot: RuntimeStoreSnapshot): RuntimeSnapshotSummary {
+function createEmptyInventorySnapshot(): InventoryDirectorySnapshot {
+  return {
+    materials: [],
+    adjustments: [],
+  }
+}
+
+function normalizeInventorySnapshot(
+  snapshot: InventoryDirectorySnapshot
+): InventoryDirectorySnapshot {
+  const normalized = inventoryDirectorySnapshotSchema.parse(snapshot)
+  return {
+    materials: [...normalized.materials].sort(sortInventoryMaterialsByName),
+    adjustments: [...normalized.adjustments].sort(sortInventoryAdjustmentsNewestFirst),
+  }
+}
+
+function toRuntimeSummary(
+  snapshot: RuntimeStoreSnapshot,
+  inventorySnapshot: InventoryDirectorySnapshot = createEmptyInventorySnapshot()
+): RuntimeSnapshotSummary {
+  const normalizedInventory = normalizeInventorySnapshot(inventorySnapshot)
   return {
     exportedAt: snapshot.exportedAt,
     snapshotUpdatedAt: snapshot.snapshotUpdatedAt,
     templates: snapshot.templates.length,
     versions: snapshot.versions.length,
     workingCopies: snapshot.workingCopies.length,
+    materials: normalizedInventory.materials.length,
+    adjustments: normalizedInventory.adjustments.length,
   }
 }
 
@@ -218,9 +258,11 @@ function normalizeSnapshot(snapshot: RuntimeStoreSnapshot): RuntimeStoreSnapshot
 
 function buildSnapshotTree(
   snapshot: RuntimeStoreSnapshot,
+  inventorySnapshot: InventoryDirectorySnapshot,
   source: "runtime-sync" | "backup-archive"
 ) {
   const normalized = normalizeSnapshot(snapshot)
+  const normalizedInventory = normalizeInventorySnapshot(inventorySnapshot)
   const files = new Map<string, string>()
   files.set(APP_SETTINGS_PATH, JSON.stringify(normalized.settings, null, 2))
 
@@ -258,6 +300,14 @@ function buildSnapshotTree(
     }
   }
 
+  for (const material of normalizedInventory.materials) {
+    files.set(`${MATERIALS_DIR}/${material.id}.json`, JSON.stringify(material, null, 2))
+  }
+
+  for (const adjustment of normalizedInventory.adjustments) {
+    files.set(`${ADJUSTMENTS_DIR}/${adjustment.id}.json`, JSON.stringify(adjustment, null, 2))
+  }
+
   const manifest: DataDirectoryManifestV1 = {
     schema: MANIFEST_SCHEMA,
     generatedAt: new Date().toISOString(),
@@ -267,17 +317,20 @@ function buildSnapshotTree(
       settings: APP_SETTINGS_PATH,
       templatesDir: TEMPLATES_DIR,
       draftsDir: DRAFTS_DIR,
+      inventoryDir: INVENTORY_DIR,
       backupsDir: BACKUPS_DIR,
     },
     counts: {
       templates: normalized.templates.length,
       versions: normalized.versions.length,
       workingCopies: normalized.workingCopies.length,
+      materials: normalizedInventory.materials.length,
+      adjustments: normalizedInventory.adjustments.length,
     },
   }
   files.set(MANIFEST_PATH, JSON.stringify(manifest, null, 2))
 
-  return { files, manifest, snapshot: normalized }
+  return { files, manifest, snapshot: normalized, inventorySnapshot: normalizedInventory }
 }
 
 function parseManifest(raw: string): DataDirectoryManifestV1 {
@@ -285,7 +338,18 @@ function parseManifest(raw: string): DataDirectoryManifestV1 {
   if (parsed.schema !== MANIFEST_SCHEMA) {
     throw new Error("目录 manifest 版本不受支持。")
   }
-  return parsed
+  return {
+    ...parsed,
+    files: {
+      ...parsed.files,
+      inventoryDir: parsed.files?.inventoryDir ?? INVENTORY_DIR,
+    },
+    counts: {
+      ...parsed.counts,
+      materials: parsed.counts?.materials ?? 0,
+      adjustments: parsed.counts?.adjustments ?? 0,
+    },
+  }
 }
 
 function parseSnapshotFromFiles(files: Map<string, string>): RuntimeStoreSnapshot {
@@ -346,12 +410,49 @@ function parseSnapshotFromFiles(files: Map<string, string>): RuntimeStoreSnapsho
   })
 }
 
-async function readTextFile(handle: FileSystemFileHandle): Promise<string> {
+function parseInventorySnapshotFromFiles(files: Map<string, string>): InventoryDirectorySnapshot {
+  const materials = []
+  const adjustments = []
+
+  for (const [path, raw] of files) {
+    const segments = path.split("/")
+    if (
+      segments[0] === "inventory" &&
+      segments[1] === "materials" &&
+      segments.length === 3 &&
+      segments[2].endsWith(".json")
+    ) {
+      materials.push(inventoryMaterialSchema.parse(JSON.parse(raw)))
+      continue
+    }
+    if (
+      segments[0] === "inventory" &&
+      segments[1] === "adjustments" &&
+      segments.length === 3 &&
+      segments[2].endsWith(".json")
+    ) {
+      adjustments.push(inventoryAdjustmentSchema.parse(JSON.parse(raw)))
+    }
+  }
+
+  return normalizeInventorySnapshot({ materials, adjustments })
+}
+
+function parseDirectoryStateFromFiles(files: Map<string, string>): ManagedDirectoryState {
+  return {
+    snapshot: parseSnapshotFromFiles(files),
+    inventorySnapshot: parseInventorySnapshotFromFiles(files),
+  }
+}
+
+export async function readTextFileFromDirectoryHandle(
+  handle: FileSystemFileHandle
+): Promise<string> {
   const file = await handle.getFile()
   return await file.text()
 }
 
-async function writeTextFile(
+export async function writeTextFileToDirectoryHandle(
   handle: FileSystemDirectoryHandle,
   path: string,
   value: string
@@ -371,19 +472,19 @@ async function writeTextFile(
   await writable.close()
 }
 
-async function readFileIfPresent(
+export async function readFileFromDirectoryHandleIfPresent(
   handle: FileSystemDirectoryHandle,
   path: string
 ): Promise<string | null> {
   try {
-    const fileHandle = await resolveFileHandle(handle, path)
-    return await readTextFile(fileHandle)
+    const fileHandle = await resolveFileHandleFromDirectoryHandle(handle, path)
+    return await readTextFileFromDirectoryHandle(fileHandle)
   } catch {
     return null
   }
 }
 
-async function resolveDirectoryHandle(
+export async function resolveDirectoryHandleFromDirectoryHandle(
   handle: FileSystemDirectoryHandle,
   path: string,
   create = false
@@ -398,7 +499,7 @@ async function resolveDirectoryHandle(
   return directory
 }
 
-async function resolveFileHandle(
+export async function resolveFileHandleFromDirectoryHandle(
   handle: FileSystemDirectoryHandle,
   path: string
 ): Promise<FileSystemFileHandle> {
@@ -414,7 +515,7 @@ async function resolveFileHandle(
   return await directory.getFileHandle(fileName)
 }
 
-async function removeEntryIfPresent(
+export async function removeEntryIfPresentFromDirectoryHandle(
   handle: FileSystemDirectoryHandle,
   name: string,
   options?: FileSystemRemoveOptions
@@ -427,13 +528,14 @@ async function removeEntryIfPresent(
 }
 
 async function clearManagedMirror(handle: FileSystemDirectoryHandle): Promise<void> {
-  await removeEntryIfPresent(handle, SETTINGS_DIR, { recursive: true })
-  await removeEntryIfPresent(handle, TEMPLATES_DIR, { recursive: true })
-  await removeEntryIfPresent(handle, DRAFTS_DIR, { recursive: true })
-  await removeEntryIfPresent(handle, MANIFEST_PATH)
+  await removeEntryIfPresentFromDirectoryHandle(handle, SETTINGS_DIR, { recursive: true })
+  await removeEntryIfPresentFromDirectoryHandle(handle, TEMPLATES_DIR, { recursive: true })
+  await removeEntryIfPresentFromDirectoryHandle(handle, DRAFTS_DIR, { recursive: true })
+  await removeEntryIfPresentFromDirectoryHandle(handle, INVENTORY_DIR, { recursive: true })
+  await removeEntryIfPresentFromDirectoryHandle(handle, MANIFEST_PATH)
 }
 
-async function collectDirectoryFiles(
+export async function collectDirectoryFilesFromDirectoryHandle(
   handle: FileSystemDirectoryHandle,
   prefix = ""
 ): Promise<Map<string, string>> {
@@ -444,13 +546,13 @@ async function collectDirectoryFiles(
     }
     const path = prefix ? `${prefix}/${entry.name}` : entry.name
     if (isFileHandle(entry)) {
-      files.set(path, await readTextFile(entry))
+      files.set(path, await readTextFileFromDirectoryHandle(entry))
       continue
     }
     if (!isDirectoryHandle(entry)) {
       continue
     }
-    const nested = await collectDirectoryFiles(entry, path)
+    const nested = await collectDirectoryFilesFromDirectoryHandle(entry, path)
     for (const [nestedPath, value] of nested) {
       files.set(nestedPath, value)
     }
@@ -485,7 +587,7 @@ async function listDirectoryEntries(
 async function readManifestIfPresent(
   handle: FileSystemDirectoryHandle
 ): Promise<DataDirectoryManifestV1 | null> {
-  const raw = await readFileIfPresent(handle, MANIFEST_PATH)
+  const raw = await readFileFromDirectoryHandleIfPresent(handle, MANIFEST_PATH)
   if (!raw) {
     return null
   }
@@ -495,33 +597,26 @@ async function readManifestIfPresent(
 async function writeSnapshotToDirectory(
   handle: FileSystemDirectoryHandle,
   snapshot: RuntimeStoreSnapshot,
+  inventorySnapshot: InventoryDirectorySnapshot,
   source: "runtime-sync" | "backup-archive"
 ): Promise<DataDirectoryManifestV1> {
-  const { files, manifest } = buildSnapshotTree(snapshot, source)
+  const { files, manifest } = buildSnapshotTree(snapshot, inventorySnapshot, source)
   await clearManagedMirror(handle)
   for (const [path, value] of files) {
-    await writeTextFile(handle, path, value)
+    await writeTextFileToDirectoryHandle(handle, path, value)
   }
   rememberSyncSuccess(manifest.generatedAt)
   return manifest
 }
 
-async function readSnapshotFromDirectory(
+async function readInventorySnapshotFromDirectory(
   handle: FileSystemDirectoryHandle
-): Promise<RuntimeStoreSnapshot> {
+): Promise<InventoryDirectorySnapshot> {
   const files = new Map<string, string>()
-  const manifestRaw = await readFileIfPresent(handle, MANIFEST_PATH)
-  if (manifestRaw) {
-    files.set(MANIFEST_PATH, manifestRaw)
-  }
-  const settingsRaw = await readFileIfPresent(handle, APP_SETTINGS_PATH)
-  if (settingsRaw) {
-    files.set(APP_SETTINGS_PATH, settingsRaw)
-  }
-  for (const root of [TEMPLATES_DIR, DRAFTS_DIR]) {
+  for (const root of [MATERIALS_DIR, ADJUSTMENTS_DIR]) {
     try {
-      const directory = await resolveDirectoryHandle(handle, root)
-      const nested = await collectDirectoryFiles(directory, root)
+      const directory = await resolveDirectoryHandleFromDirectoryHandle(handle, root)
+      const nested = await collectDirectoryFilesFromDirectoryHandle(directory, root)
       for (const [path, value] of nested) {
         files.set(path, value)
       }
@@ -529,7 +624,39 @@ async function readSnapshotFromDirectory(
       // Ignore absent managed subtrees.
     }
   }
-  return parseSnapshotFromFiles(files)
+  return parseInventorySnapshotFromFiles(files)
+}
+
+async function readDirectoryStateFromDirectory(
+  handle: FileSystemDirectoryHandle
+): Promise<ManagedDirectoryState> {
+  const files = new Map<string, string>()
+  const manifestRaw = await readFileFromDirectoryHandleIfPresent(handle, MANIFEST_PATH)
+  if (manifestRaw) {
+    files.set(MANIFEST_PATH, manifestRaw)
+  }
+  const settingsRaw = await readFileFromDirectoryHandleIfPresent(handle, APP_SETTINGS_PATH)
+  if (settingsRaw) {
+    files.set(APP_SETTINGS_PATH, settingsRaw)
+  }
+  for (const root of [TEMPLATES_DIR, DRAFTS_DIR, MATERIALS_DIR, ADJUSTMENTS_DIR]) {
+    try {
+      const directory = await resolveDirectoryHandleFromDirectoryHandle(handle, root)
+      const nested = await collectDirectoryFilesFromDirectoryHandle(directory, root)
+      for (const [path, value] of nested) {
+        files.set(path, value)
+      }
+    } catch {
+      // Ignore absent managed subtrees.
+    }
+  }
+  return parseDirectoryStateFromFiles(files)
+}
+
+async function readSnapshotFromDirectory(
+  handle: FileSystemDirectoryHandle
+): Promise<RuntimeStoreSnapshot> {
+  return (await readDirectoryStateFromDirectory(handle)).snapshot
 }
 
 async function ensureBackupsDirectory(
@@ -561,8 +688,8 @@ async function writeArchiveFile(
   }
 }
 
-function createArchiveBytes(snapshot: RuntimeStoreSnapshot): Uint8Array {
-  const { files } = buildSnapshotTree(snapshot, "backup-archive")
+function createArchiveBytes(state: ManagedDirectoryState): Uint8Array {
+  const { files } = buildSnapshotTree(state.snapshot, state.inventorySnapshot, "backup-archive")
   const zipEntries: Record<string, Uint8Array> = {}
   for (const [path, value] of files) {
     zipEntries[path] = strToU8(value)
@@ -584,12 +711,12 @@ async function readBackupEntryBytes(
   handle: FileSystemDirectoryHandle,
   entry: DataDirectoryBackupEntry
 ): Promise<Uint8Array> {
-  const fileHandle = await resolveFileHandle(handle, entry.path)
+  const fileHandle = await resolveFileHandleFromDirectoryHandle(handle, entry.path)
   const file = await fileHandle.getFile()
   return new Uint8Array(await file.arrayBuffer())
 }
 
-function parseArchiveBytes(bytes: Uint8Array): RuntimeStoreSnapshot {
+function parseArchiveBytes(bytes: Uint8Array): ManagedDirectoryState {
   const entries = unzipSync(bytes)
   const archiveMeta = entries["archive.json"]
   if (archiveMeta) {
@@ -605,7 +732,7 @@ function parseArchiveBytes(bytes: Uint8Array): RuntimeStoreSnapshot {
     }
     files.set(path, strFromU8(value))
   }
-  return parseSnapshotFromFiles(files)
+  return parseDirectoryStateFromFiles(files)
 }
 
 async function trimProtectionBackups(handle: FileSystemDirectoryHandle): Promise<void> {
@@ -615,7 +742,10 @@ async function trimProtectionBackups(handle: FileSystemDirectoryHandle): Promise
     .sort((left, right) => right.modifiedAt.localeCompare(left.modifiedAt))
   for (const stale of protection.slice(PROTECTION_BACKUP_LIMIT)) {
     try {
-      const directory = await resolveDirectoryHandle(handle, PROTECTION_BACKUPS_DIR)
+      const directory = await resolveDirectoryHandleFromDirectoryHandle(
+        handle,
+        PROTECTION_BACKUPS_DIR
+      )
       await directory.removeEntry(stale.name)
     } catch {
       // Ignore best-effort retention cleanup failures.
@@ -625,16 +755,32 @@ async function trimProtectionBackups(handle: FileSystemDirectoryHandle): Promise
 
 async function createProtectionBackup(handle: FileSystemDirectoryHandle): Promise<void> {
   const snapshot = await exportRuntimeSnapshot()
-  const bytes = createArchiveBytes(snapshot)
+  const inventorySnapshot = await readInventorySnapshotFromDirectory(handle)
+  const bytes = createArchiveBytes({ snapshot, inventorySnapshot })
   await writeArchiveFile(handle, "protection", createArchiveName("protection"), bytes)
   await trimProtectionBackups(handle)
 }
 
-async function loadConfiguredHandle(): Promise<FileSystemDirectoryHandle | null> {
+export async function loadConfiguredDataDirectoryHandle(): Promise<FileSystemDirectoryHandle | null> {
   if (!supportsDirectoryHandles()) {
     return null
   }
   return await loadStoredDataDirectoryHandle()
+}
+
+export async function readRuntimeSnapshotFromDirectoryHandle(
+  handle: FileSystemDirectoryHandle
+): Promise<RuntimeStoreSnapshot> {
+  return await readSnapshotFromDirectory(handle)
+}
+
+export async function writeRuntimeSnapshotToDirectoryHandle(
+  handle: FileSystemDirectoryHandle,
+  snapshot: RuntimeStoreSnapshot,
+  source: "runtime-sync" | "backup-archive" = "runtime-sync"
+): Promise<DataDirectoryManifestV1> {
+  const inventorySnapshot = await readInventorySnapshotFromDirectory(handle)
+  return await writeSnapshotToDirectory(handle, snapshot, inventorySnapshot, source)
 }
 
 export function supportsDataDirectoryFeatures(): boolean {
@@ -642,7 +788,7 @@ export function supportsDataDirectoryFeatures(): boolean {
 }
 
 export async function hasConfiguredDataDirectory(): Promise<boolean> {
-  return (await loadConfiguredHandle()) !== null
+  return (await loadConfiguredDataDirectoryHandle()) !== null
 }
 
 export async function inspectPickedDataDirectory(
@@ -691,11 +837,17 @@ export async function attachDataDirectory(args: {
   if (permission !== "granted") {
     throw new Error("未获得数据目录的读写权限。")
   }
+  const previousHandle = await loadConfiguredDataDirectoryHandle()
   await saveDataDirectoryHandle(args.handle)
 
   if (args.mode === "overwrite-current") {
     const snapshot = await exportRuntimeSnapshot()
-    await writeSnapshotToDirectory(args.handle, snapshot, "runtime-sync")
+    const inventorySnapshot = previousHandle
+      ? await readInventorySnapshotFromDirectory(previousHandle).catch(() =>
+          createEmptyInventorySnapshot()
+        )
+      : createEmptyInventorySnapshot()
+    await writeSnapshotToDirectory(args.handle, snapshot, inventorySnapshot, "runtime-sync")
     return "mirrored-runtime"
   }
 
@@ -712,7 +864,7 @@ export async function detachDataDirectory(): Promise<void> {
 export async function restoreRuntimeFromConfiguredDirectoryIfNeeded(): Promise<
   "restored" | "skipped"
 > {
-  const handle = await loadConfiguredHandle()
+  const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     return "skipped"
   }
@@ -735,7 +887,7 @@ export async function restoreRuntimeFromConfiguredDirectoryIfNeeded(): Promise<
 }
 
 export async function requestConfiguredDirectoryPermission(requestIfNeeded = true): Promise<void> {
-  const handle = await loadConfiguredHandle()
+  const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     throw new Error("尚未配置数据目录。")
   }
@@ -749,7 +901,7 @@ export async function syncConfiguredDataDirectory(args: {
   coordinator: CrossTabCoordinator
   requestIfNeeded?: boolean
 }): Promise<void> {
-  const handle = await loadConfiguredHandle()
+  const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     throw new Error("尚未配置数据目录。")
   }
@@ -759,14 +911,15 @@ export async function syncConfiguredDataDirectory(args: {
   }
   await args.coordinator.runAsWriter(async () => {
     const snapshot = await exportRuntimeSnapshot()
-    await writeSnapshotToDirectory(handle, snapshot, "runtime-sync")
+    const inventorySnapshot = await readInventorySnapshotFromDirectory(handle)
+    await writeSnapshotToDirectory(handle, snapshot, inventorySnapshot, "runtime-sync")
   })
 }
 
 export async function createManualBackup(args: {
   coordinator: CrossTabCoordinator
 }): Promise<DataDirectoryBackupEntry> {
-  const handle = await loadConfiguredHandle()
+  const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     throw new Error("尚未配置数据目录。")
   }
@@ -776,7 +929,8 @@ export async function createManualBackup(args: {
   }
   return await args.coordinator.runAsWriter(async () => {
     const snapshot = await exportRuntimeSnapshot()
-    const bytes = createArchiveBytes(snapshot)
+    const inventorySnapshot = await readInventorySnapshotFromDirectory(handle)
+    const bytes = createArchiveBytes({ snapshot, inventorySnapshot })
     return await writeArchiveFile(handle, "manual", createArchiveName("backup"), bytes)
   })
 }
@@ -788,7 +942,7 @@ export async function listBackupEntries(
   for (const kind of ["manual", "protection"] as const) {
     let directory: FileSystemDirectoryHandle
     try {
-      directory = await resolveDirectoryHandle(handle, `${BACKUPS_DIR}/${kind}`)
+      directory = await resolveDirectoryHandleFromDirectoryHandle(handle, `${BACKUPS_DIR}/${kind}`)
     } catch {
       continue
     }
@@ -815,7 +969,7 @@ export async function listBackupEntries(
 export async function inspectConfiguredBackup(
   entry: DataDirectoryBackupEntry
 ): Promise<DataArchiveInspection> {
-  const handle = await loadConfiguredHandle()
+  const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     throw new Error("尚未配置数据目录。")
   }
@@ -824,11 +978,12 @@ export async function inspectConfiguredBackup(
     throw new Error("需要先授予数据目录读写权限。")
   }
   const bytes = await readBackupEntryBytes(handle, entry)
-  const snapshot = parseArchiveBytes(bytes)
+  const archive = parseArchiveBytes(bytes)
   return {
     label: entry.name,
-    snapshot,
-    summary: toRuntimeSummary(snapshot),
+    snapshot: archive.snapshot,
+    inventorySnapshot: archive.inventorySnapshot,
+    summary: toRuntimeSummary(archive.snapshot, archive.inventorySnapshot),
   }
 }
 
@@ -836,8 +991,9 @@ export async function restoreConfiguredBackup(args: {
   coordinator: CrossTabCoordinator
   entry: DataDirectoryBackupEntry
   snapshot: RuntimeStoreSnapshot
+  inventorySnapshot: InventoryDirectorySnapshot
 }): Promise<void> {
-  const handle = await loadConfiguredHandle()
+  const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     throw new Error("尚未配置数据目录。")
   }
@@ -848,25 +1004,27 @@ export async function restoreConfiguredBackup(args: {
   await args.coordinator.runAsWriter(async () => {
     await createProtectionBackup(handle)
     await replaceRuntimeSnapshot(args.snapshot)
-    await writeSnapshotToDirectory(handle, args.snapshot, "runtime-sync")
+    await writeSnapshotToDirectory(handle, args.snapshot, args.inventorySnapshot, "runtime-sync")
   })
 }
 
 export async function inspectImportArchiveFile(file: File): Promise<DataArchiveInspection> {
   const bytes = new Uint8Array(await file.arrayBuffer())
-  const snapshot = parseArchiveBytes(bytes)
+  const archive = parseArchiveBytes(bytes)
   return {
     label: file.name,
-    snapshot,
-    summary: toRuntimeSummary(snapshot),
+    snapshot: archive.snapshot,
+    inventorySnapshot: archive.inventorySnapshot,
+    summary: toRuntimeSummary(archive.snapshot, archive.inventorySnapshot),
   }
 }
 
 export async function importRuntimeArchive(args: {
   coordinator: CrossTabCoordinator
   snapshot: RuntimeStoreSnapshot
+  inventorySnapshot: InventoryDirectorySnapshot
 }): Promise<void> {
-  const handle = await loadConfiguredHandle()
+  const handle = await loadConfiguredDataDirectoryHandle()
   if (handle) {
     const permission = await ensureReadWritePermission(handle, true)
     if (permission !== "granted") {
@@ -875,7 +1033,7 @@ export async function importRuntimeArchive(args: {
     await args.coordinator.runAsWriter(async () => {
       await createProtectionBackup(handle)
       await replaceRuntimeSnapshot(args.snapshot)
-      await writeSnapshotToDirectory(handle, args.snapshot, "runtime-sync")
+      await writeSnapshotToDirectory(handle, args.snapshot, args.inventorySnapshot, "runtime-sync")
     })
     return
   }
@@ -885,7 +1043,11 @@ export async function importRuntimeArchive(args: {
 
 export async function exportRuntimeArchive(): Promise<{ fileName: string }> {
   const snapshot = await exportRuntimeSnapshot()
-  const bytes = createArchiveBytes(snapshot)
+  const handle = await loadConfiguredDataDirectoryHandle()
+  const inventorySnapshot = handle
+    ? await readInventorySnapshotFromDirectory(handle).catch(() => createEmptyInventorySnapshot())
+    : createEmptyInventorySnapshot()
+  const bytes = createArchiveBytes({ snapshot, inventorySnapshot })
   const fileName = createArchiveName("tuckmark-export")
   const blob = new Blob([toBinaryArrayBuffer(bytes)], { type: "application/zip" })
   const url = URL.createObjectURL(blob)
@@ -944,7 +1106,7 @@ export async function getDataDirectoryStatus(
     }
   }
 
-  const handle = await loadConfiguredHandle()
+  const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     return {
       supported: true,

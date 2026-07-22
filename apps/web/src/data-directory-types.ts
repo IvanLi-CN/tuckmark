@@ -9,12 +9,15 @@ export type DataDirectoryManifestV1 = {
     settings: string
     templatesDir: string
     draftsDir: string
+    inventoryDir: string
     backupsDir: string
   }
   counts: {
     templates: number
     versions: number
     workingCopies: number
+    materials: number
+    adjustments: number
   }
 }
 
@@ -57,6 +60,8 @@ export type RuntimeSnapshotSummary = {
   templates: number
   versions: number
   workingCopies: number
+  materials: number
+  adjustments: number
 }
 
 export type DataDirectoryHealth =

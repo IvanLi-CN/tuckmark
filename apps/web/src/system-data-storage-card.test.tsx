@@ -58,6 +58,8 @@ const baseStatus: DataDirectoryStatus = {
     templates: 2,
     versions: 5,
     workingCopies: 3,
+    materials: 1,
+    adjustments: 2,
   },
 }
 
@@ -89,7 +91,7 @@ describe("SystemDataStorageCard", () => {
     await renderCard()
 
     expect(document.body.textContent).toContain("未配置")
-    expect(document.body.textContent).toContain("SQLite + OPFS")
+    expect(document.body.textContent).toContain("统一数据目录，承载模板与库存 JSON 数据树")
     expect(document.body.textContent).toContain("导出数据")
     expect(document.body.textContent).toContain("导入数据")
   })
@@ -136,12 +138,18 @@ describe("SystemDataStorageCard", () => {
             versions: [],
             workingCopies: [],
           },
+          inventorySnapshot: {
+            materials: [],
+            adjustments: [],
+          },
           summary: {
             exportedAt: new Date().toISOString(),
             snapshotUpdatedAt: new Date().toISOString(),
             templates: 4,
             versions: 12,
             workingCopies: 2,
+            materials: 3,
+            adjustments: 9,
           },
         },
       },
@@ -149,6 +157,6 @@ describe("SystemDataStorageCard", () => {
 
     expect(document.body.textContent).toContain("确认导入整库数据")
     expect(document.body.textContent).toContain("runtime-export.zip")
-    expect(document.body.textContent).toContain("4 模板 / 12 版本 / 2 草稿")
+    expect(document.body.textContent).toContain("4 模板 / 12 版本 / 2 草稿 / 3 物料 / 9 流水")
   })
 })

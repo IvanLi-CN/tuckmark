@@ -6,25 +6,32 @@
 
 ## Summary
 
-Tuckmark Web is a four-page desktop workbench with a shared artifact seam.
+Tuckmark Web is a five-page desktop workbench with a shared artifact seam.
 
-The canonical route tree is `/`, `/templates`, `/canvas`, and `/system`. The
-shell uses a top-middle-bottom layout with a shared header, shared footer, and
-one right-side device drawer across `server-http`, `browser-static`, and
-`demo`.
+The canonical route tree is `/`, `/templates`, `/canvas`, `/inventory`, and
+`/system`. The shell uses a top-middle-bottom layout with a shared header,
+shared footer, and one right-side device drawer across `server-http`,
+`browser-static`, and `demo`.
 
-The `templates` and `canvas` routes are formal workspaces that preserve the
-shared shell while specializing their inner tool surfaces. `templates` keeps
-its route-owned narrow fallback. `/canvas` is now an editor-first label tool
-with a stable three-column desktop layout and a route-local narrow desktop
-mode that keeps the stage visible while switching one contextual side rail.
+The `templates`, `canvas`, and `inventory` routes are formal workspaces that
+preserve the shared shell while specializing their inner tool surfaces.
+`templates` keeps its route-owned narrow fallback. `/canvas` is now an
+editor-first label tool with a stable three-column desktop layout and a
+route-local narrow desktop mode that keeps the stage visible while switching
+one contextual side rail. `/inventory` is a data-directory inventory
+workbench whose material list stays persistent while the right-side working
+surface changes with the active task.
 
 The local durability model is also route-owned now. Supported Chromium desktop
-and installed-PWA surfaces run browser-local persistence on `SQLite Wasm +
-OPFS`, while `/system` owns directory authorization, JSON mirror sync, ZIP
-backup / restore, and whole-dataset import / export. Unsupported browsers keep
-the editor usable with the legacy browser-local fallback, but do not expose
-directory-backed workflows.
+and installed-PWA surfaces run browser-local runtime persistence on
+`SQLite Wasm + OPFS`, while `/system` owns data-directory authorization,
+attach / switch, migration, runtime ZIP backup / restore, and runtime import /
+export. A configured data directory provides the cross-surface dataset for user
+templates and inventory so Web, CLI, and installed PWA can reuse the same
+records. Unsupported browsers or missing-directory states keep system-template
+browsing and existing preview / print flows available; Web user-template
+editing stays browser-local, while inventory and CLI directory workflows remain
+unavailable until a directory is configured.
 
 The freeform canvas uses `react-konva` for interactive editing only. Preview
 and print continue to normalize back into the shared canvas schema and the
@@ -48,6 +55,7 @@ output.
   - `/`
   - `/templates`
   - `/canvas`
+  - `/inventory`
   - `/system`
 - The shell layout is:
   - top: `AppHeader`
@@ -88,7 +96,8 @@ output.
   loading message.
 - Startup-shell exit is keyed to `currentRouteReady`, not to full background
   hydration completion.
-- `/templates`, `/canvas`, and `/system` load through route-level dynamic
+- `/templates`, `/canvas`, `/inventory`, and `/system` load through route-level
+  dynamic
   imports; deep-link startup prefers the target route chunk instead of first
   mounting `/`.
 - Once the current-route shell is ready, the workbench warms the other formal
@@ -133,7 +142,7 @@ output.
 ### Workspace contract
 
 - `templates` workspace layout:
-  - left: weak-grouped system templates and browser-local user templates
+  - left: weak-grouped system templates and user templates
   - center: multi-row batch-entry table
   - right: preview, print parameters, and print actions
 - `canvas` workspace layout:
@@ -141,27 +150,35 @@ output.
   - center: stage, editor toolbar, zoom state, and stage hints
   - right: `属性 / 输出` inspector with explicit tab switching
   - version history opens from the save-action area into a right-side drawer
+- `inventory` workspace layout:
+  - left: material search, filters, and inventory list
+  - center: material details, template bindings, and field mapping
+  - right: stock adjustments, manual print, and recent adjustment history
 - `system` page contains:
   - app settings
   - default print settings
-  - local data directory status, permission state, writer-lease state, and
+  - configured data directory status, permission state, writer-lease state, and
     last-sync health
-  - archived browser-local template management with restore and permanent
-    delete actions
-  - directory attach / switch actions plus manual sync, manual backup, whole
-    dataset restore, whole dataset import, and whole dataset export
+  - user-template archive management with restore and permanent delete
+    actions
+  - directory attach / switch actions plus migration, manual sync, manual
+    backup, runtime restore, runtime import, and runtime
+    export
   - device management and probe actions
 - `home` page contains:
   - recent templates
   - recent prints
-  - quick entry points to template and canvas workspaces
+  - quick entry points to template, canvas, inventory, and system workspaces
 
 ### Responsive workspace contract
 
-- At `>=1280px`, template and canvas workspaces remain three-column layouts.
+- At `>=1280px`, template, canvas, and inventory workspaces remain three-column
+  layouts.
 - At `>=1280px`, template workspace keeps the left template rail wide enough to
   preserve a readable two-up large-card grid instead of collapsing card width
   as a side effect of the three-pane shell.
+- At `>=1280px`, inventory workspace keeps the material list visible while the
+  detail and stock / print rails remain independently scrollable.
 - Template workspace keeps its existing route-owned narrow behavior.
 - Canvas workspace does not reuse template-style `focus-paired dual-pane`.
   Instead it uses a route-local narrow desktop editor mode.
@@ -180,6 +197,12 @@ output.
   - the inactive side rail is fully hidden instead of collapsing to decorative
     micro-rails
   - below `960px`, `/canvas` is outside the first-pass professional editor
+    support target
+- Inventory narrow desktop rules:
+  - active range is `960-1279px`
+  - the material list stays visible
+  - the right side switches between `物料与标签` and `库存与打印`
+  - below `960px`, `/inventory` is outside the first-pass professional editor
     support target
 
 ### Canvas and artifact seam contract
@@ -474,36 +497,45 @@ output.
 - No remote history service or `/api/history` endpoint is introduced.
 - Scratch canvas drafts participate in the same same-device sync state. No
   cross-device account sync or remote document service is introduced.
-- Browser-local user templates, saved versions, autosaves, and user-template
-  working copies stay browser-local only and do not sync through the service.
+- A configured data directory stores the cross-surface copy of user templates,
+  their saved versions, working copies, archive state, and inventory records;
+  that dataset does not sync through `TuckmarkService`.
+- When no data directory is configured, system-template browsing,
+  browser-local user-template editing, scratch-draft editing, preview, and the
+  existing print paths remain available. Web `/inventory` and CLI
+  data-directory workflows instead surface explicit directory guidance.
 - Durable runtime storage contract:
   - supported Chromium desktop / installed-PWA surfaces use a worker-backed
-    `SQLite Wasm` runtime with the `opfs-sahpool` VFS
+    `SQLite Wasm` runtime with the `opfs-sahpool` VFS for runtime-local drafts,
+    recent activity, migration inputs, and cached data-directory snapshots
   - unsupported or incomplete environments fall back to the existing
     browser-local compatibility path built on `IndexedDB`, `localStorage`, and
     in-memory test fallbacks
   - first startup performs one browser-local migration of existing user
     templates, saved versions, autosaves, working copies, and runtime app
     settings into the unified runtime store
-  - post-migration route components read and write through one runtime
-    repository / service boundary instead of scattering direct browser storage
-    mutations in page components
+  - post-migration route components read and write user templates and
+    inventory through one runtime repository / service boundary instead of
+    scattering direct browser storage mutations in page components
 - Runtime app settings contract:
-  - default print render settings and the one-shot directory-permission nudge
-    state are persisted beside user template data
+  - default print render settings, configured data-directory metadata, and
+    the one-shot directory-permission nudge state are persisted beside runtime
+    state
   - document-specific draft edits must not silently overwrite the global
     default print settings snapshot
-- Browser-local user template persistence contract:
+- User template persistence contract:
   - source kinds are `scratch`, `preset-template`, and `user-template`
-  - first save from `scratch` or `preset-template` creates a browser-local user
-    template and its first saved version
+  - first save from `scratch` or `preset-template` creates a user template plus
+    its first saved version in the active runtime store
+  - if a data directory is configured, that save lands in the directory-backed
+    store; otherwise it remains in the browser-local runtime store
   - save on a connected user template appends a new saved version
-  - save as creates a new browser-local template from the current draft or
+  - save as creates a new user template from the current draft or
     read-only version and does not inherit the source template's history
   - saved versions retain the most recent `20`
   - autosaved unsaved versions retain the most recent `10`
-  - autosave rolls every `5` minutes for named browser-local templates
-- Browser-local user template field contract:
+  - autosave rolls every `5` minutes for named user templates
+- User template field contract:
   - only `text`, `barcode`, `qr`, and `datamatrix` can bind to structured
     replacement fields
   - field identity is a stable `key`; layer names remain editor-facing labels
@@ -515,50 +547,59 @@ output.
   - replaceable-element editing only exposes one field-name input with
     autocomplete and dropdown selection over existing fields; it does not add a
     second binding selector
-- User data directory mirror contract:
-  - the directory-backed mirror is only supported when both `File System Access
-    API` directory handles and `OPFS` runtime storage are available
+- Configured data directory contract:
+  - the directory-backed mainline is only supported when both `File System
+    Access API` directory handles and `OPFS` runtime storage are available
   - `/system` persists one `FileSystemDirectoryHandle` and requests
-    `readwrite` permission on demand before sync, backup, restore, or import
+    `readwrite` permission on demand before sync, backup, restore, import, or
+    shared-data mutation
   - non-supporting environments and denied-permission states keep the workbench
-    usable, but disable directory sync and whole-dataset backup flows with an
+    usable, but disable template and inventory workflows with an
     explicit capability message
-  - the mirrored tree is versioned JSON:
+  - the shared tree is versioned JSON:
     - `manifest.json`
     - `settings/app-settings.json`
     - `templates/<templateId>/template.json`
     - `templates/<templateId>/versions/<versionId>.json`
     - `templates/<templateId>/working-copy.json`
+    - `inventory/materials/<materialId>.json`
+    - `inventory/adjustments/<adjustmentId>.json`
     - `drafts/scratch/<presetId>.json`
     - `drafts/preset-template/<presetId>.json`
     - `backups/manual/*.zip`
     - `backups/protection/*.zip`
   - `manifest.json` records the schema version, snapshot timestamps, source,
-    and aggregate counts for templates, versions, and working copies
+    and aggregate counts for the current runtime template snapshot: templates,
+    versions, and working copies
+  - inventory material and adjustment records are shared through the directory
+    tree but are not yet folded into `/system` runtime ZIP backup / restore
   - directory attach behavior is explicit:
     - an empty directory can be initialized from the current runtime snapshot
+      and any migrated legacy user-template data
     - an existing Tuckmark directory requires an explicit choice between
       importing the directory dataset or overwriting it with the current
-      browser-local dataset
+      runtime dataset
   - manual backups write fixed-location ZIP snapshots under `backups/manual/`
-  - restore and whole-dataset import write a protection ZIP snapshot under
+  - restore and runtime import write a protection ZIP snapshot under
     `backups/protection/` before replacing current runtime data
   - protection snapshots retain the most recent `20`; manual backups are not
     auto-pruned
-  - ZIP export, ZIP import, manual backup, and restore all use the same
-    logical archive contract rather than dumping raw SQLite files
-  - restore and whole-dataset import replace the active runtime dataset and
+  - ZIP export, ZIP import, manual backup, and restore all use the same runtime
+    archive contract rather than dumping raw SQLite files
+  - restore and runtime import replace the active runtime dataset and
     reload the current app state without asking the user to clear browser data
-  - mirror conflicts resolve as latest-modified-wins; no field-level merge or
+  - conflicts resolve as latest-modified-wins; no field-level merge or
     background daemon is introduced
-  - key data mutations flush immediately, working-copy and scratch updates flush
-    after a short debounce
+  - key data mutations flush immediately, while working-copy and scratch
+    updates flush after a short debounce
   - first successful user-template save may show one non-blocking directory
     setup prompt when the environment supports directory access and the user has
     not already dismissed that prompt
+  - CLI and installed PWA may reuse the same directory without export/import
+    hops
 - Cross-tab write coordination contract:
-  - directory mirror and archive mutations are coordinated by a single-writer
-    lease with `BroadcastChannel` state broadcasts
+  - data-directory sync, archive, and restore mutations are coordinated by a
+    single-writer lease with `BroadcastChannel` state broadcasts
   - one tab performs directory sync / backup / restore work while other tabs
     surface status refresh and an explicit take-over action
   - the workbench does not attempt concurrent multi-writer directory mutation
@@ -566,7 +607,7 @@ output.
 - Template list contract:
   - `/templates` groups cards into `系统模板` and `我的模板`
   - clicking a system-template card enters the structured print-entry flow
-  - clicking a browser-local user-template card enters the structured
+  - clicking a user-template card enters the structured
     print-entry flow
   - both groups keep an explicit `编辑` route into `/canvas`
   - template cards do not expose bottom action strips, hover-only operation
@@ -575,43 +616,43 @@ output.
     to the metadata row; compact-list cards keep a right-side `...` trigger
   - large-grid right click, compact-list right click, touch long press on the
     card surface, large-grid `更多操作`, and compact-list `...` all open one
-    shared action menu model
-  - shared template action menus keep system templates limited to `编辑`;
-    browser-local user templates expose `编辑`, `重命名`, and `归档`
-  - `归档` is styled as the destructive action inside the shared context menu
-  - archiving a browser-local user template removes it from `我的模板`
+    template action menu model
+  - template action menus keep system templates limited to `编辑`;
+    user templates expose `编辑`, `重命名`, and `归档`
+  - `归档` is styled as the destructive action inside the template context menu
+  - archiving a user template removes it from `我的模板`
     immediately, keeps its saved versions / autosaves / working copy intact,
     and shows one global `5` second undo toast; a newer archive replaces the
     older toast instead of stacking
-  - archiving the currently selected browser-local user template falls back to
-    the nearest remaining browser-local sibling when available; when
+  - archiving the currently selected user template falls back to the
+    nearest remaining user-template sibling when available; when
     `我的模板` becomes empty, selection clears instead of jumping to the first
     system template
-  - runtime snapshots, whole-dataset ZIP export/import, and configured
-    directory mirrors preserve template `archivedAt` state together with saved
+  - runtime snapshots, runtime ZIP export/import, and configured
+    directories preserve template `archivedAt` state together with saved
     versions, autosaves, and working copies
-  - browser-local user template rows compile client-side into a concrete canvas
+  - user-template rows compile client-side into a concrete canvas
     definition before preview or print, so `browser-static` and `server-http`
     reuse the existing canvas artifact seam without a new template persistence
     API
   - agent-generated user template packages use the
     `tuckmark.user-template-package.v1` JSON contract and compile into the same
     canvas artifact seam
-  - package import saves into browser-local user templates only; it does not
-    introduce a remote template library or service-owned template history
+  - package import saves into the active user-template store: the configured
+    data directory when present, otherwise the browser-local runtime store
   - Tuckmark CLI and Web validate, preview, import, packetize, and print
     template packages deterministically; they do not embed an LLM for template
     generation
 - Canvas editor contract:
   - system template elements with fixed keys such as `__title` stay static when
     imported into the editor
-  - scratch drafts, system-template working copies, and browser-local
+  - scratch drafts, system-template working copies, and
     user-template working copies all expose editable canvas dimensions unless
     a historical saved version is open read-only
   - canvas dimension editing accepts positive integer millimeter width and
     height values in the UI, persists `CanvasDraftDocument.width` / `height`
-    and browser-local user template summaries in millimeters, participates in
-    undo / redo, and refits the stage viewport
+    and user-template summaries in millimeters, participates in undo /
+    redo, and refits the stage viewport
   - legacy canvas drafts and user templates without `unit: "mm"` are treated as
     dots-era documents and converted to millimeters on read
   - system template source definitions remain dots-era device-neutral package
@@ -646,11 +687,12 @@ output.
 
 ## Acceptance
 
-- All four formal routes are reachable in `runtime`, `demo`, and
+- All five formal routes are reachable in `runtime`, `demo`, and
   `browser-static`.
 - The shared shell can mount and become navigable before deferred hydration of
   templates, settings, recent activity, and offline warmup is complete.
-- Deep-link startup to `/templates`, `/canvas`, and `/system` loads the target
+- Deep-link startup to `/templates`, `/canvas`, `/inventory`, and `/system`
+  loads the target
   route first instead of bouncing through `/`.
 - Ordinary page switches after shell-ready keep the mounted shell in place and
   do not reopen a startup overlay; deferred route loads resolve through warmup
@@ -717,12 +759,12 @@ output.
   selection on non-editable chrome while preserving selection and copy
   behavior in editable or read-only value fields.
 - Refresh restores the latest preset-scoped draft and reset clears it.
-- `/canvas` can load system templates, scratch drafts, and browser-local user
+- `/canvas` can load system templates, scratch drafts, and user
   templates through route query parameters.
-- First save from a system template or scratch draft creates a browser-local
-  user template.
-- Save on a connected browser-local user template appends a new saved version.
-- Save as creates a distinct browser-local template without inheriting the
+- First save from a system template or scratch draft creates a user template in
+  the active runtime store.
+- Save on a connected user template appends a new saved version.
+- Save as creates a distinct user template without inheriting the
   source history.
 - First-save and save-as naming use the project-owned template-name dialog,
   including cancel and empty-name validation paths.
@@ -745,30 +787,29 @@ output.
   draft, with non-blocking out-of-canvas warnings.
 - Preview remains available when the canvas width exceeds the current print
   target, but direct print is blocked with a width mismatch error.
-- `/templates` displays both `系统模板` and `我的模板`; browser-local templates
+- `/templates` displays both `系统模板` and `我的模板`; user templates
   support structured row editing, preview, print, an edit jump back to
-  `/canvas`, a browser-local archive action, and an undoable archive removal
-  path.
+  `/canvas`, an archive action, and an undoable archive removal path.
 - Large-grid cards do not reveal any hover-only or click-expanded bottom
   action strip.
 - Large-grid mode exposes a bottom-right icon-only `更多操作` trigger on each
   card; compact-list mode exposes a right-side `...` trigger on each card.
-- Shared template action menus opened from right click, touch long press, or
+- Template action menus opened from right click, touch long press, or
   either explicit trigger keep system templates limited to `编辑` and
-  browser-local user templates limited to `编辑`, `重命名`, and `归档`.
-- The shared context menu styles `归档` as the destructive action.
-- Archiving a browser-local user template removes it from `我的模板`
+  user templates limited to `编辑`, `重命名`, and `归档`.
+- The template context menu styles `归档` as the destructive action.
+- Archiving a user template removes it from `我的模板`
   immediately, keeps its saved history restorable for at least `5` seconds via
   one global undo toast, and still leaves the template restorable from
   `/system` after the toast expires.
-- Archiving the active browser-local user template falls back only within
-  `我的模板`; when no browser-local templates remain, structured row entry and
+- Archiving the active user template falls back only within
+  `我的模板`; when no user templates remain, structured row entry and
   preview/print rails enter the empty disabled state instead of auto-selecting
   a system template.
-- `/system` lists archived browser-local templates in newest-archived-first
+- `/system` lists archived user templates in newest-archived-first
   order and supports both restore and immediate permanent delete without route
   breakage.
-- Whole-dataset export/import and browser-local reload keep archived template
+- Runtime export/import and data-directory reload keep archived template
   state, saved versions, autosaves, and working copies intact.
 - Invalid barcode, QR, or Data Matrix payloads surface as user-visible errors.
 - `server-http` startup restores recent activity from the merged sync snapshot.
@@ -776,26 +817,32 @@ output.
   snapshot after reload.
 - Supported Chromium desktop / installed-PWA surfaces migrate existing
   browser-local template data into the unified runtime store once, then keep
-  user templates, saved versions, working copies, scratch drafts, and runtime
-  app settings readable after reload.
+  user templates, saved versions, working copies, scratch drafts,
+  inventory records, and runtime app settings readable after reload.
 - `/system` can show unsupported, unconfigured, permission-required, and
   configured-healthy data-directory states without breaking the rest of the
   workbench.
+- `/inventory` is reachable from the top-level header navigation, shows an
+  explicit directory-required state without a configured data directory, and
+  otherwise keeps material search, material editing, label binding, stock
+  adjustment, manual print, and recent-adjustment review inside one routed
+  workspace.
 - In a supported environment, `/system` can authorize a data directory, switch
   directories, sync the runtime snapshot, create a fixed-location backup,
   inspect and restore a backup ZIP, inspect and import a runtime ZIP, and
   export the current runtime ZIP.
 - Authorized data directories expose the versioned JSON tree and ZIP backup
-  layout described in this spec; permission failure or handle loss reports a
-  user-visible error instead of silently dropping writes.
-- Restore and whole-dataset import create a protection snapshot before
+  layout described in this spec for runtime template snapshots; permission
+  failure or handle loss reports a user-visible error instead of silently
+  dropping writes.
+- Restore and runtime import create a protection snapshot before
   replacing the active runtime dataset, and the workbench reflects the
   imported/restored data immediately afterward.
 - The template-workspace single-template package import continues to handle only
-  `tuckmark.user-template-package.v1`; whole-dataset import / export remains a
-  `/system`-only workflow.
+  `tuckmark.user-template-package.v1`; runtime dataset import / export remains
+  a `/system`-only workflow.
 - First successful save of a user template only shows the directory setup prompt
-  once per browser-local profile while the directory remains unconfigured.
+  once per runtime profile while the directory remains unconfigured.
 - Cross-tab directory workflows keep one active writer lease, broadcast status
   updates to peers, and surface an explicit take-over path instead of
   optimistic concurrent writes.
@@ -1017,26 +1064,26 @@ output.
   PR: include
   ![Canvas output preview workspace](./assets/canvas-output-preview-1280x800.png)
 
-- `1280×800` template workspace showing grouped `系统模板 / 我的模板` cards with a browser-local user template present
+- `1280×800` template workspace showing grouped `系统模板 / 我的模板` cards with a user template present
 
   PR: include
   ![Template grouped user templates](./assets/templates-user-groups-1280x800.png)
 
-- `1440×1200` template workspace in large-grid mode with a browser-local card
-  using the bottom-right icon-only `更多操作` trigger to open the shared
-  template action menu
+- `1440×1200` template workspace in large-grid mode with a user-template card
+  using the bottom-right icon-only `更多操作` trigger to open the template
+  action menu
 
   PR: include
   ![Template large-grid more menu](./assets/templates-large-grid-more-menu-1440x1200.png)
 
 - `430×980` mobile template workspace with a browser-local card opened
-  through touch long press, reusing the same shared template action menu model
+  through touch long press, reusing the same template action menu model
 
   PR: include
   ![Template touch long press menu](./assets/templates-touch-long-press-menu-430x980.png)
 
 - `1440×1200` template workspace in list mode with the right-side `...` trigger
-  opening the shared template action menu for a browser-local card
+  opening the template action menu for a browser-local card
 
   PR: include
   ![Template list more menu](./assets/templates-list-more-menu-1440x1200.png)
@@ -1128,7 +1175,7 @@ output.
   PR: include
   ![Canvas text BBOX font metrics](./assets/canvas-text-font-metrics-flat-pool-20260708.png)
 
-- `1280×800` canvas workspace on a browser-local user template with the version-history drawer open and saved/autosave history visible
+- `1280×800` canvas workspace on a user template with the version-history drawer open and saved/autosave history visible
 
   PR: include
   ![Canvas version history workspace](./assets/canvas-version-history-1280x800.png)
@@ -1179,7 +1226,7 @@ output.
   PR: include
   ![System page backup list](./assets/system-page-backup-list-1600x1200.png)
 
-- `1600×1200` `/system` page with the whole-dataset ZIP import confirmation
+- `1600×1200` `/system` page with the runtime ZIP import confirmation
   dialog, showing the archive summary before replacement.
 
   PR: include
@@ -1196,6 +1243,25 @@ output.
 
   PR: include
   ![System page permission denied](./assets/system-page-permission-denied-1600x1200.png)
+
+- `1600×1200` `/inventory` page in the directory-required state, making the
+  data-directory dependency explicit without collapsing the rest of the
+  workbench shell.
+
+  PR: include
+  ![Inventory page directory required](./assets/inventory-directory-required-1600x1200.png)
+
+- `1600×1200` `/inventory` page with configured materials, template bindings,
+  and current stock visible in the three-column workspace.
+
+  PR: include
+  ![Inventory page material and bindings](./assets/inventory-material-edit-1600x1200.png)
+
+- `1600×1200` `/inventory` page showing stock adjustment controls, manual print
+  defaults, and recent adjustments for the selected material.
+
+  PR: include
+  ![Inventory page adjust and print](./assets/inventory-adjust-print-1600x1200.png)
 
 - DimensionPicker autocomplete filters millimeter suggestions by width prefix
   while height is empty, and selecting a row applies width and height together.

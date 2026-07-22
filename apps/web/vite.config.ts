@@ -468,6 +468,7 @@ export default defineConfig(({ command, mode }) => {
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
+        "@tuckmark/inventory": path.resolve(__dirname, "../../plugins/inventory/src/index.ts"),
       },
     },
     server: {

@@ -101,6 +101,7 @@
       },
       "dependencies": {
         "@tuckmark/core": "workspace:*",
+        "@tuckmark/inventory": "workspace:*",
         "zod": "^4.4.3",
       },
     },
@@ -141,6 +142,17 @@
       "devDependencies": {
         "@types/cors": "^2.8.19",
         "@types/express": "^5.0.6",
+      },
+    },
+    "plugins/inventory": {
+      "name": "@tuckmark/inventory",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.9",
       },
     },
   },
@@ -734,6 +746,8 @@
     "@tuckmark/cli": ["@tuckmark/cli@workspace:packages/cli"],
 
     "@tuckmark/core": ["@tuckmark/core@workspace:packages/core"],
+
+    "@tuckmark/inventory": ["@tuckmark/inventory@workspace:plugins/inventory"],
 
     "@tuckmark/mcp": ["@tuckmark/mcp@workspace:packages/mcp"],
 

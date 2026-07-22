@@ -1,3 +1,4 @@
+import type { InventoryAdjustment, InventoryMaterial } from "@tuckmark/inventory"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import React from "react"
 
@@ -137,6 +138,11 @@ export type WorkbenchStoryStateOverrides = {
   deviceDrawerBusyAction?: DeviceDrawerAction | null
   deviceDrawerFeedback?: WorkbenchDeviceDrawerFeedback | null
   directorySetupNudgeOpen?: boolean
+  inventoryStoryState?: {
+    configured: boolean
+    materials: InventoryMaterial[]
+    adjustments: InventoryAdjustment[]
+  }
   showTextBoundingBoxes?: boolean
 }
 
@@ -252,6 +258,8 @@ function createDefaultDataDirectoryStatus(): DataDirectoryStatus {
       templates: 0,
       versions: 0,
       workingCopies: 0,
+      materials: 0,
+      adjustments: 0,
     },
   }
 }
@@ -1813,6 +1821,7 @@ export function useWorkbenchController({
       await importRuntimeArchive({
         coordinator,
         snapshot: dataDirectoryDialog.inspection.snapshot,
+        inventorySnapshot: dataDirectoryDialog.inspection.inventorySnapshot,
       })
       await refreshDataDirectoryStatus()
       return true
@@ -1849,6 +1858,7 @@ export function useWorkbenchController({
         coordinator,
         entry: dataDirectoryDialog.entry,
         snapshot: dataDirectoryDialog.inspection.snapshot,
+        inventorySnapshot: dataDirectoryDialog.inspection.inventorySnapshot,
       })
       await refreshDataDirectoryStatus()
       return true
@@ -1908,6 +1918,7 @@ export function useWorkbenchController({
     documentRenderOptions,
     error,
     hasServerPrinterFlow,
+    inventoryStoryState: storyStateOverrides?.inventoryStoryState ?? null,
     preview,
     previewPrintSource,
     previewSource,

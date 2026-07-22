@@ -3,7 +3,7 @@
 ## Current coverage
 
 - Route tree is implemented through a shared app shell with `/`, `/templates`,
-  `/canvas`, and `/system`.
+  `/canvas`, `/inventory`, and `/system`.
 - The shared shell now includes:
   - a top navigation header
   - a shared status footer with route/runtime state, GitHub repository link,
@@ -25,9 +25,13 @@
 - Route startup is now split between route-level code loading and deferred
   background hydration:
   - `apps/web/src/workbench-app.tsx` now owns the typed TanStack Router route
-    tree for `/`, `/templates`, `/canvas`, and `/system`, including shared
-    layout routing, browser history semantics, and route-level pending
-    contracts
+    tree for `/`, `/templates`, `/canvas`, `/inventory`, and `/system`,
+    including shared layout routing, browser history semantics, and route-level
+    pending contracts
+  - `apps/web/src/workbench-route-registry.tsx` owns deferred route-module
+    imports plus reusable preload helpers for `/templates`, `/canvas`,
+    `/inventory`, and `/system`, so the runtime can warm route chunks ahead of
+    reveal
   - TanStack Query now provides the shared session-memory read cache for user
     templates, archived templates, and canvas route bootstrap data, with cache
     keys scoped by `surface + mode` so browser-static, demo, and runtime do
@@ -69,11 +73,13 @@
     and last error
   - attach / switch directory, request permission, sync now, backup now,
     export runtime ZIP, import runtime ZIP, and restore backup actions
-  - an archived-template management card that lists browser-local archived
+  - an archived-template management card that lists data-directory archived
     templates newest-first and wires `恢复模板` / `彻底删除` directly into the
-    runtime store
+    configured data directory
 - Template workspace is implemented as a left template browser, center batch
   table, and right preview/print rail.
+- Inventory workspace is implemented as a left material list, center material
+  and template-binding editor, and right stock / print rail.
 - Template browser now weak-groups cards into:
   - `系统模板`
   - `我的模板`
@@ -88,22 +94,21 @@
   - large grid mode
   - compact list mode
   - preview thumbnail, name, and size metadata
-  - card click entering structured print-entry on both system and
-    browser-local user templates
+  - card click entering structured print-entry on both system and shared user
+    templates
   - no hover-only floating action chrome, bottom action strip, or row-expanded
     inline action state in either view mode
   - a bottom-right icon-only `更多操作` trigger in large-grid mode and a
     right-side `...` trigger in compact-list mode
   - one shared pointer/menu action model reused by explicit triggers,
     `contextmenu`, and touch long press
-  - `编辑` on system cards, plus `编辑`, `重命名`, and `归档` on
-    browser-local cards
+  - `编辑` on system cards, plus `编辑`, `重命名`, and `归档` on shared cards
   - one global archive undo toast with a `5` second lifetime and a background
     countdown fill instead of stacked notifications
   - one-line title truncation with fade masking
   - a widened triple-pane left rail so `>=1280px` large-card mode keeps a
     readable two-up grid instead of collapsing card width under shell pressure
-- Browser-local user template cards render real SVG previews compiled from the
+- User-template cards render real SVG previews compiled from the
   saved draft instead of placeholder chrome.
 - Template table supports:
   - row add, duplicate, delete, and select
@@ -113,7 +118,7 @@
   - compact inline editing without cell reflow
   - auto-preview on row focus/click
   - debounced preview refresh after edits
-  - browser-local user template fields sourced from the draft field registry
+  - user-template fields sourced from the draft field registry
     rather than the system template catalog
 - Canvas workspace is now implemented as an editor-first professional label
   tool with:
@@ -279,25 +284,25 @@
   - per-layer metadata
   - runtime app settings persisted beside template data, including default print
     render options and the one-shot directory-setup nudge flag
-  - runtime mutation events used by background mirror sync and cross-tab status
+  - runtime mutation events used by data-directory sync and cross-tab status
     refresh
   - runtime-only pending clipboard placement bookkeeping kept outside
     persisted drafts, sync state, saved versions, and autosaves
-  - one-time migration of existing browser-local user templates, saved
+  - one-time migration of legacy browser-local user-template data, saved
     versions, autosaves, working copies, and compatible local settings into the
     unified runtime store
   - configured-directory startup restore that compares the current runtime
-    snapshot against `manifest.json` and reloads the mirror snapshot before
+    snapshot against `manifest.json` and reloads the shared snapshot before
     page refresh when the directory copy is newer or strictly more complete
   - preset-scoped browser storage persistence for scratch drafts still feeding
     same-device sync, while scratch and preset-template working copies are also
-    mirrored into the runtime store for backup / export
+    included in the data-directory backup / export tree
   - same-device sync state records shared with `TuckmarkService` for scratch
     drafts, recent templates, and recent prints
   - legacy `IndexedDB` / `localStorage` persistence retained as the compatibility
     backend, with memory fallback in incomplete test/browser environments
   - in-memory undo/redo history capped to `50`
-- Browser-local user template model coverage includes:
+- Shared-directory template and inventory coverage now includes:
   - `UserTemplateRecord`
   - `UserTemplateVersionSnapshot`
   - `CanvasWorkingCopyIndexEntry`
@@ -308,10 +313,17 @@
   - saved-version retention capped at `20`
   - autosave retention capped at `10`
   - autosave interval fixed at `5` minutes
+  - configured-directory template records under `templates/<templateId>/`
+  - configured-directory inventory material records under
+    `inventory/materials/<materialId>.json`
+  - configured-directory inventory adjustment records under
+    `inventory/adjustments/<adjustmentId>.json`
+  - shared material/template binding resolution and print-input assembly in
+    `plugins/inventory`
 - Canvas save semantics now cover:
-  - first save from scratch/system-template creating a browser-local user
+  - first save from scratch/system-template creating a data-directory user
     template
-  - save on an existing browser-local template creating a new saved version
+  - save on an existing data-directory template creating a new saved version
   - save as creating a new template from the current draft or read-only version
   - first-save and save-as template naming through a project-owned input dialog
     instead of browser-native `prompt`
@@ -321,12 +333,11 @@
   - read-only historical restore creating a new current working copy instead of
     mutating saved history in place
 - Canvas dimension editing now covers:
-  - scratch drafts, system-template working copies, and browser-local
+  - scratch drafts, system-template working copies, and shared
     user-template working copies through the shared `DimensionPicker`
     mounted in the editor header
   - positive-integer millimeter validation before draft mutation, with canvas
-    documents and browser-local user template summaries persisted in
-    millimeters
+    documents and user-template summaries persisted in millimeters
   - `CanvasDraftDocument.unit: "mm"` marks normalized physical-unit documents;
     missing-unit drafts are migrated from dots to millimeters when loaded
   - system template package data is converted from dots to millimeters when it
@@ -365,7 +376,7 @@
   - one `名` layer-name field
   - one field-name autocomplete input that can reuse or create a field label
   - no separate `绑定到` selector duplicated beside the field-name editor
-- Browser-local user template preview/print reuses the shared canvas artifact
+- User-template preview/print reuses the shared canvas artifact
   seam by compiling row values into a concrete `DirectCanvasDefinition` on the
   client before preview or print dispatch.
 - Storybook coverage now includes:
@@ -387,24 +398,35 @@
   and compiler. CLI commands can validate, preview, generate packets, and print
   packages through the existing canvas artifact seam.
 - The template workspace can import a `tuckmark.user-template-package.v1` JSON
-  file and save it as a browser-local user template.
+  file and save it into the active user-template store: the configured data
+  directory when present, otherwise the browser-local runtime store.
 - Whole-dataset durability and archive management are implemented through:
   - `data-directory-service.ts` for capability probing, handle persistence,
-    attach / switch decisions, permission requests, JSON mirror sync, runtime
-    ZIP import / export, manual backup, and restore-protection snapshotting
+    attach / switch decisions, permission requests, data-directory sync,
+    runtime ZIP import / export, manual backup, and restore-protection
+    snapshotting
+  - `user-template-store.ts` resolving data-directory templates before the
+    legacy browser-local migration source
+  - `inventory-data-store.ts` for material and adjustment CRUD against the
+    configured directory
+  - `workbench-inventory-route.tsx` for the routed inventory workspace
   - `cross-tab-coordinator.ts` for single-writer lease coordination and
     `BroadcastChannel` status broadcasts across tabs
-  - a versioned mirror tree rooted at `manifest.json`, with
-    `settings/app-settings.json`, `templates/*`, `drafts/scratch/*`,
-    `drafts/preset-template/*`, `backups/manual/*`, and
-    `backups/protection/*`
-  - one ZIP archive contract reused by manual backup, restore, import, and
-    export instead of dumping the underlying SQLite database file
+  - a versioned shared tree rooted at `manifest.json`, with
+    `settings/app-settings.json`, `templates/*`, `inventory/materials/*`,
+    `inventory/adjustments/*`, `drafts/scratch/*`, `drafts/preset-template/*`,
+    `backups/manual/*`, and `backups/protection/*`
+  - one runtime ZIP archive contract reused by manual backup, restore, import,
+    and export instead of dumping the underlying SQLite database file
   - protection snapshot retention capped at the most recent `20`
+- Inventory material and adjustment files live directly under the shared
+  directory tree; they are not included in the current runtime ZIP archive
+  contract.
 - Directory-backed workflows intentionally stop short of a background helper:
   - no writes happen after the browser process exits
   - no directory watcher or file-system daemon is introduced
-  - mirror conflicts resolve by latest timestamp, not by field-level merge
+  - data-directory conflicts resolve by latest timestamp, not by field-level
+    merge
 - Repo-local developer and user skills document the source-tree and released
   CLI workflows for agent template generation and printing.
 - A high-cost agent practice script can call `codex exec` to generate multiple
@@ -414,8 +436,8 @@
   - recent templates
   - recent prints
   - scratch canvas drafts
-- Browser-local user templates, saved versions, autosaves, and user-template
-  working copies remain outside the sync contract.
+- User templates, saved versions, autosaves, user-template working
+  copies, and inventory records remain outside the sync contract.
 - Shared schema coverage now includes `rotation` on `text`, `rect`, `barcode`,
   `qr`, and `datamatrix`, while `line` remains endpoint-based.
 - Text elements now use a fixed container text box model across Web drafts,
@@ -518,6 +540,7 @@
     global still execute the same draft persistence assertions
 - Home page recent templates and recent prints are backed by browser-local
   recent-activity storage.
+- Home page and header navigation now expose an explicit `/inventory` entry.
 - `404.html` SPA fallback is present for static Pages deep links.
 - Storybook coverage includes stable canvas scenarios for:
   - wide editor
@@ -534,8 +557,8 @@
   - selected barcode
   - output tab
   - draft-restore state
-  - grouped browser-local user templates in `/templates`
-  - browser-local user template version history in `/canvas`
+  - grouped user templates in `/templates`
+  - user-template version history in `/canvas`
   - shared shell selectable contract
   - template inline-edit selectable contract
   - default canvas selectable contract
@@ -545,6 +568,8 @@
   - `/system` data storage card states for unsupported, unconfigured,
     configured healthy, directory-attach choice, backup list, import confirm,
     restore confirm, and permission-required flows
+  - `/inventory` directory-required, empty, populated, edit/bind, and
+    adjust/print states
 
 ## Remaining validation
 

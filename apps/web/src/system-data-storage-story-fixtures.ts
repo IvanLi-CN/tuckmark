@@ -30,6 +30,7 @@ function createManifest(counts: DataDirectoryManifestV1["counts"]): DataDirector
       settings: "settings/app-settings.json",
       templatesDir: "templates",
       draftsDir: "drafts",
+      inventoryDir: "inventory",
       backupsDir: "backups",
     },
     counts,
@@ -43,6 +44,8 @@ function createRuntimeSummary(counts: RuntimeSnapshotSummary): RuntimeSnapshotSu
     templates: counts.templates,
     versions: counts.versions,
     workingCopies: counts.workingCopies,
+    materials: counts.materials,
+    adjustments: counts.adjustments,
   }
 }
 
@@ -71,6 +74,10 @@ function createArchiveInspection(
       templates: [],
       versions: [],
       workingCopies: [],
+    },
+    inventorySnapshot: {
+      materials: [],
+      adjustments: [],
     },
     summary,
   }
@@ -107,6 +114,8 @@ const baseStatus: DataDirectoryStatus = {
     templates: 3,
     versions: 9,
     workingCopies: 4,
+    materials: 2,
+    adjustments: 5,
   }),
 }
 
@@ -136,6 +145,8 @@ export function createConfiguredHealthyDataDirectoryStatus(): DataDirectoryStatu
       templates: 3,
       versions: 9,
       workingCopies: 4,
+      materials: 2,
+      adjustments: 5,
     }),
     lastSyncAt: STORY_TIMESTAMP,
   }
@@ -167,6 +178,8 @@ export function createDirectoryAttachChoiceDialog(): WorkbenchDataDirectoryDialo
       templates: 8,
       versions: 24,
       workingCopies: 6,
+      materials: 12,
+      adjustments: 48,
     }),
   }
   return {
@@ -185,6 +198,8 @@ export function createImportConfirmDialog(): WorkbenchDataDirectoryDialogState {
       templates: 5,
       versions: 18,
       workingCopies: 3,
+      materials: 7,
+      adjustments: 21,
     }),
   }
 }
@@ -200,6 +215,8 @@ export function createRestoreConfirmDialog(): WorkbenchDataDirectoryDialogState 
       templates: 4,
       versions: 12,
       workingCopies: 2,
+      materials: 6,
+      adjustments: 19,
     }),
   }
 }

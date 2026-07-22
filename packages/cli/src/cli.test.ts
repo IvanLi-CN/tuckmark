@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process"
+import { mkdtemp, rm } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
-import { beforeAll, describe, expect, it } from "vitest"
+import { afterEach, beforeAll, describe, expect, it } from "vitest"
 
 const execFileAsync = promisify(execFile)
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
@@ -29,6 +31,18 @@ async function runCli(args: string[]) {
   })
 }
 
+async function runCliWithEnv(args: string[], env: Record<string, string>) {
+  return execFileAsync("bun", ["tsx", "--tsconfig", cliTsconfigPath, cliPath, ...args], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      TUCKMARK_MOCK_PRINTERS: "1",
+      TUCKMARK_DETONGER_PACKET_ENCODER: "lpapi",
+      ...env,
+    },
+  })
+}
+
 async function runCliAllowFailure(args: string[]) {
   try {
     return await runCli(args)
@@ -44,11 +58,19 @@ async function runCliAllowFailure(args: string[]) {
 }
 
 describe("cli smoke", () => {
+  const tempDirs: string[] = []
+
   beforeAll(async () => {
     await execFileAsync("bun", ["run", "--filter", "@tuckmark/core", "build"], {
       cwd: repoRoot,
     })
   }, 90_000)
+
+  afterEach(async () => {
+    await Promise.all(
+      tempDirs.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
+    )
+  })
 
   it("loads", () => {
     expect(true).toBe(true)
@@ -142,5 +164,242 @@ describe("cli smoke", () => {
     })
     expect(result.stderr).toContain("TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1")
     expect(result.stdout).not.toContain('"artifact"')
+  })
+
+  it("imports user templates into the configured data directory", { timeout: 20_000 }, async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-user-template-"))
+    tempDirs.push(dataDir)
+
+    const importResult = JSON.parse(
+      (await runCli(["template", "import", "--file", fixturePath, "--data-dir", dataDir])).stdout
+    ) as {
+      imported: { template: { id: string; name: string } }
+    }
+    expect(importResult.imported.template).toMatchObject({
+      id: "component-bin-sot23",
+      name: "Component Bin SOT-23",
+    })
+
+    const showResult = JSON.parse(
+      (await runCli(["template", "show", "--id", "component-bin-sot23", "--data-dir", dataDir]))
+        .stdout
+    ) as {
+      source: string
+      template: { id: string }
+      savedVersions: Array<{ version: number }>
+    }
+    expect(showResult.source).toBe("user-template")
+    expect(showResult.template.id).toBe("component-bin-sot23")
+    expect(showResult.savedVersions[0]?.version).toBe(1)
+  })
+
+  it("creates, adjusts, and prints inventory from the shared directory", {
+    timeout: 20_000,
+  }, async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-inventory-"))
+    tempDirs.push(dataDir)
+
+    await runCli(["template", "import", "--file", fixturePath, "--data-dir", dataDir])
+
+    const created = JSON.parse(
+      (
+        await runCli([
+          "inventory",
+          "create",
+          "--full-name",
+          "TPS62933DRLR",
+          "--base-name",
+          "TPS62933",
+          "--variant-name",
+          "DRLR",
+          "--package-name",
+          "SOT-583",
+          "--description",
+          "同步降压 28V",
+          "--matrix-code",
+          "P2-Y404125469",
+          "--packaging-remark",
+          "编带一盘 3000pcs",
+          "--bindings",
+          JSON.stringify([
+            {
+              id: "binding-user-template",
+              templateSource: "user-template",
+              templateId: "component-bin-sot23",
+              templateName: "Component Bin SOT-23",
+              printQuantity: 1,
+              fieldOverrides: {
+                model: "TPS62933DRLR",
+              },
+              createdAt: "2026-07-20T09:00:00.000Z",
+              updatedAt: "2026-07-20T09:00:00.000Z",
+            },
+          ]),
+          "--data-dir",
+          dataDir,
+        ])
+      ).stdout
+    ) as {
+      material: { id: string; currentQuantity: number; labelBindings: Array<{ id: string }> }
+    }
+    expect(created.material.currentQuantity).toBe(0)
+    expect(created.material.labelBindings[0]?.id).toBe("binding-user-template")
+
+    const adjusted = JSON.parse(
+      (
+        await runCli([
+          "inventory",
+          "adjust",
+          "--id",
+          created.material.id,
+          "--kind",
+          "in",
+          "--quantity",
+          "48",
+          "--note",
+          "initial stock",
+          "--data-dir",
+          dataDir,
+        ])
+      ).stdout
+    ) as {
+      material: { currentQuantity: number }
+      adjustment: { quantityAfter: number }
+    }
+    expect(adjusted.material.currentQuantity).toBe(48)
+    expect(adjusted.adjustment.quantityAfter).toBe(48)
+
+    const printResult = JSON.parse(
+      (
+        await runCliWithEnv(
+          [
+            "inventory",
+            "print",
+            "--id",
+            created.material.id,
+            "--binding",
+            "binding-user-template",
+            "--printer",
+            "mock-printer",
+            "--quantity",
+            "2",
+            "--data-dir",
+            dataDir,
+          ],
+          {
+            TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
+          }
+        )
+      ).stdout
+    ) as {
+      source: { kind: string }
+      result: { preview?: { artifact?: { width: number } } }
+    }
+    expect(printResult.source.kind).toBe("user-template")
+    expect(printResult.result.preview?.artifact?.width).toBeGreaterThan(0)
+  })
+
+  it("blocks archived inventory materials from adjust and print commands", {
+    timeout: 20_000,
+  }, async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-inventory-archived-"))
+    tempDirs.push(dataDir)
+
+    await runCli(["template", "import", "--file", fixturePath, "--data-dir", dataDir])
+
+    const created = JSON.parse(
+      (
+        await runCli([
+          "inventory",
+          "create",
+          "--full-name",
+          "TPS62933DRLR",
+          "--bindings",
+          JSON.stringify([
+            {
+              id: "binding-user-template",
+              templateSource: "user-template",
+              templateId: "component-bin-sot23",
+              templateName: "Component Bin SOT-23",
+              printQuantity: 1,
+              fieldOverrides: {},
+              createdAt: "2026-07-20T09:00:00.000Z",
+              updatedAt: "2026-07-20T09:00:00.000Z",
+            },
+          ]),
+          "--data-dir",
+          dataDir,
+        ])
+      ).stdout
+    ) as {
+      material: { id: string }
+    }
+
+    await runCli(["inventory", "archive", "--id", created.material.id, "--data-dir", dataDir])
+
+    const adjustFailure = await runCliAllowFailure([
+      "inventory",
+      "adjust",
+      "--id",
+      created.material.id,
+      "--kind",
+      "in",
+      "--quantity",
+      "1",
+      "--data-dir",
+      dataDir,
+    ])
+    expect(adjustFailure).toMatchObject({
+      failed: true,
+      code: 1,
+    })
+    expect(adjustFailure.stderr).toContain("已归档物料不能调整库存，请先恢复。")
+
+    const printFailure = await runCliAllowFailure([
+      "inventory",
+      "print",
+      "--id",
+      created.material.id,
+      "--binding",
+      "binding-user-template",
+      "--printer",
+      "mock-printer",
+      "--data-dir",
+      dataDir,
+    ])
+    expect(printFailure).toMatchObject({
+      failed: true,
+      code: 1,
+    })
+    expect(printFailure.stderr).toContain("Set TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 to enable it.")
+
+    const archivedPrintFailure = await runCliWithEnv(
+      [
+        "inventory",
+        "print",
+        "--id",
+        created.material.id,
+        "--binding",
+        "binding-user-template",
+        "--printer",
+        "mock-printer",
+        "--data-dir",
+        dataDir,
+      ],
+      {
+        TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
+      }
+    ).then(
+      () => ({
+        failed: false,
+        stderr: "",
+      }),
+      (error) => ({
+        failed: true,
+        stderr: (error as Error & { stderr?: string }).stderr ?? "",
+      })
+    )
+    expect(archivedPrintFailure.failed).toBe(true)
+    expect(archivedPrintFailure.stderr).toContain("已归档物料不能打印标签，请先恢复。")
   })
 })
