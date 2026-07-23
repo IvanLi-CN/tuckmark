@@ -1,5 +1,5 @@
-import type { InventoryAdjustment, InventoryMaterial } from "@tuckmark/inventory"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import type { InventoryAdjustment, InventoryMaterial } from "@tuckmark/inventory"
 import React from "react"
 
 import { type ApiClient, createApiClient, loadSetup } from "./api-client.js"

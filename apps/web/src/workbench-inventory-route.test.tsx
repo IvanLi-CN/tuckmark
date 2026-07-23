@@ -167,9 +167,7 @@ describe("WorkbenchInventoryRoute", () => {
   it("keeps the inventory page free of data-directory setup prompts", async () => {
     inventoryStoreMocks.listInventoryMaterials.mockResolvedValue([])
 
-    await renderNode(
-      createInventoryRouteNode(createController({ startupSyncReady: true }))
-    )
+    await renderNode(createInventoryRouteNode(createController({ startupSyncReady: true })))
 
     expect(document.body.textContent).toContain("还没有库存物料。")
     expect(document.body.textContent).not.toContain("配置数据目录")
@@ -197,7 +195,10 @@ describe("WorkbenchInventoryRoute", () => {
     inventoryStoreMocks.listInventoryAdjustments.mockResolvedValue([])
 
     await renderNode(
-      createInventoryRouteNode(createController({ startupSyncReady: true }), "/inventory/inventory-material-1")
+      createInventoryRouteNode(
+        createController({ startupSyncReady: true }),
+        "/inventory/inventory-material-1"
+      )
     )
 
     expect(document.body.textContent).toContain("返回列表")

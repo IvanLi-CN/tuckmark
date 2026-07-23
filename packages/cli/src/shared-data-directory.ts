@@ -561,6 +561,8 @@ function createDraftFromUserTemplatePackage(
           binding: field ? { fieldKey: field.key, kind: "datamatrix" } : undefined,
           meta,
         })
+      default:
+        throw new Error(`Unsupported template element kind: ${String(element.kind)}`)
     }
   })
   const synced = syncDraftBindings(fields, elements)
@@ -716,6 +718,8 @@ function compileFilledCanvasFromDraft(
             value: resolvedValue ?? "",
             rotation: element.rotation ?? 0,
           } as DirectCanvasDefinition["elements"][number]
+        default:
+          throw new Error(`Unsupported draft element kind: ${String(element.kind)}`)
       }
     }) as DirectCanvasDefinition["elements"]
   return {

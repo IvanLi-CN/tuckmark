@@ -6,7 +6,16 @@ import {
   type InventoryMaterial,
   type InventoryTemplateBinding,
 } from "@tuckmark/inventory"
-import { Archive, ChevronLeft, PackagePlus, Printer, RefreshCcw, Save, Trash2, Undo2 } from "lucide-react"
+import {
+  Archive,
+  ChevronLeft,
+  PackagePlus,
+  Printer,
+  RefreshCcw,
+  Save,
+  Trash2,
+  Undo2,
+} from "lucide-react"
 import React from "react"
 
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
@@ -34,13 +43,13 @@ import {
 import { cn } from "./lib/utils.js"
 import type { Template, UserTemplateSummary } from "./types.js"
 import { loadWorkingCopy, readUserTemplateHistory } from "./user-template-store.js"
-import { useWorkbenchNavigate } from "./workbench-navigation.js"
 import {
   createTemplatePrintSource,
   createUserTemplatePrintSource,
   EmptyMini,
 } from "./workbench-app.js"
 import type { WorkbenchController } from "./workbench-controller.js"
+import { useWorkbenchNavigate } from "./workbench-navigation.js"
 
 type TemplateOption =
   | {
@@ -347,7 +356,7 @@ export default function WorkbenchInventoryRoute({
       })
       await refresh()
       await navigate(`/inventory/${saved.id}`, {
-        replace: isNewMaterialRoute || routeMaterialId !== saved.id,
+        replace: isNewMaterialRoute || materialId !== saved.id,
       })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -357,7 +366,7 @@ export default function WorkbenchInventoryRoute({
     materialDraft,
     navigate,
     refresh,
-    routeMaterialId,
+    materialId,
     selectedMaterial?.labelBindings,
     selectedMaterialArchived,
   ])
@@ -523,7 +532,7 @@ export default function WorkbenchInventoryRoute({
     isDetailRoute && !isNewMaterialRoute && startupReady && !loading && !selectedMaterial
   const listEmptyText =
     search.trim().length > 0 || showArchived ? "没有符合当前筛选条件的物料。" : "还没有库存物料。"
-  const detailTitle = isNewMaterialRoute ? "新建物料" : selectedMaterial?.fullName ?? "物料详情"
+  const detailTitle = isNewMaterialRoute ? "新建物料" : (selectedMaterial?.fullName ?? "物料详情")
   const detailNote = isNewMaterialRoute
     ? "先完成物料资料，再进入库存调整、打印与流水查看。"
     : "先核对物料信息与标签模板，再处理库存调整和手动打印。"
@@ -578,11 +587,15 @@ export default function WorkbenchInventoryRoute({
                 </div>
                 <div className="tm-inventory__stat-card tm-inventory__stat-card--accent">
                   <span className="tm-inventory__stat-label">合计库存</span>
-                  <strong className="tm-inventory__stat-value">{materialStats.totalQuantity}</strong>
+                  <strong className="tm-inventory__stat-value">
+                    {materialStats.totalQuantity}
+                  </strong>
                 </div>
                 <div className="tm-inventory__stat-card">
                   <span className="tm-inventory__stat-label">已归档</span>
-                  <strong className="tm-inventory__stat-value">{materialStats.archivedCount}</strong>
+                  <strong className="tm-inventory__stat-value">
+                    {materialStats.archivedCount}
+                  </strong>
                 </div>
               </div>
               <Card className="tm-panel tm-inventory__filters">
@@ -661,7 +674,9 @@ export default function WorkbenchInventoryRoute({
                             }}
                           >
                             <span className="tm-inventory__row-main">
-                              <strong className="tm-inventory__row-title">{material.fullName}</strong>
+                              <strong className="tm-inventory__row-title">
+                                {material.fullName}
+                              </strong>
                               <small className="tm-inventory__row-meta">
                                 {[material.description || "未填写描述", material.matrixCode]
                                   .filter(Boolean)
@@ -747,7 +762,11 @@ export default function WorkbenchInventoryRoute({
                     <ChevronLeft className="size-4" />
                     <span>返回列表</span>
                   </Button>
-                  <Button type="button" variant="outline" onClick={() => void navigate("/inventory/new")}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void navigate("/inventory/new")}
+                  >
                     <PackagePlus className="size-4" />
                     <span>新建物料</span>
                   </Button>
@@ -773,7 +792,10 @@ export default function WorkbenchInventoryRoute({
                           value={materialDraft.fullName}
                           disabled={selectedMaterialArchived}
                           onChange={(event) =>
-                            setMaterialDraft((current) => ({ ...current, fullName: event.target.value }))
+                            setMaterialDraft((current) => ({
+                              ...current,
+                              fullName: event.target.value,
+                            }))
                           }
                         />
                       </div>
@@ -784,7 +806,10 @@ export default function WorkbenchInventoryRoute({
                           value={materialDraft.baseName}
                           disabled={selectedMaterialArchived}
                           onChange={(event) =>
-                            setMaterialDraft((current) => ({ ...current, baseName: event.target.value }))
+                            setMaterialDraft((current) => ({
+                              ...current,
+                              baseName: event.target.value,
+                            }))
                           }
                         />
                       </div>
@@ -869,7 +894,11 @@ export default function WorkbenchInventoryRoute({
                       </Alert>
                     ) : null}
                     <div className="flex flex-wrap gap-2">
-                      <Button type="button" onClick={() => void saveMaterial()} disabled={selectedMaterialArchived}>
+                      <Button
+                        type="button"
+                        onClick={() => void saveMaterial()}
+                        disabled={selectedMaterialArchived}
+                      >
                         <Save className="size-4" />
                         <span>{selectedMaterial ? "保存物料" : "创建物料"}</span>
                       </Button>
@@ -880,11 +909,19 @@ export default function WorkbenchInventoryRoute({
                             variant="outline"
                             onClick={() =>
                               void (selectedMaterial.archivedAt
-                                ? restoreInventoryMaterial(selectedMaterial.id).then(() => refresh())
-                                : archiveInventoryMaterial(selectedMaterial.id).then(() => refresh()))
+                                ? restoreInventoryMaterial(selectedMaterial.id).then(() =>
+                                    refresh()
+                                  )
+                                : archiveInventoryMaterial(selectedMaterial.id).then(() =>
+                                    refresh()
+                                  ))
                             }
                           >
-                            {selectedMaterial.archivedAt ? <Undo2 className="size-4" /> : <Archive className="size-4" />}
+                            {selectedMaterial.archivedAt ? (
+                              <Undo2 className="size-4" />
+                            ) : (
+                              <Archive className="size-4" />
+                            )}
                             <span>{selectedMaterial.archivedAt ? "恢复物料" : "归档物料"}</span>
                           </Button>
                           <Button
@@ -894,7 +931,9 @@ export default function WorkbenchInventoryRoute({
                               void deleteInventoryMaterial(selectedMaterial.id)
                                 .then(async () => {
                                   setMaterials((current) =>
-                                    current.filter((material) => material.id !== selectedMaterial.id)
+                                    current.filter(
+                                      (material) => material.id !== selectedMaterial.id
+                                    )
                                   )
                                   setAdjustments([])
                                   await navigate("/inventory", { replace: true })
@@ -944,8 +983,8 @@ export default function WorkbenchInventoryRoute({
                             <span>
                               <strong>{binding.templateName}</strong>
                               <small className="block text-muted-foreground">
-                                {binding.templateSource === "system" ? "系统模板" : "用户模板"} · 默认打印{" "}
-                                {binding.printQuantity}
+                                {binding.templateSource === "system" ? "系统模板" : "用户模板"} ·
+                                默认打印 {binding.printQuantity}
                               </small>
                             </span>
                             <div className="flex gap-2">
@@ -1051,7 +1090,9 @@ export default function WorkbenchInventoryRoute({
                         <div className="tm-inventory__binding-grid">
                           {selectedTemplateOption.fields.map((field) => (
                             <div key={field.key} className="grid gap-2">
-                              <Label htmlFor={`inventory-binding-${field.key}`}>{field.label}</Label>
+                              <Label htmlFor={`inventory-binding-${field.key}`}>
+                                {field.label}
+                              </Label>
                               <Input
                                 id={`inventory-binding-${field.key}`}
                                 value={bindingDraft.fieldOverrides[field.key] ?? ""}
@@ -1076,7 +1117,9 @@ export default function WorkbenchInventoryRoute({
                       <Button
                         type="button"
                         onClick={() => void saveBinding()}
-                        disabled={!selectedMaterial || !selectedTemplateOption || selectedMaterialArchived}
+                        disabled={
+                          !selectedMaterial || !selectedTemplateOption || selectedMaterialArchived
+                        }
                       >
                         <Save className="size-4" />
                         <span>{editingBindingId ? "保存关联" : "添加关联"}</span>
@@ -1211,7 +1254,9 @@ export default function WorkbenchInventoryRoute({
                     {!selectedMaterialArchived ? null : (
                       <Alert>
                         <AlertTitle>归档态已停用库存与打印</AlertTitle>
-                        <AlertDescription>如需继续操作，请先在当前详情页恢复该物料。</AlertDescription>
+                        <AlertDescription>
+                          如需继续操作，请先在当前详情页恢复该物料。
+                        </AlertDescription>
                       </Alert>
                     )}
                     <Card className="tm-panel">

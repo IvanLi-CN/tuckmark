@@ -4412,11 +4412,11 @@ type WorkbenchNavigationPhase = "idle" | "holding" | "pending" | "revealed" | "s
 
 type WorkbenchNavigationState = {
   active: boolean
-  fromPath: "/" | "/templates" | "/canvas" | "/system" | null
+  fromPath: "/" | "/templates" | "/canvas" | "/inventory" | "/system" | null
   id: number
   phase: WorkbenchNavigationPhase
   startedAt: number
-  toPath: "/" | "/templates" | "/canvas" | "/system" | null
+  toPath: "/" | "/templates" | "/canvas" | "/inventory" | "/system" | null
 }
 
 type WorkbenchRouterContext = {
