@@ -98,9 +98,12 @@ output.
   owner-facing startup overlay. If a route chunk still races the first switch,
   the fallback stays local to the routed content area and remains visually
   subordinate to the persistent shell.
-- Owner-triggered route switches commit after the destination route module is
-  ready, so the current page remains visible while the next workbench surface
-  is being prepared.
+- Owner-triggered route switches update the browser location immediately, keep
+  the current page visible through the hold/pending phases, and only swap the
+  routed content after the destination route has crossed its reveal gate.
+- Route chunk failures must render an owner-facing recovery panel with retry,
+  return-home, and full reload actions instead of exposing stock router or
+  development-server error copy to the end user.
 - Deferred background hydration and offline warmup stay owner-facing silent
   after mount. They must not block navigation or primary route actions, and
   they must not surface a persistent in-shell status card or badge group.
@@ -825,26 +828,26 @@ output.
   reveal window
 
   PR: include
-  ![Navigation hold on the homepage](./assets/navigation-home-hold-1440x900.png)
+  ![Navigation hold on the homepage](./assets/navigation-home-hold-20260723.png)
 
 - `1440×900` top-level route pending switches to the shared pending surface
   after the hold window while the staged progress bar remains visible
 
   PR: include
-  ![Shared pending surface during template navigation](./assets/navigation-templates-pending-1440x900.png)
+  ![Shared pending surface during template navigation](./assets/navigation-templates-pending-20260723.png)
 
-- `1440×900` template route reveal shows the destination shell as soon as
-  placeholder content is allowed, while the top progress bar stays active until
-  the route settles
+- `1440×900` template route settling shows the destination shell as soon as the
+  reveal gate opens, while the full-width top progress bar keeps advancing
+  toward completion before the transition closes
 
   PR: include
-  ![Template route revealed with placeholder content](./assets/navigation-templates-revealed-1440x900.png)
+  ![Template route settling with the top progress bar still active](./assets/navigation-templates-settling-20260723.png)
 
 - `1440×900` template route loaded state closes the navigation transition after
   cached data and initial refresh work finish
 
   PR: include
-  ![Template route loaded after navigation settles](./assets/navigation-templates-loaded-1440x900.png)
+  ![Template route loaded after navigation settles](./assets/navigation-templates-loaded-20260723.png)
 
 - `1100×820` template workspace in narrow single-outlet mode with a disabled preview/print rail before template selection
 

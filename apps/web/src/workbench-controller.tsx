@@ -780,10 +780,6 @@ export function useWorkbenchController({
 
   const refreshUserTemplates = React.useCallback(async () => {
     const queryOptions = userTemplatesQueryOptions(context)
-    await queryClient.invalidateQueries({
-      exact: true,
-      queryKey: queryOptions.queryKey,
-    })
     return queryClient.fetchQuery({
       ...queryOptions,
       staleTime: 0,
@@ -792,10 +788,6 @@ export function useWorkbenchController({
 
   const refreshArchivedUserTemplates = React.useCallback(async () => {
     const queryOptions = archivedUserTemplatesQueryOptions(context)
-    await queryClient.invalidateQueries({
-      exact: true,
-      queryKey: queryOptions.queryKey,
-    })
     return queryClient.fetchQuery({
       ...queryOptions,
       staleTime: 0,

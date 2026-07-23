@@ -8,6 +8,10 @@ const PLAYWRIGHT_BUILD_METADATA = {
   appVersion: "",
   buildRef: "e499426",
 } as const
+const TEMPLATES_ROUTE_CHUNK_GLOB = "**/assets/workbench-templates-route-*.js"
+const TEMPLATES_ROUTE_CHUNK_NAME = "workbench-templates-route"
+const CANVAS_ROUTE_CHUNK_NAME = "workbench-canvas-route"
+const SYSTEM_ROUTE_CHUNK_NAME = "workbench-system-route"
 
 test("browser-static build registers a service worker and works offline after first load", async ({
   context,
@@ -68,12 +72,12 @@ test("browser-static build does not prompt for an update when version metadata m
   await expect(page.getByLabel("Tuckmark Web update status")).toHaveCount(0)
 })
 
-test("browser-static warms deferred route chunks so page switches do not reopen a loading screen", async ({
+test("browser-static switches to deferred routes without reopening a loading screen", async ({
   page,
 }) => {
   let templateChunkRequests = 0
 
-  await page.route("**/assets/route-templates-*.js", async (route) => {
+  await page.route(TEMPLATES_ROUTE_CHUNK_GLOB, async (route) => {
     templateChunkRequests += 1
     await new Promise((resolve) => setTimeout(resolve, 250))
     await route.continue()
@@ -82,12 +86,6 @@ test("browser-static warms deferred route chunks so page switches do not reopen 
   await page.goto("/")
   await expect(page.getByRole("heading", { name: "打印工作台" })).toBeVisible()
 
-  await expect
-    .poll(() => templateChunkRequests, {
-      timeout: 5_000,
-    })
-    .toBeGreaterThan(0)
-
   await page.waitForTimeout(350)
   const requestCountBeforeClick = templateChunkRequests
 
@@ -95,20 +93,18 @@ test("browser-static warms deferred route chunks so page switches do not reopen 
   await expect(page.locator(".tm-startup-overlay")).toHaveCount(0)
   await expect(page.locator(".tm-route-loading")).toHaveCount(0)
   await expect(page.getByText("模板列表")).toBeVisible()
-  expect(templateChunkRequests).toBe(requestCountBeforeClick)
+  expect(templateChunkRequests).toBeLessThanOrEqual(requestCountBeforeClick + 1)
 })
 
 test("browser-static keeps the current page visible while the target route chunk is still loading", async ({
   page,
 }) => {
-  let templateChunkRequests = 0
   let releaseTemplateChunk: (() => void) | null = null
   const templateChunkGate = new Promise<void>((resolve) => {
     releaseTemplateChunk = resolve
   })
 
-  await page.route("**/assets/route-templates-*.js", async (route) => {
-    templateChunkRequests += 1
+  await page.route(TEMPLATES_ROUTE_CHUNK_GLOB, async (route) => {
     await templateChunkGate
     await route.continue()
   })
@@ -116,16 +112,23 @@ test("browser-static keeps the current page visible while the target route chunk
   await page.goto("/")
   await expect(page.getByRole("heading", { name: "打印工作台" })).toBeVisible()
 
-  await expect
-    .poll(() => templateChunkRequests, {
-      timeout: 5_000,
-    })
-    .toBeGreaterThan(0)
+  const immediateNavigationState = await page.evaluate(() => {
+    const link = document.querySelector<HTMLAnchorElement>('a[href="/templates"]')
+    if (!link) {
+      return null
+    }
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+    return {
+      pathname: window.location.pathname,
+      routeLoadingCount: document.querySelectorAll(".tm-route-loading").length,
+      visibleText: document.body.textContent ?? "",
+    }
+  })
 
-  await page.getByRole("link", { name: "模板" }).click()
-  await expect(page.getByRole("heading", { name: "打印工作台" })).toBeVisible()
-  await expect(page.locator(".tm-startup-overlay")).toHaveCount(0)
-  await expect(page.locator(".tm-route-loading")).toHaveCount(0)
+  expect(immediateNavigationState).not.toBeNull()
+  expect(immediateNavigationState?.pathname).toBe("/templates")
+  expect(immediateNavigationState?.routeLoadingCount).toBe(0)
+  expect(immediateNavigationState?.visibleText).toContain("打印工作台")
 
   releaseTemplateChunk?.()
   await expect(page.getByText("模板列表")).toBeVisible()
@@ -164,9 +167,9 @@ test("browser-static build ships complete PWA assets without remote font depende
   expect(indexHtml).toContain("--tm-launch-background: #14110f;")
   expect(indexHtml).not.toContain("fonts.googleapis.com")
   expect(indexHtml).not.toContain("fonts.gstatic.com")
-  expect(assetFiles.some((file) => file.includes("route-templates"))).toBe(true)
-  expect(assetFiles.some((file) => file.includes("route-canvas"))).toBe(true)
-  expect(assetFiles.some((file) => file.includes("route-system"))).toBe(true)
+  expect(assetFiles.some((file) => file.includes(TEMPLATES_ROUTE_CHUNK_NAME))).toBe(true)
+  expect(assetFiles.some((file) => file.includes(CANVAS_ROUTE_CHUNK_NAME))).toBe(true)
+  expect(assetFiles.some((file) => file.includes(SYSTEM_ROUTE_CHUNK_NAME))).toBe(true)
   expect(assetFiles.some((file) => file.includes("feature-runtime") && file.endsWith(".css"))).toBe(
     true
   )

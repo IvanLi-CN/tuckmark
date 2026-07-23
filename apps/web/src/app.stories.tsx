@@ -373,6 +373,24 @@ export const TemplatesNavigationRevealed: Story = {
   ],
 }
 
+export const TemplatesNavigationSettling: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/templates"],
+    navigationStateOverride: buildNavigationStateOverride({
+      fromPath: "/",
+      phase: "settling",
+      toPath: "/templates",
+    }),
+  },
+  loaders: [
+    async () => {
+      await seedUserTemplateFixtures()
+      return {}
+    },
+  ],
+}
+
 export const TemplatesNavigationLoaded: Story = {
   args: {
     context: runtimeContext,

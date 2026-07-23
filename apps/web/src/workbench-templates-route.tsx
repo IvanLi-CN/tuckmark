@@ -26,6 +26,8 @@ import {
   readUserTemplateHistory,
   saveUserTemplate,
 } from "./user-template-store.js"
+import { createInitialTemplateRows, type WorkbenchController } from "./workbench-controller.js"
+import { useWorkbenchNavigate } from "./workbench-navigation.js"
 import {
   createTemplatePrintSource,
   createUserTemplatePrintSource,
@@ -42,9 +44,7 @@ import {
   useElementClientWidth,
   useMediaQuery,
   WIDE_TRIPLE_THRESHOLD,
-} from "./workbench-app.js"
-import { createInitialTemplateRows, type WorkbenchController } from "./workbench-controller.js"
-import { useWorkbenchNavigate } from "./workbench-navigation.js"
+} from "./workbench-route-shared.js"
 
 type TemplateRow = {
   id: string
@@ -656,8 +656,7 @@ export default function WorkbenchTemplatesRoute({
   React.useEffect(() => {
     onRouteChunkReady?.()
     void ensureExtendedRuntimeFontStyles()
-    void Promise.all([controller.refreshUserTemplates(), controller.refreshArchivedUserTemplates()])
-  }, [controller, onRouteChunkReady])
+  }, [onRouteChunkReady])
 
   React.useEffect(() => {
     if (actionMenu && !state.templateEntries.some((entry) => entry.id === actionMenu.entry.id)) {

@@ -435,18 +435,6 @@ export default defineConfig(({ command, mode }) => {
         output: {
           manualChunks(id) {
             const normalizedId = normalizeServiceWorkerPath(id)
-            if (normalizedId.endsWith("/src/workbench-templates-route.tsx")) {
-              return "route-templates"
-            }
-            if (
-              normalizedId.endsWith("/src/workbench-canvas-route.tsx") ||
-              normalizedId.endsWith("/src/canvas-page.tsx")
-            ) {
-              return "route-canvas"
-            }
-            if (normalizedId.endsWith("/src/workbench-system-route.tsx")) {
-              return "route-system"
-            }
             if (
               normalizedId.includes("/@fontsource/") ||
               normalizedId.includes("/@fontsource-variable/")

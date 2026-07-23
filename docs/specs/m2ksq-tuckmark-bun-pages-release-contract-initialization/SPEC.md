@@ -60,9 +60,10 @@ and a reproducible worktree bootstrap path.
 - If a deferred route chunk is still racing the first navigation, any loading
   affordance must stay route-local and lightweight instead of presenting a
   second startup-like screen.
-- Owner-initiated in-app route switches should commit only after the target
-  route module is ready, so the mounted current page stays visible instead of
-  blanking or presenting a restart-like transition.
+- Owner-initiated in-app route switches should update the browser location
+  immediately, keep the mounted current page visible during any hold/pending
+  window, and reveal the new routed content only after the target route is
+  ready enough to cross its reveal gate.
 - If the current tab has gone stale since its last update check, returning the
   page to a visible, focused, or newly online state must trigger a guarded
   catch-up update check without surfacing any extra post-startup loading UI.
@@ -120,6 +121,9 @@ and a reproducible worktree bootstrap path.
   owner-facing launch shell; after shell-ready they should resolve from warmed
   route chunks, with at most a local route placeholder if prefetch loses a
   race.
+- While a deferred route chunk is still racing, the browser location should
+  already reflect the intended destination even if the previous page is still
+  being held on screen.
 - Offline refresh still works for `/`, `/templates`, `/canvas`, and `/system`
   after a first successful online load and automatic background warmup.
 - New-version caching is silent; the update prompt appears only after the

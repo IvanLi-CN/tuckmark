@@ -3,6 +3,7 @@ import {
   QueryClientProvider,
   useIsFetching,
   useQueryClient,
+  useQueryErrorResetBoundary,
 } from "@tanstack/react-query"
 import {
   createBrowserHistory,
@@ -10,8 +11,10 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  type ErrorComponentProps,
   Outlet,
   RouterProvider,
+  useRouter,
   useRouterState,
 } from "@tanstack/react-router"
 import {
@@ -123,7 +126,6 @@ import {
   readUserTemplateHistory,
   saveUserTemplate,
 } from "./user-template-store.js"
-import WorkbenchCanvasRoute from "./workbench-canvas-route.js"
 import {
   createInitialTemplateRows,
   useWorkbenchController,
@@ -140,9 +142,8 @@ import {
   createWorkbenchQueryClient,
   preloadWorkbenchRouteData,
 } from "./workbench-query.js"
-import { normalizeWorkbenchRoutePath } from "./workbench-route-registry.js"
-import WorkbenchSystemRoute from "./workbench-system-route.js"
-import WorkbenchTemplatesRoute from "./workbench-templates-route.js"
+import { WorkbenchRouteErrorPanel } from "./workbench-route-error.js"
+import { normalizeWorkbenchRoutePath, preloadWorkbenchRoute } from "./workbench-route-registry.js"
 
 type AppProps = {
   client?: ApiClient
@@ -154,6 +155,42 @@ type AppProps = {
   pwaUpdateSnapshot?: PwaUpdateSnapshot
   startupShell?: "auto" | "disabled"
   theme?: "auto" | "light" | "dark"
+}
+
+const LazyWorkbenchCanvasRoute = React.lazy(() => import("./workbench-canvas-route.js"))
+const LazyWorkbenchSystemRoute = React.lazy(() => import("./workbench-system-route.js"))
+const LazyWorkbenchTemplatesRoute = React.lazy(() => import("./workbench-templates-route.js"))
+const boundBrowserHistoryMethods = new WeakSet<Function>()
+
+function ensureBoundBrowserHistoryMethods() {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  const historyObject = window.history as History & Record<string, unknown>
+
+  for (const key of ["pushState", "replaceState"] as const) {
+    const method = historyObject[key]
+    if (typeof method !== "function" || boundBrowserHistoryMethods.has(method)) {
+      continue
+    }
+
+    const boundMethod = method.bind(historyObject)
+    boundBrowserHistoryMethods.add(boundMethod)
+    try {
+      Object.defineProperty(historyObject, key, {
+        configurable: true,
+        writable: true,
+        value: boundMethod,
+      })
+    } catch {
+      try {
+        historyObject[key] = boundMethod
+      } catch {
+        // Some runtimes may not allow rebinding native history methods.
+      }
+    }
+  }
 }
 
 function ThemeScope({
@@ -1838,7 +1875,7 @@ function WorkbenchLayout({
         : navigationState.phase === "revealed"
           ? 0.72
           : navigationState.phase === "settling"
-            ? 0.88
+            ? 1
             : 0
 
   return (
@@ -4316,6 +4353,45 @@ function RouteLoadingPanel() {
   )
 }
 
+function WorkbenchRouterErrorBoundary({ error, reset }: ErrorComponentProps) {
+  const router = useRouter()
+  const queryErrorResetBoundary = useQueryErrorResetBoundary()
+
+  React.useEffect(() => {
+    queryErrorResetBoundary.reset()
+  }, [queryErrorResetBoundary])
+
+  const handleRetry = React.useCallback(() => {
+    queryErrorResetBoundary.reset()
+    reset()
+    void router.invalidate()
+  }, [queryErrorResetBoundary, reset, router])
+
+  const handleGoHome = React.useCallback(() => {
+    reset()
+    void router.navigate({ to: "/" })
+  }, [reset, router])
+
+  const handleReload = React.useCallback(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+    window.location.reload()
+  }, [])
+
+  const pathLabel = typeof window !== "undefined" ? window.location.pathname : undefined
+
+  return (
+    <WorkbenchRouteErrorPanel
+      error={error}
+      onGoHome={handleGoHome}
+      onReload={handleReload}
+      onRetry={handleRetry}
+      pathLabel={pathLabel}
+    />
+  )
+}
+
 type WorkbenchNavigationPhase = "idle" | "holding" | "pending" | "revealed" | "settling"
 
 type WorkbenchNavigationState = {
@@ -4353,7 +4429,14 @@ type WorkbenchHistory =
   | ReturnType<typeof createMemoryHistory>
 
 const WORKBENCH_NAVIGATION_HOLD_MS = 160
-const WORKBENCH_NAVIGATION_SETTLE_DELAY_MS = 140
+const WORKBENCH_NAVIGATION_SETTLE_DELAY_MS = 260
+const WORKBENCH_NAVIGATION_PHASE_ORDER: Record<WorkbenchNavigationPhase, number> = {
+  idle: 0,
+  holding: 1,
+  pending: 2,
+  revealed: 3,
+  settling: 4,
+}
 
 function getNavigationHoldDelayMs() {
   if (typeof navigator !== "undefined" && /jsdom/i.test(navigator.userAgent)) {
@@ -4371,6 +4454,36 @@ function createIdleWorkbenchNavigationState(): WorkbenchNavigationState {
     startedAt: 0,
     toPath: null,
   }
+}
+
+export function resolveWorkbenchNavigationPhase(
+  currentPhase: WorkbenchNavigationPhase,
+  {
+    routerStatus,
+    workbenchFetchCount,
+  }: {
+    routerStatus: string
+    workbenchFetchCount: number
+  }
+): WorkbenchNavigationPhase {
+  const keepLaterPhase = (nextPhase: WorkbenchNavigationPhase) =>
+    WORKBENCH_NAVIGATION_PHASE_ORDER[currentPhase] >= WORKBENCH_NAVIGATION_PHASE_ORDER[nextPhase]
+      ? currentPhase
+      : nextPhase
+
+  if (currentPhase === "idle") {
+    return currentPhase
+  }
+  if (routerStatus !== "idle") {
+    return keepLaterPhase("pending")
+  }
+  if (currentPhase === "holding" || currentPhase === "pending") {
+    return "revealed"
+  }
+  if (workbenchFetchCount > 0) {
+    return currentPhase
+  }
+  return keepLaterPhase("settling")
 }
 
 function applyNavigationStateOverride(
@@ -4463,6 +4576,7 @@ function createWorkbenchRouter(history: WorkbenchHistory, basepath?: string) {
     history,
     basepath,
     context: undefined as never,
+    defaultErrorComponent: WorkbenchRouterErrorBoundary,
     defaultPendingComponent: RouteLoadingPanel,
     defaultPreload: "intent",
   })
@@ -4528,13 +4642,11 @@ function WorkbenchNavigationObserver({
       if (!current.active || current.toPath !== currentPath) {
         return current
       }
-      if (routerStatus !== "idle") {
-        return current.phase === "pending" ? current : { ...current, phase: "pending" }
-      }
-      if (workbenchFetchCount > 0) {
-        return current.phase === "settling" ? current : { ...current, phase: "settling" }
-      }
-      return current.phase === "revealed" ? current : { ...current, phase: "revealed" }
+      const nextPhase = resolveWorkbenchNavigationPhase(current.phase, {
+        routerStatus,
+        workbenchFetchCount,
+      })
+      return nextPhase === current.phase ? current : { ...current, phase: nextPhase }
     })
   }, [
     currentPath,
@@ -4556,6 +4668,9 @@ function WorkbenchNavigationObserver({
     if (currentPath !== navigationState.toPath) {
       return
     }
+    if (navigationState.phase !== "settling") {
+      return
+    }
     if (routerStatus !== "idle" || workbenchFetchCount > 0) {
       return
     }
@@ -4575,6 +4690,7 @@ function WorkbenchNavigationObserver({
     currentPath,
     navigationState.active,
     navigationStateLocked,
+    navigationState.phase,
     navigationState.toPath,
     routerStatus,
     setNavigationState,
@@ -4592,10 +4708,12 @@ function WorkbenchDashboardRouteComponent() {
 function WorkbenchTemplatesRouteComponent() {
   const { controller, onPresentArchiveToast } = useWorkbenchRenderContext()
   return (
-    <WorkbenchTemplatesRoute
-      controller={controller}
-      onPresentArchiveToast={onPresentArchiveToast}
-    />
+    <React.Suspense fallback={<RouteLoadingPanel />}>
+      <LazyWorkbenchTemplatesRoute
+        controller={controller}
+        onPresentArchiveToast={onPresentArchiveToast}
+      />
+    </React.Suspense>
   )
 }
 
@@ -4614,17 +4732,23 @@ function WorkbenchCanvasRouteComponent() {
     [canvasScenario, controller.context, queryClient, routeSource]
   )
   return (
-    <WorkbenchCanvasRoute
-      controller={controller}
-      initialScenario={canvasScenario}
-      initialLoadedRouteData={initialLoadedRouteData ?? undefined}
-    />
+    <React.Suspense fallback={<RouteLoadingPanel />}>
+      <LazyWorkbenchCanvasRoute
+        controller={controller}
+        initialScenario={canvasScenario}
+        initialLoadedRouteData={initialLoadedRouteData ?? undefined}
+      />
+    </React.Suspense>
   )
 }
 
 function WorkbenchSystemRouteComponent() {
   const { controller } = useWorkbenchRenderContext()
-  return <WorkbenchSystemRoute controller={controller} />
+  return (
+    <React.Suspense fallback={<RouteLoadingPanel />}>
+      <LazyWorkbenchSystemRoute controller={controller} />
+    </React.Suspense>
+  )
 }
 
 function WorkbenchRouterShell({
@@ -4708,20 +4832,22 @@ function WorkbenchRouterShell({
           toPath,
         })
 
-        let preloadReady = false
-        const preloadPromise = preloadWorkbenchRouteData({
-          context: controller.context,
-          pathname: `${nextLocation.pathname}${nextLocation.search}`,
-          queryClient,
-        })
-          .then(() => {
-            preloadReady = true
+        let routeChunkReady = false
+        const routeChunkPromise = preloadWorkbenchRoute(nextLocation.pathname)
+          .then((ready) => {
+            routeChunkReady = ready
           })
           .catch(() => undefined)
 
+        const routeDataPromise = preloadWorkbenchRouteData({
+          context: controller.context,
+          pathname: `${nextLocation.pathname}${nextLocation.search}`,
+          queryClient,
+        }).catch(() => undefined)
+
         const holdDelayMs = getNavigationHoldDelayMs()
         const holdPromise = holdDelayMs > 0 ? waitForMs(holdDelayMs) : Promise.resolve()
-        await Promise.race([preloadPromise, holdPromise])
+        await Promise.race([routeChunkPromise, holdPromise])
         await holdPromise
 
         setNavigationState((current) =>
@@ -4729,9 +4855,11 @@ function WorkbenchRouterShell({
             ? current
             : {
                 ...current,
-                phase: preloadReady ? "revealed" : "pending",
+                phase: routeChunkReady ? "revealed" : "pending",
               }
         )
+
+        void Promise.all([routeChunkPromise, routeDataPromise]).catch(() => undefined)
 
         return false
       },
@@ -4773,11 +4901,6 @@ function WorkbenchRouterShell({
 
 function WorkbenchQueryRoot({ children }: { children: React.ReactNode }) {
   const [queryClient] = React.useState(() => createWorkbenchQueryClient())
-  React.useEffect(() => {
-    return () => {
-      queryClient.clear()
-    }
-  }, [queryClient])
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 }
 
@@ -4799,7 +4922,10 @@ function WorkbenchAppInner({
     context,
     initialRoutePath,
   })
-  const [browserHistory] = React.useState(() => createBrowserHistory())
+  const [browserHistory] = React.useState(() => {
+    ensureBoundBrowserHistoryMethods()
+    return createBrowserHistory()
+  })
   const [archiveToast, setArchiveToast] = React.useState<TemplateArchiveToastState | null>(null)
   const currentRouteChunkReady =
     initialRoutePath === "/" || Boolean(bootstrapState?.currentRouteChunkReady) || true

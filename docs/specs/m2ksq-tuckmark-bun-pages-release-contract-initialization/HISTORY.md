@@ -82,6 +82,14 @@ contract while gaining typed routes, route-scoped cache reuse, and one
 consistent navigation-pending experience across in-app clicks and history
 navigation.
 
+That navigation seam was later tightened again after browser verification found
+two owner-facing regressions near lazy routes: the browser URL lagged behind
+the intended destination until the chunk resolved, and chunk failures could
+still leak stock technical error copy. Navigation now primes browser history
+up front while the previous page stays held, keeps the staged progress bar
+monotonic through settling, and routes chunk-load failures into a project-owned
+recovery panel instead.
+
 The release publication contract was later tightened again after published
 GitHub Releases were observed to ship a one-line placeholder body. Release
 publication now derives human-readable notes from the verified release snapshot

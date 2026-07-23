@@ -164,6 +164,15 @@ while the workbench was being productized:
   - stale reveal is allowed for list-like routes, but `/canvas` keeps its more
     cautious minimum-ready gate so one template's editable draft is not
     misrepresented as another route having already loaded
+- That navigation contract was then tightened again after late regression
+  review:
+  - primary-nav clicks now update the browser URL immediately even while the
+    previous page is still being held on screen
+  - the staged top progress bar no longer backslides during the final settling
+    window; it completes monotonically and closes only after background query
+    work finishes
+  - route chunk failures now fall into a custom owner-facing recovery panel
+    instead of exposing stock router or development-server error copy
 - Free canvas dimensions were later generalized from scratch presets into a
   shared document editing affordance:
   - dimensions became explicit positive-integer draft properties on scratch,

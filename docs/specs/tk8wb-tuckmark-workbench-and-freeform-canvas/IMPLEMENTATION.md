@@ -47,7 +47,13 @@
     plus background query work settle
   - `apps/web/src/workbench-navigation.ts` now routes imperative page changes
     through the TanStack Router navigation API instead of a bespoke preload
-    wrapper
+    wrapper, and it primes browser history state up front so the visible URL
+    matches the intended destination while the held page is still covering the
+    reveal delay
+  - lazy `/templates`, `/canvas`, and `/system` routes now load through
+    `React.lazy`, while route-level chunk failures fall into a custom
+    owner-facing recovery panel instead of the stock router/dev-server error
+    surface
   - the owner-facing startup overlay now keeps its title, detail copy, and
     progress affordance generic instead of exposing those background phases as
     a visible per-task checklist or secondary note card
