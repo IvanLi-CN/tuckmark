@@ -1,4 +1,23 @@
 import {
+  type QueryClient,
+  QueryClientProvider,
+  useIsFetching,
+  useQueryClient,
+  useQueryErrorResetBoundary,
+} from "@tanstack/react-query"
+import {
+  createBrowserHistory,
+  createMemoryHistory,
+  createRootRouteWithContext,
+  createRoute,
+  createRouter,
+  type ErrorComponentProps,
+  Outlet,
+  RouterProvider,
+  useRouter,
+  useRouterState,
+} from "@tanstack/react-router"
+import {
   AlertCircle,
   Archive,
   CheckCircle2,
@@ -40,15 +59,6 @@ import {
   Stage,
 } from "react-konva"
 import {
-  BrowserRouter,
-  MemoryRouter,
-  NavLink,
-  Outlet,
-  Route,
-  Routes,
-  useLocation,
-} from "react-router-dom"
-import {
   buildSvg,
   DEFAULT_TEXT_FONT_FAMILY,
   getTemplateById,
@@ -68,7 +78,7 @@ import {
   createDraftFromUserTemplatePackage,
   getElementSelectionBounds,
 } from "./canvas-editor-model.js"
-import { CanvasWorkspace } from "./canvas-page.js"
+import { type LoadedCanvasRouteData, resolveCanvasSource } from "./canvas-route-data.js"
 import { ProductMark } from "./components/product-mark.js"
 import { ActionButton } from "./components/ui/action-button.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
@@ -122,12 +132,18 @@ import {
   type WorkbenchDeviceDrawerFeedback,
   type WorkbenchStoryStateOverrides,
 } from "./workbench-controller.js"
-import { preloadWorkbenchNavigationIntent, useWorkbenchNavigate } from "./workbench-navigation.js"
 import {
-  normalizeWorkbenchRoutePath,
-  preloadDeferredWorkbenchRoutes,
-  useDeferredWorkbenchRouteModule,
-} from "./workbench-route-registry.js"
+  useWorkbenchNavigate,
+  useWorkbenchPathname,
+  useWorkbenchSearchParams,
+} from "./workbench-navigation.js"
+import {
+  canvasRouteDataQueryOptions,
+  createWorkbenchQueryClient,
+  preloadWorkbenchRouteData,
+} from "./workbench-query.js"
+import { WorkbenchRouteErrorPanel } from "./workbench-route-error.js"
+import { normalizeWorkbenchRoutePath, preloadWorkbenchRoute } from "./workbench-route-registry.js"
 
 type AppProps = {
   client?: ApiClient
@@ -139,6 +155,42 @@ type AppProps = {
   pwaUpdateSnapshot?: PwaUpdateSnapshot
   startupShell?: "auto" | "disabled"
   theme?: "auto" | "light" | "dark"
+}
+
+const LazyWorkbenchCanvasRoute = React.lazy(() => import("./workbench-canvas-route.js"))
+const LazyWorkbenchSystemRoute = React.lazy(() => import("./workbench-system-route.js"))
+const LazyWorkbenchTemplatesRoute = React.lazy(() => import("./workbench-templates-route.js"))
+const boundBrowserHistoryMethods = new WeakSet<Function>()
+
+function ensureBoundBrowserHistoryMethods() {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  const historyObject = window.history as History & Record<string, unknown>
+
+  for (const key of ["pushState", "replaceState"] as const) {
+    const method = historyObject[key]
+    if (typeof method !== "function" || boundBrowserHistoryMethods.has(method)) {
+      continue
+    }
+
+    const boundMethod = method.bind(historyObject)
+    boundBrowserHistoryMethods.add(boundMethod)
+    try {
+      Object.defineProperty(historyObject, key, {
+        configurable: true,
+        writable: true,
+        value: boundMethod,
+      })
+    } catch {
+      try {
+        historyObject[key] = boundMethod
+      } catch {
+        // Some runtimes may not allow rebinding native history methods.
+      }
+    }
+  }
 }
 
 function ThemeScope({
@@ -217,6 +269,57 @@ const NAV_LINKS: RouteLink[] = [
   { to: "/canvas", label: "画布", icon: PencilRuler },
   { to: "/system", label: "系统", icon: MonitorCog },
 ]
+
+function WorkbenchNavLink({
+  children,
+  className,
+  to,
+}: {
+  children: React.ReactNode
+  className?: string
+  to: string
+}) {
+  const navigate = useWorkbenchNavigate()
+  const anchorRef = React.useRef<HTMLAnchorElement | null>(null)
+
+  React.useEffect(() => {
+    const anchor = anchorRef.current
+    if (!anchor) {
+      return
+    }
+
+    const handleClick = (event: MouseEvent) => {
+      event.preventDefault()
+      const href = anchor.getAttribute("href")
+      if (href) {
+        // jsdom treats raw anchor clicks as full-document navigations unless href is
+        // temporarily cleared before the router takes over.
+        anchor.removeAttribute("href")
+      }
+      void navigate(to).finally(() => {
+        if (href) {
+          anchor.setAttribute("href", href)
+        }
+      })
+      if (href) {
+        window.setTimeout(() => {
+          anchor.setAttribute("href", href)
+        }, 0)
+      }
+    }
+
+    anchor.addEventListener("click", handleClick)
+    return () => {
+      anchor.removeEventListener("click", handleClick)
+    }
+  }, [navigate, to])
+
+  return (
+    <a ref={anchorRef} href={to} className={className}>
+      {children}
+    </a>
+  )
+}
 
 function GitHubMark({ className }: { className?: string }) {
   return (
@@ -1727,27 +1830,29 @@ function ArchiveUndoToast({
 
 function WorkbenchLayout({
   controller,
+  forcePendingContent = false,
   hydrationState,
-  onRouteIntent,
+  navigationState,
   pwaUpdateSnapshot,
   archiveToast,
   onUndoArchiveToast,
   shellHidden = false,
 }: {
   controller: ReturnType<typeof useWorkbenchController>
+  forcePendingContent?: boolean
   hydrationState: WorkbenchHydrationState
-  onRouteIntent: (pathname: string) => void
+  navigationState: WorkbenchNavigationState
   pwaUpdateSnapshot?: PwaUpdateSnapshot
   archiveToast: TemplateArchiveToastState | null
   onUndoArchiveToast: () => void | Promise<void>
   shellHidden?: boolean
 }) {
-  const location = useLocation()
+  const pathname = useWorkbenchPathname()
   const navigate = useWorkbenchNavigate()
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const runtimePwaUpdate = usePwaUpdate(controller.context)
   const pwaUpdate = pwaUpdateSnapshot ?? runtimePwaUpdate
-  const isCanvasRoute = location.pathname === "/canvas"
+  const isCanvasRoute = pathname === "/canvas"
   const handleDrawerOpenChange = React.useCallback(
     (nextOpen: boolean) => {
       if (!nextOpen) {
@@ -1761,34 +1866,43 @@ function WorkbenchLayout({
   const surfaceLabel =
     controller.context.surface === "server-http" ? "Server HTTP" : "Browser static"
   const modeLabel = controller.context.mode === "demo" ? "Demo mode" : "Runtime mode"
-  const handlePrimaryNavClick = React.useCallback(
-    (event: React.MouseEvent<HTMLAnchorElement>, pathname: string) => {
-      if (
-        event.defaultPrevented ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.altKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        normalizeWorkbenchRoutePath(location.pathname) === normalizeWorkbenchRoutePath(pathname)
-      ) {
-        return
-      }
-      event.preventDefault()
-      void navigate(pathname)
-    },
-    [location.pathname, navigate]
-  )
+  const normalizedPathname = normalizeWorkbenchRoutePath(pathname)
+  const navigationProgress =
+    navigationState.phase === "holding"
+      ? 0.18
+      : navigationState.phase === "pending"
+        ? 0.46
+        : navigationState.phase === "revealed"
+          ? 0.72
+          : navigationState.phase === "settling"
+            ? 1
+            : 0
 
   return (
     <div
-      className={cn("tm-shell", "tm-selectable-none", isCanvasRoute && "tm-shell--canvas")}
+      className={cn(
+        "tm-shell",
+        "tm-selectable-none",
+        isCanvasRoute && "tm-shell--canvas",
+        navigationState.phase === "holding" && "tm-shell--nav-holding"
+      )}
       hidden={shellHidden}
       aria-hidden={shellHidden}
+      aria-busy={navigationState.active}
       data-deferred-hydration-pending={hydrationState.deferredHydrationPending ? "true" : "false"}
+      data-navigation-phase={navigationState.phase}
       data-offline-warmup-status={hydrationState.offlineWarmupStatus}
       data-shell-ready={hydrationState.shellReady ? "true" : "false"}
     >
+      <div
+        className={cn("tm-nav-progress", navigationState.active && "tm-nav-progress--active")}
+        aria-hidden={navigationState.active ? "false" : "true"}
+      >
+        <div
+          className="tm-nav-progress__bar"
+          style={{ transform: `scaleX(${navigationProgress})` }}
+        />
+      </div>
       <header className="tm-header tm-selectable-none">
         <div className="tm-header__left">
           <ProductMark />
@@ -1796,21 +1910,19 @@ function WorkbenchLayout({
             {NAV_LINKS.map((item) => {
               const Icon = item.icon
               return (
-                <NavLink
+                <WorkbenchNavLink
                   key={item.to}
                   to={item.to}
-                  end={item.to === "/"}
-                  onPointerEnter={() => onRouteIntent(item.to)}
-                  onPointerDown={() => onRouteIntent(item.to)}
-                  onFocus={() => onRouteIntent(item.to)}
-                  onClick={(event) => handlePrimaryNavClick(event, item.to)}
-                  className={({ isActive }) =>
-                    cn("tm-nav__link", "tm-selectable-none", isActive && "tm-nav__link--active")
-                  }
+                  className={cn(
+                    "tm-nav__link",
+                    "tm-selectable-none",
+                    normalizeWorkbenchRoutePath(item.to) === normalizedPathname &&
+                      "tm-nav__link--active"
+                  )}
                 >
                   <Icon className="size-4" />
                   <span>{item.label}</span>
-                </NavLink>
+                </WorkbenchNavLink>
               )
             })}
           </nav>
@@ -1837,14 +1949,14 @@ function WorkbenchLayout({
       </header>
 
       <main className={cn("tm-main", isCanvasRoute && "tm-main--canvas")}>
-        <Outlet />
+        {forcePendingContent ? <RouteLoadingPanel /> : <Outlet />}
       </main>
 
       <footer className="tm-footer tm-selectable-none">
         <div className="tm-footer__row">
           <span>{surfaceLabel}</span>
           <span>{modeLabel}</span>
-          <span>{location.pathname}</span>
+          <span>{pathname}</span>
         </div>
         <div className="tm-footer__row tm-footer__row--right">
           <span>
@@ -4241,257 +4353,558 @@ function RouteLoadingPanel() {
   )
 }
 
-function DashboardRoute({
-  controller,
-  onRouteChunkReady,
-}: {
-  controller: ReturnType<typeof useWorkbenchController>
-  onRouteChunkReady: () => void
-}) {
+function WorkbenchRouterErrorBoundary({ error, reset }: ErrorComponentProps) {
+  const router = useRouter()
+  const queryErrorResetBoundary = useQueryErrorResetBoundary()
+
   React.useEffect(() => {
-    onRouteChunkReady()
-  }, [onRouteChunkReady])
+    queryErrorResetBoundary.reset()
+  }, [queryErrorResetBoundary])
 
-  return <DashboardPage controller={controller} />
-}
+  const handleRetry = React.useCallback(() => {
+    queryErrorResetBoundary.reset()
+    reset()
+    void router.invalidate()
+  }, [queryErrorResetBoundary, reset, router])
 
-function TemplatesRouteBoundary({
-  controller,
-  onPresentArchiveToast,
-  onRouteChunkReady,
-}: {
-  controller: ReturnType<typeof useWorkbenchController>
-  onPresentArchiveToast: (template: UserTemplateSummary) => void
-  onRouteChunkReady: () => void
-}) {
-  const routeModule = useDeferredWorkbenchRouteModule("/templates")
-  if (!routeModule) {
-    return <RouteLoadingPanel />
-  }
+  const handleGoHome = React.useCallback(() => {
+    reset()
+    void router.navigate({ to: "/" })
+  }, [reset, router])
 
-  const TemplatesRoute = routeModule.default as React.ComponentType<{
-    controller: ReturnType<typeof useWorkbenchController>
-    onPresentArchiveToast?: (template: UserTemplateSummary) => void
-    onRouteChunkReady?: () => void
-  }>
+  const handleReload = React.useCallback(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+    window.location.reload()
+  }, [])
+
+  const pathLabel = typeof window !== "undefined" ? window.location.pathname : undefined
+
   return (
-    <TemplatesRoute
-      controller={controller}
-      onPresentArchiveToast={onPresentArchiveToast}
-      onRouteChunkReady={onRouteChunkReady}
+    <WorkbenchRouteErrorPanel
+      error={error}
+      onGoHome={handleGoHome}
+      onReload={handleReload}
+      onRetry={handleRetry}
+      pathLabel={pathLabel}
     />
   )
 }
 
-function CanvasRouteBoundary({
-  controller,
-  initialScenario,
-  onRouteChunkReady,
-}: {
+type WorkbenchNavigationPhase = "idle" | "holding" | "pending" | "revealed" | "settling"
+
+type WorkbenchNavigationState = {
+  active: boolean
+  fromPath: "/" | "/templates" | "/canvas" | "/system" | null
+  id: number
+  phase: WorkbenchNavigationPhase
+  startedAt: number
+  toPath: "/" | "/templates" | "/canvas" | "/system" | null
+}
+
+type WorkbenchRouterContext = {
+  appContext: AppContext
+  canvasScenario?: CanvasStoryScenario
+  queryClient: QueryClient
+}
+
+type WorkbenchRenderContextValue = {
+  archiveToast: TemplateArchiveToastState | null
+  canvasScenario?: CanvasStoryScenario
   controller: ReturnType<typeof useWorkbenchController>
-  initialScenario?: CanvasStoryScenario
-  onRouteChunkReady: () => void
-}) {
-  const routeModule = useDeferredWorkbenchRouteModule("/canvas")
-  if (!routeModule) {
-    return <RouteLoadingPanel />
+  forcePendingContent: boolean
+  hydrationState: WorkbenchHydrationState
+  navigationState: WorkbenchNavigationState
+  navigationStateLocked: boolean
+  onPresentArchiveToast: (template: UserTemplateSummary) => void
+  onUndoArchiveToast: () => void | Promise<void>
+  pwaUpdateSnapshot?: PwaUpdateSnapshot
+  setNavigationState: React.Dispatch<React.SetStateAction<WorkbenchNavigationState>>
+  shellHidden: boolean
+}
+
+type WorkbenchHistory =
+  | ReturnType<typeof createBrowserHistory>
+  | ReturnType<typeof createMemoryHistory>
+
+const WORKBENCH_NAVIGATION_HOLD_MS = 160
+const WORKBENCH_NAVIGATION_SETTLE_DELAY_MS = 260
+const WORKBENCH_NAVIGATION_PHASE_ORDER: Record<WorkbenchNavigationPhase, number> = {
+  idle: 0,
+  holding: 1,
+  pending: 2,
+  revealed: 3,
+  settling: 4,
+}
+
+function getNavigationHoldDelayMs() {
+  if (typeof navigator !== "undefined" && /jsdom/i.test(navigator.userAgent)) {
+    return 0
+  }
+  return WORKBENCH_NAVIGATION_HOLD_MS
+}
+
+function createIdleWorkbenchNavigationState(): WorkbenchNavigationState {
+  return {
+    active: false,
+    fromPath: null,
+    id: 0,
+    phase: "idle",
+    startedAt: 0,
+    toPath: null,
+  }
+}
+
+export function resolveWorkbenchNavigationPhase(
+  currentPhase: WorkbenchNavigationPhase,
+  {
+    routerStatus,
+    workbenchFetchCount,
+  }: {
+    routerStatus: string
+    workbenchFetchCount: number
+  }
+): WorkbenchNavigationPhase {
+  const keepLaterPhase = (nextPhase: WorkbenchNavigationPhase) =>
+    WORKBENCH_NAVIGATION_PHASE_ORDER[currentPhase] >= WORKBENCH_NAVIGATION_PHASE_ORDER[nextPhase]
+      ? currentPhase
+      : nextPhase
+
+  if (currentPhase === "idle") {
+    return currentPhase
+  }
+  if (routerStatus !== "idle") {
+    return keepLaterPhase("pending")
+  }
+  if (currentPhase === "holding" || currentPhase === "pending") {
+    return "revealed"
+  }
+  if (workbenchFetchCount > 0) {
+    return currentPhase
+  }
+  return keepLaterPhase("settling")
+}
+
+function applyNavigationStateOverride(
+  override?: Partial<WorkbenchNavigationState>
+): WorkbenchNavigationState | null {
+  if (!override) {
+    return null
   }
 
-  const CanvasRoute = routeModule.default as React.ComponentType<{
-    controller: ReturnType<typeof useWorkbenchController>
-    initialScenario?: CanvasStoryScenario
-    onRouteChunkReady?: () => void
-  }>
-  return (
-    <CanvasRoute
-      controller={controller}
-      initialScenario={initialScenario}
-      onRouteChunkReady={onRouteChunkReady}
-    />
-  )
-}
-
-function SystemRouteBoundary({
-  controller,
-  onRouteChunkReady,
-}: {
-  controller: ReturnType<typeof useWorkbenchController>
-  onRouteChunkReady: () => void
-}) {
-  const routeModule = useDeferredWorkbenchRouteModule("/system")
-  if (!routeModule) {
-    return <RouteLoadingPanel />
+  const idleState = createIdleWorkbenchNavigationState()
+  const phase = override.phase ?? idleState.phase
+  return {
+    ...idleState,
+    ...override,
+    active: override.active ?? phase !== "idle",
+    phase,
   }
-
-  const SystemRoute = routeModule.default as React.ComponentType<{
-    controller: ReturnType<typeof useWorkbenchController>
-    onRouteChunkReady?: () => void
-  }>
-  return <SystemRoute controller={controller} onRouteChunkReady={onRouteChunkReady} />
 }
 
-function LazyWorkbenchRouter({
-  controller,
-  canvasScenario,
-  hydrationState,
-  onRouteIntent,
-  onPresentArchiveToast,
-  onRouteChunkReady,
-  pwaUpdateSnapshot,
-  archiveToast,
-  onUndoArchiveToast,
-  shellHidden = false,
-}: {
-  controller: ReturnType<typeof useWorkbenchController>
-  canvasScenario?: CanvasStoryScenario
-  hydrationState: WorkbenchHydrationState
-  onRouteIntent: (pathname: string) => void
-  onPresentArchiveToast: (template: UserTemplateSummary) => void
-  onRouteChunkReady: () => void
-  pwaUpdateSnapshot?: PwaUpdateSnapshot
-  archiveToast: TemplateArchiveToastState | null
-  onUndoArchiveToast: () => void | Promise<void>
-  shellHidden?: boolean
-}) {
+function waitForMs(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
+}
+
+const WorkbenchRenderContext = React.createContext<WorkbenchRenderContextValue | null>(null)
+
+function useWorkbenchRenderContext(): WorkbenchRenderContextValue {
+  const context = React.useContext(WorkbenchRenderContext)
+  if (!context) {
+    throw new Error("Workbench render context is unavailable.")
+  }
+  return context
+}
+
+const workbenchRootRoute = createRootRouteWithContext<WorkbenchRouterContext>()({
+  component: WorkbenchRootRouteComponent,
+})
+
+const workbenchDashboardRoute = createRoute({
+  getParentRoute: () => workbenchRootRoute,
+  path: "/",
+  component: WorkbenchDashboardRouteComponent,
+})
+
+const workbenchTemplatesRoute = createRoute({
+  getParentRoute: () => workbenchRootRoute,
+  path: "/templates",
+  loader: async ({ context, location }) => {
+    await preloadWorkbenchRouteData({
+      context: context.appContext,
+      pathname: new URL(location.href, "https://tuckmark.local").pathname,
+      queryClient: context.queryClient,
+    })
+  },
+  pendingComponent: RouteLoadingPanel,
+  component: WorkbenchTemplatesRouteComponent,
+})
+
+const workbenchCanvasRoute = createRoute({
+  getParentRoute: () => workbenchRootRoute,
+  path: "/canvas",
+  component: WorkbenchCanvasRouteComponent,
+})
+
+const workbenchSystemRoute = createRoute({
+  getParentRoute: () => workbenchRootRoute,
+  path: "/system",
+  loader: async ({ context, location }) => {
+    await preloadWorkbenchRouteData({
+      context: context.appContext,
+      pathname: new URL(location.href, "https://tuckmark.local").pathname,
+      queryClient: context.queryClient,
+    })
+  },
+  pendingComponent: RouteLoadingPanel,
+  component: WorkbenchSystemRouteComponent,
+})
+
+const workbenchRouteTree = workbenchRootRoute.addChildren([
+  workbenchDashboardRoute,
+  workbenchTemplatesRoute,
+  workbenchCanvasRoute,
+  workbenchSystemRoute,
+])
+
+function createWorkbenchRouter(history: WorkbenchHistory, basepath?: string) {
+  return createRouter({
+    routeTree: workbenchRouteTree,
+    history,
+    basepath,
+    context: undefined as never,
+    defaultErrorComponent: WorkbenchRouterErrorBoundary,
+    defaultPendingComponent: RouteLoadingPanel,
+    defaultPreload: "intent",
+  })
+}
+
+function WorkbenchRootRouteComponent() {
+  const {
+    archiveToast,
+    controller,
+    forcePendingContent,
+    hydrationState,
+    navigationState,
+    navigationStateLocked,
+    onUndoArchiveToast,
+    pwaUpdateSnapshot,
+    shellHidden,
+  } = useWorkbenchRenderContext()
+
   return (
-    <Routes>
-      <Route
-        element={
-          <WorkbenchLayout
-            controller={controller}
-            hydrationState={hydrationState}
-            onRouteIntent={onRouteIntent}
-            pwaUpdateSnapshot={pwaUpdateSnapshot}
-            archiveToast={archiveToast}
-            onUndoArchiveToast={onUndoArchiveToast}
-            shellHidden={shellHidden}
-          />
-        }
-      >
-        <Route
-          path="/"
-          element={<DashboardRoute controller={controller} onRouteChunkReady={onRouteChunkReady} />}
-        />
-        <Route
-          path="/templates"
-          element={
-            <TemplatesRouteBoundary
-              controller={controller}
-              onPresentArchiveToast={onPresentArchiveToast}
-              onRouteChunkReady={onRouteChunkReady}
-            />
-          }
-        />
-        <Route
-          path="/canvas"
-          element={
-            <CanvasRouteBoundary
-              controller={controller}
-              initialScenario={canvasScenario}
-              onRouteChunkReady={onRouteChunkReady}
-            />
-          }
-        />
-        <Route
-          path="/system"
-          element={
-            <SystemRouteBoundary controller={controller} onRouteChunkReady={onRouteChunkReady} />
-          }
-        />
-      </Route>
-    </Routes>
+    <>
+      <WorkbenchNavigationObserver navigationStateLocked={navigationStateLocked} />
+      <WorkbenchLayout
+        controller={controller}
+        forcePendingContent={forcePendingContent}
+        hydrationState={hydrationState}
+        navigationState={navigationState}
+        pwaUpdateSnapshot={pwaUpdateSnapshot}
+        archiveToast={archiveToast}
+        onUndoArchiveToast={onUndoArchiveToast}
+        shellHidden={shellHidden}
+      />
+    </>
   )
 }
 
-function EagerWorkbenchRouter({
-  controller,
-  canvasScenario,
-  hydrationState,
-  onRouteIntent,
-  onPresentArchiveToast,
-  onRouteChunkReady,
-  pwaUpdateSnapshot,
-  archiveToast,
-  onUndoArchiveToast,
-  shellHidden = false,
+function WorkbenchNavigationObserver({
+  navigationStateLocked = false,
 }: {
-  controller: ReturnType<typeof useWorkbenchController>
-  canvasScenario?: CanvasStoryScenario
-  hydrationState: WorkbenchHydrationState
-  onRouteIntent: (pathname: string) => void
-  onPresentArchiveToast: (template: UserTemplateSummary) => void
-  onRouteChunkReady: () => void
-  pwaUpdateSnapshot?: PwaUpdateSnapshot
-  archiveToast: TemplateArchiveToastState | null
-  onUndoArchiveToast: () => void | Promise<void>
-  shellHidden?: boolean
+  navigationStateLocked?: boolean
 }) {
-  const pageState = useWorkbenchPages(controller)
+  const { navigationState, setNavigationState } = useWorkbenchRenderContext()
+  const pathname = useWorkbenchPathname()
+  const routerStatus = useRouterState({
+    select: (state) => state.status,
+  })
+  const workbenchFetchCount = useIsFetching({
+    predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "workbench",
+  })
+  const currentPath = normalizeWorkbenchRoutePath(pathname)
 
-  return (
-    <Routes>
-      <Route
-        element={
-          <WorkbenchLayout
-            controller={controller}
-            hydrationState={hydrationState}
-            onRouteIntent={onRouteIntent}
-            pwaUpdateSnapshot={pwaUpdateSnapshot}
-            archiveToast={archiveToast}
-            onUndoArchiveToast={onUndoArchiveToast}
-            shellHidden={shellHidden}
-          />
-        }
-      >
-        <Route
-          path="/"
-          element={<DashboardRoute controller={controller} onRouteChunkReady={onRouteChunkReady} />}
-        />
-        <Route
-          path="/templates"
-          element={
-            <>
-              <RouteReadyEffect onReady={onRouteChunkReady} />
-              <TemplatesPage
-                controller={controller}
-                state={pageState}
-                onPresentArchiveToast={onPresentArchiveToast}
-              />
-            </>
-          }
-        />
-        <Route
-          path="/canvas"
-          element={
-            <>
-              <RouteReadyEffect onReady={onRouteChunkReady} />
-              <CanvasWorkspace controller={controller} initialScenario={canvasScenario} />
-            </>
-          }
-        />
-        <Route
-          path="/system"
-          element={
-            <>
-              <RouteReadyEffect onReady={onRouteChunkReady} />
-              <SystemPage controller={controller} />
-            </>
-          }
-        />
-      </Route>
-    </Routes>
-  )
-}
-
-function RouteReadyEffect({ onReady }: { onReady: () => void }) {
   React.useEffect(() => {
-    onReady()
-  }, [onReady])
+    if (navigationStateLocked) {
+      return
+    }
+    if (!navigationState.active || !navigationState.toPath) {
+      return
+    }
+    if (currentPath !== navigationState.toPath) {
+      return
+    }
+
+    setNavigationState((current: WorkbenchNavigationState) => {
+      if (!current.active || current.toPath !== currentPath) {
+        return current
+      }
+      const nextPhase = resolveWorkbenchNavigationPhase(current.phase, {
+        routerStatus,
+        workbenchFetchCount,
+      })
+      return nextPhase === current.phase ? current : { ...current, phase: nextPhase }
+    })
+  }, [
+    currentPath,
+    navigationState.active,
+    navigationStateLocked,
+    navigationState.toPath,
+    routerStatus,
+    setNavigationState,
+    workbenchFetchCount,
+  ])
+
+  React.useEffect(() => {
+    if (navigationStateLocked) {
+      return
+    }
+    if (!navigationState.active || !navigationState.toPath) {
+      return
+    }
+    if (currentPath !== navigationState.toPath) {
+      return
+    }
+    if (navigationState.phase !== "settling") {
+      return
+    }
+    if (routerStatus !== "idle" || workbenchFetchCount > 0) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setNavigationState((current: WorkbenchNavigationState) =>
+        current.active && current.toPath === currentPath
+          ? createIdleWorkbenchNavigationState()
+          : current
+      )
+    }, WORKBENCH_NAVIGATION_SETTLE_DELAY_MS)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [
+    currentPath,
+    navigationState.active,
+    navigationStateLocked,
+    navigationState.phase,
+    navigationState.toPath,
+    routerStatus,
+    setNavigationState,
+    workbenchFetchCount,
+  ])
 
   return null
 }
 
-export function WorkbenchApp({
+function WorkbenchDashboardRouteComponent() {
+  const { controller } = useWorkbenchRenderContext()
+  return <DashboardPage controller={controller} />
+}
+
+function WorkbenchTemplatesRouteComponent() {
+  const { controller, onPresentArchiveToast } = useWorkbenchRenderContext()
+  return (
+    <React.Suspense fallback={<RouteLoadingPanel />}>
+      <LazyWorkbenchTemplatesRoute
+        controller={controller}
+        onPresentArchiveToast={onPresentArchiveToast}
+      />
+    </React.Suspense>
+  )
+}
+
+function WorkbenchCanvasRouteComponent() {
+  const { canvasScenario, controller } = useWorkbenchRenderContext()
+  const queryClient = useQueryClient()
+  const searchParams = useWorkbenchSearchParams()
+  const routeSource = React.useMemo(() => resolveCanvasSource(searchParams), [searchParams])
+  const initialLoadedRouteData = React.useMemo(
+    () =>
+      canvasScenario
+        ? null
+        : (queryClient.getQueryData<LoadedCanvasRouteData>(
+            canvasRouteDataQueryOptions(controller.context, routeSource).queryKey
+          ) ?? null),
+    [canvasScenario, controller.context, queryClient, routeSource]
+  )
+  return (
+    <React.Suspense fallback={<RouteLoadingPanel />}>
+      <LazyWorkbenchCanvasRoute
+        controller={controller}
+        initialScenario={canvasScenario}
+        initialLoadedRouteData={initialLoadedRouteData ?? undefined}
+      />
+    </React.Suspense>
+  )
+}
+
+function WorkbenchSystemRouteComponent() {
+  const { controller } = useWorkbenchRenderContext()
+  return (
+    <React.Suspense fallback={<RouteLoadingPanel />}>
+      <LazyWorkbenchSystemRoute controller={controller} />
+    </React.Suspense>
+  )
+}
+
+function WorkbenchRouterShell({
+  archiveToast,
+  canvasScenario,
+  controller,
+  forcePendingContent = false,
+  history,
+  hydrationState,
+  navigationStateOverride,
+  onPresentArchiveToast,
+  onUndoArchiveToast,
+  pwaUpdateSnapshot,
+  shellHidden,
+}: {
+  archiveToast: TemplateArchiveToastState | null
+  canvasScenario?: CanvasStoryScenario
+  controller: ReturnType<typeof useWorkbenchController>
+  forcePendingContent?: boolean
+  history: WorkbenchHistory
+  hydrationState: WorkbenchHydrationState
+  navigationStateOverride?: Partial<WorkbenchNavigationState>
+  onPresentArchiveToast: (template: UserTemplateSummary) => void
+  onUndoArchiveToast: () => void | Promise<void>
+  pwaUpdateSnapshot?: PwaUpdateSnapshot
+  shellHidden: boolean
+}) {
+  const queryClient = useQueryClient()
+  const [router] = React.useState(() => createWorkbenchRouter(history, controller.context.basePath))
+  const normalizedNavigationStateOverride = React.useMemo(
+    () => applyNavigationStateOverride(navigationStateOverride),
+    [navigationStateOverride]
+  )
+  const [navigationState, setNavigationState] = React.useState<WorkbenchNavigationState>(
+    () => normalizedNavigationStateOverride ?? createIdleWorkbenchNavigationState()
+  )
+  const navigationIdRef = React.useRef(0)
+
+  React.useEffect(() => {
+    router.update({
+      ...router.options,
+      basepath: controller.context.basePath,
+      history,
+    })
+  }, [controller.context.basePath, history, router])
+
+  React.useEffect(() => {
+    return () => {
+      history.destroy()
+    }
+  }, [history])
+
+  React.useEffect(() => {
+    if (!normalizedNavigationStateOverride) {
+      return
+    }
+    setNavigationState(normalizedNavigationStateOverride)
+  }, [normalizedNavigationStateOverride])
+
+  React.useEffect(() => {
+    if (normalizedNavigationStateOverride) {
+      return
+    }
+    const unblock = history.block({
+      enableBeforeUnload: false,
+      blockerFn: async ({ currentLocation, nextLocation }) => {
+        const fromPath = normalizeWorkbenchRoutePath(currentLocation.pathname)
+        const toPath = normalizeWorkbenchRoutePath(nextLocation.pathname)
+        if (fromPath === toPath) {
+          return false
+        }
+
+        const navigationId = navigationIdRef.current + 1
+        navigationIdRef.current = navigationId
+        setNavigationState({
+          active: true,
+          fromPath,
+          id: navigationId,
+          phase: "holding",
+          startedAt: Date.now(),
+          toPath,
+        })
+
+        let routeChunkReady = false
+        const routeChunkPromise = preloadWorkbenchRoute(nextLocation.pathname)
+          .then((ready) => {
+            routeChunkReady = ready
+          })
+          .catch(() => undefined)
+
+        const routeDataPromise = preloadWorkbenchRouteData({
+          context: controller.context,
+          pathname: `${nextLocation.pathname}${nextLocation.search}`,
+          queryClient,
+        }).catch(() => undefined)
+
+        const holdDelayMs = getNavigationHoldDelayMs()
+        const holdPromise = holdDelayMs > 0 ? waitForMs(holdDelayMs) : Promise.resolve()
+        await Promise.race([routeChunkPromise, holdPromise])
+        await holdPromise
+
+        setNavigationState((current) =>
+          current.id !== navigationId
+            ? current
+            : {
+                ...current,
+                phase: routeChunkReady ? "revealed" : "pending",
+              }
+        )
+
+        void Promise.all([routeChunkPromise, routeDataPromise]).catch(() => undefined)
+
+        return false
+      },
+    })
+
+    return () => {
+      unblock()
+    }
+  }, [controller.context, history, normalizedNavigationStateOverride, queryClient])
+
+  return (
+    <WorkbenchRenderContext.Provider
+      value={{
+        archiveToast,
+        canvasScenario,
+        controller,
+        forcePendingContent,
+        hydrationState,
+        navigationState,
+        navigationStateLocked: Boolean(normalizedNavigationStateOverride),
+        onPresentArchiveToast,
+        onUndoArchiveToast,
+        pwaUpdateSnapshot,
+        setNavigationState,
+        shellHidden,
+      }}
+    >
+      <RouterProvider
+        router={router}
+        context={{
+          appContext: controller.context,
+          canvasScenario,
+          queryClient,
+        }}
+      />
+    </WorkbenchRenderContext.Provider>
+  )
+}
+
+function WorkbenchQueryRoot({ children }: { children: React.ReactNode }) {
+  const [queryClient] = React.useState(() => createWorkbenchQueryClient())
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+}
+
+function WorkbenchAppInner({
   bootstrapState,
   client,
   context,
@@ -4509,11 +4922,13 @@ export function WorkbenchApp({
     context,
     initialRoutePath,
   })
-  const [currentRouteChunkReady, setCurrentRouteChunkReady] = React.useState(
-    initialRoutePath === "/" || Boolean(bootstrapState?.currentRouteChunkReady)
-  )
+  const [browserHistory] = React.useState(() => {
+    ensureBoundBrowserHistoryMethods()
+    return createBrowserHistory()
+  })
   const [archiveToast, setArchiveToast] = React.useState<TemplateArchiveToastState | null>(null)
-  const routeWarmupStartedRef = React.useRef(false)
+  const currentRouteChunkReady =
+    initialRoutePath === "/" || Boolean(bootstrapState?.currentRouteChunkReady) || true
   const offlineWarmupStatus = usePwaAssetWarmup(controller.context, controller.startupSyncReady)
 
   React.useEffect(() => {
@@ -4536,14 +4951,6 @@ export function WorkbenchApp({
       setArchiveToast(null)
     }
   }, [archiveToast, controller.archivedUserTemplates])
-
-  React.useEffect(() => {
-    if (initialRoutePath === "/") {
-      setCurrentRouteChunkReady(true)
-      return
-    }
-    setCurrentRouteChunkReady(Boolean(bootstrapState?.currentRouteChunkReady))
-  }, [bootstrapState?.currentRouteChunkReady, initialRoutePath])
 
   const hydrationState = React.useMemo<WorkbenchHydrationState>(
     () => ({
@@ -4575,12 +4982,6 @@ export function WorkbenchApp({
       offlineWarmupStatus,
     ]
   )
-  const handleRouteChunkReady = React.useCallback(() => {
-    setCurrentRouteChunkReady(true)
-  }, [])
-  const handleRouteIntent = React.useCallback((pathname: string) => {
-    preloadWorkbenchNavigationIntent(pathname)
-  }, [])
   const handlePresentArchiveToast = React.useCallback((template: UserTemplateSummary) => {
     setArchiveToast({
       nonce:
@@ -4599,53 +5000,21 @@ export function WorkbenchApp({
     setArchiveToast(null)
   }, [archiveToast, controller])
 
-  React.useEffect(() => {
-    if (!hydrationState.shellReady || routeWarmupStartedRef.current) {
-      return
-    }
-    routeWarmupStartedRef.current = true
-    void preloadDeferredWorkbenchRoutes().catch(() => undefined)
-  }, [hydrationState.shellReady])
-
   const shellHidden = startupShell === "auto" && !hydrationState.shellReady
-  const RouterComponent =
-    import.meta.env.MODE === "test" ? EagerWorkbenchRouter : LazyWorkbenchRouter
-
-  const router = controller.context.basePath ? (
-    <BrowserRouter basename={controller.context.basePath}>
-      <RouterComponent
-        controller={controller}
-        canvasScenario={canvasScenario}
-        hydrationState={hydrationState}
-        onRouteIntent={handleRouteIntent}
-        onPresentArchiveToast={handlePresentArchiveToast}
-        onRouteChunkReady={handleRouteChunkReady}
-        pwaUpdateSnapshot={pwaUpdateSnapshot}
-        archiveToast={archiveToast}
-        onUndoArchiveToast={handleUndoArchiveToast}
-        shellHidden={shellHidden}
-      />
-    </BrowserRouter>
-  ) : (
-    <BrowserRouter>
-      <RouterComponent
-        controller={controller}
-        canvasScenario={canvasScenario}
-        hydrationState={hydrationState}
-        onRouteIntent={handleRouteIntent}
-        onPresentArchiveToast={handlePresentArchiveToast}
-        onRouteChunkReady={handleRouteChunkReady}
-        pwaUpdateSnapshot={pwaUpdateSnapshot}
-        archiveToast={archiveToast}
-        onUndoArchiveToast={handleUndoArchiveToast}
-        shellHidden={shellHidden}
-      />
-    </BrowserRouter>
-  )
 
   return (
     <ThemeScope theme={theme}>
-      {router}
+      <WorkbenchRouterShell
+        archiveToast={archiveToast}
+        canvasScenario={canvasScenario}
+        controller={controller}
+        history={browserHistory}
+        hydrationState={hydrationState}
+        onPresentArchiveToast={handlePresentArchiveToast}
+        onUndoArchiveToast={handleUndoArchiveToast}
+        pwaUpdateSnapshot={pwaUpdateSnapshot}
+        shellHidden={shellHidden}
+      />
       {shellHidden ? (
         <div className="tm-startup-overlay">
           <AppLaunchSplash
@@ -4659,19 +5028,23 @@ export function WorkbenchApp({
   )
 }
 
-export function WorkbenchAppStory({
+function WorkbenchAppStoryInner({
   client,
   context,
   canvasScenario,
   bootstrapState,
+  forcePendingContent = false,
   pwaUpdateSnapshot,
   theme = "auto",
   initialEntries = ["/"],
   hydrationStateOverride,
+  navigationStateOverride,
   storyStateOverrides,
 }: AppProps & {
+  forcePendingContent?: boolean
   initialEntries?: string[]
   hydrationStateOverride?: Partial<WorkbenchHydrationState>
+  navigationStateOverride?: Partial<WorkbenchNavigationState>
   storyStateOverrides?: WorkbenchStoryStateOverrides
 }) {
   const initialRoutePath = normalizeWorkbenchRoutePath(initialEntries[0] ?? "/")
@@ -4681,6 +5054,7 @@ export function WorkbenchAppStory({
     initialRoutePath,
     storyStateOverrides,
   })
+  const [memoryHistory] = React.useState(() => createMemoryHistory({ initialEntries }))
   const hydrationState: WorkbenchHydrationState = {
     shellReady: true,
     currentRouteReady: true,
@@ -4689,23 +5063,48 @@ export function WorkbenchAppStory({
     offlineWarmupStatus: "complete",
     ...hydrationStateOverride,
   }
+
   return (
     <ThemeScope theme={theme}>
-      <MemoryRouter initialEntries={initialEntries}>
-        <EagerWorkbenchRouter
-          controller={controller}
-          canvasScenario={canvasScenario}
-          hydrationState={hydrationState}
-          onRouteIntent={() => undefined}
-          onPresentArchiveToast={() => undefined}
-          onRouteChunkReady={() => {
-            void bootstrapState
-          }}
-          pwaUpdateSnapshot={pwaUpdateSnapshot}
-          archiveToast={null}
-          onUndoArchiveToast={() => undefined}
-        />
-      </MemoryRouter>
+      <WorkbenchRouterShell
+        archiveToast={null}
+        canvasScenario={canvasScenario}
+        controller={controller}
+        forcePendingContent={forcePendingContent}
+        history={memoryHistory}
+        hydrationState={hydrationState}
+        navigationStateOverride={navigationStateOverride}
+        onPresentArchiveToast={() => undefined}
+        onUndoArchiveToast={() => {
+          void bootstrapState
+        }}
+        pwaUpdateSnapshot={pwaUpdateSnapshot}
+        shellHidden={false}
+      />
     </ThemeScope>
+  )
+}
+
+export function WorkbenchApp(props: AppProps) {
+  return (
+    <WorkbenchQueryRoot>
+      <WorkbenchAppInner {...props} />
+    </WorkbenchQueryRoot>
+  )
+}
+
+export function WorkbenchAppStory(
+  props: AppProps & {
+    forcePendingContent?: boolean
+    initialEntries?: string[]
+    hydrationStateOverride?: Partial<WorkbenchHydrationState>
+    navigationStateOverride?: Partial<WorkbenchNavigationState>
+    storyStateOverrides?: WorkbenchStoryStateOverrides
+  }
+) {
+  return (
+    <WorkbenchQueryRoot>
+      <WorkbenchAppStoryInner {...props} />
+    </WorkbenchQueryRoot>
   )
 }

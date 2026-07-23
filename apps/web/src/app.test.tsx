@@ -45,7 +45,11 @@ import {
   saveUserTemplate,
   saveUserTemplateAutosave,
 } from "./user-template-store.js"
-import { WorkbenchApp } from "./workbench-app.js"
+import {
+  resolveWorkbenchNavigationPhase,
+  WorkbenchApp,
+  WorkbenchAppStory,
+} from "./workbench-app.js"
 
 let heldUserTemplateLoadRelease: (() => void) | null = null
 
@@ -168,6 +172,8 @@ const originalMatchMedia = window.matchMedia
 const originalNavigatorClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard")
 const originalClipboardItem = globalThis.ClipboardItem
 const originalSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureContext")
+const originalHistoryPushState = window.history.pushState
+const originalHistoryReplaceState = window.history.replaceState
 let mountedRoot: ReturnType<typeof ReactDOM.createRoot> | null = null
 let viewportWidth = 1440
 
@@ -1168,6 +1174,16 @@ afterEach(async () => {
   Reflect.deleteProperty(globalThis, "__TUCKMARK_BUILD_REF__")
   Reflect.deleteProperty(globalThis, "__TUCKMARK_REPOSITORY_URL__")
   Reflect.deleteProperty(globalThis, "__TUCKMARK_RIGHTS_URL__")
+  Object.defineProperty(window.history, "pushState", {
+    value: originalHistoryPushState,
+    configurable: true,
+    writable: true,
+  })
+  Object.defineProperty(window.history, "replaceState", {
+    value: originalHistoryReplaceState,
+    configurable: true,
+    writable: true,
+  })
   document.body.innerHTML = ""
   window.history.replaceState({}, "", "/")
   vi.useRealTimers()
@@ -1277,6 +1293,10 @@ describe("web workbench app", () => {
 
     expect(document.body.textContent).not.toContain("正在读取当前画布草稿")
     expect(document.body.textContent).not.toContain("正在读取画布")
+    expect(document.body.textContent).toContain("正在准备工作台")
+
+    await settleWorkbenchUi()
+
     expect(document.body.textContent).toContain("系统模板：Cable Tag")
   })
 
@@ -1310,6 +1330,116 @@ describe("web workbench app", () => {
     } finally {
       releaseHeldUserTemplateLoad()
       vi.restoreAllMocks()
+    }
+  })
+
+  it("reveals the target page before settling template background work", () => {
+    expect(
+      resolveWorkbenchNavigationPhase("holding", {
+        routerStatus: "idle",
+        workbenchFetchCount: 2,
+      })
+    ).toBe("revealed")
+    expect(
+      resolveWorkbenchNavigationPhase("pending", {
+        routerStatus: "idle",
+        workbenchFetchCount: 0,
+      })
+    ).toBe("revealed")
+  })
+
+  it("keeps template navigation progress monotonic while background queries finish", () => {
+    expect(
+      resolveWorkbenchNavigationPhase("revealed", {
+        routerStatus: "idle",
+        workbenchFetchCount: 2,
+      })
+    ).toBe("revealed")
+    expect(
+      resolveWorkbenchNavigationPhase("revealed", {
+        routerStatus: "idle",
+        workbenchFetchCount: 0,
+      })
+    ).toBe("settling")
+    expect(
+      resolveWorkbenchNavigationPhase("settling", {
+        routerStatus: "idle",
+        workbenchFetchCount: 1,
+      })
+    ).toBe("settling")
+    expect(
+      resolveWorkbenchNavigationPhase("settling", {
+        routerStatus: "pending",
+        workbenchFetchCount: 0,
+      })
+    ).toBe("settling")
+  })
+
+  it("renders settling navigation progress at full width", async () => {
+    await resetMountedRoot()
+    document.body.innerHTML = '<div id="root"></div>'
+    const rootElement = document.getElementById("root")
+    if (!rootElement) {
+      throw new Error("Missing root element")
+    }
+
+    window.history.replaceState({}, "", "/templates")
+
+    await act(async () => {
+      mountedRoot = ReactDOM.createRoot(rootElement)
+      mountedRoot.render(
+        <WorkbenchAppStory
+          context={browserRuntimeContext}
+          initialEntries={["/templates"]}
+          navigationStateOverride={{
+            active: true,
+            fromPath: "/",
+            id: 1,
+            phase: "settling",
+            startedAt: Date.now(),
+            toPath: "/templates",
+          }}
+        />
+      )
+      await flush(1)
+    })
+    await settleWorkbenchUi()
+
+    const shell = document.querySelector<HTMLElement>(".tm-shell")
+    const progress = document.querySelector<HTMLElement>(".tm-nav-progress")
+    const bar = document.querySelector<HTMLElement>(".tm-nav-progress__bar")
+
+    expect(shell?.getAttribute("data-navigation-phase")).toBe("settling")
+    expect(progress?.classList.contains("tm-nav-progress--active")).toBe(true)
+    expect(bar?.getAttribute("style")).toContain("scaleX(1)")
+  })
+
+  it("does not force template query refresh after navigating into a warm templates route", async () => {
+    const listUserTemplatesSpy = vi.spyOn(userTemplateStoreModule, "listUserTemplates")
+    const listArchivedUserTemplatesSpy = vi.spyOn(
+      userTemplateStoreModule,
+      "listArchivedUserTemplates"
+    )
+
+    try {
+      await renderApp(browserRuntimeContext)
+      listUserTemplatesSpy.mockClear()
+      listArchivedUserTemplatesSpy.mockClear()
+
+      await act(async () => {
+        const nav = document.querySelector("a[href='/templates']") as HTMLAnchorElement | null
+        nav?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await flush(1)
+      })
+      await settleWorkbenchUi()
+
+      expect(window.location.pathname).toBe("/templates")
+      expect(document.body.textContent).toContain("模板列表")
+      expect(listUserTemplatesSpy).not.toHaveBeenCalled()
+      expect(listArchivedUserTemplatesSpy).not.toHaveBeenCalled()
+    } finally {
+      listUserTemplatesSpy.mockRestore()
+      listArchivedUserTemplatesSpy.mockRestore()
     }
   })
 
@@ -1525,6 +1655,71 @@ describe("web workbench app", () => {
           String(call[0]).includes("/api/artifacts/") && String(call[0]).endsWith("/packets")
       )
     ).toBe(true)
+  })
+
+  it("binds history state methods before navigating to a lazy route", async () => {
+    queueFetchJsonResponsesByRequest({
+      "GET /api/templates": { templates: fallbackTemplates },
+      "GET /api/printers": {
+        printers: [
+          {
+            id: "printer-1",
+            name: "Mock P2",
+            capabilities: {
+              printWidthDots: 384,
+              supportedPaperTypes: ["continuous", "gap"],
+            },
+          },
+        ],
+      },
+      "GET /api/sync/state": { state: emptySyncState() },
+      "POST /api/sync/state": { state: emptySyncState() },
+    })
+
+    Object.defineProperty(window.history, "pushState", {
+      value: function pushState(
+        this: History,
+        data: unknown,
+        unused: string,
+        url?: string | URL | null
+      ) {
+        if (this !== window.history) {
+          throw new TypeError("Illegal invocation")
+        }
+        return originalHistoryPushState.call(window.history, data, unused, url)
+      },
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(window.history, "replaceState", {
+      value: function replaceState(
+        this: History,
+        data: unknown,
+        unused: string,
+        url?: string | URL | null
+      ) {
+        if (this !== window.history) {
+          throw new TypeError("Illegal invocation")
+        }
+        return originalHistoryReplaceState.call(window.history, data, unused, url)
+      },
+      configurable: true,
+      writable: true,
+    })
+
+    await renderApp(serverRuntimeContext)
+    await waitForServerRuntimeReady()
+
+    await act(async () => {
+      const nav = document.querySelector("a[href='/templates']") as HTMLAnchorElement | null
+      nav?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(1)
+    })
+    await settleWorkbenchUi()
+
+    expect(window.location.pathname).toBe("/templates")
+    expect(document.body.textContent).toContain("模板列表")
+    expect(document.body.textContent).not.toContain("Something went wrong!")
   })
 
   it("auto-generates template preview when a table row is selected on server-http runtime", async () => {

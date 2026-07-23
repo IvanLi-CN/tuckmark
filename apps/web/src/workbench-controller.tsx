@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import React from "react"
 
 import { type ApiClient, createApiClient, loadSetup } from "./api-client.js"
@@ -76,12 +77,9 @@ import type {
   PrintResult,
   RenderOptions,
   Template,
-  UserTemplateSummary,
 } from "./types.js"
 import {
   archiveUserTemplate,
-  listArchivedUserTemplates,
-  listUserTemplates,
   loadRuntimeAppSettings,
   purgeUserTemplate,
   renameUserTemplate,
@@ -97,6 +95,7 @@ import {
   recordTemplateUsageLocally,
   syncWebState,
 } from "./web-state-sync.js"
+import { archivedUserTemplatesQueryOptions, userTemplatesQueryOptions } from "./workbench-query.js"
 
 type UiPrintResult = PrintResult | BrowserPrintResult
 const SYNC_PRESET_IDS = ["shipping-wide", "ops-tag", "compact-note"] as const
@@ -369,6 +368,9 @@ export function useWorkbenchController({
     () => providedClient ?? createApiClient(context),
     [context, providedClient]
   )
+  const queryClient = useQueryClient()
+  const userTemplatesQuery = useQuery(userTemplatesQueryOptions(context))
+  const archivedUserTemplatesQuery = useQuery(archivedUserTemplatesQueryOptions(context))
 
   const [templates, setTemplates] = React.useState<Template[]>(fallbackTemplates)
   const [printers, setPrinters] = React.useState<Printer[]>([])
@@ -406,10 +408,8 @@ export function useWorkbenchController({
     loadRecentActivity()
   )
   const [canvasDimensions, setCanvasDimensions] = React.useState(() => loadRecentCanvasDimensions())
-  const [userTemplates, setUserTemplates] = React.useState<UserTemplateSummary[]>([])
-  const [archivedUserTemplates, setArchivedUserTemplates] = React.useState<UserTemplateSummary[]>(
-    []
-  )
+  const userTemplates = userTemplatesQuery.data ?? []
+  const archivedUserTemplates = archivedUserTemplatesQuery.data ?? []
   const [dataDirectoryStatus, setDataDirectoryStatus] = React.useState<DataDirectoryStatus>(
     () => storyStateOverrides?.dataDirectoryStatus ?? createDefaultDataDirectoryStatus()
   )
@@ -779,50 +779,68 @@ export function useWorkbenchController({
   )
 
   const refreshUserTemplates = React.useCallback(async () => {
-    const nextTemplates = await listUserTemplates()
-    setUserTemplates(nextTemplates)
-    return nextTemplates
-  }, [])
+    const queryOptions = userTemplatesQueryOptions(context)
+    return queryClient.fetchQuery({
+      ...queryOptions,
+      staleTime: 0,
+    })
+  }, [context, queryClient])
 
   const refreshArchivedUserTemplates = React.useCallback(async () => {
-    const nextTemplates = await listArchivedUserTemplates()
-    setArchivedUserTemplates(nextTemplates)
-    return nextTemplates
-  }, [])
+    const queryOptions = archivedUserTemplatesQueryOptions(context)
+    return queryClient.fetchQuery({
+      ...queryOptions,
+      staleTime: 0,
+    })
+  }, [context, queryClient])
+
+  const archiveTemplateMutation = useMutation({
+    mutationFn: archiveUserTemplate,
+  })
+  const renameTemplateMutation = useMutation({
+    mutationFn: ({ templateId, name }: { templateId: string; name: string }) =>
+      renameUserTemplate(templateId, name),
+  })
+  const restoreArchivedTemplateMutation = useMutation({
+    mutationFn: restoreUserTemplate,
+  })
+  const purgeArchivedTemplateMutation = useMutation({
+    mutationFn: purgeUserTemplate,
+  })
 
   const archiveTemplate = React.useCallback(
     async (templateId: string) => {
-      const archived = await archiveUserTemplate(templateId)
+      const archived = await archiveTemplateMutation.mutateAsync(templateId)
       await Promise.all([refreshUserTemplates(), refreshArchivedUserTemplates()])
       return archived
     },
-    [refreshArchivedUserTemplates, refreshUserTemplates]
+    [archiveTemplateMutation, refreshArchivedUserTemplates, refreshUserTemplates]
   )
 
   const renameTemplate = React.useCallback(
     async (templateId: string, name: string) => {
-      const renamed = await renameUserTemplate(templateId, name)
+      const renamed = await renameTemplateMutation.mutateAsync({ templateId, name })
       await Promise.all([refreshUserTemplates(), refreshArchivedUserTemplates()])
       return renamed
     },
-    [refreshArchivedUserTemplates, refreshUserTemplates]
+    [refreshArchivedUserTemplates, refreshUserTemplates, renameTemplateMutation]
   )
 
   const restoreArchivedTemplate = React.useCallback(
     async (templateId: string) => {
-      const restored = await restoreUserTemplate(templateId)
+      const restored = await restoreArchivedTemplateMutation.mutateAsync(templateId)
       await Promise.all([refreshUserTemplates(), refreshArchivedUserTemplates()])
       return restored
     },
-    [refreshArchivedUserTemplates, refreshUserTemplates]
+    [refreshArchivedUserTemplates, refreshUserTemplates, restoreArchivedTemplateMutation]
   )
 
   const purgeArchivedTemplate = React.useCallback(
     async (templateId: string) => {
-      await purgeUserTemplate(templateId)
+      await purgeArchivedTemplateMutation.mutateAsync(templateId)
       await Promise.all([refreshUserTemplates(), refreshArchivedUserTemplates()])
     },
-    [refreshArchivedUserTemplates, refreshUserTemplates]
+    [purgeArchivedTemplateMutation, refreshArchivedUserTemplates, refreshUserTemplates]
   )
 
   const refreshRenderOptionsFromStore = React.useCallback(async () => {

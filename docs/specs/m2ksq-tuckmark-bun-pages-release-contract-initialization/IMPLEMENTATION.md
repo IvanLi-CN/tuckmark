@@ -82,12 +82,17 @@
   - on primary-nav pointer/focus intent, it opportunistically preloads the
     target route before click
 - `apps/web/src/workbench-navigation.ts` now centralizes in-app route changes:
-  it preloads the destination workbench route before calling the router
-  navigation API, so owner-triggered page switches keep the current page in
-  place until the destination module is ready.
+  it now targets the TanStack Router navigation API directly, while the shared
+  shell transition coordinator keeps Pages deep-link/basepath semantics intact,
+  primes browser history immediately so the URL matches the intended route
+  during the hold window, and stages owner-facing pending feedback before the
+  destination route is revealed.
 - `apps/web/src/workbench-app.tsx` keeps `React.Suspense` fallback for route
   chunk races, but the fallback is now a small route-local skeleton instead of
   a card that reads like a second startup panel.
+- Route-level chunk failures now reset through a project-owned recovery panel
+  with retry / home / reload actions instead of exposing stock router or
+  dev-server error messaging.
 - `apps/web/tests/pwa.spec.ts` covers service worker registration, offline
   route refresh, launch-shell-first startup, warmup-complete offline behavior,
   deferred-route warmup preventing startup-like page-switch loading, and PWA

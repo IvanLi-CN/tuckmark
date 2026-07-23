@@ -24,10 +24,14 @@
     deferred setup, recent activity, and offline warmup have all completed
 - Route startup is now split between route-level code loading and deferred
   background hydration:
-  - `apps/web/src/workbench-route-registry.tsx` owns dynamic route imports for
-    `/templates`, `/canvas`, and `/system`
-  - the same route registry also owns reusable preload helpers so the runtime
-    can warm deferred route chunks after `shellReady`
+  - `apps/web/src/workbench-app.tsx` now owns the typed TanStack Router route
+    tree for `/`, `/templates`, `/canvas`, and `/system`, including shared
+    layout routing, browser history semantics, and route-level pending
+    contracts
+  - TanStack Query now provides the shared session-memory read cache for user
+    templates, archived templates, and canvas route bootstrap data, with cache
+    keys scoped by `surface + mode` so browser-static, demo, and runtime do
+    not leak data across each other
   - `apps/web/src/workbench-controller.tsx` blocks only current-route critical
     data before marking the shell ready, then continues setup/template/status
     work in the background
@@ -36,12 +40,20 @@
     `offlineWarmupStatus`, while keeping the mounted shell hidden until
     `shellReady` is true so the startup overlay does not reveal the workbench
     prematurely
-  - `apps/web/src/workbench-app.tsx` also preloads target route chunks on
-    primary-nav hover, focus, and pointer-down intent so first page switches
-    normally complete without exposing the route-level fallback
-  - `apps/web/src/workbench-navigation.ts` wraps imperative route changes so
-    buttons and route-owned actions keep the current page mounted until the
-    destination route chunk is ready
+  - `apps/web/src/workbench-app.tsx` now coordinates top-level navigation
+    transitions through one shell-level gate: the current page is held briefly,
+    the shell locks interaction, shared pending UI only appears after that
+    short hold, and a staged top progress bar stays visible until route load
+    plus background query work settle
+  - `apps/web/src/workbench-navigation.ts` now routes imperative page changes
+    through the TanStack Router navigation API instead of a bespoke preload
+    wrapper, and it primes browser history state up front so the visible URL
+    matches the intended destination while the held page is still covering the
+    reveal delay
+  - lazy `/templates`, `/canvas`, and `/system` routes now load through
+    `React.lazy`, while route-level chunk failures fall into a custom
+    owner-facing recovery panel instead of the stock router/dev-server error
+    surface
   - the owner-facing startup overlay now keeps its title, detail copy, and
     progress affordance generic instead of exposing those background phases as
     a visible per-task checklist or secondary note card
@@ -362,6 +374,12 @@
   - pointer-position context menu state
   - archive undo toast state
   - system archived-template management state
+- Navigation loading now keeps data semantics route-specific:
+  - `/templates` and `/system` can reveal the last known list state while the
+    next query refresh settles
+  - `/canvas` does not reveal a stale editable draft for a different source;
+    it only re-enters the editor once the target route source is minimally
+    ready, otherwise it stays in route-local loading state
 - Touch-first template browsing reuses the same shared action menu through a
   long-press pointer timer on the card surface instead of relying on a
   browser-native context-menu event.
