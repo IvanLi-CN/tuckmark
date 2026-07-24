@@ -20,6 +20,12 @@ vi.mock("./inventory-data-store.js", () => inventoryStoreMocks)
 vi.mock("./workbench-app.js", () => ({
   EmptyMini: ({ text }: { text: string }) => <div>{text}</div>,
   PaneHeader: ({ title }: { title: string }) => <div>{title}</div>,
+  PreviewCard: ({ emptyText }: { emptyText: string }) => (
+    <div>
+      <div>打印预览</div>
+      <div>{emptyText}</div>
+    </div>
+  ),
   createTemplatePrintSource: vi.fn(),
   createUserTemplatePrintSource: vi.fn(),
 }))
@@ -207,5 +213,7 @@ describe("WorkbenchInventoryRoute", () => {
     expect(document.body.textContent).toContain("标签模板关联")
     expect(document.body.textContent).toContain("库存调整")
     expect(document.body.textContent).toContain("手动打印标签")
+    expect(document.body.textContent).toContain("打印预览")
+    expect(document.body.textContent).toContain("先打印当前标签后查看预览。")
   })
 })

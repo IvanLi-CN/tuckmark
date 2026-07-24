@@ -357,7 +357,7 @@ export type ArtifactPreviewSource =
 
 export type ArtifactData = {
   preview: ArtifactPreviewSource
-  packets: ArtifactPackets
+  packets?: ArtifactPackets
 }
 
 export type AppCapabilities = {

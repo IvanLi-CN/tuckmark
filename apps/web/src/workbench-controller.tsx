@@ -1455,10 +1455,16 @@ export function useWorkbenchController({
       return
     }
 
+    if (!artifactData.packets) {
+      setError("当前预览尚未准备浏览器直连打印数据，请重新生成预览或直接从标签入口打印。")
+      return
+    }
+    const packets = artifactData.packets
+
     const result = await run("browser-print", () =>
       printPreviewArtifact(browserPrinter, {
         id: preview.artifact.id,
-        packets: artifactData.packets,
+        packets,
       })
     )
     if (result) {

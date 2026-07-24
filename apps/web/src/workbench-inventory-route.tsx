@@ -47,6 +47,7 @@ import {
   createTemplatePrintSource,
   createUserTemplatePrintSource,
   EmptyMini,
+  PreviewCard,
 } from "./workbench-app.js"
 import type { WorkbenchController } from "./workbench-controller.js"
 import { useWorkbenchNavigate } from "./workbench-navigation.js"
@@ -1251,6 +1252,7 @@ export default function WorkbenchInventoryRoute({
                         )}
                       </CardContent>
                     </Card>
+                    <PreviewCard controller={controller} emptyText="先打印当前标签后查看预览。" />
                     {!selectedMaterialArchived ? null : (
                       <Alert>
                         <AlertTitle>归档态已停用库存与打印</AlertTitle>

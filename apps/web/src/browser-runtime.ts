@@ -1,6 +1,5 @@
 import type { DirectCanvasDefinition, TemplateDefinition } from "../../../packages/core/src/web.js"
 import { buildSvg, presetTemplateData, wrapText } from "../../../packages/core/src/web.js"
-import { encodeBrowserPngBytes } from "./browser-print-payload.js"
 import type { ArtifactData, PreviewArtifact, RenderOptions, Template } from "./types.js"
 
 export type StoredArtifact = {
@@ -252,30 +251,6 @@ function toPngDataUrl(imageData: ImageData): string {
   return canvas.toDataURL("image/png")
 }
 
-async function imageDataToPngBytes(imageData: ImageData): Promise<Uint8Array> {
-  if (typeof document === "undefined") {
-    throw new Error("浏览器渲染只支持在 DOM 环境中运行。")
-  }
-
-  const canvas = document.createElement("canvas")
-  canvas.width = imageData.width
-  canvas.height = imageData.height
-  const context = canvas.getContext("2d")
-  if (!context) {
-    throw new Error("当前浏览器无法创建 2D canvas。")
-  }
-  context.putImageData(imageData, 0, 0)
-
-  const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, "image/png")
-  })
-  if (!blob) {
-    throw new Error("浏览器无法导出 PNG 预览。")
-  }
-
-  return new Uint8Array(await blob.arrayBuffer())
-}
-
 class MemoryArtifactStore {
   private readonly items = new Map<string, StoredArtifact>()
 
@@ -453,18 +428,11 @@ async function persistRasterArtifact(
   artifact: PreviewArtifact,
   rasterized: ImageData
 ): Promise<void> {
-  const packets = await encodeBrowserPngBytes(
-    artifact.renderOptions,
-    await imageDataToPngBytes(rasterized)
-  )
-  packets.artifactId = artifact.id
-
   await persistArtifact(artifact, {
     preview: {
       kind: "data-url",
       dataUrl: toPngDataUrl(rasterized),
     },
-    packets,
   })
 }
 

@@ -3828,7 +3828,7 @@ export function RenderOptionsForm({
   )
 }
 
-function PreviewCard({
+export function PreviewCard({
   controller,
   disabled = false,
   emptyText = "先生成一个预览。",

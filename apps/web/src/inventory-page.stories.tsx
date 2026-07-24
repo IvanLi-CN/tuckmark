@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { expect, userEvent, within } from "storybook/test"
 
 import type { AppContext } from "./types.js"
 import { WorkbenchAppStory } from "./workbench-app.js"
@@ -12,6 +13,17 @@ const runtimeContext: AppContext = {
   capabilities: {
     browserDirectPrintPath: "available",
     serviceApiPrintPath: "disabled",
+  },
+}
+
+const demoContext: AppContext = {
+  apiBasePath: "",
+  basePath: "",
+  surface: "browser-static",
+  mode: "demo",
+  capabilities: {
+    browserDirectPrintPath: "mocked",
+    serviceApiPrintPath: "mocked",
   },
 }
 
@@ -37,6 +49,7 @@ const materialOne = {
       printQuantity: 1,
       fieldOverrides: {
         recipient: "TPS62933DRLR",
+        address: "Moon Street 42 Shanghai",
         orderId: "P2-Y404125469",
       },
       createdAt: "2026-07-20T09:05:00.000Z",
@@ -164,10 +177,16 @@ export const EditMaterialAndBindings: Story = {
 
 export const AdjustAndPrint: Story = {
   args: {
+    context: demoContext,
     initialEntries: [`/inventory/${materialOne.id}`],
     storyStateOverrides: {
       inventoryStoryState: adjustmentStoryState,
     },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: "打印当前标签" }))
+    await expect(canvas.getByAltText("preview artifact")).toBeVisible()
   },
 }
 
