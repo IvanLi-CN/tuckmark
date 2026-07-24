@@ -713,33 +713,56 @@ export default function WorkbenchInventoryRoute({
       ) : (
         <>
           <div className="tm-inventory-detail__header">
-            <Button type="button" variant="outline" onClick={() => void navigate("/inventory")}>
-              <ChevronLeft className="size-4" />
-              <span>返回列表</span>
-            </Button>
-            <div className="tm-inventory-detail__copy">
+            <div className="tm-inventory-detail__header-bar">
+              <Button
+                type="button"
+                variant="outline"
+                className="tm-inventory-detail__back"
+                onClick={() => void navigate("/inventory")}
+              >
+                <ChevronLeft className="size-4" />
+                <span>返回列表</span>
+              </Button>
               <span className="tm-inventory-detail__eyebrow">库存详情</span>
-              <strong className="tm-inventory-detail__title">{detailTitle}</strong>
-              <p className="tm-inventory-detail__note">{detailNote}</p>
-              {detailMeta.length > 0 ? (
-                <div className="tm-inventory-detail__meta">
-                  {detailMeta.map((item) => (
-                    <span key={item} className="tm-inventory-detail__pill">
-                      {item}
-                    </span>
-                  ))}
-                  <span
-                    className={cn(
-                      "tm-inventory-detail__pill",
-                      selectedMaterialArchived
-                        ? "tm-inventory-detail__pill--archived"
-                        : "tm-inventory-detail__pill--live"
-                    )}
-                  >
-                    {selectedMaterialArchived ? "已归档" : "活跃"}
+            </div>
+            <div className="tm-inventory-detail__hero">
+              <div className="tm-inventory-detail__copy">
+                <strong className="tm-inventory-detail__title">{detailTitle}</strong>
+                <p className="tm-inventory-detail__note">{detailNote}</p>
+                {detailMeta.length > 0 ? (
+                  <div className="tm-inventory-detail__meta">
+                    {detailMeta.map((item) => (
+                      <span key={item} className="tm-inventory-detail__pill">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <div className="tm-inventory-detail__summary">
+                <div className="tm-inventory-detail__summary-card">
+                  <span className="tm-inventory-detail__summary-label">标签模板</span>
+                  <strong className="tm-inventory-detail__summary-value">
+                    {selectedMaterial.labelBindings.length}
+                  </strong>
+                  <span className="tm-inventory-detail__summary-note">
+                    {selectedMaterial.labelBindings.length > 0
+                      ? "已为当前物料准备打印入口。"
+                      : "还没有关联可打印标签模板。"}
                   </span>
                 </div>
-              ) : null}
+                <div className="tm-inventory-detail__summary-card tm-inventory-detail__summary-card--accent">
+                  <span className="tm-inventory-detail__summary-label">物料状态</span>
+                  <strong className="tm-inventory-detail__summary-value">
+                    {selectedMaterialArchived ? "已归档" : "活跃"}
+                  </strong>
+                  <span className="tm-inventory-detail__summary-note">
+                    {selectedMaterialArchived
+                      ? "当前物料保持停用，仅保留库存与打印记录。"
+                      : "当前物料可继续调整库存与手动打印。"}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
           {!startupReady ? (
