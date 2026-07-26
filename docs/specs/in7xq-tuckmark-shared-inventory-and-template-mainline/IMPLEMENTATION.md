@@ -13,10 +13,11 @@
   - deletion / archive guards
 - `apps/web/src/data-directory-service.ts` exposes reusable data-directory
   file helpers for runtime snapshot reads, writes, listing, and deletion.
-- `apps/web/src/user-template-store.ts` now resolves a configured
-  data-directory template store before the legacy browser-local migration
-  source.
-- `apps/web/src/inventory-data-store.ts` implements data-directory CRUD for:
+- `apps/web/src/user-template-store.ts` uses the configured directory when one
+  is attached and otherwise keeps user templates in the browser-local runtime
+  store.
+- `apps/web/src/inventory-data-store.ts` implements browser-local and optional
+  data-directory CRUD for:
   - materials
   - adjustments
   - stock reconciliation
@@ -34,8 +35,9 @@
   navigation, deferred route loading, and route preload behavior.
 - `apps/web/src/system-data-storage-card.tsx` now describes the directory as
   an optional unified data location instead of a backup-only mirror.
-- `apps/web/src/inventory-page.stories.tsx` covers directory-required, empty,
-  populated, edit/bind, and adjust/print inventory states for review capture.
+- `apps/web/src/inventory-page.stories.tsx` covers browser-local empty,
+  configured empty, populated, edit/bind, and adjust/print inventory states
+  for review capture.
 - `packages/cli/src/shared-data-directory.ts` implements:
   - saved CLI config at `~/.config/tuckmark/config.json`
   - data-directory resolution
@@ -53,16 +55,15 @@
 
 ## Validation
 
-- `bun run test` in `plugins/inventory`
-- `bun run test -- src/cli.test.ts` in `packages/cli`
-- `bun x tsc -p packages/cli/tsconfig.typecheck.json --pretty false`
-- `bun run test -- src/workbench-route-registry.test.ts` in `apps/web`
+- `bun run check` at the repository root
+- `bun x playwright test tests/inventory-print-preview.spec.ts` in `apps/web`
+  with the preview server lease injected through `TUCKMARK_E2E_PORT`
 
 ## Notes
 
-- User-template migration into the data-directory-backed store is intentionally
-  one-way in product semantics:
-  browser-local legacy data is only a bootstrap source for the new mainline.
+- Attaching a data directory can initialize its versioned tree from current
+  browser-local data. Without an attached directory, the browser-local store
+  remains the active persistence surface for both user templates and inventory.
 - CLI and Web reuse the same JSON tree but do not attempt concurrent file-level
   merges beyond the existing latest-wins directory semantics.
 - Inventory v1 deliberately stores only total stock; deeper warehouse modeling

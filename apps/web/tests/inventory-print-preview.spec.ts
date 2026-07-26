@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test"
 
+test.use({ viewport: { width: 1600, height: 1200 } })
+
 test("inventory detail creates a material, binds a template, and renders a print preview", async ({
   page,
 }) => {
@@ -30,6 +32,7 @@ test("inventory detail creates a material, binds a template, and renders a print
     .filter({ has: page.getByRole("heading", { name: "标签模板关联" }) })
   const bindingComboboxes = bindingPanel.locator("button[role='combobox']")
   await expect(bindingComboboxes).toHaveCount(2)
+  await bindingComboboxes.nth(1).scrollIntoViewIfNeeded()
   await bindingComboboxes.nth(1).click()
   await page.getByRole("option", { name: "Cable Tag" }).click()
   await page.getByRole("button", { name: "添加关联" }).click()

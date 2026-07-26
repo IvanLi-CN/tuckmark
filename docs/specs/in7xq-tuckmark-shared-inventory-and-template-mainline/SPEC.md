@@ -6,10 +6,11 @@
 
 ## Summary
 
-Tuckmark adds a configurable data-directory path that Web, CLI, and installed
-PWA can point at when they need to share one versioned JSON tree for user
-templates and inventory. When that directory is not configured, Web user
-templates continue to work through the browser-local runtime store.
+Tuckmark keeps user templates and inventory in browser-local storage by
+default. A configurable data-directory path is optional: when attached, Web,
+CLI, and an installed PWA can access one versioned JSON tree. It does not
+define a separate "shared template" category: user templates remain the same
+"我的模板" across both storage locations.
 
 This round also introduces `/inventory` as a top-level workbench route and
 `plugins/inventory` as the shared domain boundary for material records, stock
@@ -21,7 +22,8 @@ built-in.
 
 ### Data-directory contract
 
-- A configured data directory is the cross-surface persistence surface for:
+- A configured data directory is an optional cross-surface persistence surface
+  for:
   - user templates
   - user-template versions and working copies
   - inventory materials
@@ -44,8 +46,11 @@ built-in.
 - Inventory material and adjustment records are versioned by their own JSON
   schemas under `inventory/`; current `/system` runtime ZIP backup / restore
   does not include inventory records.
-- Web `/system` owns data-directory attach, switch, migration, backup,
+- Web `/system` owns optional data-directory attach, switch, migration, backup,
   restore, import, and export flows for the runtime template snapshot.
+- Without an attached directory, Web persists user templates and inventory in
+  its browser-local runtime storage. Attaching a directory deliberately moves
+  the Web persistence surface to that directory for cross-surface access.
 - CLI resolves the directory in this priority order:
   - `--data-dir`
   - saved default directory
@@ -91,7 +96,8 @@ built-in.
 
 - The selectable template pool for inventory workflows is:
   - built-in system templates
-  - user templates from the configured directory
+  - user templates from the active Web store: browser-local by default, or the
+    configured directory when attached
 - `/canvas` remains the only WYSIWYG template editor.
 - CLI template lifecycle management covers user templates stored in the
   configured directory.
@@ -121,8 +127,8 @@ built-in.
 - At `960-1279px`, the material list stays visible and the right side switches
   between `物料与标签` and `库存与打印`.
 - `/inventory` supports these owner-facing states:
-  - directory required
-  - configured but empty
+  - browser-local empty inventory
+  - configured but empty inventory
   - material list with stock summary
   - material edit and template binding
   - stock adjustment and manual print
@@ -158,18 +164,19 @@ built-in.
 
 ### Migration and compatibility contract
 
-- Legacy browser-local user-template data is a one-time migration input, not a
-  continuing truth source.
-- Attaching a configured directory can initialize from migrated runtime data or
-  import an existing Tuckmark directory.
+- Browser-local user-template and inventory data remains the default Web
+  persistence surface when no directory is attached.
+- Attaching a configured directory can initialize from the current
+  browser-local runtime data or import an existing Tuckmark directory.
 - Without a configured directory:
   - built-in system templates remain usable
   - Web `/templates` and `/canvas` remain usable through browser-local runtime
     storage
   - existing preview / print flows remain usable
-  - Web `/inventory` stays unavailable with explicit directory guidance
+  - Web `/inventory` remains available through browser-local inventory storage
+    and must not show a data-directory setup prompt
   - CLI `template` / `inventory` commands stay unavailable until a directory
-    is resolved
+    is resolved, because the CLI cannot access browser-local storage
 - This round does not include:
   - automatic print on stock movement
   - camera scanning or fuzzy matrix-code recognition
@@ -184,9 +191,9 @@ built-in.
   the same template and material records.
 - CLI mutations become visible in Web after refresh, and Web mutations become
   visible to CLI without extra conversion steps.
-- Without a configured directory, Web `/templates` and `/canvas` remain
-  available through browser-local runtime storage, while Web `/inventory` and
-  CLI `template` / `inventory` commands surface directory guidance.
+- Without a configured directory, Web `/templates`, `/canvas`, and
+  `/inventory` remain available through browser-local runtime storage. CLI
+  `template` / `inventory` commands surface an actionable directory error.
 - Material CRUD enforces:
   - unique `fullName`
   - globally unique non-empty `matrixCode`
@@ -202,7 +209,7 @@ built-in.
   bindings, starts from saved mapping defaults, and still allows one-off print
   quantity override.
 - Storybook covers at least:
-  - directory required
+  - browser-local empty inventory
   - configured empty inventory
   - populated inventory list
   - material edit and template bindings
@@ -210,17 +217,9 @@ built-in.
 
 ## Visual Evidence
 
-- `1600×1200` `/inventory` directory-required state
+- `1753×1225` `/inventory` browser-local empty state. The page has no
+  data-directory setup prompt; it keeps search above the compact summary stack
+  and the material list in the primary column.
 
   PR: include
-  ![Inventory page directory required](./assets/inventory-directory-required-1600x1200.png)
-
-- `1600×1200` `/inventory` material edit and template-binding state
-
-  PR: include
-  ![Inventory page material and bindings](./assets/inventory-material-edit-1600x1200.png)
-
-- `1600×1200` `/inventory` stock adjustment and manual print state
-
-  PR: include
-  ![Inventory page adjust and print](./assets/inventory-adjust-print-1600x1200.png)
+  ![Inventory browser-local empty state](./assets/inventory-browser-local-empty-1753x1225.png)

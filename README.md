@@ -135,6 +135,6 @@ Override ports or runtime wiring with:
   - create fixed-location runtime snapshot backups inside that directory
   - restore from a runtime backup ZIP
   - import or export the same runtime snapshot ZIP archive format
-- User templates remain available without a configured data directory through the existing browser-local runtime store.
-- Inventory material and adjustment files live under the configured data directory in this round, so Web inventory, CLI `template` / `inventory` commands, and cross-surface dataset sharing all depend on that directory being set.
-- Unsupported browsers keep local editing available through the compatibility storage path, but data-directory attach, inventory, backup / restore, and runtime import / export stay disabled with an explicit capability boundary.
+- User templates and inventory remain available without a configured data directory through browser-local runtime storage.
+- Attaching a data directory is optional. It gives Web inventory, CLI `template` / `inventory` commands, and an installed PWA access to the same versioned JSON tree; CLI commands require this location because they cannot access browser-local data.
+- Unsupported browsers keep local editing and inventory available through the compatibility storage path, while data-directory attach, backup / restore, and runtime import / export stay disabled with an explicit capability boundary.

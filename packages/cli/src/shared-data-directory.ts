@@ -562,7 +562,7 @@ function createDraftFromUserTemplatePackage(
           meta,
         })
       default:
-        throw new Error(`Unsupported template element kind: ${String(element.kind)}`)
+        throw new Error("Unsupported template element kind")
     }
   })
   const synced = syncDraftBindings(fields, elements)
@@ -719,7 +719,7 @@ function compileFilledCanvasFromDraft(
             rotation: element.rotation ?? 0,
           } as DirectCanvasDefinition["elements"][number]
         default:
-          throw new Error(`Unsupported draft element kind: ${String(element.kind)}`)
+          throw new Error("Unsupported draft element kind")
       }
     }) as DirectCanvasDefinition["elements"]
   return {

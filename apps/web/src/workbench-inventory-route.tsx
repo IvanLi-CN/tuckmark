@@ -243,6 +243,7 @@ export default function WorkbenchInventoryRoute({
     [bindingDraft.templateId, bindingDraft.templateSource, templateOptions]
   )
   const selectedMaterialArchived = Boolean(selectedMaterial?.archivedAt)
+  const selectedMaterialBindingCount = selectedMaterial?.labelBindings.length ?? 0
   const selectedPrintBinding = React.useMemo(
     () =>
       selectedMaterial?.labelBindings.find((binding) => binding.id === printBindingId) ??
@@ -743,10 +744,10 @@ export default function WorkbenchInventoryRoute({
                 <div className="tm-inventory-detail__summary-card">
                   <span className="tm-inventory-detail__summary-label">标签模板</span>
                   <strong className="tm-inventory-detail__summary-value">
-                    {selectedMaterial.labelBindings.length}
+                    {selectedMaterialBindingCount}
                   </strong>
                   <span className="tm-inventory-detail__summary-note">
-                    {selectedMaterial.labelBindings.length > 0
+                    {selectedMaterialBindingCount > 0
                       ? "已为当前物料准备打印入口。"
                       : "还没有关联可打印标签模板。"}
                   </span>
