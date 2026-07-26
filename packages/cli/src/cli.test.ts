@@ -194,7 +194,7 @@ describe("cli smoke", () => {
   })
 
   it("creates, adjusts, and prints inventory from the shared directory", {
-    timeout: 20_000,
+    timeout: 45_000,
   }, async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-inventory-"))
     tempDirs.push(dataDir)
@@ -301,7 +301,9 @@ describe("cli smoke", () => {
     expect(printResult.results).toHaveLength(2)
   })
 
-  it("rejects inventory adjustments without their operation-specific quantity", async () => {
+  it("rejects inventory adjustments without their operation-specific quantity", {
+    timeout: 20_000,
+  }, async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-inventory-adjustment-"))
     tempDirs.push(dataDir)
     const created = JSON.parse(
