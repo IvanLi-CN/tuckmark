@@ -46,6 +46,7 @@ test("inventory detail creates a material, binds a template, and renders a print
   const printPanel = page
     .locator(".tm-panel")
     .filter({ has: page.getByRole("heading", { name: "手动打印标签" }) })
+  await printPanel.getByLabel("本次打印数量").fill("2")
   await printPanel.getByRole("button", { name: "打印当前标签" }).click()
 
   await expect(previewPanel.getByAltText("preview artifact")).toBeVisible()

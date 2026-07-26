@@ -184,8 +184,8 @@ function parseIntegerFlag(args: string[], name: string): number | undefined {
   if (raw === undefined) {
     return undefined
   }
-  const parsed = Number.parseInt(raw, 10)
-  if (!Number.isFinite(parsed)) {
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed)) {
     throw new Error(`Flag ${name} must be an integer.`)
   }
   return parsed
@@ -748,31 +748,55 @@ async function handleInventoryCommand(args: string[]): Promise<void> {
       const printerId = requireFlag(rest, "--printer")
       const printerName = parseFlag(rest, "--printer-name")
       const renderOptions = parseRenderOptions(rest)
+      const quantity = parseIntegerFlag(rest, "--quantity")
       const source = await resolveInventoryPrintSource({
         dataDir,
         materialId: requireFlag(rest, "--id"),
         bindingId: requireFlag(rest, "--binding"),
-        quantity: Math.max(1, parseIntegerFlag(rest, "--quantity") ?? 1),
+        ...(quantity !== undefined ? { quantity } : {}),
         ...(renderOptions ? { renderOptions } : {}),
       })
       if (source.kind === "system-template") {
-        const result = await service.printByTemplate({
-          printerId,
-          printerName,
-          templateId: source.templateId,
-          input: source.input,
-          renderOptions: source.renderOptions,
-        })
-        console.log(JSON.stringify({ dataDir, source, result }, null, 2))
+        const results = []
+        for (let index = 0; index < source.copies; index += 1) {
+          results.push(
+            await service.printByTemplate({
+              printerId,
+              printerName,
+              templateId: source.templateId,
+              input: source.input,
+              renderOptions: source.renderOptions,
+            })
+          )
+        }
+        console.log(
+          JSON.stringify({ dataDir, source, result: results[results.length - 1], results }, null, 2)
+        )
         return
       }
-      const result = await service.printCanvas({
-        printerId,
-        printerName,
-        canvas: source.canvas,
-        renderOptions: source.renderOptions,
-      })
-      console.log(JSON.stringify({ dataDir, source: { kind: source.kind }, result }, null, 2))
+      const results = []
+      for (let index = 0; index < source.copies; index += 1) {
+        results.push(
+          await service.printCanvas({
+            printerId,
+            printerName,
+            canvas: source.canvas,
+            renderOptions: source.renderOptions,
+          })
+        )
+      }
+      console.log(
+        JSON.stringify(
+          {
+            dataDir,
+            source: { kind: source.kind, copies: source.copies },
+            result: results[results.length - 1],
+            results,
+          },
+          null,
+          2
+        )
+      )
       return
     }
     default:

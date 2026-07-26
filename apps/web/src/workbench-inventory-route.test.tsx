@@ -216,4 +216,55 @@ describe("WorkbenchInventoryRoute", () => {
     expect(document.body.textContent).toContain("打印预览")
     expect(document.body.textContent).toContain("先打印当前标签后查看预览。")
   })
+
+  it("submits the requested manual label copy count to the print controller", async () => {
+    const material = {
+      id: "inventory-material-1",
+      fullName: "TPS62933DRLR",
+      description: "同步降压 28V",
+      packagingRemark: "编带",
+      currentQuantity: 12,
+      createdAt: "2026-07-20T09:00:00.000Z",
+      updatedAt: "2026-07-20T10:30:00.000Z",
+      archivedAt: null,
+      labelBindings: [
+        {
+          id: "binding-1",
+          templateSource: "system" as const,
+          templateId: "cable-tag",
+          templateName: "Cable Tag",
+          printQuantity: 3,
+          fieldOverrides: {},
+          createdAt: "2026-07-20T09:00:00.000Z",
+          updatedAt: "2026-07-20T10:30:00.000Z",
+        },
+      ],
+    }
+    const controller = createController({
+      inventoryStoryState: { materials: [material], adjustments: [] },
+      templates: [
+        {
+          id: "cable-tag",
+          name: "Cable Tag",
+          description: "",
+          fields: [],
+        },
+      ],
+    })
+
+    await renderNode(createInventoryRouteNode(controller, "/inventory/inventory-material-1"))
+
+    const printButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("打印当前标签")
+    )
+    if (!printButton) {
+      throw new Error("Missing inventory print button")
+    }
+    await act(async () => {
+      printButton.click()
+      await flush()
+    })
+
+    expect(controller.printSourceDirect).toHaveBeenCalledWith(undefined, 3)
+  })
 })

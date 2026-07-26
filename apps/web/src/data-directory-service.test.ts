@@ -19,7 +19,17 @@ const runtimeStoreMocks = vi.hoisted(() => ({
 vi.mock("./data-directory-handle-store.js", () => handleStoreMocks)
 vi.mock("./user-template-store.js", () => runtimeStoreMocks)
 
-import { restoreRuntimeFromConfiguredDirectoryIfNeeded } from "./data-directory-service.js"
+import {
+  attachDataDirectory,
+  exportRuntimeArchive,
+  importRuntimeArchive,
+  restoreRuntimeFromConfiguredDirectoryIfNeeded,
+  syncConfiguredDataDirectory,
+} from "./data-directory-service.js"
+import {
+  readBrowserLocalInventorySnapshot,
+  writeBrowserLocalInventorySnapshot,
+} from "./inventory-browser-storage.js"
 
 function createMemoryStorage(): Storage {
   const entries = new Map<string, string>()
@@ -164,6 +174,34 @@ function createDirectoryHandle(
   tree: DirectoryEntries,
   permission: PermissionState = "granted"
 ): FileSystemDirectoryHandle {
+  const createFile = (fileName: string, directory: DirectoryEntries): FileSystemFileHandle =>
+    ({
+      kind: "file",
+      name: fileName,
+      async getFile() {
+        const content = directory[fileName]
+        if (typeof content !== "string") {
+          throw new Error(`Missing file: ${fileName}`)
+        }
+        return {
+          name: fileName,
+          size: content.length,
+          lastModified: 0,
+          async text() {
+            return content
+          },
+        } as File
+      },
+      async createWritable() {
+        return {
+          async write(value: string) {
+            directory[fileName] = value
+          },
+          async close() {},
+        } as FileSystemWritableFileStream
+      },
+    }) as FileSystemFileHandle
+
   const createDirectory = (
     directoryName: string,
     value: DirectoryEntries
@@ -174,51 +212,36 @@ function createDirectoryHandle(
       async *values() {
         for (const [entryName, entryValue] of Object.entries(value)) {
           if (typeof entryValue === "string") {
-            yield {
-              kind: "file",
-              name: entryName,
-              async getFile() {
-                return {
-                  name: entryName,
-                  size: entryValue.length,
-                  lastModified: 0,
-                  async text() {
-                    return entryValue
-                  },
-                } as File
-              },
-            } as FileSystemFileHandle
+            yield createFile(entryName, value)
             continue
           }
           yield createDirectory(entryName, entryValue)
         }
       },
-      async getDirectoryHandle(entryName: string) {
-        const next = value[entryName]
+      async getDirectoryHandle(entryName: string, options?: FileSystemGetDirectoryOptions) {
+        let next = value[entryName]
+        if (next === undefined && options?.create) {
+          next = {}
+          value[entryName] = next
+        }
         if (!next || typeof next === "string") {
           throw new Error(`Missing directory: ${entryName}`)
         }
         return createDirectory(entryName, next)
       },
-      async getFileHandle(entryName: string) {
-        const next = value[entryName]
+      async getFileHandle(entryName: string, options?: FileSystemGetFileOptions) {
+        let next = value[entryName]
+        if (next === undefined && options?.create) {
+          next = ""
+          value[entryName] = next
+        }
         if (typeof next !== "string") {
           throw new Error(`Missing file: ${entryName}`)
         }
-        return {
-          kind: "file",
-          name: entryName,
-          async getFile() {
-            return {
-              name: entryName,
-              size: next.length,
-              lastModified: 0,
-              async text() {
-                return next
-              },
-            } as File
-          },
-        } as FileSystemFileHandle
+        return createFile(entryName, value)
+      },
+      async removeEntry(entryName: string) {
+        delete value[entryName]
       },
       async queryPermission() {
         return permission
@@ -301,6 +324,12 @@ function snapshotToDirectoryTree(snapshot: RuntimeStoreSnapshot): DirectoryEntri
     templates,
     drafts: draftTree,
   }
+}
+
+function readInventoryMaterialFromTree(tree: DirectoryEntries, materialId: string): unknown {
+  const inventory = tree.inventory as DirectoryEntries
+  const materials = inventory.materials as DirectoryEntries
+  return JSON.parse(materials[`${materialId}.json`] as string)
 }
 
 beforeEach(() => {
@@ -389,5 +418,158 @@ describe("restoreRuntimeFromConfiguredDirectoryIfNeeded", () => {
 
     expect(result).toBe("skipped")
     expect(runtimeStoreMocks.replaceRuntimeSnapshot).not.toHaveBeenCalled()
+  })
+})
+
+describe("browser-local inventory archives", () => {
+  const localInventorySnapshot = {
+    materials: [
+      {
+        id: "material-local",
+        fullName: "TPS62933DRLR",
+        description: "同步降压 28V",
+        packagingRemark: "编带",
+        currentQuantity: 12,
+        createdAt: "2026-07-17T07:00:00.000Z",
+        updatedAt: "2026-07-17T07:00:00.000Z",
+        labelBindings: [],
+      },
+    ],
+    adjustments: [
+      {
+        id: "adjustment-local",
+        materialId: "material-local",
+        kind: "in" as const,
+        quantityDelta: 12,
+        targetQuantity: null,
+        quantityAfter: 12,
+        note: "initial stock",
+        actor: "web",
+        createdAt: "2026-07-17T07:00:00.000Z",
+      },
+    ],
+  }
+
+  it("restores archive inventory into browser-local storage without an attached directory", async () => {
+    handleStoreMocks.loadStoredDataDirectoryHandle.mockResolvedValue(null)
+    const snapshot = createSnapshot({
+      templateIds: [],
+      versionCount: 0,
+      workingCopyCount: 0,
+      updatedAt: "2026-07-17T07:00:00.000Z",
+    })
+
+    await importRuntimeArchive({
+      coordinator: {
+        runAsWriter: async <T>(task: () => Promise<T>) => await task(),
+      } as never,
+      snapshot,
+      inventorySnapshot: localInventorySnapshot,
+    })
+
+    expect(runtimeStoreMocks.replaceRuntimeSnapshot).toHaveBeenCalledWith(snapshot)
+    expect(readBrowserLocalInventorySnapshot()).toMatchObject(localInventorySnapshot)
+  })
+
+  it("includes browser-local inventory in an exported archive", async () => {
+    handleStoreMocks.loadStoredDataDirectoryHandle.mockResolvedValue(null)
+    runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(
+      createSnapshot({
+        templateIds: [],
+        versionCount: 0,
+        workingCopyCount: 0,
+        updatedAt: "2026-07-17T07:00:00.000Z",
+      })
+    )
+    writeBrowserLocalInventorySnapshot(localInventorySnapshot)
+    const createObjectUrl = vi.fn<(blob: Blob) => string>(() => "blob:tuckmark-test")
+    const revokeObjectUrl = vi.fn()
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl })
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectUrl })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined)
+
+    await exportRuntimeArchive()
+
+    const blob = createObjectUrl.mock.calls[0]?.[0]
+    expect(blob).toBeInstanceOf(Blob)
+    if (!blob) {
+      throw new Error("Missing exported archive blob")
+    }
+    expect(await blob.text()).toContain("inventory/materials/material-local.json")
+    expect(click).toHaveBeenCalledTimes(1)
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:tuckmark-test")
+  })
+})
+
+describe("inventory directory preservation", () => {
+  const localInventorySnapshot = {
+    materials: [
+      {
+        id: "material-local",
+        fullName: "TPS62933DRLR",
+        description: "同步降压 28V",
+        packagingRemark: "编带",
+        currentQuantity: 12,
+        createdAt: "2026-07-17T07:00:00.000Z",
+        updatedAt: "2026-07-17T07:00:00.000Z",
+        labelBindings: [],
+      },
+    ],
+    adjustments: [],
+  }
+
+  const coordinator = {
+    runAsWriter: async <T>(task: () => Promise<T>) => await task(),
+  } as never
+
+  it("initializes a first attached directory with browser-local inventory", async () => {
+    const snapshot = createSnapshot({
+      templateIds: [],
+      versionCount: 0,
+      workingCopyCount: 0,
+      updatedAt: "2026-07-17T07:00:00.000Z",
+    })
+    const tree: DirectoryEntries = {}
+    runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(snapshot)
+    handleStoreMocks.loadStoredDataDirectoryHandle.mockResolvedValue(null)
+    writeBrowserLocalInventorySnapshot(localInventorySnapshot)
+
+    await attachDataDirectory({
+      handle: createDirectoryHandle("Tuckmark", tree),
+      mode: "overwrite-current",
+    })
+
+    expect(readInventoryMaterialFromTree(tree, "material-local")).toMatchObject({
+      id: "material-local",
+      currentQuantity: 12,
+    })
+  })
+
+  it("preserves directory inventory during routine runtime synchronization", async () => {
+    const snapshot = createSnapshot({
+      templateIds: [],
+      versionCount: 0,
+      workingCopyCount: 0,
+      updatedAt: "2026-07-17T07:00:00.000Z",
+    })
+    const tree: DirectoryEntries = {
+      ...snapshotToDirectoryTree(snapshot),
+      inventory: {
+        materials: {
+          "material-local.json": JSON.stringify(localInventorySnapshot.materials[0]),
+        },
+        adjustments: {},
+      },
+    }
+    const handle = createDirectoryHandle("Tuckmark", tree)
+    runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(snapshot)
+    handleStoreMocks.loadStoredDataDirectoryHandle.mockResolvedValue(handle)
+
+    await syncConfiguredDataDirectory({ coordinator })
+
+    expect(readInventoryMaterialFromTree(tree, "material-local")).toMatchObject({
+      id: "material-local",
+      currentQuantity: 12,
+    })
   })
 })

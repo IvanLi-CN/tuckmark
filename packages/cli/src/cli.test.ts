@@ -294,9 +294,59 @@ describe("cli smoke", () => {
     ) as {
       source: { kind: string }
       result: { preview?: { artifact?: { width: number } } }
+      results: unknown[]
     }
     expect(printResult.source.kind).toBe("user-template")
     expect(printResult.result.preview?.artifact?.width).toBeGreaterThan(0)
+    expect(printResult.results).toHaveLength(2)
+  })
+
+  it("rejects inventory adjustments without their operation-specific quantity", async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-inventory-adjustment-"))
+    tempDirs.push(dataDir)
+    const created = JSON.parse(
+      (
+        await runCli([
+          "inventory",
+          "create",
+          "--full-name",
+          "ADJUSTMENT-TEST",
+          "--data-dir",
+          dataDir,
+        ])
+      ).stdout
+    ) as { material: { id: string } }
+
+    const missingQuantity = await runCliAllowFailure([
+      "inventory",
+      "adjust",
+      "--id",
+      created.material.id,
+      "--kind",
+      "in",
+      "--data-dir",
+      dataDir,
+    ])
+    expect(missingQuantity.stderr).toContain("require a positive --quantity")
+
+    const missingTarget = await runCliAllowFailure([
+      "inventory",
+      "adjust",
+      "--id",
+      created.material.id,
+      "--kind",
+      "correction",
+      "--data-dir",
+      dataDir,
+    ])
+    expect(missingTarget.stderr).toContain("require a non-negative --target-quantity")
+
+    const shown = JSON.parse(
+      (await runCli(["inventory", "show", "--id", created.material.id, "--data-dir", dataDir]))
+        .stdout
+    ) as { material: { currentQuantity: number }; adjustments: unknown[] }
+    expect(shown.material.currentQuantity).toBe(0)
+    expect(shown.adjustments).toHaveLength(0)
   })
 
   it("blocks archived inventory materials from adjust and print commands", {

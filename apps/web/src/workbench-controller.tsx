@@ -70,6 +70,7 @@ import {
 import type {
   AppContext,
   ArtifactData,
+  ArtifactPackets,
   DocumentRenderOptions,
   PreviewResult,
   Printer,
@@ -105,6 +106,25 @@ const STARTUP_RESTORE_SOFT_TIMEOUT_MS = 1500
 const PAINT_FRAME_FALLBACK_TIMEOUT_MS = 120
 type DeviceDrawerAction = "connect-browser-printer" | "probe-printer" | "refresh-setup"
 type DeviceDrawerSection = "browser-direct" | "service-api"
+
+function normalizePrintCopies(copies: number | undefined): number {
+  if (copies === undefined || !Number.isInteger(copies) || copies < 1) {
+    return 1
+  }
+  return copies
+}
+
+function repeatArtifactPackets(packets: ArtifactPackets, copies: number): ArtifactPackets {
+  if (copies === 1) {
+    return packets
+  }
+  return {
+    ...packets,
+    packets: Array.from({ length: copies }, () => packets.packets).flat(),
+    packetCount: packets.packetCount * copies,
+    totalBytes: packets.totalBytes * copies,
+  }
+}
 
 type DataDirectoryDialogState =
   | {
@@ -1492,7 +1512,8 @@ export function useWorkbenchController({
   ])
 
   const printSourceDirect = React.useCallback(
-    async (source: BrowserPrintSource) => {
+    async (source: BrowserPrintSource, requestedCopies?: number) => {
+      const copies = normalizePrintCopies(requestedCopies)
       if (source.kind === "template") {
         const template =
           templates.find((item) => item.id === source.templateId) ??
@@ -1534,20 +1555,24 @@ export function useWorkbenchController({
       }
 
       if (context.mode === "demo") {
-        const result = await run(`demo-print-${source.kind}`, () =>
-          executeServerPrint(
-            {
-              id: selectedPrinter?.id ?? browserPrinter?.deviceId ?? "demo-printer",
-              name: selectedPrinter?.name ?? browserPrinter?.name ?? "Demo printer",
-              capabilities: {
-                dpi: source.renderOptions.printerDpi,
-                printWidthDots: source.renderOptions.printWidthDots,
-                supportedPaperTypes: ["continuous", "gap"],
+        const result = await run(`demo-print-${source.kind}`, async () => {
+          let lastResult: PrintResult | undefined
+          for (let index = 0; index < copies; index += 1) {
+            lastResult = await executeServerPrint(
+              {
+                id: selectedPrinter?.id ?? browserPrinter?.deviceId ?? "demo-printer",
+                name: selectedPrinter?.name ?? browserPrinter?.name ?? "Demo printer",
+                capabilities: {
+                  dpi: source.renderOptions.printerDpi,
+                  printWidthDots: source.renderOptions.printWidthDots,
+                  supportedPaperTypes: ["continuous", "gap"],
+                },
               },
-            },
-            source
-          )
-        )
+              source
+            )
+          }
+          return lastResult
+        })
         if (result?.preview) {
           await syncArtifactData(result.preview)
         }
@@ -1563,9 +1588,12 @@ export function useWorkbenchController({
       }
 
       if (hasServerPrinterFlow && selectedPrinter) {
-        const result = await runServerTaskWithRecovery(`server-print-${source.kind}`, (printer) =>
-          executeServerPrint(printer, source)
-        )
+        let result: PrintResult | undefined
+        for (let index = 0; index < copies; index += 1) {
+          result = await runServerTaskWithRecovery(`server-print-${source.kind}`, (printer) =>
+            executeServerPrint(printer, source)
+          )
+        }
         if (result?.preview) {
           await syncArtifactData(result.preview)
         }
@@ -1584,7 +1612,7 @@ export function useWorkbenchController({
         }
         const print = await printPreviewArtifact(browserPrinter, {
           id: materialized.artifact.id,
-          packets: materialized.data.packets,
+          packets: repeatArtifactPackets(materialized.data.packets, copies),
         })
         return { materialized, print }
       })

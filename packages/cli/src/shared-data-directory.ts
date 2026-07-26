@@ -283,18 +283,24 @@ export type SharedUserTemplateDetail = {
   autosaves: SharedUserTemplateVersion[]
 }
 
+type UserTemplateInventoryPrintSource = {
+  kind: "user-template"
+  canvas: DirectCanvasDefinition
+  copies: number
+  renderOptions?: Partial<RenderOptions>
+}
+
 export type InventoryPrintSource =
   | {
       kind: "system-template"
       templateId: string
       input: Record<string, string>
+      copies: number
       renderOptions?: Partial<RenderOptions>
     }
-  | {
-      kind: "user-template"
-      canvas: DirectCanvasDefinition
-      renderOptions?: Partial<RenderOptions>
-    }
+  | UserTemplateInventoryPrintSource
+
+type ResolvedUserTemplatePrintSource = Omit<UserTemplateInventoryPrintSource, "copies">
 
 function createId(prefix: string): string {
   return `${prefix}-${randomUUID()}`
@@ -1092,7 +1098,7 @@ export async function resolveTemplateForPrint(args: {
   templateId: string
   input: Record<string, string>
   renderOptions?: Partial<RenderOptions>
-}): Promise<InventoryPrintSource> {
+}): Promise<ResolvedUserTemplatePrintSource> {
   const detail = await readSharedUserTemplateDetail(args.dataDir, args.templateId)
   if (!detail?.template.document) {
     throw new Error("User template does not have a printable canvas document.")
@@ -1320,7 +1326,7 @@ export async function resolveInventoryPrintSource(args: {
   dataDir: string
   materialId: string
   bindingId: string
-  quantity: number
+  quantity?: number
   renderOptions?: Partial<RenderOptions>
 }): Promise<InventoryPrintSource> {
   const material = await readInventoryMaterialFromDirectory(args.dataDir, args.materialId)
@@ -1332,9 +1338,13 @@ export async function resolveInventoryPrintSource(args: {
   if (!binding) {
     throw new Error("Template binding not found on material.")
   }
+  const copies = args.quantity ?? binding.printQuantity
+  if (!Number.isInteger(copies) || copies < 1) {
+    throw new Error("Print quantity must be a positive integer.")
+  }
   const input = {
     ...buildInventoryTemplateInput(material, binding),
-    quantity: String(args.quantity),
+    quantity: String(copies),
     currentQuantity: String(material.currentQuantity),
   }
   if (binding.templateSource === "system") {
@@ -1343,15 +1353,17 @@ export async function resolveInventoryPrintSource(args: {
       kind: "system-template",
       templateId: binding.templateId,
       input,
+      copies,
       ...(renderOptions ? { renderOptions } : {}),
     }
   }
-  return await resolveTemplateForPrint({
+  const resolved = await resolveTemplateForPrint({
     dataDir: args.dataDir,
     templateId: binding.templateId,
     input,
     ...(args.renderOptions ? { renderOptions: args.renderOptions } : {}),
   })
+  return { ...resolved, copies }
 }
 
 export function createInventoryAdjustmentInput(args: {
@@ -1364,16 +1376,26 @@ export function createInventoryAdjustmentInput(args: {
   const note = args.note?.trim() ?? ""
   const actor = args.actor ?? "cli"
   if (args.kind === "correction") {
+    if (
+      args.targetQuantity === undefined ||
+      !Number.isInteger(args.targetQuantity) ||
+      args.targetQuantity < 0
+    ) {
+      throw new Error("Correction adjustments require a non-negative --target-quantity.")
+    }
     return {
       kind: "correction",
-      targetQuantity: Math.max(0, Math.trunc(args.targetQuantity ?? 0)),
+      targetQuantity: args.targetQuantity,
       note,
       actor,
     }
   }
+  if (args.quantity === undefined || !Number.isInteger(args.quantity) || args.quantity < 1) {
+    throw new Error("In and out adjustments require a positive --quantity.")
+  }
   return {
     kind: args.kind,
-    quantity: Math.max(1, Math.trunc(args.quantity ?? 0)),
+    quantity: args.quantity,
     note,
     actor,
   }

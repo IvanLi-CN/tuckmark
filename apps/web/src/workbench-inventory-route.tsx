@@ -489,12 +489,17 @@ export default function WorkbenchInventoryRoute({
       setError("关联模板不存在，可能已被移除。")
       return
     }
+    const copies = Number(printQuantity)
+    if (!Number.isInteger(copies) || copies < 1) {
+      setError("本次打印数量必须是正整数。")
+      return
+    }
 
     const row = {
       id: selectedPrintBinding.id,
       values: {
         ...buildInventoryTemplateInput(selectedMaterial, selectedPrintBinding),
-        quantity: printQuantity,
+        quantity: String(copies),
         currentQuantity: String(selectedMaterial.currentQuantity),
       },
     }
@@ -502,7 +507,8 @@ export default function WorkbenchInventoryRoute({
     try {
       if (option.source === "system") {
         await controller.printSourceDirect(
-          createTemplatePrintSource(option.template, row, controller.renderOptions)
+          createTemplatePrintSource(option.template, row, controller.renderOptions),
+          copies
         )
         return
       }
@@ -512,7 +518,8 @@ export default function WorkbenchInventoryRoute({
         throw new Error("用户模板当前没有可用画布版本。")
       }
       await controller.printSourceDirect(
-        createUserTemplatePrintSource(option.template, draft, row, controller.renderOptions)
+        createUserTemplatePrintSource(option.template, draft, row, controller.renderOptions),
+        copies
       )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))

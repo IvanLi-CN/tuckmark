@@ -25,6 +25,10 @@ import type {
   RuntimeExportArchiveV1,
   RuntimeSnapshotSummary,
 } from "./data-directory-types.js"
+import {
+  readBrowserLocalInventorySnapshot,
+  writeBrowserLocalInventorySnapshot,
+} from "./inventory-browser-storage.js"
 import { normalizeRuntimeAppSettings } from "./runtime-app-settings.js"
 import type { RuntimeStoreSnapshot } from "./runtime-store-contract.js"
 import type {
@@ -527,11 +531,16 @@ export async function removeEntryIfPresentFromDirectoryHandle(
   }
 }
 
-async function clearManagedMirror(handle: FileSystemDirectoryHandle): Promise<void> {
+async function clearManagedMirror(
+  handle: FileSystemDirectoryHandle,
+  inventoryMode: "replace" | "preserve"
+): Promise<void> {
   await removeEntryIfPresentFromDirectoryHandle(handle, SETTINGS_DIR, { recursive: true })
   await removeEntryIfPresentFromDirectoryHandle(handle, TEMPLATES_DIR, { recursive: true })
   await removeEntryIfPresentFromDirectoryHandle(handle, DRAFTS_DIR, { recursive: true })
-  await removeEntryIfPresentFromDirectoryHandle(handle, INVENTORY_DIR, { recursive: true })
+  if (inventoryMode === "replace") {
+    await removeEntryIfPresentFromDirectoryHandle(handle, INVENTORY_DIR, { recursive: true })
+  }
   await removeEntryIfPresentFromDirectoryHandle(handle, MANIFEST_PATH)
 }
 
@@ -598,11 +607,15 @@ async function writeSnapshotToDirectory(
   handle: FileSystemDirectoryHandle,
   snapshot: RuntimeStoreSnapshot,
   inventorySnapshot: InventoryDirectorySnapshot,
-  source: "runtime-sync" | "backup-archive"
+  source: "runtime-sync" | "backup-archive",
+  inventoryMode: "replace" | "preserve"
 ): Promise<DataDirectoryManifestV1> {
   const { files, manifest } = buildSnapshotTree(snapshot, inventorySnapshot, source)
-  await clearManagedMirror(handle)
+  await clearManagedMirror(handle, inventoryMode)
   for (const [path, value] of files) {
+    if (inventoryMode === "preserve" && path.startsWith(`${INVENTORY_DIR}/`)) {
+      continue
+    }
     await writeTextFileToDirectoryHandle(handle, path, value)
   }
   rememberSyncSuccess(manifest.generatedAt)
@@ -780,7 +793,7 @@ export async function writeRuntimeSnapshotToDirectoryHandle(
   source: "runtime-sync" | "backup-archive" = "runtime-sync"
 ): Promise<DataDirectoryManifestV1> {
   const inventorySnapshot = await readInventorySnapshotFromDirectory(handle)
-  return await writeSnapshotToDirectory(handle, snapshot, inventorySnapshot, source)
+  return await writeSnapshotToDirectory(handle, snapshot, inventorySnapshot, source, "preserve")
 }
 
 export function supportsDataDirectoryFeatures(): boolean {
@@ -846,8 +859,14 @@ export async function attachDataDirectory(args: {
       ? await readInventorySnapshotFromDirectory(previousHandle).catch(() =>
           createEmptyInventorySnapshot()
         )
-      : createEmptyInventorySnapshot()
-    await writeSnapshotToDirectory(args.handle, snapshot, inventorySnapshot, "runtime-sync")
+      : readBrowserLocalInventorySnapshot()
+    await writeSnapshotToDirectory(
+      args.handle,
+      snapshot,
+      inventorySnapshot,
+      "runtime-sync",
+      "replace"
+    )
     return "mirrored-runtime"
   }
 
@@ -912,7 +931,7 @@ export async function syncConfiguredDataDirectory(args: {
   await args.coordinator.runAsWriter(async () => {
     const snapshot = await exportRuntimeSnapshot()
     const inventorySnapshot = await readInventorySnapshotFromDirectory(handle)
-    await writeSnapshotToDirectory(handle, snapshot, inventorySnapshot, "runtime-sync")
+    await writeSnapshotToDirectory(handle, snapshot, inventorySnapshot, "runtime-sync", "preserve")
   })
 }
 
@@ -1004,7 +1023,13 @@ export async function restoreConfiguredBackup(args: {
   await args.coordinator.runAsWriter(async () => {
     await createProtectionBackup(handle)
     await replaceRuntimeSnapshot(args.snapshot)
-    await writeSnapshotToDirectory(handle, args.snapshot, args.inventorySnapshot, "runtime-sync")
+    await writeSnapshotToDirectory(
+      handle,
+      args.snapshot,
+      args.inventorySnapshot,
+      "runtime-sync",
+      "replace"
+    )
   })
 }
 
@@ -1033,12 +1058,19 @@ export async function importRuntimeArchive(args: {
     await args.coordinator.runAsWriter(async () => {
       await createProtectionBackup(handle)
       await replaceRuntimeSnapshot(args.snapshot)
-      await writeSnapshotToDirectory(handle, args.snapshot, args.inventorySnapshot, "runtime-sync")
+      await writeSnapshotToDirectory(
+        handle,
+        args.snapshot,
+        args.inventorySnapshot,
+        "runtime-sync",
+        "replace"
+      )
     })
     return
   }
 
   await replaceRuntimeSnapshot(args.snapshot)
+  writeBrowserLocalInventorySnapshot(args.inventorySnapshot)
 }
 
 export async function exportRuntimeArchive(): Promise<{ fileName: string }> {
@@ -1046,7 +1078,7 @@ export async function exportRuntimeArchive(): Promise<{ fileName: string }> {
   const handle = await loadConfiguredDataDirectoryHandle()
   const inventorySnapshot = handle
     ? await readInventorySnapshotFromDirectory(handle).catch(() => createEmptyInventorySnapshot())
-    : createEmptyInventorySnapshot()
+    : readBrowserLocalInventorySnapshot()
   const bytes = createArchiveBytes({ snapshot, inventorySnapshot })
   const fileName = createArchiveName("tuckmark-export")
   const blob = new Blob([toBinaryArrayBuffer(bytes)], { type: "application/zip" })

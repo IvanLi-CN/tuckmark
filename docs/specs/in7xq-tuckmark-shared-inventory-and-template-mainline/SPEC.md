@@ -44,8 +44,11 @@ built-in.
   aggregate counts for the current runtime template snapshot: templates,
   versions, and working copies.
 - Inventory material and adjustment records are versioned by their own JSON
-  schemas under `inventory/`; current `/system` runtime ZIP backup / restore
-  does not include inventory records.
+  schemas under `inventory/`; `/system` runtime ZIP backup, restore, import,
+  and export include the inventory snapshot alongside the runtime templates.
+- Routine runtime-template synchronization preserves the existing
+  `inventory/` subtree. Only an explicit attach initialization, archive import,
+  backup restore, or data-directory switch replaces that subtree.
 - Web `/system` owns optional data-directory attach, switch, migration, backup,
   restore, import, and export flows for the runtime template snapshot.
 - Without an attached directory, Web persists user templates and inventory in
@@ -207,7 +210,8 @@ built-in.
     delta
 - Manual inventory print supports both system-template and user-template
   bindings, starts from saved mapping defaults, and still allows one-off print
-  quantity override.
+  quantity override. A positive manual quantity produces that many print jobs
+  or browser-direct packet copies.
 - Storybook covers at least:
   - browser-local empty inventory
   - configured empty inventory

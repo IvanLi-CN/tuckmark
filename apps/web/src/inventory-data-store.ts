@@ -4,10 +4,8 @@ import {
   ensureInventoryMaterialDeletionAllowed,
   type InventoryAdjustment,
   type InventoryAdjustmentInput,
-  type InventoryDirectorySnapshot,
   type InventoryMaterial,
   inventoryAdjustmentSchema,
-  inventoryDirectorySnapshotSchema,
   inventoryMaterialSchema,
   materialMatchesQuery,
   sortInventoryAdjustmentsNewestFirst,
@@ -21,11 +19,14 @@ import {
   resolveDirectoryHandleFromDirectoryHandle,
   writeTextFileToDirectoryHandle,
 } from "./data-directory-service.js"
+import {
+  readBrowserLocalInventorySnapshot,
+  writeBrowserLocalInventorySnapshot,
+} from "./inventory-browser-storage.js"
 
 const INVENTORY_ROOT = "inventory"
 const MATERIALS_ROOT = `${INVENTORY_ROOT}/materials`
 const ADJUSTMENTS_ROOT = `${INVENTORY_ROOT}/adjustments`
-const INVENTORY_BROWSER_STORAGE_KEY = "tuckmark.inventory-snapshot.v1"
 
 export type InventoryMaterialSaveArgs = {
   id?: string
@@ -52,8 +53,6 @@ type InventoryPersistence =
       kind: "browser-local"
     }
 
-let browserLocalInventorySnapshot = createEmptyInventorySnapshot()
-
 function createId(prefix: string): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return `${prefix}-${crypto.randomUUID()}`
@@ -67,51 +66,6 @@ function parseInventoryMaterial(input: unknown): InventoryMaterial {
 
 function parseInventoryAdjustment(input: unknown): InventoryAdjustment {
   return inventoryAdjustmentSchema.parse(input)
-}
-
-function createEmptyInventorySnapshot(): InventoryDirectorySnapshot {
-  return {
-    materials: [],
-    adjustments: [],
-  }
-}
-
-function normalizeInventorySnapshot(
-  snapshot: InventoryDirectorySnapshot
-): InventoryDirectorySnapshot {
-  const normalized = inventoryDirectorySnapshotSchema.parse(snapshot)
-  return {
-    materials: [...normalized.materials].sort(sortInventoryMaterialsByName),
-    adjustments: [...normalized.adjustments].sort(sortInventoryAdjustmentsNewestFirst),
-  }
-}
-
-function canUseLocalStorage(): boolean {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined"
-}
-
-function readBrowserLocalInventorySnapshot(): InventoryDirectorySnapshot {
-  if (!canUseLocalStorage()) {
-    return browserLocalInventorySnapshot
-  }
-  try {
-    const raw = window.localStorage.getItem(INVENTORY_BROWSER_STORAGE_KEY)
-    if (!raw) {
-      return createEmptyInventorySnapshot()
-    }
-    return normalizeInventorySnapshot(JSON.parse(raw))
-  } catch {
-    return createEmptyInventorySnapshot()
-  }
-}
-
-function writeBrowserLocalInventorySnapshot(snapshot: InventoryDirectorySnapshot): void {
-  const normalized = normalizeInventorySnapshot(snapshot)
-  browserLocalInventorySnapshot = normalized
-  if (!canUseLocalStorage()) {
-    return
-  }
-  window.localStorage.setItem(INVENTORY_BROWSER_STORAGE_KEY, JSON.stringify(normalized))
 }
 
 async function resolveInventoryPersistence(): Promise<InventoryPersistence> {

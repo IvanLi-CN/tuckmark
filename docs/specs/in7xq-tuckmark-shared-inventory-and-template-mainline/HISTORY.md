@@ -12,3 +12,8 @@ The same round made the data directory an optional cross-surface location:
 browser-local user templates and inventory remain usable without it, while an
 attached directory gives Web, CLI, and installed PWA one dataset without
 import / export hops.
+
+Runtime-template synchronization was subsequently constrained to preserve the
+inventory subtree. Inventory is now included in local and directory-backed
+runtime archive flows, and explicit manual print quantities are validated and
+executed as actual copies instead of label-field data only.
