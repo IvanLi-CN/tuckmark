@@ -24,6 +24,7 @@ import {
 import type {
   DataDirectoryAttachmentInspection,
   DataDirectoryBackupEntry,
+  DataDirectoryManifestV1,
   DataDirectoryStatus,
   RuntimeSnapshotSummary,
 } from "./data-directory-types.js"
@@ -75,13 +76,29 @@ function formatBytes(value: number): string {
 }
 
 function summarizeSnapshot(summary: RuntimeSnapshotSummary): string {
-  return `${summary.templates} 模板 / ${summary.versions} 版本 / ${summary.workingCopies} 草稿`
+  return [
+    `${summary.templates} 模板`,
+    `${summary.versions} 版本`,
+    `${summary.workingCopies} 草稿`,
+    `${summary.materials} 物料`,
+    `${summary.adjustments} 流水`,
+  ].join(" / ")
+}
+
+function summarizeManifestCounts(counts: DataDirectoryManifestV1["counts"]): string {
+  return [
+    `${counts.templates} 模板`,
+    `${counts.versions} 版本`,
+    `${counts.workingCopies} 草稿`,
+    `${counts.materials} 物料`,
+    `${counts.adjustments} 流水`,
+  ].join(" / ")
 }
 
 function getHealthBadge(status: DataDirectoryStatus) {
   switch (status.health) {
     case "healthy":
-      return <Badge variant="secondary">镜像正常</Badge>
+      return <Badge variant="secondary">主存储正常</Badge>
     case "permission-required":
       return <Badge variant="outline">等待授权</Badge>
     case "unconfigured":
@@ -147,10 +164,7 @@ function DataDirectoryAttachmentDialog({
           <div className="grid gap-2 text-sm text-muted-foreground">
             <div className="tm-list-item">
               <span>目录快照</span>
-              <strong>
-                {inspection.manifest.counts.templates} 模板 / {inspection.manifest.counts.versions}{" "}
-                版本
-              </strong>
+              <strong>{summarizeManifestCounts(inspection.manifest.counts)}</strong>
             </div>
             <div className="tm-list-item">
               <span>最近生成</span>
@@ -268,8 +282,8 @@ export function SystemDataStorageCard({
           </div>
           <div className="text-sm text-muted-foreground">
             {status.supported
-              ? "浏览器内数据由 SQLite + OPFS 持久化，已授权目录会同步为可读的 JSON 数据树，并支持 ZIP 导入导出。"
-              : "当前环境不支持目录句柄与磁盘镜像。应用仍可继续使用浏览器内存储，但目录同步、备份恢复与整库导入导出已禁用。"}
+              ? "已授权目录会作为统一数据目录，承载模板与库存 JSON 数据树，并支持迁移、备份恢复与 ZIP 导入导出。"
+              : "当前环境不支持目录句柄与本地数据目录接入。应用仍可继续使用浏览器内存储，但目录绑定、备份恢复与整库导入导出已禁用。"}
           </div>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -288,9 +302,9 @@ export function SystemDataStorageCard({
           {status.health === "healthy" ? (
             <Alert>
               <CheckCircle2 className="mt-0.5 size-4" />
-              <AlertTitle>目录镜像健康</AlertTitle>
+              <AlertTitle>本地数据目录可用</AlertTitle>
               <AlertDescription>
-                当前数据目录可读写，最近一次 JSON 镜像时间为 {formatTimestamp(status.lastSyncAt)}。
+                当前数据目录可读写，最近一次目录写入时间为 {formatTimestamp(status.lastSyncAt)}。
               </AlertDescription>
             </Alert>
           ) : null}
@@ -322,10 +336,8 @@ export function SystemDataStorageCard({
             </div>
             {status.manifest ? (
               <div className="tm-list-item">
-                <span>目录镜像快照</span>
-                <strong>
-                  {status.manifest.counts.templates} 模板 / {status.manifest.counts.versions} 版本
-                </strong>
+                <span>目录主链快照</span>
+                <strong>{summarizeManifestCounts(status.manifest.counts)}</strong>
               </div>
             ) : null}
           </div>

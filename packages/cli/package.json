@@ -6,13 +6,17 @@
     "tuckmark": "./dist/index.js"
   },
   "scripts": {
+    "prebuild": "bun --cwd=../../packages/core run build && bun --cwd=../../plugins/inventory run build",
+    "pretest": "bun --cwd=../../plugins/inventory run build",
+    "pretypecheck": "bun --cwd=../../packages/core run build && bun --cwd=../../plugins/inventory run build",
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/index.ts --help",
+    "dev": "tsx --tsconfig tsconfig.typecheck.json src/index.ts --help",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.typecheck.json"
   },
   "dependencies": {
     "@tuckmark/core": "workspace:*",
+    "@tuckmark/inventory": "workspace:*",
     "zod": "^4.4.3"
   }
 }

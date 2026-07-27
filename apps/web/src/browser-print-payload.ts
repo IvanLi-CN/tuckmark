@@ -48,7 +48,7 @@ type BrowserPreviewMaterialization = {
 
 export type BrowserArtifactMaterialization = {
   artifact: PreviewArtifact
-  data: ArtifactData
+  data: ArtifactData & { packets: ArtifactPackets }
   source: BrowserPrintSource
 }
 

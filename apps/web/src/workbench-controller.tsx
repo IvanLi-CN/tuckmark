@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import type { InventoryAdjustment, InventoryMaterial } from "@tuckmark/inventory"
 import React from "react"
 
 import { type ApiClient, createApiClient, loadSetup } from "./api-client.js"
@@ -69,6 +70,7 @@ import {
 import type {
   AppContext,
   ArtifactData,
+  ArtifactPackets,
   DocumentRenderOptions,
   PreviewResult,
   Printer,
@@ -105,6 +107,25 @@ const PAINT_FRAME_FALLBACK_TIMEOUT_MS = 120
 type DeviceDrawerAction = "connect-browser-printer" | "probe-printer" | "refresh-setup"
 type DeviceDrawerSection = "browser-direct" | "service-api"
 
+function normalizePrintCopies(copies: number | undefined): number {
+  if (copies === undefined || !Number.isInteger(copies) || copies < 1) {
+    return 1
+  }
+  return copies
+}
+
+function repeatArtifactPackets(packets: ArtifactPackets, copies: number): ArtifactPackets {
+  if (copies === 1) {
+    return packets
+  }
+  return {
+    ...packets,
+    packets: Array.from({ length: copies }, () => packets.packets).flat(),
+    packetCount: packets.packetCount * copies,
+    totalBytes: packets.totalBytes * copies,
+  }
+}
+
 type DataDirectoryDialogState =
   | {
       kind: "attach-choice"
@@ -137,6 +158,11 @@ export type WorkbenchStoryStateOverrides = {
   deviceDrawerBusyAction?: DeviceDrawerAction | null
   deviceDrawerFeedback?: WorkbenchDeviceDrawerFeedback | null
   directorySetupNudgeOpen?: boolean
+  inventoryStoryState?: {
+    configured: boolean
+    materials: InventoryMaterial[]
+    adjustments: InventoryAdjustment[]
+  }
   showTextBoundingBoxes?: boolean
 }
 
@@ -252,6 +278,8 @@ function createDefaultDataDirectoryStatus(): DataDirectoryStatus {
       templates: 0,
       versions: 0,
       workingCopies: 0,
+      materials: 0,
+      adjustments: 0,
     },
   }
 }
@@ -1447,10 +1475,16 @@ export function useWorkbenchController({
       return
     }
 
+    if (!artifactData.packets) {
+      setError("当前预览尚未准备浏览器直连打印数据，请重新生成预览或直接从标签入口打印。")
+      return
+    }
+    const packets = artifactData.packets
+
     const result = await run("browser-print", () =>
       printPreviewArtifact(browserPrinter, {
         id: preview.artifact.id,
-        packets: artifactData.packets,
+        packets,
       })
     )
     if (result) {
@@ -1478,7 +1512,8 @@ export function useWorkbenchController({
   ])
 
   const printSourceDirect = React.useCallback(
-    async (source: BrowserPrintSource) => {
+    async (source: BrowserPrintSource, requestedCopies?: number) => {
+      const copies = normalizePrintCopies(requestedCopies)
       if (source.kind === "template") {
         const template =
           templates.find((item) => item.id === source.templateId) ??
@@ -1520,20 +1555,24 @@ export function useWorkbenchController({
       }
 
       if (context.mode === "demo") {
-        const result = await run(`demo-print-${source.kind}`, () =>
-          executeServerPrint(
-            {
-              id: selectedPrinter?.id ?? browserPrinter?.deviceId ?? "demo-printer",
-              name: selectedPrinter?.name ?? browserPrinter?.name ?? "Demo printer",
-              capabilities: {
-                dpi: source.renderOptions.printerDpi,
-                printWidthDots: source.renderOptions.printWidthDots,
-                supportedPaperTypes: ["continuous", "gap"],
+        const result = await run(`demo-print-${source.kind}`, async () => {
+          let lastResult: PrintResult | undefined
+          for (let index = 0; index < copies; index += 1) {
+            lastResult = await executeServerPrint(
+              {
+                id: selectedPrinter?.id ?? browserPrinter?.deviceId ?? "demo-printer",
+                name: selectedPrinter?.name ?? browserPrinter?.name ?? "Demo printer",
+                capabilities: {
+                  dpi: source.renderOptions.printerDpi,
+                  printWidthDots: source.renderOptions.printWidthDots,
+                  supportedPaperTypes: ["continuous", "gap"],
+                },
               },
-            },
-            source
-          )
-        )
+              source
+            )
+          }
+          return lastResult
+        })
         if (result?.preview) {
           await syncArtifactData(result.preview)
         }
@@ -1549,9 +1588,12 @@ export function useWorkbenchController({
       }
 
       if (hasServerPrinterFlow && selectedPrinter) {
-        const result = await runServerTaskWithRecovery(`server-print-${source.kind}`, (printer) =>
-          executeServerPrint(printer, source)
-        )
+        let result: PrintResult | undefined
+        for (let index = 0; index < copies; index += 1) {
+          result = await runServerTaskWithRecovery(`server-print-${source.kind}`, (printer) =>
+            executeServerPrint(printer, source)
+          )
+        }
         if (result?.preview) {
           await syncArtifactData(result.preview)
         }
@@ -1570,7 +1612,7 @@ export function useWorkbenchController({
         }
         const print = await printPreviewArtifact(browserPrinter, {
           id: materialized.artifact.id,
-          packets: materialized.data.packets,
+          packets: repeatArtifactPackets(materialized.data.packets, copies),
         })
         return { materialized, print }
       })
@@ -1813,6 +1855,7 @@ export function useWorkbenchController({
       await importRuntimeArchive({
         coordinator,
         snapshot: dataDirectoryDialog.inspection.snapshot,
+        inventorySnapshot: dataDirectoryDialog.inspection.inventorySnapshot,
       })
       await refreshDataDirectoryStatus()
       return true
@@ -1849,6 +1892,7 @@ export function useWorkbenchController({
         coordinator,
         entry: dataDirectoryDialog.entry,
         snapshot: dataDirectoryDialog.inspection.snapshot,
+        inventorySnapshot: dataDirectoryDialog.inspection.inventorySnapshot,
       })
       await refreshDataDirectoryStatus()
       return true
@@ -1908,6 +1952,7 @@ export function useWorkbenchController({
     documentRenderOptions,
     error,
     hasServerPrinterFlow,
+    inventoryStoryState: storyStateOverrides?.inventoryStoryState ?? null,
     preview,
     previewPrintSource,
     previewSource,

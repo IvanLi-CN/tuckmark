@@ -75,7 +75,10 @@ function writeDetongerStatus(status) {
   writeTextFile(
     wasmStatusTypesPath,
     [
-      'import type { DetongerWasmStatus } from "../../browser-direct-path.js"',
+      "type DetongerWasmStatus = {",
+      "  available: boolean",
+      "  reason: string | null",
+      "}",
       "",
       "declare const detongerWasmStatus: DetongerWasmStatus",
       "",
@@ -268,6 +271,7 @@ function main() {
   let buildLockFd
 
   try {
+    buildLockFd = acquireBuildLock()
     if (!fs.existsSync(wasmCrateDir)) {
       const reason =
         "浏览器直连打印依赖 detonger-wasm 未生成：当前工作区缺少 detonger 子模块。恢复子模块后重新启动 dev/build。"
@@ -283,7 +287,6 @@ function main() {
       return
     }
 
-    buildLockFd = acquireBuildLock()
     const wasmPackCommand = ensureWasmPack()
     const toolchain = resolveDetongerToolchain()
     if (!toolchain) {

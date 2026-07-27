@@ -1,5 +1,11 @@
 import { stableStringify } from "../../../packages/core/src/web.js"
 import { listStoredDraftDocuments } from "./canvas-editor-model.js"
+import { supportsDirectoryHandles } from "./data-directory-handle-store.js"
+import {
+  loadConfiguredDataDirectoryHandle,
+  readRuntimeSnapshotFromDirectoryHandle,
+  writeRuntimeSnapshotToDirectoryHandle,
+} from "./data-directory-service.js"
 import { normalizeCanvasDraftDocumentUnits } from "./lib/canvas-units.js"
 import {
   createDefaultRuntimeAppSettings,
@@ -611,6 +617,181 @@ class MemoryUserTemplateStore implements RuntimeStore {
       .forEach((version) => {
         this.versions.delete(version.id)
       })
+  }
+}
+
+class DirectoryUserTemplateStore extends MemoryUserTemplateStore {
+  private loadPromise: Promise<void> | null = null
+  private loaded = false
+
+  constructor(private readonly handle: FileSystemDirectoryHandle) {
+    super()
+  }
+
+  private async ensureLoaded(): Promise<void> {
+    if (this.loaded) {
+      return
+    }
+    if (!this.loadPromise) {
+      this.loadPromise = (async () => {
+        try {
+          const snapshot = await readRuntimeSnapshotFromDirectoryHandle(this.handle)
+          await super.replaceSnapshot(snapshot)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          if (!message.includes("manifest.json")) {
+            throw error
+          }
+          await super.resetForTest()
+        }
+        this.loaded = true
+      })().finally(() => {
+        this.loadPromise = null
+      })
+    }
+    await this.loadPromise
+  }
+
+  private async flush(): Promise<void> {
+    const snapshot = await super.exportSnapshot()
+    await writeRuntimeSnapshotToDirectoryHandle(this.handle, snapshot)
+  }
+
+  override async listTemplates(): Promise<UserTemplateSummary[]> {
+    await this.ensureLoaded()
+    return await super.listTemplates()
+  }
+
+  override async listArchivedTemplates(): Promise<UserTemplateSummary[]> {
+    await this.ensureLoaded()
+    return await super.listArchivedTemplates()
+  }
+
+  override async readTemplate(templateId: string): Promise<UserTemplateSummary | null> {
+    await this.ensureLoaded()
+    return await super.readTemplate(templateId)
+  }
+
+  override async readHistory(templateId: string): Promise<UserTemplateHistory | null> {
+    await this.ensureLoaded()
+    return await super.readHistory(templateId)
+  }
+
+  override async readVersion(versionId: string): Promise<UserTemplateVersionSnapshot | null> {
+    await this.ensureLoaded()
+    return await super.readVersion(versionId)
+  }
+
+  override async saveTemplate(
+    args: Parameters<RuntimeStore["saveTemplate"]>[0]
+  ): Promise<Awaited<ReturnType<RuntimeStore["saveTemplate"]>>> {
+    await this.ensureLoaded()
+    const result = await super.saveTemplate(args)
+    await this.flush()
+    return result
+  }
+
+  override async renameTemplate(
+    templateId: string,
+    name: string
+  ): Promise<UserTemplateSummary | null> {
+    await this.ensureLoaded()
+    const result = await super.renameTemplate(templateId, name)
+    await this.flush()
+    return result
+  }
+
+  override async archiveTemplate(templateId: string): Promise<UserTemplateSummary | null> {
+    await this.ensureLoaded()
+    const result = await super.archiveTemplate(templateId)
+    await this.flush()
+    return result
+  }
+
+  override async restoreTemplate(templateId: string): Promise<UserTemplateSummary | null> {
+    await this.ensureLoaded()
+    const result = await super.restoreTemplate(templateId)
+    await this.flush()
+    return result
+  }
+
+  override async purgeTemplate(templateId: string): Promise<void> {
+    await this.ensureLoaded()
+    await super.purgeTemplate(templateId)
+    await this.flush()
+  }
+
+  override async saveAutosave(
+    args: Parameters<RuntimeStore["saveAutosave"]>[0]
+  ): Promise<CanvasWorkingCopyIndexEntry> {
+    await this.ensureLoaded()
+    const result = await super.saveAutosave(args)
+    await this.flush()
+    return result
+  }
+
+  override async replaceWorkingCopy(
+    args: Parameters<RuntimeStore["replaceWorkingCopy"]>[0]
+  ): Promise<CanvasWorkingCopyIndexEntry> {
+    await this.ensureLoaded()
+    const result = await super.replaceWorkingCopy(args)
+    await this.flush()
+    return result
+  }
+
+  override async loadWorkingCopy(
+    source: Parameters<RuntimeStore["loadWorkingCopy"]>[0]
+  ): Promise<CanvasWorkingCopyIndexEntry | null> {
+    await this.ensureLoaded()
+    return await super.loadWorkingCopy(source)
+  }
+
+  override async clearWorkingCopy(source: Parameters<RuntimeStore["clearWorkingCopy"]>[0]) {
+    await this.ensureLoaded()
+    await super.clearWorkingCopy(source)
+    await this.flush()
+  }
+
+  override async clearTemplateAutosaves(templateId: string): Promise<void> {
+    await this.ensureLoaded()
+    await super.clearTemplateAutosaves(templateId)
+    await this.flush()
+  }
+
+  override async loadAppSettings(): Promise<RuntimeStoreAppSettings> {
+    await this.ensureLoaded()
+    return await super.loadAppSettings()
+  }
+
+  override async saveAppSettings(
+    updater: Parameters<RuntimeStore["saveAppSettings"]>[0]
+  ): Promise<RuntimeStoreAppSettings> {
+    await this.ensureLoaded()
+    const result = await super.saveAppSettings(updater)
+    await this.flush()
+    return result
+  }
+
+  override async exportSnapshot(): Promise<RuntimeStoreSnapshot> {
+    await this.ensureLoaded()
+    return await super.exportSnapshot()
+  }
+
+  override async replaceSnapshot(snapshot: RuntimeStoreSnapshot): Promise<void> {
+    await this.ensureLoaded()
+    await super.replaceSnapshot(snapshot)
+    await this.flush()
+  }
+
+  override async isEmpty(): Promise<boolean> {
+    await this.ensureLoaded()
+    return await super.isEmpty()
+  }
+
+  override async resetForTest(): Promise<void> {
+    await super.resetForTest()
+    this.loaded = false
+    this.loadPromise = null
   }
 }
 
@@ -1289,9 +1470,32 @@ async function resolveLegacyStore(): Promise<RuntimeStore> {
   return await legacyStorePromise
 }
 
+async function resolveConfiguredDirectoryStore(): Promise<RuntimeStore | null> {
+  if (!supportsDirectoryHandles()) {
+    return null
+  }
+  const handle = await loadConfiguredDataDirectoryHandle()
+  if (!handle) {
+    return null
+  }
+  try {
+    if ((await handle.queryPermission({ mode: "readwrite" })) !== "granted") {
+      return null
+    }
+  } catch {
+    return null
+  }
+  return new DirectoryUserTemplateStore(handle)
+}
+
 async function resolveStore() {
   if (!storePromise) {
     storePromise = (async () => {
+      const directoryStore = await resolveConfiguredDirectoryStore()
+      if (directoryStore) {
+        return directoryStore
+      }
+
       const legacyStore = await resolveLegacyStore()
       if (!supportsSqliteRuntimeStore()) {
         return legacyStore

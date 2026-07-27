@@ -4,7 +4,12 @@ type DeferredWorkbenchRouteModule = {
   default: React.ComponentType<any>
 }
 
-export const DEFERRED_WORKBENCH_ROUTE_PATHS = ["/templates", "/canvas", "/system"] as const
+export const DEFERRED_WORKBENCH_ROUTE_PATHS = [
+  "/templates",
+  "/canvas",
+  "/inventory",
+  "/system",
+] as const
 type DeferredWorkbenchRoutePath = (typeof DEFERRED_WORKBENCH_ROUTE_PATHS)[number]
 
 type DeferredWorkbenchRouteStore<TModule extends DeferredWorkbenchRouteModule> = {
@@ -16,6 +21,7 @@ type DeferredWorkbenchRouteStore<TModule extends DeferredWorkbenchRouteModule> =
 
 type TemplatesRouteModule = typeof import("./workbench-templates-route.js")
 type CanvasRouteModule = typeof import("./workbench-canvas-route.js")
+type InventoryRouteModule = typeof import("./workbench-inventory-route.js")
 type SystemRouteModule = typeof import("./workbench-system-route.js")
 
 function createDeferredWorkbenchRouteStore<TModule extends DeferredWorkbenchRouteModule>(
@@ -34,6 +40,9 @@ const templatesRouteStore = createDeferredWorkbenchRouteStore<TemplatesRouteModu
 )
 const canvasRouteStore = createDeferredWorkbenchRouteStore<CanvasRouteModule>(
   () => import("./workbench-canvas-route.js")
+)
+const inventoryRouteStore = createDeferredWorkbenchRouteStore<InventoryRouteModule>(
+  () => import("./workbench-inventory-route.js")
 )
 const systemRouteStore = createDeferredWorkbenchRouteStore<SystemRouteModule>(
   () => import("./workbench-system-route.js")
@@ -80,6 +89,8 @@ function resolveDeferredWorkbenchRouteStore(
       return templatesRouteStore
     case "/canvas":
       return canvasRouteStore
+    case "/inventory":
+      return inventoryRouteStore
     case "/system":
       return systemRouteStore
   }
@@ -93,7 +104,7 @@ function getDeferredWorkbenchRouteModule(
 
 export function normalizeWorkbenchRoutePath(
   pathname: string
-): "/" | "/templates" | "/canvas" | "/system" {
+): "/" | "/templates" | "/canvas" | "/inventory" | "/system" {
   const pathnameOnly = pathname.split(/[?#]/u)[0] ?? pathname
   const normalized = pathnameOnly.replace(/\/+$/, "") || "/"
   if (normalized.endsWith("/templates")) {
@@ -101,6 +112,9 @@ export function normalizeWorkbenchRoutePath(
   }
   if (normalized.endsWith("/canvas")) {
     return "/canvas"
+  }
+  if (normalized === "/inventory" || normalized.startsWith("/inventory/")) {
+    return "/inventory"
   }
   if (normalized.endsWith("/system")) {
     return "/system"
@@ -139,6 +153,8 @@ export function preloadWorkbenchRoute(pathname: string): Promise<boolean> {
       return loadDeferredWorkbenchRouteStore(templatesRouteStore).then(() => true)
     case "/canvas":
       return loadDeferredWorkbenchRouteStore(canvasRouteStore).then(() => true)
+    case "/inventory":
+      return loadDeferredWorkbenchRouteStore(inventoryRouteStore).then(() => true)
     case "/system":
       return loadDeferredWorkbenchRouteStore(systemRouteStore).then(() => true)
     default:
@@ -157,6 +173,9 @@ export async function prepareWorkbenchRouteNavigation(pathname: string): Promise
       void routeModule.preloadCanvasRouteNavigation?.(pathname).catch(() => undefined)
       return
     }
+    case "/inventory":
+      await loadDeferredWorkbenchRouteStore(inventoryRouteStore)
+      return
     case "/system":
       await loadDeferredWorkbenchRouteStore(systemRouteStore)
       return

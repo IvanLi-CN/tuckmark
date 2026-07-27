@@ -20,6 +20,7 @@ import {
 import {
   AlertCircle,
   Archive,
+  Boxes,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -158,6 +159,7 @@ type AppProps = {
 }
 
 const LazyWorkbenchCanvasRoute = React.lazy(() => import("./workbench-canvas-route.js"))
+const LazyWorkbenchInventoryRoute = React.lazy(() => import("./workbench-inventory-route.js"))
 const LazyWorkbenchSystemRoute = React.lazy(() => import("./workbench-system-route.js"))
 const LazyWorkbenchTemplatesRoute = React.lazy(() => import("./workbench-templates-route.js"))
 const boundBrowserHistoryMethods = new WeakSet<Function>()
@@ -265,6 +267,7 @@ type RouteLink = {
 
 const NAV_LINKS: RouteLink[] = [
   { to: "/", label: "主页", icon: Package2 },
+  { to: "/inventory", label: "库存", icon: Boxes },
   { to: "/templates", label: "模板", icon: LayoutTemplate },
   { to: "/canvas", label: "画布", icon: PencilRuler },
   { to: "/system", label: "系统", icon: MonitorCog },
@@ -2255,7 +2258,11 @@ function DashboardPage({ controller }: { controller: ReturnType<typeof useWorkbe
           <Badge variant="outline">Tuckmark</Badge>
           <h1>打印工作台</h1>
           <div className="flex flex-wrap gap-3">
-            <Button type="button" onClick={() => navigate("/templates")}>
+            <Button type="button" onClick={() => navigate("/inventory")}>
+              <Boxes className="size-4" />
+              <span>进入库存</span>
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => navigate("/templates")}>
               <LayoutTemplate className="size-4" />
               <span>进入模板</span>
             </Button>
@@ -2273,6 +2280,15 @@ function DashboardPage({ controller }: { controller: ReturnType<typeof useWorkbe
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="justify-start"
+                onClick={() => navigate("/inventory")}
+              >
+                <Boxes className="size-4" />
+                <span>库存管理</span>
+              </Button>
               <Button
                 type="button"
                 variant="outline"
@@ -3812,7 +3828,7 @@ export function RenderOptionsForm({
   )
 }
 
-function PreviewCard({
+export function PreviewCard({
   controller,
   disabled = false,
   emptyText = "先生成一个预览。",
@@ -4396,11 +4412,11 @@ type WorkbenchNavigationPhase = "idle" | "holding" | "pending" | "revealed" | "s
 
 type WorkbenchNavigationState = {
   active: boolean
-  fromPath: "/" | "/templates" | "/canvas" | "/system" | null
+  fromPath: "/" | "/templates" | "/canvas" | "/inventory" | "/system" | null
   id: number
   phase: WorkbenchNavigationPhase
   startedAt: number
-  toPath: "/" | "/templates" | "/canvas" | "/system" | null
+  toPath: "/" | "/templates" | "/canvas" | "/inventory" | "/system" | null
 }
 
 type WorkbenchRouterContext = {
@@ -4549,6 +4565,18 @@ const workbenchCanvasRoute = createRoute({
   component: WorkbenchCanvasRouteComponent,
 })
 
+const workbenchInventoryRoute = createRoute({
+  getParentRoute: () => workbenchRootRoute,
+  path: "/inventory",
+  component: WorkbenchInventoryRouteComponent,
+})
+
+const workbenchInventoryDetailRoute = createRoute({
+  getParentRoute: () => workbenchRootRoute,
+  path: "/inventory/$materialId",
+  component: WorkbenchInventoryRouteComponent,
+})
+
 const workbenchSystemRoute = createRoute({
   getParentRoute: () => workbenchRootRoute,
   path: "/system",
@@ -4567,6 +4595,8 @@ const workbenchRouteTree = workbenchRootRoute.addChildren([
   workbenchDashboardRoute,
   workbenchTemplatesRoute,
   workbenchCanvasRoute,
+  workbenchInventoryRoute,
+  workbenchInventoryDetailRoute,
   workbenchSystemRoute,
 ])
 
@@ -4626,7 +4656,6 @@ function WorkbenchNavigationObserver({
     predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "workbench",
   })
   const currentPath = normalizeWorkbenchRoutePath(pathname)
-
   React.useEffect(() => {
     if (navigationStateLocked) {
       return
@@ -4738,6 +4767,26 @@ function WorkbenchCanvasRouteComponent() {
         initialScenario={canvasScenario}
         initialLoadedRouteData={initialLoadedRouteData ?? undefined}
       />
+    </React.Suspense>
+  )
+}
+
+function WorkbenchInventoryRouteComponent() {
+  const { controller } = useWorkbenchRenderContext()
+  const pathname = useWorkbenchPathname()
+  const materialId = React.useMemo(() => {
+    const pathnameOnly = pathname.split(/[?#]/u)[0] ?? pathname
+    const normalizedPath = pathnameOnly.replace(/\/+$/, "") || "/"
+    if (!normalizedPath.startsWith("/inventory/")) {
+      return undefined
+    }
+    const rawMaterialId = normalizedPath.slice("/inventory/".length)
+    return rawMaterialId.length > 0 ? decodeURIComponent(rawMaterialId) : undefined
+  }, [pathname])
+
+  return (
+    <React.Suspense fallback={<RouteLoadingPanel />}>
+      <LazyWorkbenchInventoryRoute controller={controller} materialId={materialId} />
     </React.Suspense>
   )
 }
@@ -5064,6 +5113,9 @@ function WorkbenchAppStoryInner({
     ...hydrationStateOverride,
   }
 
+  React.useEffect(() => {
+    void preloadWorkbenchRoute(initialRoutePath).catch(() => undefined)
+  }, [initialRoutePath])
   return (
     <ThemeScope theme={theme}>
       <WorkbenchRouterShell

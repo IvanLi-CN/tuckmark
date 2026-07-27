@@ -28,6 +28,7 @@ You can still override this with `TUCKMARK_DETONGER_COMMAND` or `TUCKMARK_DETONG
 - `packages/cli`: command-line interface
 - `packages/mcp`: MCP server
 - `apps/web`: Web UI
+- `plugins/inventory`: inventory and data-directory template domain module
 
 ## Agent Template Packages
 
@@ -122,13 +123,18 @@ Override ports or runtime wiring with:
 
 ## Local Data Storage
 
-- Tuckmark Web now keeps durable user-template data behind one runtime storage boundary instead of scattering browser keys across page code.
-- Supported Chromium desktop / installed-PWA surfaces prefer `SQLite Wasm + OPFS` for browser-local runtime persistence.
-- `/system` owns local data-directory workflows:
+- Tuckmark Web now keeps runtime state behind one storage boundary instead of scattering browser keys across page code.
+- Supported Chromium desktop / installed-PWA surfaces prefer `SQLite Wasm + OPFS` for runtime-local drafts, recent activity, and migration state.
+- A configured data directory is an optional unified data location for user templates and inventory:
+  - Web `/templates`, `/canvas`, `/inventory`, and `/system` can point at the same versioned JSON tree
+  - CLI `config set-data-dir`, `template`, and `inventory` commands target that same directory
+  - installed PWA and CLI can therefore share one dataset without import / export hops
+- `/system` owns data-directory workflows:
   - authorize or switch a user-chosen directory
-  - mirror runtime data into a versioned JSON tree
-  - create fixed-location backups inside that directory
-  - restore from a backup ZIP
-  - import or export the same whole-dataset ZIP archive format
-- The mirrored directory is an external backup surface, not a live online database file. Tuckmark does not read or write it after the browser process exits, and this round does not introduce a background desktop helper.
-- Unsupported browsers keep local editing available through the compatibility storage path, but directory sync, backup / restore, and whole-dataset import / export stay disabled with an explicit capability boundary.
+  - initialize, import, or overwrite the versioned JSON tree in that directory
+  - create fixed-location runtime snapshot backups inside that directory
+  - restore from a runtime backup ZIP
+  - import or export the same runtime snapshot ZIP archive format
+- User templates and inventory remain available without a configured data directory through browser-local runtime storage.
+- Attaching a data directory is optional. It gives Web inventory, CLI `template` / `inventory` commands, and an installed PWA access to the same versioned JSON tree; CLI commands require this location because they cannot access browser-local data.
+- Unsupported browsers keep local editing and inventory available through the compatibility storage path, while data-directory attach, backup / restore, and runtime import / export stay disabled with an explicit capability boundary.
