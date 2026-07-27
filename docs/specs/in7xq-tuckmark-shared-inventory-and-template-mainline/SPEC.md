@@ -50,7 +50,8 @@ built-in.
   and export include the inventory snapshot alongside the runtime templates.
 - An adjustment first records a recoverable transaction, then writes the
   material cache and audit record. Readers replay pending transactions before
-  serving inventory data.
+  serving inventory data; system sync, backup, and export also replay them
+  before capturing the inventory snapshot.
 - Routine runtime-template synchronization preserves the existing
   `inventory/` subtree. Only an explicit attach initialization, archive import,
   backup restore, or data-directory switch replaces that subtree.

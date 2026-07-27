@@ -1,6 +1,7 @@
 import {
   type InventoryDirectorySnapshot,
   inventoryAdjustmentSchema,
+  inventoryAdjustmentTransactionSchema,
   inventoryDirectorySnapshotSchema,
   inventoryMaterialSchema,
   sortInventoryAdjustmentsNewestFirst,
@@ -44,6 +45,7 @@ const DRAFTS_DIR = "drafts"
 const INVENTORY_DIR = "inventory"
 const MATERIALS_DIR = `${INVENTORY_DIR}/materials`
 const ADJUSTMENTS_DIR = `${INVENTORY_DIR}/adjustments`
+const TRANSACTIONS_DIR = `${INVENTORY_DIR}/transactions`
 const MANIFEST_PATH = "manifest.json"
 const MANUAL_BACKUPS_DIR = `${BACKUPS_DIR}/manual`
 const PROTECTION_BACKUPS_DIR = `${BACKUPS_DIR}/protection`
@@ -234,6 +236,15 @@ function isFileHandle(handle: FileSystemHandle): handle is FileSystemFileHandle 
 
 function isDirectoryHandle(handle: FileSystemHandle): handle is FileSystemDirectoryHandle {
   return handle.kind === "directory"
+}
+
+function isNotFoundError(cause: unknown): boolean {
+  return (
+    typeof cause === "object" &&
+    cause !== null &&
+    "name" in cause &&
+    (cause as { name?: unknown }).name === "NotFoundError"
+  )
 }
 
 function toBinaryArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -483,8 +494,11 @@ export async function readFileFromDirectoryHandleIfPresent(
   try {
     const fileHandle = await resolveFileHandleFromDirectoryHandle(handle, path)
     return await readTextFileFromDirectoryHandle(fileHandle)
-  } catch {
-    return null
+  } catch (cause) {
+    if (isNotFoundError(cause)) {
+      return null
+    }
+    throw cause
   }
 }
 
@@ -622,27 +636,75 @@ async function writeSnapshotToDirectory(
   return manifest
 }
 
-async function readInventorySnapshotFromDirectory(
-  handle: FileSystemDirectoryHandle
-): Promise<InventoryDirectorySnapshot> {
+async function collectManagedDirectoryFiles(
+  handle: FileSystemDirectoryHandle,
+  roots: readonly string[]
+): Promise<Map<string, string>> {
   const files = new Map<string, string>()
-  for (const root of [MATERIALS_DIR, ADJUSTMENTS_DIR]) {
+  for (const root of roots) {
     try {
       const directory = await resolveDirectoryHandleFromDirectoryHandle(handle, root)
       const nested = await collectDirectoryFilesFromDirectoryHandle(directory, root)
       for (const [path, value] of nested) {
         files.set(path, value)
       }
-    } catch {
-      // Ignore absent managed subtrees.
+    } catch (cause) {
+      if (isNotFoundError(cause)) {
+        continue
+      }
+      throw cause
     }
   }
+  return files
+}
+
+async function recoverInventoryAdjustmentTransactionsFromDirectory(
+  handle: FileSystemDirectoryHandle
+): Promise<void> {
+  const files = await collectManagedDirectoryFiles(handle, [TRANSACTIONS_DIR])
+  const transactions = Array.from(files.values()).map((raw) =>
+    inventoryAdjustmentTransactionSchema.parse(JSON.parse(raw))
+  )
+  if (transactions.length === 0) {
+    return
+  }
+  const transactionsDirectory = await resolveDirectoryHandleFromDirectoryHandle(
+    handle,
+    TRANSACTIONS_DIR
+  )
+  for (const transaction of transactions) {
+    await writeTextFileToDirectoryHandle(
+      handle,
+      `${MATERIALS_DIR}/${transaction.material.id}.json`,
+      `${JSON.stringify(transaction.material, null, 2)}\n`
+    )
+    await writeTextFileToDirectoryHandle(
+      handle,
+      `${ADJUSTMENTS_DIR}/${transaction.adjustment.id}.json`,
+      `${JSON.stringify(transaction.adjustment, null, 2)}\n`
+    )
+    try {
+      await transactionsDirectory.removeEntry(`${transaction.adjustment.id}.json`)
+    } catch (cause) {
+      if (!isNotFoundError(cause)) {
+        throw cause
+      }
+    }
+  }
+}
+
+async function readInventorySnapshotFromDirectory(
+  handle: FileSystemDirectoryHandle
+): Promise<InventoryDirectorySnapshot> {
+  await recoverInventoryAdjustmentTransactionsFromDirectory(handle)
+  const files = await collectManagedDirectoryFiles(handle, [MATERIALS_DIR, ADJUSTMENTS_DIR])
   return parseInventorySnapshotFromFiles(files)
 }
 
 async function readDirectoryStateFromDirectory(
   handle: FileSystemDirectoryHandle
 ): Promise<ManagedDirectoryState> {
+  await recoverInventoryAdjustmentTransactionsFromDirectory(handle)
   const files = new Map<string, string>()
   const manifestRaw = await readFileFromDirectoryHandleIfPresent(handle, MANIFEST_PATH)
   if (manifestRaw) {
@@ -652,16 +714,14 @@ async function readDirectoryStateFromDirectory(
   if (settingsRaw) {
     files.set(APP_SETTINGS_PATH, settingsRaw)
   }
-  for (const root of [TEMPLATES_DIR, DRAFTS_DIR, MATERIALS_DIR, ADJUSTMENTS_DIR]) {
-    try {
-      const directory = await resolveDirectoryHandleFromDirectoryHandle(handle, root)
-      const nested = await collectDirectoryFilesFromDirectoryHandle(directory, root)
-      for (const [path, value] of nested) {
-        files.set(path, value)
-      }
-    } catch {
-      // Ignore absent managed subtrees.
-    }
+  const managedFiles = await collectManagedDirectoryFiles(handle, [
+    TEMPLATES_DIR,
+    DRAFTS_DIR,
+    MATERIALS_DIR,
+    ADJUSTMENTS_DIR,
+  ])
+  for (const [path, value] of managedFiles) {
+    files.set(path, value)
   }
   return parseDirectoryStateFromFiles(files)
 }
@@ -856,9 +916,7 @@ export async function attachDataDirectory(args: {
   if (args.mode === "overwrite-current") {
     const snapshot = await exportRuntimeSnapshot()
     const inventorySnapshot = previousHandle
-      ? await readInventorySnapshotFromDirectory(previousHandle).catch(() =>
-          createEmptyInventorySnapshot()
-        )
+      ? await readInventorySnapshotFromDirectory(previousHandle)
       : readBrowserLocalInventorySnapshot()
     await writeSnapshotToDirectory(
       args.handle,
@@ -1077,7 +1135,7 @@ export async function exportRuntimeArchive(): Promise<{ fileName: string }> {
   const snapshot = await exportRuntimeSnapshot()
   const handle = await loadConfiguredDataDirectoryHandle()
   const inventorySnapshot = handle
-    ? await readInventorySnapshotFromDirectory(handle).catch(() => createEmptyInventorySnapshot())
+    ? await readInventorySnapshotFromDirectory(handle)
     : readBrowserLocalInventorySnapshot()
   const bytes = createArchiveBytes({ snapshot, inventorySnapshot })
   const fileName = createArchiveName("tuckmark-export")

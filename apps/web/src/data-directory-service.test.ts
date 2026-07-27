@@ -169,6 +169,10 @@ interface DirectoryEntries {
   [key: string]: string | DirectoryEntries
 }
 
+function createNotFoundError(message: string): Error {
+  return Object.assign(new Error(message), { name: "NotFoundError" })
+}
+
 function createDirectoryHandle(
   name: string,
   tree: DirectoryEntries,
@@ -181,7 +185,7 @@ function createDirectoryHandle(
       async getFile() {
         const content = directory[fileName]
         if (typeof content !== "string") {
-          throw new Error(`Missing file: ${fileName}`)
+          throw createNotFoundError(`Missing file: ${fileName}`)
         }
         return {
           name: fileName,
@@ -225,7 +229,7 @@ function createDirectoryHandle(
           value[entryName] = next
         }
         if (!next || typeof next === "string") {
-          throw new Error(`Missing directory: ${entryName}`)
+          throw createNotFoundError(`Missing directory: ${entryName}`)
         }
         return createDirectory(entryName, next)
       },
@@ -236,7 +240,7 @@ function createDirectoryHandle(
           value[entryName] = next
         }
         if (typeof next !== "string") {
-          throw new Error(`Missing file: ${entryName}`)
+          throw createNotFoundError(`Missing file: ${entryName}`)
         }
         return createFile(entryName, value)
       },
@@ -498,6 +502,102 @@ describe("browser-local inventory archives", () => {
     expect(await blob.text()).toContain("inventory/materials/material-local.json")
     expect(click).toHaveBeenCalledTimes(1)
     expect(revokeObjectUrl).toHaveBeenCalledWith("blob:tuckmark-test")
+  })
+})
+
+describe("directory inventory transaction recovery", () => {
+  it("replays a pending adjustment before exporting a directory archive", async () => {
+    const snapshot = createSnapshot({
+      templateIds: [],
+      versionCount: 0,
+      workingCopyCount: 0,
+      updatedAt: "2026-07-27T07:00:00.000Z",
+    })
+    const material = {
+      id: "material-pending",
+      fullName: "PENDING-TEST",
+      description: "",
+      packagingRemark: "",
+      currentQuantity: 0,
+      createdAt: "2026-07-27T07:00:00.000Z",
+      updatedAt: "2026-07-27T07:00:00.000Z",
+      labelBindings: [],
+    }
+    const adjustment = {
+      id: "adjustment-pending",
+      materialId: material.id,
+      kind: "in" as const,
+      quantityDelta: 6,
+      targetQuantity: null,
+      quantityAfter: 6,
+      note: "恢复",
+      actor: "web",
+      createdAt: "2026-07-27T07:01:00.000Z",
+    }
+    const tree: DirectoryEntries = {
+      inventory: {
+        materials: {
+          "material-pending.json": JSON.stringify(material),
+        },
+        adjustments: {},
+        transactions: {
+          "adjustment-pending.json": JSON.stringify({
+            schema: "tuckmark.inventory-adjustment-transaction.v1",
+            material: {
+              ...material,
+              currentQuantity: 6,
+              updatedAt: adjustment.createdAt,
+            },
+            adjustment,
+          }),
+        },
+      },
+    }
+    runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(snapshot)
+    handleStoreMocks.loadStoredDataDirectoryHandle.mockResolvedValue(
+      createDirectoryHandle("Tuckmark", tree)
+    )
+    const createObjectUrl = vi.fn<(blob: Blob) => string>(() => "blob:tuckmark-test")
+    const revokeObjectUrl = vi.fn()
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl })
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectUrl })
+
+    await exportRuntimeArchive()
+
+    expect(readInventoryMaterialFromTree(tree, material.id)).toMatchObject({ currentQuantity: 6 })
+    expect(
+      JSON.parse(
+        ((tree.inventory as DirectoryEntries).adjustments as DirectoryEntries)[
+          `${adjustment.id}.json`
+        ] as string
+      )
+    ).toMatchObject(adjustment)
+    expect(
+      ((tree.inventory as DirectoryEntries).transactions as DirectoryEntries)[
+        `${adjustment.id}.json`
+      ]
+    ).toBeUndefined()
+    expect(createObjectUrl).toHaveBeenCalledTimes(1)
+  })
+
+  it("propagates directory read failures instead of exporting an empty inventory", async () => {
+    runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(
+      createSnapshot({
+        templateIds: [],
+        versionCount: 0,
+        workingCopyCount: 0,
+        updatedAt: "2026-07-27T07:00:00.000Z",
+      })
+    )
+    handleStoreMocks.loadStoredDataDirectoryHandle.mockResolvedValue({
+      kind: "directory",
+      name: "Tuckmark",
+      async getDirectoryHandle() {
+        throw Object.assign(new Error("directory unavailable"), { name: "NotAllowedError" })
+      },
+    } as unknown as FileSystemDirectoryHandle)
+
+    await expect(exportRuntimeArchive()).rejects.toThrow("directory unavailable")
   })
 })
 

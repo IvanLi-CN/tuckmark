@@ -16,6 +16,8 @@
   file helpers for runtime snapshot reads, writes, listing, and deletion. Its
   routine template synchronization preserves the directory inventory subtree,
   while explicit initialization, import, and restore replace it deliberately.
+  System sync, backup, and export recover pending inventory transactions before
+  reading their snapshot.
 - `apps/web/src/inventory-browser-storage.ts` centralizes the browser-local
   inventory snapshot so archive import and export retain inventory when no
   data directory is attached.
