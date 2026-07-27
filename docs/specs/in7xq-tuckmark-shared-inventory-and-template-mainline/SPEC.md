@@ -36,16 +36,21 @@ built-in.
   - `templates/<templateId>/working-copy.json`
   - `inventory/materials/<materialId>.json`
   - `inventory/adjustments/<adjustmentId>.json`
+  - `inventory/transactions/<adjustmentId>.json` only while an adjustment
+    transaction awaits recovery
   - `drafts/scratch/<presetId>.json`
   - `drafts/preset-template/<presetId>.json`
   - `backups/manual/*.zip`
   - `backups/protection/*.zip`
 - `manifest.json` records schema version, timestamps, source metadata, and
-  aggregate counts for the current runtime template snapshot: templates,
-  versions, and working copies.
+  aggregate counts for the current runtime and inventory snapshot: templates,
+  versions, working copies, materials, and adjustments.
 - Inventory material and adjustment records are versioned by their own JSON
   schemas under `inventory/`; `/system` runtime ZIP backup, restore, import,
   and export include the inventory snapshot alongside the runtime templates.
+- An adjustment first records a recoverable transaction, then writes the
+  material cache and audit record. Readers replay pending transactions before
+  serving inventory data.
 - Routine runtime-template synchronization preserves the existing
   `inventory/` subtree. Only an explicit attach initialization, archive import,
   backup restore, or data-directory switch replaces that subtree.
@@ -111,6 +116,8 @@ built-in.
   - pick one bound template
   - start from the binding's default quantity and field mapping
   - override the print quantity for the current print action
+- The material `quantity` and `currentQuantity` fields always represent total
+  inventory. The one-off print quantity only controls dispatched print jobs.
 - Binding default print quantity is only a manual-print preset in v1. It does
   not auto-trigger on stock movements.
 - Field filling defaults to same-name matching and allows per-binding override

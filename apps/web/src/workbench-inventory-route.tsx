@@ -89,6 +89,15 @@ type BindingDraft = {
   fieldOverrides: Record<string, string>
 }
 
+function parseAdjustmentValue(rawValue: string, kind: InventoryAdjustmentInput["kind"]): number {
+  const value = Number(rawValue)
+  const minimum = kind === "correction" ? 0 : 1
+  if (!rawValue.trim() || !Number.isInteger(value) || value < minimum) {
+    throw new Error(kind === "correction" ? "目标库存必须是非负整数。" : "调整数量必须是正整数。")
+  }
+  return value
+}
+
 function createEmptyMaterialDraft(): MaterialDraft {
   return {
     fullName: "",
@@ -442,7 +451,7 @@ export default function WorkbenchInventoryRoute({
       return
     }
     try {
-      const numericValue = Math.max(0, Number.parseInt(adjustmentValue, 10) || 0)
+      const numericValue = parseAdjustmentValue(adjustmentValue, adjustmentKind)
       const input: InventoryAdjustmentInput =
         adjustmentKind === "correction"
           ? {
@@ -499,7 +508,6 @@ export default function WorkbenchInventoryRoute({
       id: selectedPrintBinding.id,
       values: {
         ...buildInventoryTemplateInput(selectedMaterial, selectedPrintBinding),
-        quantity: String(copies),
         currentQuantity: String(selectedMaterial.currentQuantity),
       },
     }
@@ -1206,6 +1214,9 @@ export default function WorkbenchInventoryRoute({
                             </Label>
                             <Input
                               id="inventory-adjustment-value"
+                              type="number"
+                              min={adjustmentKind === "correction" ? 0 : 1}
+                              step={1}
                               inputMode="numeric"
                               value={adjustmentValue}
                               disabled={selectedMaterialArchived}

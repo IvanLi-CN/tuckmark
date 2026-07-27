@@ -7,6 +7,7 @@
 - `plugins/inventory` owns the shared domain contract for:
   - inventory material schema
   - inventory adjustment schema
+  - recoverable inventory-adjustment transaction schema
   - template binding schema
   - quantity reconciliation and non-negative stock rules
   - print field assembly and mapping fallback
@@ -26,6 +27,7 @@
   - materials
   - adjustments
   - stock reconciliation
+  - replay of pending adjustment transactions before reads and mutations
   - archive / restore / delete
 - `apps/web/src/workbench-inventory-route.tsx` implements the routed inventory
   workbench with:
@@ -48,10 +50,12 @@
   - data-directory resolution
   - user-template lifecycle operations
   - inventory CRUD and adjustment flows
+  - manifest creation and count refresh for CLI-managed directories
   - inventory print-source resolution across system templates and user
     templates
   - positive adjustment and print-quantity validation
   - dispatching one print job per requested inventory print copy
+  - separation of material stock fields from manual print-copy counts
   - user-template package import into the directory-backed user-template store
 - `packages/cli/src/index.ts` now exposes:
   - `config get-data-dir`

@@ -1,11 +1,13 @@
 import { execFile } from "node:child_process"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
 import { afterEach, beforeAll, describe, expect, it } from "vitest"
+
+import { resolveInventoryPrintSource } from "./shared-data-directory.js"
 
 const execFileAsync = promisify(execFile)
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
@@ -191,6 +193,19 @@ describe("cli smoke", () => {
     expect(showResult.source).toBe("user-template")
     expect(showResult.template.id).toBe("component-bin-sot23")
     expect(showResult.savedVersions[0]?.version).toBe(1)
+
+    const manifest = JSON.parse(await readFile(path.join(dataDir, "manifest.json"), "utf8")) as {
+      schema: string
+      counts: { templates: number; versions: number; workingCopies: number }
+    }
+    expect(manifest).toMatchObject({
+      schema: "tuckmark.data-dir-manifest.v1",
+      counts: {
+        templates: 1,
+        versions: 1,
+        workingCopies: 1,
+      },
+    })
   })
 
   it("creates, adjusts, and prints inventory from the shared directory", {
@@ -234,6 +249,16 @@ describe("cli smoke", () => {
               createdAt: "2026-07-20T09:00:00.000Z",
               updatedAt: "2026-07-20T09:00:00.000Z",
             },
+            {
+              id: "binding-system-template",
+              templateSource: "system",
+              templateId: "cable-tag",
+              templateName: "Cable Tag",
+              printQuantity: 1,
+              fieldOverrides: {},
+              createdAt: "2026-07-20T09:00:00.000Z",
+              updatedAt: "2026-07-20T09:00:00.000Z",
+            },
           ]),
           "--data-dir",
           dataDir,
@@ -268,6 +293,26 @@ describe("cli smoke", () => {
     }
     expect(adjusted.material.currentQuantity).toBe(48)
     expect(adjusted.adjustment.quantityAfter).toBe(48)
+
+    const systemPrintSource = await resolveInventoryPrintSource({
+      dataDir,
+      materialId: created.material.id,
+      bindingId: "binding-system-template",
+      quantity: 2,
+    })
+    expect(systemPrintSource).toMatchObject({
+      kind: "system-template",
+      copies: 2,
+      input: {
+        quantity: "48",
+        currentQuantity: "48",
+      },
+    })
+
+    const manifest = JSON.parse(await readFile(path.join(dataDir, "manifest.json"), "utf8")) as {
+      counts: { materials: number; adjustments: number }
+    }
+    expect(manifest.counts).toMatchObject({ materials: 1, adjustments: 1 })
 
     const printResult = JSON.parse(
       (
@@ -349,6 +394,58 @@ describe("cli smoke", () => {
     ) as { material: { currentQuantity: number }; adjustments: unknown[] }
     expect(shown.material.currentQuantity).toBe(0)
     expect(shown.adjustments).toHaveLength(0)
+  })
+
+  it("recovers an interrupted inventory adjustment before listing materials", {
+    timeout: 20_000,
+  }, async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-inventory-journal-"))
+    tempDirs.push(dataDir)
+    const created = JSON.parse(
+      (await runCli(["inventory", "create", "--full-name", "JOURNAL-TEST", "--data-dir", dataDir]))
+        .stdout
+    ) as { material: { id: string } }
+    const material = JSON.parse(
+      await readFile(
+        path.join(dataDir, "inventory", "materials", `${created.material.id}.json`),
+        "utf8"
+      )
+    ) as Record<string, unknown>
+    const adjustment = {
+      id: "inventory-adjustment-pending",
+      materialId: created.material.id,
+      kind: "in",
+      quantityDelta: 6,
+      targetQuantity: null,
+      quantityAfter: 6,
+      note: "recovery",
+      actor: "cli",
+      createdAt: "2026-07-27T09:00:00.000Z",
+    }
+    await mkdir(path.join(dataDir, "inventory", "transactions"), { recursive: true })
+    await writeFile(
+      path.join(dataDir, "inventory", "transactions", `${adjustment.id}.json`),
+      `${JSON.stringify({
+        schema: "tuckmark.inventory-adjustment-transaction.v1",
+        material: {
+          ...material,
+          currentQuantity: 6,
+          updatedAt: "2026-07-27T09:00:00.000Z",
+        },
+        adjustment,
+      })}\n`
+    )
+
+    const listed = JSON.parse(
+      (await runCli(["inventory", "list", "--data-dir", dataDir])).stdout
+    ) as { materials: Array<{ currentQuantity: number }> }
+    const shown = JSON.parse(
+      (await runCli(["inventory", "show", "--id", created.material.id, "--data-dir", dataDir]))
+        .stdout
+    ) as { adjustments: Array<{ id: string }> }
+
+    expect(listed.materials[0]?.currentQuantity).toBe(6)
+    expect(shown.adjustments).toEqual([expect.objectContaining({ id: adjustment.id })])
   })
 
   it("blocks archived inventory materials from adjust and print commands", {

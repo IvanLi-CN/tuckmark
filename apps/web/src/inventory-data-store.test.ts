@@ -113,4 +113,82 @@ describe("inventory-data-store", () => {
     expect(adjustments[0]?.quantityAfter).toBe(12)
     expect(adjustments[0]?.note).toBe("补货")
   })
+
+  it("propagates directory read failures instead of treating them as an empty inventory", async () => {
+    const handle = {
+      queryPermission: vi.fn().mockResolvedValue("granted"),
+    } as unknown as FileSystemDirectoryHandle
+    dataDirectoryServiceMocks.loadConfiguredDataDirectoryHandle.mockResolvedValue(handle)
+    dataDirectoryServiceMocks.resolveDirectoryHandleFromDirectoryHandle.mockRejectedValue(
+      Object.assign(new Error("permission denied"), { name: "NotAllowedError" })
+    )
+
+    await expect(listInventoryMaterials()).rejects.toThrow("permission denied")
+  })
+
+  it("replays a pending adjustment transaction before serving directory inventory", async () => {
+    const handle = {
+      queryPermission: vi.fn().mockResolvedValue("granted"),
+    } as unknown as FileSystemDirectoryHandle
+    const material = {
+      id: "inventory-material-pending",
+      fullName: "PENDING-TEST",
+      description: "",
+      packagingRemark: "",
+      currentQuantity: 6,
+      createdAt: "2026-07-27T00:00:00.000Z",
+      updatedAt: "2026-07-27T00:00:00.000Z",
+      archivedAt: null,
+      labelBindings: [],
+    }
+    const adjustment = {
+      id: "inventory-adjustment-pending",
+      materialId: material.id,
+      kind: "in",
+      quantityDelta: 6,
+      targetQuantity: null,
+      quantityAfter: 6,
+      note: "恢复",
+      actor: "web",
+      createdAt: "2026-07-27T00:00:00.000Z",
+    }
+    dataDirectoryServiceMocks.loadConfiguredDataDirectoryHandle.mockResolvedValue(handle)
+    dataDirectoryServiceMocks.resolveDirectoryHandleFromDirectoryHandle.mockResolvedValue(
+      {} as FileSystemDirectoryHandle
+    )
+    dataDirectoryServiceMocks.collectDirectoryFilesFromDirectoryHandle
+      .mockResolvedValueOnce(
+        new Map([
+          [
+            "inventory/transactions/inventory-adjustment-pending.json",
+            JSON.stringify({
+              schema: "tuckmark.inventory-adjustment-transaction.v1",
+              material,
+              adjustment,
+            }),
+          ],
+        ])
+      )
+      .mockResolvedValueOnce(
+        new Map([["inventory/materials/inventory-material-pending.json", JSON.stringify(material)]])
+      )
+
+    await expect(listInventoryMaterials()).resolves.toEqual([expect.objectContaining(material)])
+    expect(dataDirectoryServiceMocks.writeTextFileToDirectoryHandle).toHaveBeenNthCalledWith(
+      1,
+      handle,
+      `inventory/materials/${material.id}.json`,
+      expect.any(String)
+    )
+    expect(dataDirectoryServiceMocks.writeTextFileToDirectoryHandle).toHaveBeenNthCalledWith(
+      2,
+      handle,
+      `inventory/adjustments/${adjustment.id}.json`,
+      expect.any(String)
+    )
+    expect(dataDirectoryServiceMocks.removeEntryIfPresentFromDirectoryHandle).toHaveBeenCalledWith(
+      expect.anything(),
+      `${adjustment.id}.json`
+    )
+  })
 })

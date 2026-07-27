@@ -15,6 +15,11 @@ const inventoryStoreMocks = vi.hoisted(() => ({
   saveInventoryMaterial: vi.fn(),
 }))
 
+const workbenchAppMocks = vi.hoisted(() => ({
+  createTemplatePrintSource: vi.fn((template: unknown, row: unknown) => ({ template, row })),
+  createUserTemplatePrintSource: vi.fn(),
+}))
+
 vi.mock("./inventory-data-store.js", () => inventoryStoreMocks)
 
 vi.mock("./workbench-app.js", () => ({
@@ -26,8 +31,8 @@ vi.mock("./workbench-app.js", () => ({
       <div>{emptyText}</div>
     </div>
   ),
-  createTemplatePrintSource: vi.fn(),
-  createUserTemplatePrintSource: vi.fn(),
+  createTemplatePrintSource: workbenchAppMocks.createTemplatePrintSource,
+  createUserTemplatePrintSource: workbenchAppMocks.createUserTemplatePrintSource,
 }))
 
 vi.mock("./user-template-store.js", () => ({
@@ -217,6 +222,47 @@ describe("WorkbenchInventoryRoute", () => {
     expect(document.body.textContent).toContain("先打印当前标签后查看预览。")
   })
 
+  it("rejects fractional inventory adjustment input instead of truncating it", async () => {
+    const material = {
+      id: "inventory-material-1",
+      fullName: "TPS62933DRLR",
+      description: "同步降压 28V",
+      packagingRemark: "编带",
+      currentQuantity: 12,
+      createdAt: "2026-07-20T09:00:00.000Z",
+      updatedAt: "2026-07-20T10:30:00.000Z",
+      archivedAt: null,
+      labelBindings: [],
+    }
+    await renderNode(
+      createInventoryRouteNode(
+        createController({ inventoryStoryState: { materials: [material], adjustments: [] } }),
+        "/inventory/inventory-material-1"
+      )
+    )
+
+    const quantityInput = document.querySelector<HTMLInputElement>("#inventory-adjustment-value")
+    const submitButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("提交库存调整")
+    )
+    if (!quantityInput || !submitButton) {
+      throw new Error("Missing inventory adjustment controls")
+    }
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set
+    setValue?.call(quantityInput, "1.5")
+    await act(async () => {
+      quantityInput.dispatchEvent(new Event("input", { bubbles: true }))
+      await flush()
+    })
+    await act(async () => {
+      submitButton.click()
+      await flush()
+    })
+
+    expect(inventoryStoreMocks.applyInventoryMaterialAdjustment).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain("调整数量必须是正整数。")
+  })
+
   it("submits the requested manual label copy count to the print controller", async () => {
     const material = {
       id: "inventory-material-1",
@@ -265,6 +311,13 @@ describe("WorkbenchInventoryRoute", () => {
       await flush()
     })
 
-    expect(controller.printSourceDirect).toHaveBeenCalledWith(undefined, 3)
+    expect(controller.printSourceDirect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        row: expect.objectContaining({
+          values: expect.objectContaining({ quantity: "12", currentQuantity: "12" }),
+        }),
+      }),
+      3
+    )
   })
 })

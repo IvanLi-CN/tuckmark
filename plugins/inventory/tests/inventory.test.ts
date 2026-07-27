@@ -43,6 +43,7 @@ describe("inventory plugin", () => {
       model: "TPS62933DRLR",
       package: "SOT-583",
       remark: "手动覆盖",
+      quantity: "12",
       currentQuantity: "12",
     })
   })

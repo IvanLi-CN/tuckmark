@@ -6,6 +6,7 @@ import {
   type InventoryAdjustmentInput,
   type InventoryMaterial,
   inventoryAdjustmentSchema,
+  inventoryAdjustmentTransactionSchema,
   inventoryMaterialSchema,
   materialMatchesQuery,
   sortInventoryAdjustmentsNewestFirst,
@@ -27,6 +28,7 @@ import {
 const INVENTORY_ROOT = "inventory"
 const MATERIALS_ROOT = `${INVENTORY_ROOT}/materials`
 const ADJUSTMENTS_ROOT = `${INVENTORY_ROOT}/adjustments`
+const TRANSACTIONS_ROOT = `${INVENTORY_ROOT}/transactions`
 
 export type InventoryMaterialSaveArgs = {
   id?: string
@@ -68,6 +70,15 @@ function parseInventoryAdjustment(input: unknown): InventoryAdjustment {
   return inventoryAdjustmentSchema.parse(input)
 }
 
+function isMissingDirectoryError(cause: unknown): boolean {
+  return (
+    typeof cause === "object" &&
+    cause !== null &&
+    "name" in cause &&
+    (cause as { name?: unknown }).name === "NotFoundError"
+  )
+}
+
 async function resolveInventoryPersistence(): Promise<InventoryPersistence> {
   const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
@@ -92,8 +103,11 @@ async function readInventoryEntries<T>(
     const directory = await resolveDirectoryHandleFromDirectoryHandle(handle, root)
     const files = await collectDirectoryFilesFromDirectoryHandle(directory, root)
     return Array.from(files.values()).map((raw) => parser(JSON.parse(raw)))
-  } catch {
-    return []
+  } catch (cause) {
+    if (isMissingDirectoryError(cause)) {
+      return []
+    }
+    throw cause
   }
 }
 
@@ -103,6 +117,60 @@ async function writeJsonFile(
   value: unknown
 ): Promise<void> {
   await writeTextFileToDirectoryHandle(handle, path, `${JSON.stringify(value, null, 2)}\n`)
+}
+
+async function recoverInventoryAdjustmentTransactions(
+  handle: FileSystemDirectoryHandle
+): Promise<void> {
+  const transactions = await readInventoryEntries(
+    handle,
+    TRANSACTIONS_ROOT,
+    inventoryAdjustmentTransactionSchema.parse
+  )
+  for (const transaction of transactions) {
+    await writeJsonFile(
+      handle,
+      `${MATERIALS_ROOT}/${transaction.material.id}.json`,
+      transaction.material
+    )
+    await writeJsonFile(
+      handle,
+      `${ADJUSTMENTS_ROOT}/${transaction.adjustment.id}.json`,
+      transaction.adjustment
+    )
+    const transactionsDirectory = await resolveDirectoryHandleFromDirectoryHandle(
+      handle,
+      TRANSACTIONS_ROOT
+    )
+    await removeEntryIfPresentFromDirectoryHandle(
+      transactionsDirectory,
+      `${transaction.adjustment.id}.json`
+    )
+  }
+}
+
+async function commitInventoryAdjustmentTransaction(args: {
+  handle: FileSystemDirectoryHandle
+  material: InventoryMaterial
+  adjustment: InventoryAdjustment
+}): Promise<void> {
+  const transaction = inventoryAdjustmentTransactionSchema.parse({
+    schema: "tuckmark.inventory-adjustment-transaction.v1",
+    material: args.material,
+    adjustment: args.adjustment,
+  })
+  await writeJsonFile(args.handle, `${TRANSACTIONS_ROOT}/${args.adjustment.id}.json`, transaction)
+  await writeJsonFile(
+    args.handle,
+    `${ADJUSTMENTS_ROOT}/${args.adjustment.id}.json`,
+    args.adjustment
+  )
+  await writeJsonFile(args.handle, `${MATERIALS_ROOT}/${args.material.id}.json`, args.material)
+  const transactionsDirectory = await resolveDirectoryHandleFromDirectoryHandle(
+    args.handle,
+    TRANSACTIONS_ROOT
+  )
+  await removeEntryIfPresentFromDirectoryHandle(transactionsDirectory, `${args.adjustment.id}.json`)
 }
 
 function sanitizeOptionalText(value: string | undefined): string | undefined {
@@ -136,6 +204,9 @@ export async function listInventoryMaterials(
   options: ListInventoryMaterialsOptions = {}
 ): Promise<InventoryMaterial[]> {
   const persistence = await resolveInventoryPersistence()
+  if (persistence.kind === "data-directory") {
+    await recoverInventoryAdjustmentTransactions(persistence.handle)
+  }
   const materials =
     persistence.kind === "data-directory"
       ? await readInventoryEntries(persistence.handle, MATERIALS_ROOT, parseInventoryMaterial)
@@ -150,6 +221,9 @@ export async function listInventoryAdjustments(
   materialId?: string
 ): Promise<InventoryAdjustment[]> {
   const persistence = await resolveInventoryPersistence()
+  if (persistence.kind === "data-directory") {
+    await recoverInventoryAdjustmentTransactions(persistence.handle)
+  }
   const adjustments =
     persistence.kind === "data-directory"
       ? await readInventoryEntries(persistence.handle, ADJUSTMENTS_ROOT, parseInventoryAdjustment)
@@ -199,6 +273,7 @@ export async function saveInventoryMaterial(
     return material
   }
 
+  await recoverInventoryAdjustmentTransactions(persistence.handle)
   const materials = await readInventoryEntries(
     persistence.handle,
     MATERIALS_ROOT,
@@ -252,6 +327,7 @@ export async function archiveInventoryMaterial(materialId: string): Promise<Inve
     return archived
   }
 
+  await recoverInventoryAdjustmentTransactions(persistence.handle)
   const materials = await readInventoryEntries(
     persistence.handle,
     MATERIALS_ROOT,
@@ -293,6 +369,7 @@ export async function restoreInventoryMaterial(materialId: string): Promise<Inve
     return restored
   }
 
+  await recoverInventoryAdjustmentTransactions(persistence.handle)
   const materials = await readInventoryEntries(
     persistence.handle,
     MATERIALS_ROOT,
@@ -330,6 +407,7 @@ export async function deleteInventoryMaterial(materialId: string): Promise<void>
     return
   }
 
+  await recoverInventoryAdjustmentTransactions(persistence.handle)
   const materials = await readInventoryEntries(
     persistence.handle,
     MATERIALS_ROOT,
@@ -378,6 +456,7 @@ export async function applyInventoryMaterialAdjustment(args: {
     return result
   }
 
+  await recoverInventoryAdjustmentTransactions(persistence.handle)
   const materials = await readInventoryEntries(
     persistence.handle,
     MATERIALS_ROOT,
@@ -393,12 +472,11 @@ export async function applyInventoryMaterialAdjustment(args: {
     input: args.input,
     adjustmentId: createId("inventory-adjustment"),
   })
-  await writeJsonFile(persistence.handle, `${MATERIALS_ROOT}/${material.id}.json`, result.material)
-  await writeJsonFile(
-    persistence.handle,
-    `${ADJUSTMENTS_ROOT}/${result.adjustment.id}.json`,
-    result.adjustment
-  )
+  await commitInventoryAdjustmentTransaction({
+    handle: persistence.handle,
+    material: result.material,
+    adjustment: result.adjustment,
+  })
   return result
 }
 

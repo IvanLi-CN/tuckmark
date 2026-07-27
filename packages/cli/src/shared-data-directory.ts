@@ -20,6 +20,7 @@ import {
   type InventoryMaterial,
   type InventoryTemplateBinding,
   inventoryAdjustmentSchema,
+  inventoryAdjustmentTransactionSchema,
   inventoryMaterialSchema,
   materialMatchesQuery,
   sortInventoryAdjustmentsNewestFirst,
@@ -32,10 +33,34 @@ const CLI_CONFIG_PATH = path.join(os.homedir(), ".config", "tuckmark", "config.j
 const TEMPLATES_ROOT = "templates"
 const INVENTORY_MATERIALS_ROOT = path.join("inventory", "materials")
 const INVENTORY_ADJUSTMENTS_ROOT = path.join("inventory", "adjustments")
+const INVENTORY_TRANSACTIONS_ROOT = path.join("inventory", "transactions")
+const DATA_DIRECTORY_MANIFEST_PATH = "manifest.json"
+const DATA_DIRECTORY_MANIFEST_SCHEMA = "tuckmark.data-dir-manifest.v1"
 
 const cliConfigSchema = z.object({
   version: z.literal(1).default(1),
   dataDir: z.string().min(1).optional(),
+})
+
+const dataDirectoryManifestSchema = z.object({
+  schema: z.literal(DATA_DIRECTORY_MANIFEST_SCHEMA),
+  generatedAt: z.string().min(1),
+  snapshotUpdatedAt: z.string().nullable(),
+  source: z.enum(["runtime-sync", "backup-archive"]),
+  files: z.object({
+    settings: z.string().min(1),
+    templatesDir: z.string().min(1),
+    draftsDir: z.string().min(1),
+    inventoryDir: z.string().min(1),
+    backupsDir: z.string().min(1),
+  }),
+  counts: z.object({
+    templates: z.number().int().min(0),
+    versions: z.number().int().min(0),
+    workingCopies: z.number().int().min(0),
+    materials: z.number().int().min(0),
+    adjustments: z.number().int().min(0),
+  }),
 })
 
 const canvasDraftSourceSchema = z.discriminatedUnion("kind", [
@@ -854,6 +879,10 @@ function resolveInventoryAdjustmentsRoot(dataDir: string): string {
   return path.join(dataDir, INVENTORY_ADJUSTMENTS_ROOT)
 }
 
+function resolveInventoryTransactionsRoot(dataDir: string): string {
+  return path.join(dataDir, INVENTORY_TRANSACTIONS_ROOT)
+}
+
 async function readInventoryEntries<T>(
   rootPath: string,
   parser: (value: unknown) => T
@@ -871,6 +900,112 @@ async function ensureDataDirExists(dataDir: string): Promise<string> {
   return resolved
 }
 
+async function writeDataDirectoryManifest(dataDir: string): Promise<void> {
+  const templateIds = await listChildDirectories(path.join(dataDir, TEMPLATES_ROOT))
+  const templateCounts = await Promise.all(
+    templateIds.map(async (templateId) => {
+      const templateRoot = getTemplateRoot(dataDir, templateId)
+      const topLevelFiles = await listJsonFiles(templateRoot)
+      const versions = await listJsonFiles(getTemplateVersionsRoot(dataDir, templateId))
+      return {
+        templates: topLevelFiles.some((filePath) => path.basename(filePath) === "template.json")
+          ? 1
+          : 0,
+        workingCopies: topLevelFiles.some(
+          (filePath) => path.basename(filePath) === "working-copy.json"
+        )
+          ? 1
+          : 0,
+        versions: versions.length,
+      }
+    })
+  )
+  const generatedAt = new Date().toISOString()
+  const manifest = dataDirectoryManifestSchema.parse({
+    schema: DATA_DIRECTORY_MANIFEST_SCHEMA,
+    generatedAt,
+    snapshotUpdatedAt: generatedAt,
+    source: "runtime-sync",
+    files: {
+      settings: "settings/app-settings.json",
+      templatesDir: TEMPLATES_ROOT,
+      draftsDir: "drafts",
+      inventoryDir: "inventory",
+      backupsDir: "backups",
+    },
+    counts: {
+      templates: templateCounts.reduce((total, count) => total + count.templates, 0),
+      versions: templateCounts.reduce((total, count) => total + count.versions, 0),
+      workingCopies: templateCounts.reduce((total, count) => total + count.workingCopies, 0),
+      materials: (await listJsonFiles(resolveInventoryMaterialsRoot(dataDir))).length,
+      adjustments: (await listJsonFiles(resolveInventoryAdjustmentsRoot(dataDir))).length,
+    },
+  })
+  await writeJsonFile(path.join(dataDir, DATA_DIRECTORY_MANIFEST_PATH), manifest)
+}
+
+async function ensureDataDirectoryManifest(dataDir: string): Promise<void> {
+  const manifest = await readJsonFile(
+    path.join(dataDir, DATA_DIRECTORY_MANIFEST_PATH),
+    dataDirectoryManifestSchema.parse
+  )
+  if (!manifest) {
+    await writeDataDirectoryManifest(dataDir)
+  }
+}
+
+async function recoverInventoryAdjustmentTransactions(dataDir: string): Promise<void> {
+  const transactions = await readInventoryEntries(
+    resolveInventoryTransactionsRoot(dataDir),
+    inventoryAdjustmentTransactionSchema.parse
+  )
+  for (const transaction of transactions) {
+    await writeJsonFile(
+      path.join(resolveInventoryMaterialsRoot(dataDir), `${transaction.material.id}.json`),
+      transaction.material
+    )
+    await writeJsonFile(
+      path.join(resolveInventoryAdjustmentsRoot(dataDir), `${transaction.adjustment.id}.json`),
+      transaction.adjustment
+    )
+    await rm(
+      path.join(resolveInventoryTransactionsRoot(dataDir), `${transaction.adjustment.id}.json`),
+      { force: true }
+    )
+  }
+  if (transactions.length > 0) {
+    await writeDataDirectoryManifest(dataDir)
+  }
+}
+
+async function commitInventoryAdjustmentTransaction(args: {
+  dataDir: string
+  material: InventoryMaterial
+  adjustment: InventoryAdjustment
+}): Promise<void> {
+  const transaction = inventoryAdjustmentTransactionSchema.parse({
+    schema: "tuckmark.inventory-adjustment-transaction.v1",
+    material: args.material,
+    adjustment: args.adjustment,
+  })
+  await writeJsonFile(
+    path.join(resolveInventoryTransactionsRoot(args.dataDir), `${args.adjustment.id}.json`),
+    transaction
+  )
+  await writeJsonFile(
+    path.join(resolveInventoryAdjustmentsRoot(args.dataDir), `${args.adjustment.id}.json`),
+    args.adjustment
+  )
+  await writeJsonFile(
+    path.join(resolveInventoryMaterialsRoot(args.dataDir), `${args.material.id}.json`),
+    args.material
+  )
+  await rm(
+    path.join(resolveInventoryTransactionsRoot(args.dataDir), `${args.adjustment.id}.json`),
+    { force: true }
+  )
+}
+
 export async function readCliConfig(): Promise<CliConfig> {
   const raw = await readJsonFile(CLI_CONFIG_PATH, cliConfigSchema.parse)
   return raw ?? { version: 1 }
@@ -883,6 +1018,7 @@ export async function getSavedCliDataDir(): Promise<string | null> {
 
 export async function setSavedCliDataDir(dataDir: string): Promise<string> {
   const resolved = await ensureDataDirExists(dataDir)
+  await ensureDataDirectoryManifest(resolved)
   await mkdir(path.dirname(CLI_CONFIG_PATH), { recursive: true })
   await writeJsonFile(CLI_CONFIG_PATH, {
     version: 1,
@@ -947,6 +1083,7 @@ export async function importSharedUserTemplatePackage(args: {
   name?: string
   description?: string
 }): Promise<SharedUserTemplateDetail> {
+  await ensureDataDirectoryManifest(args.dataDir)
   const templateId = args.templateId ?? args.templatePackage.id
   const existing = await readTemplateSummary(args.dataDir, templateId)
   if (existing) {
@@ -1002,6 +1139,7 @@ export async function importSharedUserTemplatePackage(args: {
     version
   )
   await writeJsonFile(getTemplateWorkingCopyPath(args.dataDir, templateId), workingCopy)
+  await writeDataDirectoryManifest(args.dataDir)
   return (
     (await readSharedUserTemplateDetail(args.dataDir, templateId)) ??
     (() => {
@@ -1015,6 +1153,7 @@ export async function renameSharedUserTemplate(args: {
   templateId: string
   name: string
 }): Promise<SharedUserTemplateSummary> {
+  await ensureDataDirectoryManifest(args.dataDir)
   const detail = await readSharedUserTemplateDetail(args.dataDir, args.templateId)
   if (!detail) {
     throw new Error("User template not found.")
@@ -1036,6 +1175,7 @@ export async function renameSharedUserTemplate(args: {
       },
     })
   }
+  await writeDataDirectoryManifest(args.dataDir)
   const summary = await readTemplateSummary(args.dataDir, args.templateId)
   if (!summary) {
     throw new Error("User template rename did not persist.")
@@ -1047,6 +1187,7 @@ export async function archiveSharedUserTemplate(
   dataDir: string,
   templateId: string
 ): Promise<SharedUserTemplateSummary> {
+  await ensureDataDirectoryManifest(dataDir)
   const detail = await readSharedUserTemplateDetail(dataDir, templateId)
   if (!detail) {
     throw new Error("User template not found.")
@@ -1057,6 +1198,7 @@ export async function archiveSharedUserTemplate(
     archivedAt: now,
     updatedAt: now,
   })
+  await writeDataDirectoryManifest(dataDir)
   const summary = await readTemplateSummary(dataDir, templateId)
   if (!summary) {
     throw new Error("User template archive did not persist.")
@@ -1068,6 +1210,7 @@ export async function restoreSharedUserTemplate(
   dataDir: string,
   templateId: string
 ): Promise<SharedUserTemplateSummary> {
+  await ensureDataDirectoryManifest(dataDir)
   const detail = await readSharedUserTemplateDetail(dataDir, templateId)
   if (!detail) {
     throw new Error("User template not found.")
@@ -1078,6 +1221,7 @@ export async function restoreSharedUserTemplate(
     archivedAt: null,
     updatedAt: now,
   })
+  await writeDataDirectoryManifest(dataDir)
   const summary = await readTemplateSummary(dataDir, templateId)
   if (!summary) {
     throw new Error("User template restore did not persist.")
@@ -1086,11 +1230,13 @@ export async function restoreSharedUserTemplate(
 }
 
 export async function deleteSharedUserTemplate(dataDir: string, templateId: string): Promise<void> {
+  await ensureDataDirectoryManifest(dataDir)
   const detail = await readSharedUserTemplateDetail(dataDir, templateId)
   if (!detail) {
     throw new Error("User template not found.")
   }
   await rm(getTemplateRoot(dataDir, templateId), { recursive: true, force: true })
+  await writeDataDirectoryManifest(dataDir)
 }
 
 export async function resolveTemplateForPrint(args: {
@@ -1159,6 +1305,7 @@ export async function listInventoryMaterialsFromDirectory(args: {
   query?: string
   includeArchived?: boolean
 }): Promise<InventoryMaterial[]> {
+  await recoverInventoryAdjustmentTransactions(args.dataDir)
   const materials = await readInventoryEntries(
     resolveInventoryMaterialsRoot(args.dataDir),
     inventoryMaterialSchema.parse
@@ -1184,6 +1331,7 @@ export async function listInventoryAdjustmentsFromDirectory(args: {
   dataDir: string
   materialId?: string
 }): Promise<InventoryAdjustment[]> {
+  await recoverInventoryAdjustmentTransactions(args.dataDir)
   const adjustments = await readInventoryEntries(
     resolveInventoryAdjustmentsRoot(args.dataDir),
     inventoryAdjustmentSchema.parse
@@ -1197,6 +1345,7 @@ export async function saveInventoryMaterialToDirectory(args: {
   dataDir: string
   material: InventoryMaterialSaveArgs
 }): Promise<InventoryMaterial> {
+  await ensureDataDirectoryManifest(args.dataDir)
   const materials = await listInventoryMaterialsFromDirectory({
     dataDir: args.dataDir,
     includeArchived: true,
@@ -1228,6 +1377,7 @@ export async function saveInventoryMaterialToDirectory(args: {
     path.join(resolveInventoryMaterialsRoot(args.dataDir), `${material.id}.json`),
     material
   )
+  await writeDataDirectoryManifest(args.dataDir)
   return material
 }
 
@@ -1235,6 +1385,7 @@ export async function archiveInventoryMaterialInDirectory(
   dataDir: string,
   materialId: string
 ): Promise<InventoryMaterial> {
+  await ensureDataDirectoryManifest(dataDir)
   const material = await readInventoryMaterialFromDirectory(dataDir, materialId)
   if (!material) {
     throw new Error("Material not found.")
@@ -1245,6 +1396,7 @@ export async function archiveInventoryMaterialInDirectory(
     archivedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   })
+  await writeDataDirectoryManifest(dataDir)
   return (
     (await readInventoryMaterialFromDirectory(dataDir, materialId)) ??
     (() => {
@@ -1257,6 +1409,7 @@ export async function restoreInventoryMaterialInDirectory(
   dataDir: string,
   materialId: string
 ): Promise<InventoryMaterial> {
+  await ensureDataDirectoryManifest(dataDir)
   const materials = await listInventoryMaterialsFromDirectory({
     dataDir,
     includeArchived: true,
@@ -1275,6 +1428,7 @@ export async function restoreInventoryMaterialInDirectory(
     path.join(resolveInventoryMaterialsRoot(dataDir), `${material.id}.json`),
     restored
   )
+  await writeDataDirectoryManifest(dataDir)
   return restored
 }
 
@@ -1282,6 +1436,7 @@ export async function deleteInventoryMaterialFromDirectory(
   dataDir: string,
   materialId: string
 ): Promise<void> {
+  await ensureDataDirectoryManifest(dataDir)
   const material = await readInventoryMaterialFromDirectory(dataDir, materialId)
   if (!material) {
     throw new Error("Material not found.")
@@ -1291,6 +1446,7 @@ export async function deleteInventoryMaterialFromDirectory(
   await rm(path.join(resolveInventoryMaterialsRoot(dataDir), `${material.id}.json`), {
     force: true,
   })
+  await writeDataDirectoryManifest(dataDir)
 }
 
 export async function adjustInventoryMaterialInDirectory(args: {
@@ -1301,6 +1457,7 @@ export async function adjustInventoryMaterialInDirectory(args: {
   material: InventoryMaterial
   adjustment: InventoryAdjustment
 }> {
+  await ensureDataDirectoryManifest(args.dataDir)
   const material = await readInventoryMaterialFromDirectory(args.dataDir, args.materialId)
   if (!material) {
     throw new Error("Material not found.")
@@ -1311,14 +1468,12 @@ export async function adjustInventoryMaterialInDirectory(args: {
     input: args.input,
     adjustmentId: createId("inventory-adjustment"),
   })
-  await writeJsonFile(
-    path.join(resolveInventoryMaterialsRoot(args.dataDir), `${result.material.id}.json`),
-    result.material
-  )
-  await writeJsonFile(
-    path.join(resolveInventoryAdjustmentsRoot(args.dataDir), `${result.adjustment.id}.json`),
-    result.adjustment
-  )
+  await commitInventoryAdjustmentTransaction({
+    dataDir: args.dataDir,
+    material: result.material,
+    adjustment: result.adjustment,
+  })
+  await writeDataDirectoryManifest(args.dataDir)
   return result
 }
 
@@ -1344,7 +1499,6 @@ export async function resolveInventoryPrintSource(args: {
   }
   const input = {
     ...buildInventoryTemplateInput(material, binding),
-    quantity: String(copies),
     currentQuantity: String(material.currentQuantity),
   }
   if (binding.templateSource === "system") {

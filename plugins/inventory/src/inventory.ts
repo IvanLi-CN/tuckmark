@@ -50,6 +50,13 @@ export const inventoryAdjustmentSchema = z.object({
 })
 export type InventoryAdjustment = z.infer<typeof inventoryAdjustmentSchema>
 
+export const inventoryAdjustmentTransactionSchema = z.object({
+  schema: z.literal("tuckmark.inventory-adjustment-transaction.v1"),
+  material: inventoryMaterialSchema,
+  adjustment: inventoryAdjustmentSchema,
+})
+export type InventoryAdjustmentTransaction = z.infer<typeof inventoryAdjustmentTransactionSchema>
+
 export const inventoryDirectorySnapshotSchema = z.object({
   materials: z.array(inventoryMaterialSchema),
   adjustments: z.array(inventoryAdjustmentSchema),
