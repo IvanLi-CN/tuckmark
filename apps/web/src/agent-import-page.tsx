@@ -8,10 +8,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
-  FileText,
   LoaderCircle,
   PackagePlus,
-  RefreshCcw,
   Save,
   Warehouse,
 } from "lucide-react"
@@ -382,33 +380,31 @@ export function AgentImportPage({
         title="新增物品"
         description="创建物料、绑定一个标签模板，并写入入库流水。"
         count={newItems.length}
+        kind="new"
+        emptyText="该会话没有新增物品。"
       >
-        {newItems.length ? (
-          newItems.map((item) => {
-            const draft = drafts[item.id]
-            return draft ? (
-              <AgentImportItemEditor
-                key={item.id}
-                draft={draft}
-                disabled={isCompleted}
-                manualTemplates={manualTemplates.map((template) => template.template)}
-                localTemplateFor={(template) =>
-                  manualTemplates.find(
-                    (candidate) => templateKey(candidate.template) === templateKey(template)
-                  )?.snapshot
-                }
-                saving={savingItemId === item.id}
-                onChange={(update) => updateDraft(item.id, update)}
-                onSave={() => void saveItem(item.id)}
-                onRequestTemplate={(template, localTemplate) =>
-                  void requestTemplate(item.id, template, localTemplate)
-                }
-              />
-            ) : null
-          })
-        ) : (
-          <EmptySection text="该会话没有新增物品。" />
-        )}
+        {newItems.map((item) => {
+          const draft = drafts[item.id]
+          return draft ? (
+            <AgentImportTableRow
+              key={item.id}
+              draft={draft}
+              disabled={isCompleted}
+              manualTemplates={manualTemplates.map((template) => template.template)}
+              localTemplateFor={(template) =>
+                manualTemplates.find(
+                  (candidate) => templateKey(candidate.template) === templateKey(template)
+                )?.snapshot
+              }
+              saving={savingItemId === item.id}
+              onChange={(update) => updateDraft(item.id, update)}
+              onSave={() => void saveItem(item.id)}
+              onRequestTemplate={(template, localTemplate) =>
+                void requestTemplate(item.id, template, localTemplate)
+              }
+            />
+          ) : null
+        })}
       </ImportSection>
 
       <ImportSection
@@ -416,27 +412,25 @@ export function AgentImportPage({
         title="增加库存"
         description="仅向 Agent 指定的已有物料写入入库流水，保留原有标签绑定。"
         count={restockItems.length}
+        kind="restock"
+        emptyText="该会话没有增加库存项。"
       >
-        {restockItems.length ? (
-          restockItems.map((item) => {
-            const draft = drafts[item.id]
-            return draft ? (
-              <AgentImportItemEditor
-                key={item.id}
-                draft={draft}
-                disabled={isCompleted}
-                manualTemplates={[]}
-                localTemplateFor={() => undefined}
-                saving={savingItemId === item.id}
-                onChange={(update) => updateDraft(item.id, update)}
-                onSave={() => void saveItem(item.id)}
-                onRequestTemplate={() => undefined}
-              />
-            ) : null
-          })
-        ) : (
-          <EmptySection text="该会话没有增加库存项。" />
-        )}
+        {restockItems.map((item) => {
+          const draft = drafts[item.id]
+          return draft ? (
+            <AgentImportTableRow
+              key={item.id}
+              draft={draft}
+              disabled={isCompleted}
+              manualTemplates={[]}
+              localTemplateFor={() => undefined}
+              saving={savingItemId === item.id}
+              onChange={(update) => updateDraft(item.id, update)}
+              onSave={() => void saveItem(item.id)}
+              onRequestTemplate={() => undefined}
+            />
+          ) : null
+        })}
       </ImportSection>
 
       <footer className="tm-agent-import__footer">
@@ -471,12 +465,16 @@ function ImportSection({
   title,
   description,
   count,
+  kind,
+  emptyText,
   children,
 }: {
   icon: React.ReactNode
   title: string
   description: string
   count: number
+  kind: AgentImportItem["kind"]
+  emptyText: string
   children: React.ReactNode
 }) {
   return (
@@ -491,21 +489,64 @@ function ImportSection({
         </div>
         <Badge variant="outline">{count} 项</Badge>
       </header>
-      <div className="tm-agent-import__items">{children}</div>
+      {count ? (
+        <div className="tm-agent-import__table-shell">
+          <table
+            className={cn("tm-agent-import__table", `tm-agent-import__table--${kind}`)}
+            aria-label={title}
+          >
+            <thead>
+              <tr>
+                <th className="tm-agent-import__column--select" scope="col">
+                  导入
+                </th>
+                {kind === "new" ? (
+                  <>
+                    <th className="tm-agent-import__column--material" scope="col">
+                      物料
+                    </th>
+                    <th className="tm-agent-import__column--intake" scope="col">
+                      数量与来源
+                    </th>
+                    <th className="tm-agent-import__column--datasheet" scope="col">
+                      数据手册
+                    </th>
+                    <th className="tm-agent-import__column--template" scope="col">
+                      标签模板
+                    </th>
+                  </>
+                ) : (
+                  <>
+                    <th className="tm-agent-import__column--target" scope="col">
+                      目标物料
+                    </th>
+                    <th className="tm-agent-import__column--quantity" scope="col">
+                      入库数量
+                    </th>
+                    <th className="tm-agent-import__column--source" scope="col">
+                      来源备注
+                    </th>
+                  </>
+                )}
+                <th className="tm-agent-import__column--attention" scope="col">
+                  注意
+                </th>
+                <th className="tm-agent-import__column--action" scope="col">
+                  <span className="sr-only">保存</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>{children}</tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptySection text={emptyText} />
+      )}
     </section>
   )
 }
 
-function AgentImportItemEditor({
-  draft,
-  disabled,
-  manualTemplates,
-  localTemplateFor,
-  saving,
-  onChange,
-  onSave,
-  onRequestTemplate,
-}: {
+type AgentImportTableRowProps = {
   draft: ItemDraft
   disabled: boolean
   manualTemplates: AgentImportTemplate[]
@@ -517,12 +558,29 @@ function AgentImportItemEditor({
     template: AgentImportTemplate,
     localTemplate: AgentImportLocalTemplate | undefined
   ) => void
-}) {
+}
+
+function AgentImportTableRow(props: AgentImportTableRowProps) {
+  return props.draft.item.kind === "new" ? (
+    <NewItemTableRow {...props} />
+  ) : (
+    <RestockItemTableRow {...props} />
+  )
+}
+
+function NewItemTableRow({
+  draft,
+  disabled,
+  manualTemplates,
+  localTemplateFor,
+  saving,
+  onChange,
+  onSave,
+  onRequestTemplate,
+}: AgentImportTableRowProps) {
   const item = draft.item
   const templateOptions = resolveItemTemplates(item, manualTemplates)
   const waitingForAgent = Boolean(item.pendingTemplateEventId)
-  const materialReadOnly = item.kind === "restock"
-  const materialDisabled = disabled || materialReadOnly
   const preview = item.template
     ? renderSystemTemplatePreview(item.template, item.templateInput)
     : null
@@ -532,11 +590,9 @@ function AgentImportItemEditor({
   }
 
   return (
-    <article
-      className={cn("tm-agent-import__item", !item.selected && "tm-agent-import__item--excluded")}
-    >
-      <header className="tm-agent-import__item-header">
-        <label className="tm-agent-import__selection">
+    <tr className={cn(!item.selected && "tm-agent-import__row--excluded")}>
+      <td className="tm-agent-import__table-cell--select">
+        <label className="tm-agent-import__selection" aria-label="导入此物料">
           <input
             type="checkbox"
             checked={item.selected}
@@ -547,128 +603,104 @@ function AgentImportItemEditor({
           />
           <span>{item.selected ? "将导入" : "不导入"}</span>
         </label>
-        <div className="tm-agent-import__item-actions">
-          {item.needsAttention ? (
-            <Badge variant="outline" className="border-amber-500/50 text-amber-800">
-              需要注意
-            </Badge>
-          ) : null}
-          {saving ? (
-            <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title="保存当前编辑"
+      </td>
+      <td>
+        <div className="tm-agent-import__field-grid tm-agent-import__field-grid--material">
+          <Field label="物料全名" required>
+            <Input
+              density="compact"
+              size="lg"
+              value={item.material.fullName}
               disabled={disabled}
-              onClick={onSave}
-            >
-              <Save className="size-4" />
-            </Button>
-          )}
-        </div>
-      </header>
-
-      {item.needsAttention ? (
-        <Alert className="tm-agent-import__attention">
-          <AlertTriangle className="mt-0.5 size-4 text-amber-700" />
-          <AlertTitle>Agent 提示</AlertTitle>
-          <AlertDescription>{item.needsAttention}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      {item.kind === "restock" ? (
-        <p className="mb-3 text-xs text-muted-foreground">
-          补库存沿用目标物料的资料与标签绑定；可调整入库数量、来源备注和是否导入。
-        </p>
-      ) : null}
-
-      <div className="tm-agent-import__form-grid">
-        <Field label="物料全名" required>
-          <Input
-            value={item.material.fullName}
-            disabled={materialDisabled}
-            onChange={(event) => updateMaterial("fullName", event.target.value)}
-          />
-        </Field>
-        <Field label="入库数量" required>
-          <Input
-            type="number"
-            min="1"
-            value={item.quantity}
-            disabled={disabled}
-            onChange={(event) =>
-              onChange((current) => ({
-                ...current,
-                quantity: Math.max(1, Number.parseInt(event.target.value, 10) || 1),
-              }))
-            }
-          />
-        </Field>
-        {item.kind === "restock" ? (
-          <Field label="目标物料 ID" required>
-            <Input value={item.targetMaterialId ?? ""} disabled={materialDisabled} />
+              onChange={(event) => updateMaterial("fullName", event.target.value)}
+            />
           </Field>
-        ) : null}
-        <Field label="基础型号">
-          <Input
-            value={item.material.baseName ?? ""}
-            disabled={materialDisabled}
-            onChange={(event) => updateMaterial("baseName", event.target.value)}
-          />
-        </Field>
-        <Field label="变体">
-          <Input
-            value={item.material.variantName ?? ""}
-            disabled={materialDisabled}
-            onChange={(event) => updateMaterial("variantName", event.target.value)}
-          />
-        </Field>
-        <Field label="封装">
-          <Input
-            value={item.material.packageName ?? ""}
-            disabled={materialDisabled}
-            onChange={(event) => updateMaterial("packageName", event.target.value)}
-          />
-        </Field>
-        <Field label="矩阵码">
-          <Input
-            value={item.material.matrixCode ?? ""}
-            disabled={materialDisabled}
-            onChange={(event) => updateMaterial("matrixCode", event.target.value)}
-          />
-        </Field>
-        <Field label="来源备注" className="tm-agent-import__field--wide">
-          <Input
-            value={item.sourceNote}
-            disabled={disabled}
-            onChange={(event) =>
-              onChange((current) => ({ ...current, sourceNote: event.target.value }))
-            }
-          />
-        </Field>
-        <Field label="描述" className="tm-agent-import__field--wide">
-          <textarea
-            className="tm-agent-import__textarea"
-            value={item.material.description}
-            disabled={materialDisabled}
-            onChange={(event) => updateMaterial("description", event.target.value)}
-          />
-        </Field>
-      </div>
-
-      <section className="tm-agent-import__datasheet" aria-label="数据手册">
-        <div className="tm-agent-import__subheading">
-          <FileText className="size-4" />
-          <h3>数据手册</h3>
+          <Field label="基础型号">
+            <Input
+              density="compact"
+              size="lg"
+              value={item.material.baseName ?? ""}
+              disabled={disabled}
+              onChange={(event) => updateMaterial("baseName", event.target.value)}
+            />
+          </Field>
+          <Field label="变体">
+            <Input
+              density="compact"
+              size="lg"
+              value={item.material.variantName ?? ""}
+              disabled={disabled}
+              onChange={(event) => updateMaterial("variantName", event.target.value)}
+            />
+          </Field>
+          <Field label="封装">
+            <Input
+              density="compact"
+              size="lg"
+              value={item.material.packageName ?? ""}
+              disabled={disabled}
+              onChange={(event) => updateMaterial("packageName", event.target.value)}
+            />
+          </Field>
+          <Field label="矩阵码">
+            <Input
+              density="compact"
+              size="lg"
+              value={item.material.matrixCode ?? ""}
+              disabled={disabled}
+              onChange={(event) => updateMaterial("matrixCode", event.target.value)}
+            />
+          </Field>
+          <Field label="描述" className="tm-agent-import__field--full">
+            <textarea
+              className="tm-agent-import__textarea tm-agent-import__textarea--compact"
+              value={item.material.description}
+              disabled={disabled}
+              onChange={(event) => updateMaterial("description", event.target.value)}
+            />
+          </Field>
         </div>
+      </td>
+      <td>
+        <div className="tm-agent-import__field-stack">
+          <Field label="入库数量" required>
+            <Input
+              density="compact"
+              size="lg"
+              type="number"
+              min="1"
+              value={item.quantity}
+              disabled={disabled}
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  quantity: Math.max(1, Number.parseInt(event.target.value, 10) || 1),
+                }))
+              }
+            />
+          </Field>
+          <Field label="来源备注">
+            <Input
+              density="compact"
+              size="lg"
+              value={item.sourceNote}
+              disabled={disabled}
+              onChange={(event) =>
+                onChange((current) => ({ ...current, sourceNote: event.target.value }))
+              }
+            />
+          </Field>
+        </div>
+      </td>
+      <td>
         {firstDatasheet ? (
-          <div className="tm-agent-import__form-grid">
+          <div className="tm-agent-import__field-stack">
             <Field label="标题">
               <Input
+                density="compact"
+                size="lg"
                 value={firstDatasheet.title}
-                disabled={materialDisabled}
+                disabled={disabled}
                 onChange={(event) =>
                   onChange((current) => ({
                     ...current,
@@ -680,10 +712,12 @@ function AgentImportItemEditor({
                 }
               />
             </Field>
-            <Field label="链接" className="tm-agent-import__field--wide">
+            <Field label="链接">
               <Input
+                density="compact"
+                size="lg"
                 value={firstDatasheet.url ?? ""}
-                disabled={materialDisabled}
+                disabled={disabled}
                 placeholder="制造商或授权分销商链接"
                 onChange={(event) =>
                   onChange((current) => ({
@@ -697,10 +731,12 @@ function AgentImportItemEditor({
               />
             </Field>
             {firstDatasheet.missingReason ? (
-              <Field label="缺失原因" className="tm-agent-import__field--wide">
+              <Field label="缺失原因">
                 <Input
+                  density="compact"
+                  size="lg"
                   value={firstDatasheet.missingReason}
-                  disabled={materialDisabled}
+                  disabled={disabled}
                   onChange={(event) =>
                     onChange((current) => ({
                       ...current,
@@ -717,79 +753,70 @@ function AgentImportItemEditor({
             ) : null}
           </div>
         ) : (
-          <Alert className="tm-agent-import__attention">
-            <AlertTriangle className="mt-0.5 size-4 text-amber-700" />
-            <AlertTitle>未提供数据手册</AlertTitle>
-            <AlertDescription>电子元器件建议补充制造商或授权分销商链接。</AlertDescription>
-          </Alert>
+          <MissingDatasheetNotice />
         )}
-      </section>
-
-      {item.kind === "new" ? (
-        <section className="tm-agent-import__template" aria-label="标签模板">
-          <div className="tm-agent-import__subheading">
-            <RefreshCcw className="size-4" />
-            <h3>标签模板与预览</h3>
-          </div>
-          <div className="tm-agent-import__template-grid">
-            <Field label="标签模板">
-              <select
-                className="tm-agent-import__select"
-                value={item.template ? templateKey(item.template) : ""}
-                disabled={disabled || waitingForAgent || saving}
-                onChange={(event) => {
-                  const next = templateOptions.find(
-                    (template) => templateKey(template) === event.target.value
+      </td>
+      <td className="tm-agent-import__template-cell">
+        <div className="tm-agent-import__field-stack">
+          <Field label="标签模板">
+            <select
+              className="tm-agent-import__select tm-agent-import__select--compact"
+              value={item.template ? templateKey(item.template) : ""}
+              disabled={disabled || waitingForAgent || saving}
+              onChange={(event) => {
+                const next = templateOptions.find(
+                  (template) => templateKey(template) === event.target.value
+                )
+                if (next) {
+                  onRequestTemplate(next, localTemplateFor(next))
+                }
+              }}
+            >
+              {templateOptions.map((template) => (
+                <option key={templateKey(template)} value={templateKey(template)}>
+                  {template.name}
+                  {manualTemplates.some(
+                    (candidate) => templateKey(candidate) === templateKey(template)
                   )
-                  if (next) {
-                    onRequestTemplate(next, localTemplateFor(next))
-                  }
-                }}
-              >
-                {templateOptions.map((template) => (
-                  <option key={templateKey(template)} value={templateKey(template)}>
-                    {template.name}
-                    {manualTemplates.some(
-                      (candidate) => templateKey(candidate) === templateKey(template)
-                    )
-                      ? "（本地）"
-                      : ""}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <div className="tm-agent-import__template-status">
-              {waitingForAgent ? (
-                <>
-                  <LoaderCircle className="size-4 animate-spin" />
-                  等待 Agent 根据字段合同补全
-                </>
-              ) : (
-                "可在导入前编辑字段"
-              )}
-            </div>
-            <div className="tm-agent-import__label-preview">
-              {preview ? (
-                <img
-                  src={`data:image/svg+xml,${encodeURIComponent(preview)}`}
-                  alt={`${item.template?.name ?? "标签"}预览`}
-                />
-              ) : (
-                <>
-                  <strong>{item.template?.name ?? "未选择模板"}</strong>
-                  <span>
-                    {item.template?.fields
-                      .map((field) => item.templateInput[field.key] || field.label)
-                      .join(" · ") || "等待模板字段"}
-                  </span>
-                </>
-              )}
-            </div>
+                    ? "（本地）"
+                    : ""}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <div className="tm-agent-import__template-status">
+            {waitingForAgent ? (
+              <>
+                <LoaderCircle className="size-4 animate-spin" />
+                等待 Agent 根据字段合同补全
+              </>
+            ) : (
+              "可在导入前编辑字段"
+            )}
           </div>
-          <div className="tm-agent-import__form-grid">
+          <div className="tm-agent-import__label-preview">
+            {preview ? (
+              <img
+                src={`data:image/svg+xml,${encodeURIComponent(preview)}`}
+                alt={`${item.template?.name ?? "标签"}预览`}
+              />
+            ) : (
+              <>
+                <strong>{item.template?.name ?? "未选择模板"}</strong>
+                <span>
+                  {item.template?.fields
+                    .map((field) => item.templateInput[field.key] || field.label)
+                    .join(" · ") || "等待模板字段"}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="tm-agent-import__field-grid tm-agent-import__field-grid--template">
             {(item.template?.fields ?? []).map((field) => (
               <Field key={field.key} label={field.label} required={field.required}>
                 <Input
+                  density="compact"
+                  size="lg"
                   value={item.templateInput[field.key] ?? ""}
                   disabled={disabled || waitingForAgent || saving}
                   onChange={(event) =>
@@ -802,9 +829,145 @@ function AgentImportItemEditor({
               </Field>
             ))}
           </div>
-        </section>
-      ) : null}
-    </article>
+        </div>
+      </td>
+      <td>
+        <AttentionCell message={item.needsAttention} />
+      </td>
+      <td className="tm-agent-import__table-cell--action">
+        <SaveItemAction saving={saving} disabled={disabled} onSave={onSave} />
+      </td>
+    </tr>
+  )
+}
+
+function RestockItemTableRow({
+  draft,
+  disabled,
+  saving,
+  onChange,
+  onSave,
+}: AgentImportTableRowProps) {
+  const item = draft.item
+  return (
+    <tr className={cn(!item.selected && "tm-agent-import__row--excluded")}>
+      <td className="tm-agent-import__table-cell--select">
+        <label className="tm-agent-import__selection" aria-label="导入此物料">
+          <input
+            type="checkbox"
+            checked={item.selected}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange((current) => ({ ...current, selected: event.target.checked }))
+            }
+          />
+          <span>{item.selected ? "将导入" : "不导入"}</span>
+        </label>
+      </td>
+      <td>
+        <div className="tm-agent-import__target-material">
+          <strong>{item.material.fullName}</strong>
+          <span>
+            {[item.material.baseName, item.material.variantName, item.material.packageName]
+              .filter(Boolean)
+              .join(" · ") || "未提供型号详情"}
+          </span>
+          <p>{item.material.description || "既有物料；保留它原有的标签绑定。"}</p>
+          <Field label="目标物料 ID" required>
+            <Input density="compact" size="lg" value={item.targetMaterialId ?? ""} disabled />
+          </Field>
+        </div>
+      </td>
+      <td>
+        <Field label="入库数量" required>
+          <Input
+            density="compact"
+            size="lg"
+            type="number"
+            min="1"
+            value={item.quantity}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange((current) => ({
+                ...current,
+                quantity: Math.max(1, Number.parseInt(event.target.value, 10) || 1),
+              }))
+            }
+          />
+        </Field>
+      </td>
+      <td>
+        <Field label="来源备注">
+          <Input
+            density="compact"
+            size="lg"
+            value={item.sourceNote}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange((current) => ({ ...current, sourceNote: event.target.value }))
+            }
+          />
+        </Field>
+      </td>
+      <td>
+        <p className="tm-agent-import__restock-policy">
+          补库存沿用目标物料的资料与标签绑定；可调整入库数量、来源备注和是否导入。
+        </p>
+        <AttentionCell message={item.needsAttention} />
+        {!item.material.datasheets.length ? <MissingDatasheetNotice /> : null}
+      </td>
+      <td className="tm-agent-import__table-cell--action">
+        <SaveItemAction saving={saving} disabled={disabled} onSave={onSave} />
+      </td>
+    </tr>
+  )
+}
+
+function AttentionCell({ message }: { message?: string }) {
+  return message ? (
+    <Alert className="tm-agent-import__attention">
+      <AlertTriangle className="mt-0.5 size-4 text-amber-700" />
+      <AlertTitle>Agent 提示</AlertTitle>
+      <AlertDescription>{message}</AlertDescription>
+    </Alert>
+  ) : (
+    <span className="tm-agent-import__no-attention">无额外提示</span>
+  )
+}
+
+function MissingDatasheetNotice() {
+  return (
+    <Alert className="tm-agent-import__attention">
+      <AlertTriangle className="mt-0.5 size-4 text-amber-700" />
+      <AlertTitle>未提供数据手册</AlertTitle>
+      <AlertDescription>电子元器件建议补充制造商或授权分销商链接。</AlertDescription>
+    </Alert>
+  )
+}
+
+function SaveItemAction({
+  saving,
+  disabled,
+  onSave,
+}: {
+  saving: boolean
+  disabled: boolean
+  onSave: () => void
+}) {
+  return saving ? (
+    <LoaderCircle className="size-4 animate-spin text-muted-foreground" aria-label="正在保存" />
+  ) : (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label="保存当前编辑"
+      title="保存当前编辑"
+      disabled={disabled}
+      onClick={onSave}
+    >
+      <Save className="size-4" />
+    </Button>
   )
 }
 

@@ -32,6 +32,11 @@ export const ReadyToConfirm: Story = {
     client: createAgentImportDemoClient(),
     localTemplatesLoader: async () => [],
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole("table", { name: "新增物品" })).toBeVisible()
+    await expect(canvas.getByRole("table", { name: "增加库存" })).toBeVisible()
+  },
 }
 
 export const TemplateWaitingForAgent: Story = {

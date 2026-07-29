@@ -9,7 +9,7 @@ External agents can interpret private order exports and product pages, while Tuc
 - Define the `tuckmark.agent-import.v1` proposal contract for agent-produced new-material and restock entries.
 - Let a DEVD `server-http` instance own the configured local data directory, short-lived import sessions, field-completion events, and confirmed inventory writes.
 - Make CLI commands exchange proposal, catalog, inventory, and event data with DEVD.
-- Provide a confirmation route with editable **new items** and **restock existing inventory** sections.
+- Provide a confirmation route with two editable tables: **new items** and **restock existing inventory**.
 - Publish released and source-tree Agent Skills that describe order interpretation, identity decisions, datasheet links, and CLI interaction.
 
 ## Non-goals
@@ -51,7 +51,7 @@ Confirmation writes are server-owned and recoverable. Selected new items create 
 
 - CLI catalog and inventory commands read DEVD data; `--devd-url` wins over `TUCKMARK_DEVD_URL` and either omission fails.
 - The create command opens an authorized confirmation URL unless `--no-open` is supplied.
-- The page supports full editing for new-material records, non-blocking attention/datasheet warnings, selection, and separately grouped new/restock items. Restock controls edit only the persisted intake values (selection, quantity, and source note); target material details stay visible and read-only because confirmation writes only its inbound adjustment.
+- The page presents separate editable tables for new-material and restock records. It supports full editing for new-material records, non-blocking attention/datasheet warnings, and selection. Restock controls edit only the persisted intake values (selection, quantity, and source note); target material details stay visible and read-only because confirmation writes only its inbound adjustment.
 - Template switches produce an Agent event, wait state, and fresh field preview after fulfillment.
 - Tests use mocked order-derived proposals only. No real order file, session secret, product body, or screenshot is committed.
 

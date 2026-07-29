@@ -9,6 +9,14 @@ test.describe("agent-assisted inventory intake", () => {
   test("separates new and restock items while keeping attention non-blocking", async ({ page }) => {
     await expect(page.getByRole("heading", { name: "新增物品" })).toBeVisible()
     await expect(page.getByRole("heading", { name: "增加库存" })).toBeVisible()
+    await expect(page.getByRole("table", { name: "新增物品" })).toBeVisible()
+    await expect(page.getByRole("table", { name: "增加库存" })).toBeVisible()
+    await expect(
+      page.getByRole("table", { name: "新增物品" }).getByRole("columnheader", { name: "数据手册" })
+    ).toBeVisible()
+    await expect(
+      page.getByRole("table", { name: "增加库存" }).getByRole("columnheader", { name: "目标物料" })
+    ).toBeVisible()
     await expect(page.getByText("型号后缀来自商品标题，建议在导入前核对封装。")).toBeVisible()
     await expect(page.getByText("未提供数据手册")).toBeVisible()
     await expect(
