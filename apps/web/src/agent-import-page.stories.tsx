@@ -36,6 +36,8 @@ export const ReadyToConfirm: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole("table", { name: "新增物品" })).toBeVisible()
     await expect(canvas.getByRole("table", { name: "增加库存" })).toBeVisible()
+    await userEvent.click(canvas.getByRole("button", { name: "展开物料详情" }))
+    await expect(canvas.getByLabelText("描述")).toBeVisible()
   },
 }
 

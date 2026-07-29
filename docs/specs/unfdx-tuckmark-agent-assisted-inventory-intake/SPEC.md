@@ -51,7 +51,7 @@ Confirmation writes are server-owned and recoverable. Selected new items create 
 
 - CLI catalog and inventory commands read DEVD data; `--devd-url` wins over `TUCKMARK_DEVD_URL` and either omission fails.
 - The create command opens an authorized confirmation URL unless `--no-open` is supplied.
-- The page presents separate editable tables for new-material and restock records. It supports full editing for new-material records, non-blocking attention/datasheet warnings, and selection. Restock controls edit only the persisted intake values (selection, quantity, and source note); target material details stay visible and read-only because confirmation writes only its inbound adjustment.
+- The page presents separate editable tables for new-material and restock records. New-material primary intake fields are edited inline, while its supplementary fields, label preview, and template fields expand in a detail row. It supports non-blocking attention/datasheet warnings and selection. Restock controls edit only the persisted intake values (selection, quantity, and source note); target material details stay visible and read-only because confirmation writes only its inbound adjustment.
 - Template switches produce an Agent event, wait state, and fresh field preview after fulfillment.
 - Tests use mocked order-derived proposals only. No real order file, session secret, product body, or screenshot is committed.
 

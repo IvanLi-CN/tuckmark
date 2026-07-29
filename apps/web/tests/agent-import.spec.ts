@@ -11,11 +11,13 @@ test.describe("agent-assisted inventory intake", () => {
     await expect(page.getByRole("heading", { name: "增加库存" })).toBeVisible()
     await expect(page.getByRole("table", { name: "新增物品" })).toBeVisible()
     await expect(page.getByRole("table", { name: "增加库存" })).toBeVisible()
+    await expect(page.getByRole("table", { name: "新增物品" }).locator("tbody > tr")).toHaveCount(1)
+    await expect(page.getByRole("table", { name: "增加库存" }).locator("tbody > tr")).toHaveCount(1)
     await expect(
       page.getByRole("table", { name: "新增物品" }).getByRole("columnheader", { name: "数据手册" })
     ).toBeVisible()
     await expect(
-      page.getByRole("table", { name: "增加库存" }).getByRole("columnheader", { name: "目标物料" })
+      page.getByRole("table", { name: "增加库存" }).getByRole("columnheader", { name: "物料" })
     ).toBeVisible()
     await expect(page.getByText("型号后缀来自商品标题，建议在导入前核对封装。")).toBeVisible()
     await expect(page.getByText("未提供数据手册")).toBeVisible()
@@ -30,7 +32,7 @@ test.describe("agent-assisted inventory intake", () => {
   }) => {
     await page.getByRole("combobox", { name: "标签模板" }).selectOption("system:shipping-compact")
 
-    await expect(page.getByText("等待 Agent 根据字段合同补全")).toBeVisible()
+    await expect(page.getByText("等待 Agent 补全", { exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: "确认导入选中项" })).toBeDisabled()
     await expect(page.getByLabel("目标物料 ID")).toBeDisabled()
   })
@@ -38,10 +40,11 @@ test.describe("agent-assisted inventory intake", () => {
   test("preserves current edits before requesting a replacement template contract", async ({
     page,
   }) => {
+    await page.getByRole("button", { name: "展开物料详情" }).click()
     await page.getByLabel("描述").first().fill("Mock draft edited before template replacement")
     await page.getByRole("combobox", { name: "标签模板" }).selectOption("system:shipping-compact")
 
-    await expect(page.getByText("等待 Agent 根据字段合同补全")).toBeVisible()
+    await expect(page.getByText("等待 Agent 补全", { exact: true })).toBeVisible()
     await expect(page.getByLabel("描述").first()).toHaveValue(
       "Mock draft edited before template replacement"
     )
