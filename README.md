@@ -49,6 +49,30 @@ the existing printer capability checks. High-cost agent practice scripts only
 generate packages, previews, packets, self-evaluation data, and HTML reports;
 they do not contain a physical print path.
 
+## Agent-Assisted Inventory Import
+
+Tuckmark does not parse private order exports, host an LLM, or automate a browser.
+An external Agent can interpret an order, optionally inspect an already-authorized
+product page, then submit a `tuckmark.agent-import.v1` proposal to a DEVD
+`server-http` instance that owns the shared local directory.
+
+Start DEVD with `TUCKMARK_DATA_DIR` set. Agent commands require `--devd-url`
+or `TUCKMARK_DEVD_URL`:
+
+- `tuckmark agent-import catalog --devd-url <url>` lists system and shared-directory templates, including suggested scopes and weights.
+- `tuckmark agent-import inventory --devd-url <url>` lists active inventory for Agent identity decisions.
+- `tuckmark agent-import create --file <proposal.json> --devd-url <url>` opens the user confirmation page; `--no-open` supports headless Agents.
+- `tuckmark agent-import wait` and `fulfill` let an Agent handle field contracts after the user changes a new-material template.
+
+The confirmation page keeps **new items** and **inventory restocks** separate. It
+does not force a material-identity confirmation: uncertainty is a non-blocking
+notice. Confirmed writes are performed by DEVD; new items create one material,
+one label binding, and an inbound adjustment, while restocks write only an
+inbound adjustment. Sessions use a fragment-held key and expire after 30 minutes.
+
+Use `skills/tuckmark-agent-import-user` outside a source checkout and
+`skills/tuckmark-agent-import-developer` while testing the active worktree.
+
 ## Local Preview
 
 ### Recommended startup path

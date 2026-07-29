@@ -114,6 +114,33 @@ describe("inventory-data-store", () => {
     expect(adjustments[0]?.note).toBe("补货")
   })
 
+  it("preserves imported datasheets when a material is later edited", async () => {
+    dataDirectoryServiceMocks.loadConfiguredDataDirectoryHandle.mockResolvedValue(null)
+    const created = await saveInventoryMaterial({
+      fullName: "Mock imported regulator",
+      description: "initial description",
+      packagingRemark: "reel",
+      labelBindings: [],
+      datasheets: [
+        {
+          title: "Manufacturer datasheet",
+          url: "https://manufacturer.example/mock-regulator.pdf",
+          source: "manufacturer",
+        },
+      ],
+    })
+
+    const edited = await saveInventoryMaterial({
+      id: created.id,
+      fullName: created.fullName,
+      description: "edited description",
+      packagingRemark: created.packagingRemark,
+      labelBindings: created.labelBindings,
+    })
+
+    expect(edited.datasheets).toEqual(created.datasheets)
+  })
+
   it("propagates directory read failures instead of treating them as an empty inventory", async () => {
     const handle = {
       queryPermission: vi.fn().mockResolvedValue("granted"),
@@ -157,6 +184,7 @@ describe("inventory-data-store", () => {
       {} as FileSystemDirectoryHandle
     )
     dataDirectoryServiceMocks.collectDirectoryFilesFromDirectoryHandle
+      .mockResolvedValueOnce(new Map())
       .mockResolvedValueOnce(
         new Map([
           [
@@ -189,6 +217,59 @@ describe("inventory-data-store", () => {
     expect(dataDirectoryServiceMocks.removeEntryIfPresentFromDirectoryHandle).toHaveBeenCalledWith(
       expect.anything(),
       `${adjustment.id}.json`
+    )
+  })
+
+  it("replays a pending Agent import before serving directory inventory", async () => {
+    const handle = {
+      queryPermission: vi.fn().mockResolvedValue("granted"),
+    } as unknown as FileSystemDirectoryHandle
+    const material = {
+      id: "inventory-material-agent-import-pending",
+      fullName: "PENDING-AGENT-IMPORT",
+      description: "",
+      packagingRemark: "",
+      currentQuantity: 4,
+      createdAt: "2026-07-27T00:00:00.000Z",
+      updatedAt: "2026-07-27T00:00:00.000Z",
+      archivedAt: null,
+      labelBindings: [],
+    }
+    dataDirectoryServiceMocks.loadConfiguredDataDirectoryHandle.mockResolvedValue(handle)
+    dataDirectoryServiceMocks.resolveDirectoryHandleFromDirectoryHandle.mockResolvedValue(
+      {} as FileSystemDirectoryHandle
+    )
+    dataDirectoryServiceMocks.collectDirectoryFilesFromDirectoryHandle
+      .mockResolvedValueOnce(
+        new Map([
+          [
+            "inventory/agent-import-transactions/recover.json",
+            JSON.stringify({
+              schema: "tuckmark.agent-import-transaction.v1",
+              writes: [
+                {
+                  relativePath: `inventory/materials/${material.id}.json`,
+                  value: material,
+                },
+              ],
+            }),
+          ],
+        ])
+      )
+      .mockResolvedValueOnce(new Map())
+      .mockResolvedValueOnce(
+        new Map([[`inventory/materials/${material.id}.json`, JSON.stringify(material)]])
+      )
+
+    await expect(listInventoryMaterials()).resolves.toEqual([expect.objectContaining(material)])
+    expect(dataDirectoryServiceMocks.writeTextFileToDirectoryHandle).toHaveBeenCalledWith(
+      handle,
+      `inventory/materials/${material.id}.json`,
+      expect.any(String)
+    )
+    expect(dataDirectoryServiceMocks.removeEntryIfPresentFromDirectoryHandle).toHaveBeenCalledWith(
+      expect.anything(),
+      "recover.json"
     )
   })
 })

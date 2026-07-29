@@ -88,6 +88,7 @@ class FakeServerService implements ServerService {
         width: 384,
         height: 224,
         tags: ["preset"],
+        recommendedUses: [],
         fields: [{ key: "recipient", label: "Recipient", required: true, multiline: false }],
         elements: [],
       },

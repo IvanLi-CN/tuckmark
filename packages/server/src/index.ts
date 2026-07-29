@@ -23,9 +23,17 @@ import {
   type TemplateUsageRecord,
   TuckmarkService,
 } from "@tuckmark/core"
+import {
+  agentImportItemSchema,
+  agentImportLocalTemplateSchema,
+  agentImportProposalSchema,
+  agentImportTemplateSchema,
+} from "@tuckmark/inventory"
 import cors from "cors"
 import express from "express"
 import { z } from "zod"
+
+import { AgentImportService } from "./agent-import-service.js"
 
 export interface ServerService {
   listTemplates(): Promise<Awaited<ReturnType<TuckmarkService["listTemplates"]>>>
@@ -152,13 +160,60 @@ const canvasDraftRecordRequestSchema = syncRecordSchema.refine(
   "Expected canvas_draft record"
 )
 
+const createAgentImportSessionSchema = z.object({
+  sessionId: z.string().min(24).max(200),
+  secret: z.string().min(32).max(1000),
+  proposal: agentImportProposalSchema,
+})
+
+const updateAgentImportItemSchema = z.object({
+  expectedRevision: z.number().int().min(0),
+  item: agentImportItemSchema,
+})
+
+const requestAgentImportTemplateSchema = z.object({
+  expectedRevision: z.number().int().min(0),
+  template: agentImportTemplateSchema,
+  localTemplate: agentImportLocalTemplateSchema.optional(),
+})
+
+const fulfillAgentImportTemplateSchema = z.object({
+  expectedRevision: z.number().int().min(0),
+  input: z.record(z.string(), z.string()),
+})
+
 function sendError(res: express.Response, error: unknown): void {
   const message = error instanceof Error ? error.message : "Unknown error"
   res.status(400).json({ status: "error", error: message })
 }
 
-export function createApp(service: ServerService = new TuckmarkService()): express.Express {
+export type CreateAppOptions = {
+  agentImportService?: AgentImportService | null
+}
+
+function requireAgentImportService(service: AgentImportService | null): AgentImportService {
+  if (!service) {
+    throw new Error(
+      "Agent import requires a server-managed data directory. Set TUCKMARK_DATA_DIR and use server-http."
+    )
+  }
+  return service
+}
+
+function requireAgentImportKey(req: express.Request): string {
+  const key = req.header("x-tuckmark-agent-import-key")?.trim()
+  if (!key) {
+    throw new Error("Missing agent import session key.")
+  }
+  return key
+}
+
+export function createApp(
+  service: ServerService = new TuckmarkService(),
+  options: CreateAppOptions = {}
+): express.Express {
   const app = express()
+  const agentImportService = options.agentImportService ?? AgentImportService.fromEnvironment()
   app.use(cors())
   app.use(express.json({ limit: "10mb" }))
 
@@ -369,6 +424,125 @@ export function createApp(service: ServerService = new TuckmarkService()): expre
           printerName
         )
       )
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.get("/api/agent-import/catalog", async (_req, res) => {
+    try {
+      res.json(await requireAgentImportService(agentImportService).catalog())
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.get("/api/agent-import/inventory", async (req, res) => {
+    try {
+      const query = typeof req.query.query === "string" ? req.query.query : undefined
+      res.json({
+        materials: await requireAgentImportService(agentImportService).listInventory(query),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post("/api/agent-import/sessions", (req, res) => {
+    try {
+      const payload = createAgentImportSessionSchema.parse(req.body)
+      res.status(201).json({
+        session: requireAgentImportService(agentImportService).createSession(payload),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.get("/api/agent-import/sessions/:sessionId", (req, res) => {
+    try {
+      res.json({
+        session: requireAgentImportService(agentImportService).getSession(
+          req.params.sessionId,
+          requireAgentImportKey(req)
+        ),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.get("/api/agent-import/sessions/:sessionId/events", (req, res) => {
+    try {
+      res.json({
+        events: requireAgentImportService(agentImportService).listEvents(
+          req.params.sessionId,
+          requireAgentImportKey(req)
+        ),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.put("/api/agent-import/sessions/:sessionId/items/:itemId", (req, res) => {
+    try {
+      const payload = updateAgentImportItemSchema.parse(req.body)
+      res.json({
+        session: requireAgentImportService(agentImportService).updateItem({
+          sessionId: req.params.sessionId,
+          secret: requireAgentImportKey(req),
+          itemId: req.params.itemId,
+          ...payload,
+        }),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post("/api/agent-import/sessions/:sessionId/items/:itemId/template-input", (req, res) => {
+    try {
+      const payload = requestAgentImportTemplateSchema.parse(req.body)
+      const { localTemplate, ...request } = payload
+      res.json({
+        session: requireAgentImportService(agentImportService).requestTemplateInput({
+          sessionId: req.params.sessionId,
+          secret: requireAgentImportKey(req),
+          itemId: req.params.itemId,
+          ...request,
+          ...(localTemplate ? { localTemplate } : {}),
+        }),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post("/api/agent-import/sessions/:sessionId/events/:eventId/fulfill", (req, res) => {
+    try {
+      const payload = fulfillAgentImportTemplateSchema.parse(req.body)
+      res.json({
+        session: requireAgentImportService(agentImportService).fulfillTemplateInput({
+          sessionId: req.params.sessionId,
+          secret: requireAgentImportKey(req),
+          eventId: req.params.eventId,
+          ...payload,
+        }),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post("/api/agent-import/sessions/:sessionId/confirm", async (req, res) => {
+    try {
+      res.json({
+        session: await requireAgentImportService(agentImportService).confirm(
+          req.params.sessionId,
+          requireAgentImportKey(req)
+        ),
+      })
     } catch (error) {
       sendError(res, error)
     }

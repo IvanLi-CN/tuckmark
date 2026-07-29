@@ -17,6 +17,18 @@ export const inventoryTemplateBindingSchema = z.object({
 })
 export type InventoryTemplateBinding = z.infer<typeof inventoryTemplateBindingSchema>
 
+export const inventoryDatasheetSchema = z
+  .object({
+    title: z.string().min(1).default("Datasheet"),
+    url: z.string().url().optional(),
+    source: z.enum(["manufacturer", "authorized-distributor"]).optional(),
+    missingReason: z.string().min(1).optional(),
+  })
+  .refine((value) => Boolean(value.url || value.missingReason), {
+    message: "A datasheet needs a URL or a missing reason.",
+  })
+export type InventoryDatasheet = z.infer<typeof inventoryDatasheetSchema>
+
 export const inventoryMaterialSchema = z.object({
   id: z.string().min(1),
   fullName: z.string().min(1),
@@ -31,6 +43,7 @@ export const inventoryMaterialSchema = z.object({
   updatedAt: z.string().min(1),
   archivedAt: z.string().nullable().optional(),
   labelBindings: z.array(inventoryTemplateBindingSchema).default([]),
+  datasheets: z.array(inventoryDatasheetSchema).optional(),
 })
 export type InventoryMaterial = z.infer<typeof inventoryMaterialSchema>
 

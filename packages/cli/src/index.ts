@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises"
+import { spawn } from "node:child_process"
+import { randomBytes, randomUUID } from "node:crypto"
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 
 import {
@@ -9,6 +12,7 @@ import {
   resolveUserTemplatePackageRenderOptions,
   TuckmarkService,
 } from "@tuckmark/core"
+import { agentImportProposalSchema } from "@tuckmark/inventory"
 import { z } from "zod"
 
 import {
@@ -91,6 +95,9 @@ async function main(): Promise<void> {
     case "inventory":
       await handleInventoryCommand(argv.slice(1))
       break
+    case "agent-import":
+      await handleAgentImportCommand(argv.slice(1))
+      break
     case "config":
       await handleConfigCommand(argv.slice(1))
       break
@@ -136,6 +143,12 @@ function printHelp(): void {
       "  tuckmark inventory update --id <id> [--full-name <name>] [--base-name <name>] [--variant-name <name>] [--package-name <name>] [--description <text>] [--matrix-code <code>] [--packaging-remark <text>] [--bindings <json>] [--data-dir <dir>]",
       "  tuckmark inventory archive --id <id> [--data-dir <dir>]",
       "  tuckmark inventory restore --id <id> [--data-dir <dir>]",
+      "  tuckmark agent-import catalog --devd-url <url>",
+      "  tuckmark agent-import inventory --devd-url <url> [--query <text>]",
+      "  tuckmark agent-import create --file <proposal.json> --devd-url <url> [--no-open] [--credential-file <path>]",
+      "  tuckmark agent-import open --session <id> [--credential-file <path>]",
+      "  tuckmark agent-import wait --session <id> --devd-url <url> [--timeout-ms <ms>] [--credential-file <path>]",
+      "  tuckmark agent-import fulfill --session <id> --event <id> --revision <n> --input <json> --devd-url <url> [--credential-file <path>]",
       "  tuckmark inventory delete --id <id> [--data-dir <dir>]",
       "  tuckmark inventory adjust --id <id> --kind <in|out|correction> [--quantity <n>] [--target-quantity <n>] [--note <text>] [--actor <name>] [--data-dir <dir>]",
       "  tuckmark inventory print --id <id> --binding <bindingId> --printer <printerId> [--printer-name <name>] [--quantity <n>] [--render-options <json>] [--data-dir <dir>]",
@@ -468,6 +481,240 @@ async function handleConfigCommand(args: string[]): Promise<void> {
     }
     default:
       throw new Error("config supports get-data-dir and set-data-dir.")
+  }
+}
+
+const agentImportCredentialSchema = z.object({
+  sessionId: z.string().min(1),
+  secret: z.string().min(32),
+  devdUrl: z.string().url(),
+  expiresAt: z.string().min(1),
+})
+
+type AgentImportCredential = z.infer<typeof agentImportCredentialSchema>
+
+function resolveDevdUrl(args: string[], fallback?: string): string {
+  const raw = parseFlag(args, "--devd-url") ?? process.env.TUCKMARK_DEVD_URL ?? fallback
+  if (!raw?.trim()) {
+    throw new Error("DEVD URL is required. Pass --devd-url or set TUCKMARK_DEVD_URL.")
+  }
+  const parsed = new URL(raw)
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("DEVD URL must use http or https.")
+  }
+  return parsed.toString().replace(/\/$/, "")
+}
+
+function defaultAgentImportCredentialPath(sessionId: string): string {
+  if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
+    throw new Error("Invalid agent import session identifier.")
+  }
+  return path.join(os.homedir(), ".cache", "tuckmark", "agent-import", `${sessionId}.json`)
+}
+
+async function writeAgentImportCredential(
+  filePath: string,
+  credential: AgentImportCredential
+): Promise<void> {
+  const resolved = path.resolve(filePath)
+  await mkdir(path.dirname(resolved), { recursive: true })
+  await writeFile(resolved, `${JSON.stringify(credential, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  })
+  if (process.platform !== "win32") {
+    await chmod(resolved, 0o600)
+  }
+}
+
+async function readAgentImportCredential(args: string[]): Promise<AgentImportCredential> {
+  const sessionId = requireFlag(args, "--session")
+  const filePath =
+    parseFlag(args, "--credential-file") ?? defaultAgentImportCredentialPath(sessionId)
+  const credential = agentImportCredentialSchema.parse(
+    JSON.parse(await readFile(path.resolve(filePath), "utf8"))
+  )
+  if (credential.sessionId !== sessionId) {
+    throw new Error("Agent import credential does not match --session.")
+  }
+  return credential
+}
+
+async function requestDevd<T>(args: {
+  devdUrl: string
+  pathname: string
+  method?: "GET" | "POST" | "PUT"
+  secret?: string
+  body?: unknown
+}): Promise<T> {
+  const response = await fetch(`${args.devdUrl}${args.pathname}`, {
+    method: args.method ?? "GET",
+    headers: {
+      ...(args.secret ? { "x-tuckmark-agent-import-key": args.secret } : {}),
+      ...(args.body === undefined ? {} : { "content-type": "application/json" }),
+    },
+    ...(args.body === undefined ? {} : { body: JSON.stringify(args.body) }),
+  })
+  const payload = (await response.json().catch(() => ({}))) as { error?: unknown }
+  if (!response.ok) {
+    throw new Error(
+      typeof payload.error === "string" ? payload.error : `DEVD returned ${response.status}.`
+    )
+  }
+  return payload as T
+}
+
+async function launchConfirmationUrl(url: string): Promise<void> {
+  const command =
+    process.platform === "darwin"
+      ? { executable: "open", args: [url] }
+      : process.platform === "win32"
+        ? { executable: "cmd", args: ["/c", "start", "", url] }
+        : { executable: "xdg-open", args: [url] }
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command.executable, command.args, {
+      detached: true,
+      stdio: "ignore",
+    })
+    child.once("error", reject)
+    child.once("spawn", () => {
+      child.unref()
+      resolve()
+    })
+  })
+}
+
+function confirmationUrl(devdUrl: string, credential: AgentImportCredential): string {
+  return `${devdUrl}/agent-import/${encodeURIComponent(credential.sessionId)}#key=${encodeURIComponent(credential.secret)}`
+}
+
+async function handleAgentImportCommand(args: string[]): Promise<void> {
+  const subcommand = args[0] ?? "help"
+  const rest = args.slice(1)
+
+  switch (subcommand) {
+    case "catalog": {
+      const catalog = await requestDevd({
+        devdUrl: resolveDevdUrl(rest),
+        pathname: "/api/agent-import/catalog",
+      })
+      console.log(JSON.stringify(catalog, null, 2))
+      return
+    }
+    case "inventory": {
+      const query = parseFlag(rest, "--query")
+      const inventory = await requestDevd({
+        devdUrl: resolveDevdUrl(rest),
+        pathname: `/api/agent-import/inventory${query ? `?query=${encodeURIComponent(query)}` : ""}`,
+      })
+      console.log(JSON.stringify(inventory, null, 2))
+      return
+    }
+    case "create": {
+      const devdUrl = resolveDevdUrl(rest)
+      const proposal = agentImportProposalSchema.parse(
+        JSON.parse(await readFile(path.resolve(requireFlag(rest, "--file")), "utf8"))
+      )
+      const sessionId = `agent-import-session-${randomUUID()}`
+      const secret = randomBytes(32).toString("base64url")
+      const response = await requestDevd<{
+        session: { id: string; expiresAt: string }
+      }>({
+        devdUrl,
+        pathname: "/api/agent-import/sessions",
+        method: "POST",
+        body: { sessionId, secret, proposal },
+      })
+      const credential = agentImportCredentialSchema.parse({
+        sessionId: response.session.id,
+        secret,
+        devdUrl,
+        expiresAt: response.session.expiresAt,
+      })
+      const credentialFile = path.resolve(
+        parseFlag(rest, "--credential-file") ??
+          defaultAgentImportCredentialPath(credential.sessionId)
+      )
+      await writeAgentImportCredential(credentialFile, credential)
+      if (!hasFlag(rest, "--no-open")) {
+        await launchConfirmationUrl(confirmationUrl(devdUrl, credential))
+      }
+      console.log(
+        JSON.stringify(
+          {
+            sessionId: credential.sessionId,
+            expiresAt: credential.expiresAt,
+            credentialFile,
+            opened: !hasFlag(rest, "--no-open"),
+          },
+          null,
+          2
+        )
+      )
+      return
+    }
+    case "open": {
+      const credential = await readAgentImportCredential(rest)
+      const devdUrl = resolveDevdUrl(rest, credential.devdUrl)
+      await launchConfirmationUrl(confirmationUrl(devdUrl, credential))
+      console.log(JSON.stringify({ sessionId: credential.sessionId, opened: true }, null, 2))
+      return
+    }
+    case "wait": {
+      const credential = await readAgentImportCredential(rest)
+      const devdUrl = resolveDevdUrl(rest, credential.devdUrl)
+      const timeoutMs = parseIntegerFlag(rest, "--timeout-ms") ?? 25_000
+      if (timeoutMs < 0) {
+        throw new Error("--timeout-ms must be zero or greater.")
+      }
+      const deadline = Date.now() + timeoutMs
+      do {
+        const result = await requestDevd<{
+          events: unknown[]
+        }>({
+          devdUrl,
+          pathname: `/api/agent-import/sessions/${encodeURIComponent(credential.sessionId)}/events`,
+          secret: credential.secret,
+        })
+        if (result.events.length > 0 || Date.now() >= deadline) {
+          console.log(
+            JSON.stringify(
+              {
+                sessionId: credential.sessionId,
+                events: result.events,
+                waiting: result.events.length === 0,
+              },
+              null,
+              2
+            )
+          )
+          return
+        }
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, Math.min(1_000, deadline - Date.now()))
+        )
+      } while (Date.now() < deadline)
+      return
+    }
+    case "fulfill": {
+      const credential = await readAgentImportCredential(rest)
+      const devdUrl = resolveDevdUrl(rest, credential.devdUrl)
+      const input = z.record(z.string(), z.string()).parse(JSON.parse(requireFlag(rest, "--input")))
+      const session = await requestDevd({
+        devdUrl,
+        pathname: `/api/agent-import/sessions/${encodeURIComponent(credential.sessionId)}/events/${encodeURIComponent(requireFlag(rest, "--event"))}/fulfill`,
+        method: "POST",
+        secret: credential.secret,
+        body: {
+          expectedRevision: parseIntegerFlag(rest, "--revision"),
+          input,
+        },
+      })
+      console.log(JSON.stringify(session, null, 2))
+      return
+    }
+    default:
+      throw new Error("agent-import supports catalog, inventory, create, open, wait, and fulfill.")
   }
 }
 

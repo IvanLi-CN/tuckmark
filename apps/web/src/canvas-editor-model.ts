@@ -934,6 +934,7 @@ export function createDraftFromUserTemplatePackage(
     })),
     elements: templatePackage.elements,
     tags: templatePackage.tags,
+    recommendedUses: templatePackage.recommendedUses ?? [],
   }
 
   const draft = normalizeDraftDocument({

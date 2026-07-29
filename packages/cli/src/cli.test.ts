@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -76,6 +78,216 @@ describe("cli smoke", () => {
 
   it("loads", () => {
     expect(true).toBe(true)
+  })
+
+  it("uses the DEVD agent-import API without printing the session secret", {
+    timeout: 20_000,
+  }, async () => {
+    const workingDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-agent-import-"))
+    tempDirs.push(workingDir)
+    const proposalPath = path.join(workingDir, "mock-proposal.json")
+    const credentialPath = path.join(workingDir, "session.json")
+    await writeFile(
+      proposalPath,
+      JSON.stringify({
+        schema: "tuckmark.agent-import.v1",
+        sourceNote: "mock order",
+        items: [
+          {
+            id: "mock-new-item",
+            kind: "new",
+            selected: true,
+            quantity: 3,
+            material: {
+              fullName: "Mock capacitor",
+              description: "mock data only",
+              packagingRemark: "reel",
+              datasheets: [
+                {
+                  title: "Mock datasheet",
+                  url: "https://manufacturer.example/mock-capacitor.pdf",
+                  source: "manufacturer",
+                },
+              ],
+            },
+            sourceNote: "mock order row",
+            template: {
+              source: "system",
+              id: "cable-tag",
+              name: "Cable Tag",
+              fields: [],
+              recommendedUses: [{ scope: "electronics", weight: 90 }],
+            },
+            templateAlternatives: [],
+            templateInput: {},
+            revision: 0,
+            pendingTemplateEventId: null,
+          },
+        ],
+      })
+    )
+
+    const received: {
+      createBody?: { sessionId: string; secret: string }
+      fulfillHeader?: string | undefined
+      fulfillBody?: { expectedRevision: number; input: Record<string, string> }
+    } = {}
+    const server = createServer(async (request, response) => {
+      const body = await new Promise<string>((resolve, reject) => {
+        const chunks: Buffer[] = []
+        request.on("data", (chunk: Buffer) => chunks.push(chunk))
+        request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")))
+        request.on("error", reject)
+      })
+      response.setHeader("content-type", "application/json")
+      if (request.method === "POST" && request.url === "/api/agent-import/sessions") {
+        received.createBody = JSON.parse(body) as { sessionId: string; secret: string }
+        response.end(
+          JSON.stringify({
+            session: {
+              id: received.createBody.sessionId,
+              expiresAt: "2026-07-30T12:00:00.000Z",
+            },
+          })
+        )
+        return
+      }
+      if (request.method === "GET" && request.url === "/api/agent-import/catalog") {
+        response.end(
+          JSON.stringify({
+            templates: [
+              {
+                source: "system",
+                id: "cable-tag",
+                name: "Cable Tag",
+                fields: [],
+                recommendedUses: [{ scope: "electronics", weight: 90 }],
+              },
+            ],
+          })
+        )
+        return
+      }
+      if (request.method === "GET" && request.url?.endsWith("/events")) {
+        response.end(
+          JSON.stringify({
+            events: [
+              {
+                id: "mock-event",
+                type: "template-input-requested",
+                itemId: "mock-new-item",
+                revision: 1,
+                template: {
+                  source: "system",
+                  id: "cable-tag",
+                  name: "Cable Tag",
+                  fields: [{ key: "name", label: "Name", required: true, multiline: false }],
+                  recommendedUses: [{ scope: "electronics", weight: 90 }],
+                },
+                createdAt: "2026-07-30T11:00:00.000Z",
+                status: "open",
+              },
+            ],
+          })
+        )
+        return
+      }
+      if (request.method === "POST" && request.url?.endsWith("/events/mock-event/fulfill")) {
+        received.fulfillHeader = request.headers["x-tuckmark-agent-import-key"] as
+          | string
+          | undefined
+        received.fulfillBody = JSON.parse(body) as {
+          expectedRevision: number
+          input: Record<string, string>
+        }
+        response.end(JSON.stringify({ session: { state: "open" } }))
+        return
+      }
+      response.statusCode = 404
+      response.end(JSON.stringify({ error: "mock endpoint not found" }))
+    })
+    const baseUrl = await new Promise<string>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, "127.0.0.1", () => {
+        resolve(`http://127.0.0.1:${(server.address() as AddressInfo).port}`)
+      })
+    })
+
+    try {
+      const create = await runCliWithEnv(
+        [
+          "agent-import",
+          "create",
+          "--file",
+          proposalPath,
+          "--credential-file",
+          credentialPath,
+          "--devd-url",
+          baseUrl,
+          "--no-open",
+        ],
+        { TUCKMARK_DEVD_URL: "http://127.0.0.1:1" }
+      )
+      const created = JSON.parse(create.stdout) as { sessionId: string; opened: boolean }
+      const credential = JSON.parse(await readFile(credentialPath, "utf8")) as {
+        secret: string
+        sessionId: string
+      }
+
+      expect(created.opened).toBe(false)
+      expect(created.sessionId).toBe(credential.sessionId)
+      expect(received.createBody?.secret).toBe(credential.secret)
+      expect(create.stdout).not.toContain(credential.secret)
+
+      const catalog = JSON.parse(
+        (await runCli(["agent-import", "catalog", "--devd-url", baseUrl])).stdout
+      ) as { templates: Array<{ recommendedUses: Array<{ scope: string }> }> }
+      expect(catalog.templates[0]?.recommendedUses[0]?.scope).toBe("electronics")
+
+      const waiting = JSON.parse(
+        (
+          await runCli([
+            "agent-import",
+            "wait",
+            "--session",
+            created.sessionId,
+            "--credential-file",
+            credentialPath,
+            "--devd-url",
+            baseUrl,
+            "--timeout-ms",
+            "0",
+          ])
+        ).stdout
+      ) as { events: Array<{ id: string }> }
+      expect(waiting.events[0]?.id).toBe("mock-event")
+
+      await runCli([
+        "agent-import",
+        "fulfill",
+        "--session",
+        created.sessionId,
+        "--credential-file",
+        credentialPath,
+        "--event",
+        "mock-event",
+        "--revision",
+        "1",
+        "--input",
+        '{"name":"Mock capacitor"}',
+        "--devd-url",
+        baseUrl,
+      ])
+      expect(received.fulfillHeader).toBe(credential.secret)
+      expect(received.fulfillBody).toEqual({
+        expectedRevision: 1,
+        input: { name: "Mock capacitor" },
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve()))
+      )
+    }
   })
 
   it("validates user template packages", { timeout: 20_000 }, async () => {

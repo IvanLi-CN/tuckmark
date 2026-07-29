@@ -3,11 +3,13 @@
   "compilerOptions": {
     "ignoreDeprecations": "6.0",
     "noEmit": true,
-    "rootDir": "..",
+    "rootDir": "../..",
     "baseUrl": "../..",
     "paths": {
       "@tuckmark/core": ["packages/core/src/index.ts"],
-      "@tuckmark/core/*": ["packages/core/src/*"]
+      "@tuckmark/core/*": ["packages/core/src/*"],
+      "@tuckmark/inventory": ["plugins/inventory/src/index.ts"],
+      "@tuckmark/inventory/*": ["plugins/inventory/src/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.test.ts", "../core/src/**/*.d.ts"]
