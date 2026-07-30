@@ -355,9 +355,7 @@
 }
 
 .tm-agent-import__selection {
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 650;
+  justify-content: center;
 }
 
 .tm-agent-import__table-shell {

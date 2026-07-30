@@ -645,7 +645,6 @@ function NewItemTableRow({
                 onChange((current) => ({ ...current, selected: event.target.checked }))
               }
             />
-            <span>{item.selected ? "将导入" : "不导入"}</span>
           </label>
         </td>
         <td>
@@ -948,7 +947,6 @@ function RestockItemTableRow({
               onChange((current) => ({ ...current, selected: event.target.checked }))
             }
           />
-          <span>{item.selected ? "将导入" : "不导入"}</span>
         </label>
       </td>
       <td className="tm-agent-import__target-material">
