@@ -663,7 +663,7 @@ describe("pwa-lifecycle", () => {
     restore()
   })
 
-  it("clears cached app shell state before reloading a version-probe update", async () => {
+  it("requests a complete update before changing a version-probe client", async () => {
     const reloadWindow = vi.fn()
     const { controller, registrationHandle, restore } = installBrowserState({
       remoteMetadata: {
@@ -680,17 +680,17 @@ describe("pwa-lifecycle", () => {
     await controller.register()
     await flushPromises()
 
+    const updateCallsBeforeApply = registrationHandle.update.mock.calls.length
+
     controller.applyUpdate()
     await flushPromises()
 
-    expect(registrationHandle.unregister).toHaveBeenCalledTimes(1)
-    expect(caches.keys).toHaveBeenCalledTimes(1)
-    expect(caches.delete).toHaveBeenCalledWith("tuckmark-app-old")
-    expect(caches.delete).not.toHaveBeenCalledWith("other-cache")
-    await vi.waitFor(() => {
-      expect(reloadWindow).toHaveBeenCalledTimes(1)
-    })
-    expect(latestSnapshot).toBe("activating:version-probe")
+    expect(registrationHandle.update).toHaveBeenCalledTimes(updateCallsBeforeApply + 1)
+    expect(registrationHandle.unregister).not.toHaveBeenCalled()
+    expect(caches.keys).not.toHaveBeenCalled()
+    expect(caches.delete).not.toHaveBeenCalled()
+    expect(reloadWindow).not.toHaveBeenCalled()
+    expect(latestSnapshot).toBe("installing:version-probe")
 
     unsubscribe()
     controller.dispose()

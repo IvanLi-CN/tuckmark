@@ -316,8 +316,8 @@ export const HomeDarkDeferredHydrationPending: Story = {
       shellReady: true,
       currentRouteReady: true,
       deferredHydrationPending: true,
-      offlineWarmupPending: true,
-      offlineWarmupStatus: "pending",
+      offlineReadinessPending: true,
+      offlineReadinessStatus: "pending",
     },
   },
 }

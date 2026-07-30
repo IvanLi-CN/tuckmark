@@ -87,15 +87,15 @@ describe("PWA build assets", () => {
     })
   })
 
-  it("generates a service worker with app-shell caching and update activation", () => {
+  it("generates a service worker that publishes only complete offline app versions", () => {
     const source = createServiceWorkerSource({
       version: "test-version",
       versionMetadataFile: "version.json",
       assets: [
-        { tier: "shell", url: "./index.html", revision: "index" },
-        { tier: "route", url: "./assets/route-templates.js", revision: "route" },
-        { tier: "feature", url: "./assets/feature-fonts.css", revision: "feature" },
-        { tier: "shell", url: "./pwa/tuckmark-icon-192.png", revision: "icon" },
+        { url: "./index.html", revision: "index" },
+        { url: "./assets/route-templates.js", revision: "route" },
+        { url: "./assets/feature-fonts.css", revision: "feature" },
+        { url: "./pwa/tuckmark-icon-192.png", revision: "icon" },
       ],
     })
 
@@ -104,12 +104,13 @@ describe("PWA build assets", () => {
     expect(source).toContain('"./assets/route-templates.js"')
     expect(source).toContain('"./assets/feature-fonts.css"')
     expect(source).toContain('"./pwa/tuckmark-icon-192.png"')
-    expect(source).toContain('const INSTALL_TIERS = ["shell", "route"]')
-    expect(source).toContain('event.data?.type === "WARM_ASSETS"')
-    expect(source).toContain(
-      'const tiers = Array.isArray(event.data.tiers) ? event.data.tiers : ["feature"]'
-    )
-    expect(source).toContain("cacheAssetUrls(resolveAssetUrlsForTiers(INSTALL_TIERS))")
+    expect(source).toContain('const CACHE_READY_MARKER = "./__tuckmark-cache-ready__"')
+    expect(source).toContain("cache.addAll(PRECACHE_ASSETS.map((asset) => asset.url))")
+    expect(source).toContain("await cache.put(\n    CACHE_READY_MARKER")
+    expect(source).toContain("cache.match(CACHE_READY_MARKER)")
+    expect(source).toContain("caches.open(APP_CACHE)")
+    expect(source).not.toContain("WARM_ASSETS")
+    expect(source).not.toContain("caches.match(request")
     expect(source).toContain('event.data?.type === "SKIP_WAITING"')
     expect(source).toContain('const VERSION_METADATA_URL = "./version.json"')
     expect(source).toContain("requestUrl.pathname.endsWith(VERSION_METADATA_URL.slice(1))")

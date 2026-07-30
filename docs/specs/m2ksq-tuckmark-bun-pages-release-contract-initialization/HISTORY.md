@@ -96,3 +96,13 @@ publication now derives human-readable notes from the verified release snapshot
 and merged PR metadata, uploads a durable `release-context-<merge_sha>`
 artifact for failure analysis, and fails before `gh release create` whenever
 that release context cannot produce the required notes sections.
+
+The offline startup contract was corrected after an interrupted cache could
+leave `index.html` pointing at uncached runtime chunks and hold the static launch
+shell forever. Browser-static releases now publish only complete, marked cache
+versions; previous complete versions remain protected until replacement
+activation. A still-loading workbench receives a non-blocking update-restart
+suggestion after 10 seconds, while the terminal state appears after one minute.
+The terminal state deliberately requires an owner action: startup never repairs
+caches, activates a worker, or reloads automatically, and it protects the
+installed complete version and all browser user data.

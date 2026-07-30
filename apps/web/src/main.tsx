@@ -7,18 +7,21 @@ declare global {
       setPhase: (
         phaseId: "bootstrap-loaded" | "current-route-chunk-ready" | "current-route-data-ready"
       ) => void
+      markMounted: () => void
+      fail: () => void
     }
   }
 }
 
 const rootElement = document.getElementById("root")
 if (rootElement) {
-  restoreSpaRedirectLocation()
-  window.__tuckmarkLaunchShell?.setPhase("current-route-chunk-ready")
-  void Promise.all([
-    import("./app-runtime.js"),
-    preloadWorkbenchRoute(window.location.pathname).catch(() => false),
-  ]).then(([runtimeModule, currentRouteChunkReady]) => {
+  void (async () => {
+    restoreSpaRedirectLocation()
+    window.__tuckmarkLaunchShell?.setPhase("current-route-chunk-ready")
+    const [runtimeModule, currentRouteChunkReady] = await Promise.all([
+      import("./app-runtime.js"),
+      preloadWorkbenchRoute(window.location.pathname).catch(() => false),
+    ])
     if (currentRouteChunkReady) {
       window.__tuckmarkLaunchShell?.setPhase("current-route-data-ready")
     }
@@ -31,5 +34,8 @@ if (rootElement) {
       },
       true
     )
+    window.__tuckmarkLaunchShell?.markMounted()
+  })().catch(() => {
+    window.__tuckmarkLaunchShell?.fail()
   })
 }
