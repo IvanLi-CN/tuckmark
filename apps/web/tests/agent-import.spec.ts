@@ -14,6 +14,7 @@ test.describe("agent-assisted inventory intake", () => {
     await expect(page.getByRole("table", { name: "新增物品" }).locator("tbody > tr")).toHaveCount(1)
     await expect(page.getByRole("table", { name: "增加库存" }).locator("tbody > tr")).toHaveCount(1)
     await expect(page.getByLabel("导入此物料").first()).toBeChecked()
+    await expect(page.getByRole("button", { name: "保存当前编辑" })).toHaveCount(2)
     await expect(
       page.getByRole("table", { name: "新增物品" }).getByRole("columnheader", { name: "数据手册" })
     ).toBeVisible()

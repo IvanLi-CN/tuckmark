@@ -769,6 +769,7 @@ function NewItemTableRow({
               type="button"
               variant="ghost"
               size="icon"
+              className="size-9"
               aria-label={expanded ? "收起物料详情" : "展开物料详情"}
               title={expanded ? "收起物料详情" : "展开物料详情"}
               onClick={onToggleDetails}
@@ -1073,6 +1074,7 @@ function SaveItemAction({
       type="button"
       variant="ghost"
       size="icon"
+      className="size-9"
       aria-label="保存当前编辑"
       title="保存当前编辑"
       disabled={disabled}

@@ -455,7 +455,7 @@
 }
 
 .tm-agent-import__column--quantity {
-  width: 92px;
+  width: 90px;
 }
 
 .tm-agent-import__column--source {
@@ -467,7 +467,7 @@
 }
 
 .tm-agent-import__column--action {
-  width: 92px;
+  width: 80px;
 }
 
 .tm-agent-import__table-cell--select {
@@ -475,6 +475,7 @@
 }
 
 .tm-agent-import__table-cell--action {
+  padding-inline: 2px;
   text-align: center;
 }
 
