@@ -44,7 +44,6 @@ const INITIAL_SNAPSHOT: PwaUpdateSnapshot = {
 }
 const PERIODIC_UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000
 const ACTIVATION_STALE_UPDATE_CHECK_MS = 10 * 60 * 1000
-const APP_CACHE_PREFIX = "tuckmark-app-"
 
 function serviceWorkersSupported(): boolean {
   return typeof navigator !== "undefined" && "serviceWorker" in navigator
@@ -236,9 +235,19 @@ export class PwaUpdateController {
     }
 
     if (this.snapshot.source === "version-probe") {
-      this.setSnapshot({ status: "activating" })
-      void this.resetCachedShellForProbeUpdate().finally(() => {
-        this.reloadWindow()
+      if (!this.registration) {
+        this.setSnapshot({
+          status: "error",
+          error: "更新尚未完整下载，请保持联网后重试。",
+        })
+        return
+      }
+      this.setSnapshot({ status: "installing" })
+      void this.registration.update().catch((error: unknown) => {
+        this.setSnapshot({
+          status: "error",
+          error: error instanceof Error ? error.message : String(error),
+        })
       })
       return
     }
@@ -274,34 +283,6 @@ export class PwaUpdateController {
     if (this.periodicCheckTimer !== null && typeof window !== "undefined") {
       window.clearInterval(this.periodicCheckTimer)
       this.periodicCheckTimer = null
-    }
-  }
-
-  private async resetCachedShellForProbeUpdate(): Promise<void> {
-    const cacheStorage = typeof caches === "undefined" ? null : caches
-    const cleanupTasks: Array<Promise<unknown>> = []
-
-    if (this.registration && typeof this.registration.unregister === "function") {
-      cleanupTasks.push(this.registration.unregister().catch(() => false))
-    }
-
-    if (cacheStorage) {
-      cleanupTasks.push(
-        cacheStorage
-          .keys()
-          .then((keys) =>
-            Promise.all(
-              keys
-                .filter((key) => key.startsWith(APP_CACHE_PREFIX))
-                .map((key) => cacheStorage.delete(key))
-            )
-          )
-          .catch(() => undefined)
-      )
-    }
-
-    if (cleanupTasks.length > 0) {
-      await Promise.all(cleanupTasks)
     }
   }
 

@@ -106,8 +106,8 @@ import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
 import { canvasDotsToMillimeters, canvasMillimetersToDots } from "./lib/canvas-units.js"
 import { cn } from "./lib/utils.js"
 import { OutputSettingsControls, PositionedPreview } from "./output-settings-ui.js"
-import { usePwaAssetWarmup } from "./pwa-asset-warmup.js"
 import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
+import { usePwaOfflineReadiness } from "./pwa-offline-readiness.js"
 import { applyPwaUpdate, PwaUpdateToast, usePwaUpdate } from "./pwa-update-toast.js"
 import { buildStartupSplashState, type WorkbenchHydrationState } from "./startup-contract.js"
 import { SystemDataStorageCard } from "./system-data-storage-card.js"
@@ -1894,7 +1894,7 @@ function WorkbenchLayout({
       aria-busy={navigationState.active}
       data-deferred-hydration-pending={hydrationState.deferredHydrationPending ? "true" : "false"}
       data-navigation-phase={navigationState.phase}
-      data-offline-warmup-status={hydrationState.offlineWarmupStatus}
+      data-offline-readiness-status={hydrationState.offlineReadinessStatus}
       data-shell-ready={hydrationState.shellReady ? "true" : "false"}
     >
       <div
@@ -4978,7 +4978,10 @@ function WorkbenchAppInner({
   const [archiveToast, setArchiveToast] = React.useState<TemplateArchiveToastState | null>(null)
   const currentRouteChunkReady =
     initialRoutePath === "/" || Boolean(bootstrapState?.currentRouteChunkReady) || true
-  const offlineWarmupStatus = usePwaAssetWarmup(controller.context, controller.startupSyncReady)
+  const offlineReadinessStatus = usePwaOfflineReadiness(
+    controller.context,
+    controller.startupSyncReady
+  )
 
   React.useEffect(() => {
     if (!archiveToast) {
@@ -5006,14 +5009,14 @@ function WorkbenchAppInner({
       shellReady: currentRouteChunkReady && controller.startupSyncReady,
       currentRouteReady: currentRouteChunkReady && controller.startupSyncReady,
       deferredHydrationPending: controller.deferredHydrationPending,
-      offlineWarmupPending: offlineWarmupStatus === "pending",
-      offlineWarmupStatus,
+      offlineReadinessPending: offlineReadinessStatus === "pending",
+      offlineReadinessStatus,
     }),
     [
       controller.deferredHydrationPending,
       controller.startupSyncReady,
       currentRouteChunkReady,
-      offlineWarmupStatus,
+      offlineReadinessStatus,
     ]
   )
   const launchSplashState = React.useMemo(
@@ -5022,13 +5025,13 @@ function WorkbenchAppInner({
         currentRouteChunkReady,
         currentRouteDataReady: controller.startupSyncReady,
         deferredHydrationPending: controller.deferredHydrationPending,
-        offlineWarmupStatus,
+        offlineReadinessStatus,
       }),
     [
       controller.deferredHydrationPending,
       controller.startupSyncReady,
       currentRouteChunkReady,
-      offlineWarmupStatus,
+      offlineReadinessStatus,
     ]
   )
   const handlePresentArchiveToast = React.useCallback((template: UserTemplateSummary) => {
@@ -5108,8 +5111,8 @@ function WorkbenchAppStoryInner({
     shellReady: true,
     currentRouteReady: true,
     deferredHydrationPending: controller.deferredHydrationPending,
-    offlineWarmupPending: false,
-    offlineWarmupStatus: "complete",
+    offlineReadinessPending: false,
+    offlineReadinessStatus: "complete",
     ...hydrationStateOverride,
   }
 

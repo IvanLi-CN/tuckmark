@@ -4,28 +4,28 @@ export type StartupTaskId =
   | "bootstrap-loaded"
   | "current-route-chunk-ready"
   | "current-route-data-ready"
-  | "offline-warmup"
+  | "offline-readiness"
 
 export type StartupTaskState = "pending" | "active" | "complete"
 
-export type OfflineWarmupStatus = "unsupported" | "idle" | "pending" | "complete" | "error"
+export type OfflineReadinessStatus = "unsupported" | "idle" | "pending" | "complete" | "error"
 
 export type WorkbenchHydrationState = {
   shellReady: boolean
   currentRouteReady: boolean
   deferredHydrationPending: boolean
-  offlineWarmupPending: boolean
-  offlineWarmupStatus: OfflineWarmupStatus
+  offlineReadinessPending: boolean
+  offlineReadinessStatus: OfflineReadinessStatus
 }
 
 const STARTUP_TASK_LABELS: Record<StartupTaskId, string> = {
   "bootstrap-loaded": "启动运行时引导",
   "current-route-chunk-ready": "装载当前页面模块",
   "current-route-data-ready": "准备当前页面状态",
-  "offline-warmup": "补齐离线资源缓存",
+  "offline-readiness": "验证离线版本完整性",
 }
 
-function resolveWarmupTaskState(status: OfflineWarmupStatus): StartupTaskState {
+function resolveOfflineReadinessTaskState(status: OfflineReadinessStatus): StartupTaskState {
   if (status === "complete" || status === "unsupported") {
     return "complete"
   }
@@ -38,7 +38,7 @@ function resolveWarmupTaskState(status: OfflineWarmupStatus): StartupTaskState {
 export function buildStartupTaskSteps(args: {
   currentRouteChunkReady: boolean
   currentRouteDataReady: boolean
-  offlineWarmupStatus: OfflineWarmupStatus
+  offlineReadinessStatus: OfflineReadinessStatus
 }): readonly AppLaunchSplashStep[] {
   const bootstrapLoaded = true
   return [
@@ -62,9 +62,9 @@ export function buildStartupTaskSteps(args: {
           : "pending",
     },
     {
-      id: "offline-warmup",
-      label: STARTUP_TASK_LABELS["offline-warmup"],
-      state: resolveWarmupTaskState(args.offlineWarmupStatus),
+      id: "offline-readiness",
+      label: STARTUP_TASK_LABELS["offline-readiness"],
+      state: resolveOfflineReadinessTaskState(args.offlineReadinessStatus),
     },
   ] satisfies readonly AppLaunchSplashStep[]
 }
@@ -72,7 +72,7 @@ export function buildStartupTaskSteps(args: {
 export function buildStartupSplashState(args: {
   currentRouteChunkReady: boolean
   currentRouteDataReady: boolean
-  offlineWarmupStatus: OfflineWarmupStatus
+  offlineReadinessStatus: OfflineReadinessStatus
   deferredHydrationPending: boolean
 }) {
   const steps = buildStartupTaskSteps(args)
@@ -97,9 +97,9 @@ export function buildStartupSplashState(args: {
     }
   }
 
-  if (args.offlineWarmupStatus === "pending") {
+  if (args.offlineReadinessStatus === "pending") {
     return {
-      detailText: "工作台已可用，正在后台静默补齐完整资产。",
+      detailText: "工作台已可用，正在后台确认离线版本完整性。",
       progressPercent,
       statusText: "正在进入工作台",
       steps,
@@ -108,7 +108,7 @@ export function buildStartupSplashState(args: {
 
   if (args.deferredHydrationPending) {
     return {
-      detailText: "工作台已可用，正在后台静默补齐完整资产。",
+      detailText: "工作台已可用，离线版本会在后台准备。",
       progressPercent,
       statusText: "正在进入工作台",
       steps,

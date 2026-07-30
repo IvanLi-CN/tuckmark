@@ -47,7 +47,8 @@
 - `apps/web/src/main.tsx` is now a thin bootstrap: it restores SPA fallback
   location, preloads the current route chunk, and asynchronously imports
   `apps/web/src/app-runtime.tsx` instead of mounting the whole workbench bundle
-  directly from the HTML entry.
+  directly from the HTML entry. It reports every bootstrap failure to the
+  static launch shell and marks the shell mounted only after React takes over.
 - `apps/web/src/app-launch-splash.tsx` mirrors that shell for runtime review
   and now exposes an explicit `theme` prop so Storybook can lock light or dark
   states without relying on ambient browser settings.
@@ -56,24 +57,32 @@
   - `bootstrap-loaded`
   - `current-route-chunk-ready`
   - `current-route-data-ready`
-  - `offline-warmup`
+  - `offline-readiness`
 - The owner-facing launch shell no longer renders those internal phases as a
   visible checklist. `apps/web/index.html`, `apps/web/src/app-launch-splash.tsx`,
   and `apps/web/src/workbench-app.tsx` now keep the public copy generic, avoid
   secondary explanatory cards, and keep the progress rail indeterminate because
-  route readiness, deferred hydration, and offline warmup may overlap in real
+  route readiness, deferred hydration, and offline readiness may overlap in real
   startup traces.
 - `apps/web/src/workbench-app.tsx` keeps the routed runtime shell mounted for
   code-loading continuity, but hides it with the platform `hidden` contract
   until `shellReady` flips true so the startup overlay never reveals the
   workbench underneath before the current route is actually ready.
-- `apps/web/vite.config.ts` now classifies browser-static assets into
-  `shell`, `route`, and `feature` tiers. The emitted service worker precaches
-  only `shell + route` during `install`, bypasses `version.json`, and accepts
-  `WARM_ASSETS` messages for silent background feature caching.
-- `apps/web/src/pwa-asset-warmup.ts` triggers runtime warmup of `feature`
-  assets only after the current-route shell is mounted, keeping offline
-  coverage automatic without blocking startup navigation.
+- `apps/web/vite.config.ts` emits an atomic browser-static offline version. The
+  worker caches every emitted static application asset, HTML entry, manifest,
+  and icon during `install`, then writes `./__tuckmark-cache-ready__`; it reads
+  only that ready cache for navigation and asset responses. `sw.js` and
+  `version.json` are intentionally excluded from the version cache.
+- `apps/web/index.html` registers the worker before React starts and owns a
+  10-second slow-start notice plus a 60-second terminal startup guard. The
+  notice suggests checking for the latest version and restarting without
+  interrupting a still-loading app. The terminal state never auto-clears
+  caches, unregisters workers, activates a waiting worker, or reloads; only an
+  owner-triggered update restart may activate a complete waiting worker. The
+  flow never deletes IndexedDB, LocalStorage, OPFS, or permissions.
+- `apps/web/src/pwa-offline-readiness.ts` reports whether an active worker is
+  available for a complete offline version; it replaces the former runtime
+  asset-warmup message protocol.
 - `apps/web/src/workbench-route-registry.tsx` now exposes route preloading
   helpers for `/templates`, `/canvas`, and `/system`, and
   `apps/web/src/workbench-app.tsx` uses them in two places:
@@ -93,11 +102,12 @@
 - Route-level chunk failures now reset through a project-owned recovery panel
   with retry / home / reload actions instead of exposing stock router or
   dev-server error messaging.
-- `apps/web/tests/pwa.spec.ts` covers service worker registration, offline
-  route refresh, launch-shell-first startup, warmup-complete offline behavior,
-  deferred-route warmup preventing startup-like page-switch loading, and PWA
-  asset inspection including `version.json` consistency, asset-tier
-  separation, and non-precache behavior.
+- `apps/web/tests/pwa.spec.ts` covers service worker registration, complete
+  cache marker presence, offline route refresh, launch-shell-first startup,
+  deferred-route continuity, an intentional runtime-import failure, 10-second
+  slow-start guidance, 60-second terminal recovery, complete-cache protection,
+  owner-triggered waiting-worker activation, and PWA artifact inspection
+  including `version.json` exclusion.
 - `apps/web/src/pwa-lifecycle.test.ts` covers the guarded update-check cadence:
   immediate startup checks, 30-minute periodic polling, 10-minute stale-tab
   activation catch-up, offline skips, online retries, in-flight dedupe, and

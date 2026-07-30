@@ -12,6 +12,13 @@ const preview: Preview = {
     },
     viewport: {
       options: {
+        "launch-mobile": {
+          name: "Launch Mobile 390",
+          styles: {
+            width: "390px",
+            height: "844px",
+          },
+        },
         "template-single-outlet": {
           name: "Template Single Outlet 1100",
           styles: {

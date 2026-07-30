@@ -32,8 +32,10 @@ and a reproducible worktree bootstrap path.
 - Static Pages uses the browser-static runtime with relative asset URLs.
 - Static Pages ships a browser-static PWA manifest, maskable icons, and a root
   service worker.
-- After the first successful online load, the browser-static runtime must open
-  from cached app-shell resources while offline.
+- Offline navigation is eligible only after a browser-static worker has cached
+  every executable static asset, HTML entry, manifest, and icon and then written
+  its version-ready marker. A partial cache must never answer navigation or
+  asset requests.
 - Browser-static updates are non-blocking: a newly detected version caches
   silently in the background, then prompts the user to update only when the
   runtime has confirmed a newer build through either a ready waiting worker or
@@ -44,6 +46,11 @@ and a reproducible worktree bootstrap path.
   `index.html` while the routed React workbench mounts. This shell must stay
   offline-safe, require no network data, adapt to the active light or dark
   color scheme, and disappear automatically once the app takes over.
+- The static launch shell registers the PWA before React boot and reports mount
+  success or bootstrap failure. After 10 seconds it offers a non-blocking
+  update-and-restart suggestion; after 60 seconds it exposes terminal recovery
+  actions. Startup never clears caches, activates a waiting worker, or reloads
+  automatically, and it never clears browser user data.
 - Browser-static startup bootstrap stays thin: the entry script restores SPA
   fallback location, preloads the current route chunk when possible, and
   asynchronously imports the routed runtime instead of synchronously loading
@@ -51,9 +58,10 @@ and a reproducible worktree bootstrap path.
 - Launch-shell state is driven by real startup milestones, but the
   owner-facing shell stays coarse: it must not enumerate internal parallel
   task names or imply byte-level network download progress.
-- Service-worker asset caching is tiered. `install` precaches only `shell` and
-  offline-refresh-critical `route` assets, while non-critical `feature` assets
-  are warmed silently in the background after the current-route shell is ready.
+- Service-worker installation is an all-or-nothing offline-version transaction:
+  it precaches the complete static application and writes the readiness marker
+  only after every request succeeds. `sw.js` and `version.json` remain outside
+  that version cache so browser update checks and metadata probing stay current.
 - Once the current-route shell is visible, browser-static must warm the
   remaining route chunks in the background so ordinary in-app page switches do
   not reopen the owner-facing startup shell.
@@ -110,13 +118,14 @@ and a reproducible worktree bootstrap path.
 - The browser-static launch shell stays legible and branded in both light and
   dark color schemes.
 - Installed-PWA startup reaches a navigable current-route shell before
-  background hydration and feature warmup finish.
+  background hydration and offline-readiness confirmation finish.
 - The owner-facing launch shell uses generic branded startup copy and an
   indeterminate progress rail while startup is pending; it does not expose
   internal task names, auxiliary explanatory cards, or byte-level download
   promises.
-- Service-worker `install` precache is limited to `shell` and `route` assets;
-  `feature` assets are cached later through silent warmup.
+- Service-worker `install` succeeds only after the complete browser-static
+  application cache has been written and marked ready; failed or unmarked
+  versions cannot serve offline navigation.
 - Ordinary page switches inside the mounted workbench do not reopen the
   owner-facing launch shell; after shell-ready they should resolve from warmed
   route chunks, with at most a local route placeholder if prefetch loses a
@@ -124,8 +133,16 @@ and a reproducible worktree bootstrap path.
 - While a deferred route chunk is still racing, the browser location should
   already reflect the intended destination even if the previous page is still
   being held on screen.
-- Offline refresh still works for `/`, `/templates`, `/canvas`, and `/system`
-  after a first successful online load and automatic background warmup.
+- Offline refresh works for `/`, `/templates`, `/canvas`, and `/system` after
+  a complete online version has been cached.
+- After 10 seconds without a mounted workbench, the launch shell shows a
+  non-blocking slow-start message and offers an owner-triggered update check
+  and restart. When a complete waiting worker is present, that action can use
+  the newer version explicitly.
+- Dynamic-import failure, synchronous mount failure, and 60-second no-mount
+  timeout leave the launch shell with actionable recovery controls rather than
+  an indefinite loading screen. The startup task does not automatically clear
+  caches, unregister workers, activate a waiting worker, or reload the page.
 - New-version caching is silent; the update prompt appears only after the
   runtime confirms a newer build through a waiting worker or version-probe
   mismatch.
@@ -149,8 +166,8 @@ and a reproducible worktree bootstrap path.
 This spec requires deterministic evidence from repo-owned surfaces:
 
 - static build inspection proving root-path relative asset URLs
-- static build inspection proving PWA manifest, icons, service worker, and
-  tiered install precache plus background warmup entries
+- static build inspection proving PWA manifest, icons, complete-version service
+  worker precache, readiness marker, and `version.json` exclusion
 - Playwright coverage for service worker registration and offline deep-link
   refresh after first load
 - Storybook coverage for PWA update prompt component states
@@ -158,6 +175,16 @@ This spec requires deterministic evidence from repo-owned surfaces:
 
 Non-deterministic screenshots from a live browser window do not count as proof for
 this spec.
+
+### PWA Evidence Matrix
+
+| Acceptance contract | Owner-facing visual evidence | Behavioral verification |
+| --- | --- | --- |
+| Cold launch remains branded without blocking the current route | `pwa-launch-splash-state.png`, `pwa-launch-splash-dark-state.png` | Browser-static launch test reaches the routed workbench after the shell appears. |
+| A delayed launch gives a bounded 10-second update suggestion on mobile | `pwa-launch-slow-start-state.png` | Launch-recovery Playwright test advances the slow-start timer and asserts the update action. |
+| A one-minute failed launch is terminal and owner-actionable | `pwa-launch-recovery-state.png` | Launch-recovery Playwright test asserts both reload and update-restart actions without an automatic cache clear or reload. |
+| Ordinary updates remain explicit and non-blocking | `pwa-update-toast-state-gallery.png`, `pwa-workbench-update-toast-viewport.png` | Story interactions cover update confirmation; runtime tests cover waiting-worker and version-probe paths. |
+| Offline entry is an atomic complete-version contract | Not user-visible by design: readiness must stay silent until the workbench is usable. | Browser-static Playwright verifies the ready marker, then offline refresh for `/`, `/templates`, `/canvas`, and `/system`; static-build inspection verifies complete precache and excludes `WARM_ASSETS`. |
 
 The prompt state gallery is captured from Storybook canvas using mock state only.
 It covers all owner-facing prompt states: waiting-worker ready, stranded-client
@@ -195,6 +222,19 @@ PR: include
 
 PR: include
 ![Browser-static launch splash dark theme](./assets/pwa-launch-splash-dark-state.png)
+
+The launch recovery states are deterministic Storybook canvas renderings with
+mock-only inputs. They verify the 10-second slow-start update suggestion and
+the one-minute terminal state, each with explicit owner-controlled restart
+actions instead of an endless startup rail or automatic recovery. The
+slow-start story binds a mobile viewport and keeps its title as the semantic
+groups "工作台启动 / 时间较长" rather than allowing a character-level wrap.
+
+PR: include
+![Browser-static launch slow-start notice](./assets/pwa-launch-slow-start-state.png)
+
+PR: include
+![Browser-static launch recovery](./assets/pwa-launch-recovery-state.png)
 
 The footer build-metadata contract is captured from Storybook canvas so release
 and untagged states can be reviewed without relying on a live deployment.

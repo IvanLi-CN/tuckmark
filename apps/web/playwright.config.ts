@@ -1,6 +1,7 @@
 import { defineConfig } from "@playwright/test"
 
 const externalBaseURL = process.env.TUCKMARK_E2E_BASE_URL
+const browserChannel = process.env.TUCKMARK_E2E_BROWSER_CHANNEL === "chrome" ? "chrome" : undefined
 const previewPort = Number(process.env.TUCKMARK_E2E_PORT ?? "4173")
 const previewBaseURL = `http://127.0.0.1:${previewPort}`
 
@@ -11,6 +12,7 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: externalBaseURL ?? previewBaseURL,
+    channel: browserChannel,
   },
   webServer: externalBaseURL
     ? undefined
