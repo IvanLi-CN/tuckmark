@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
+  DevdDataClient,
   DevdDataConflictError,
   devdDataClient,
   isServerHttpDataSurface,
@@ -53,6 +54,50 @@ describe("DevdDataClient", () => {
     })
     expect(JSON.parse(fetchMock.mock.calls[2]?.[1]?.body as string)).toMatchObject({
       expectedRevision: 8,
+    })
+  })
+
+  it("does not regress the cached revision when an older concurrent read finishes last", async () => {
+    let resolveSnapshot: ((response: Response) => void) | undefined
+    const snapshotResponse = new Promise<Response>((resolve) => {
+      resolveSnapshot = resolve
+    })
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => snapshotResponse)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            configured: true,
+            health: "healthy",
+            directoryName: "mock-devd",
+            revision: 9,
+            counts: { templates: 0, versions: 0, workingCopies: 0, materials: 0, adjustments: 0 },
+          }),
+          { headers: { "content-type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ revision: 10, data: null }), {
+          headers: { "content-type": "application/json" },
+        })
+      )
+    vi.stubGlobal("fetch", fetchMock)
+    const client = new DevdDataClient()
+
+    const olderSnapshot = client.snapshot()
+    await client.status()
+    resolveSnapshot?.(
+      new Response(
+        JSON.stringify({ revision: 3, data: { schema: "tuckmark.runtime-export.v1" } }),
+        { headers: { "content-type": "application/json" } }
+      )
+    )
+    await olderSnapshot
+    await client.runtimeCommand("save-settings", { patch: {} })
+
+    expect(JSON.parse(fetchMock.mock.calls[2]?.[1]?.body as string)).toMatchObject({
+      expectedRevision: 9,
     })
   })
 })

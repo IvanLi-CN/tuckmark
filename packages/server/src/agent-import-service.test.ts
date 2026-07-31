@@ -338,7 +338,7 @@ describe("AgentImportService", () => {
     ).toContain("Browser-local Mock Template")
   })
 
-  it("does not let a stale template fulfillment overwrite a later user edit", async () => {
+  it("rejects item edits while template input is pending", async () => {
     const dataDir = await createDataDir()
     const service = new AgentImportService(dataDir)
     const session = service.createSession({
@@ -370,23 +370,26 @@ describe("AgentImportService", () => {
     if (!changedItem) {
       throw new Error("Mock item was not returned.")
     }
-    service.updateItem({
-      sessionId: session.id,
-      secret,
-      itemId: changedItem.id,
-      expectedRevision: changedItem.revision,
-      item: { ...changedItem, material: { ...changedItem.material, description: "user edit" } },
-    })
-
     expect(() =>
-      service.fulfillTemplateInput({
+      service.updateItem({
         sessionId: session.id,
         secret,
-        eventId: event.id,
-        expectedRevision: event.revision,
-        input: { recipient: "stale Agent value" },
+        itemId: changedItem.id,
+        expectedRevision: changedItem.revision,
+        item: { ...changedItem, material: { ...changedItem.material, description: "user edit" } },
       })
-    ).toThrow("superseded")
+    ).toThrow("Template input is pending")
+
+    const fulfilled = service.fulfillTemplateInput({
+      sessionId: session.id,
+      secret,
+      eventId: event.id,
+      expectedRevision: event.revision,
+      input: { recipient: "Mock recipient" },
+    })
+
+    expect(fulfilled.events[0]?.status).toBe("fulfilled")
+    expect(fulfilled.proposal.items[0]?.pendingTemplateEventId).toBeNull()
   })
 
   it("requires every requested template field before accepting an Agent fulfillment", async () => {

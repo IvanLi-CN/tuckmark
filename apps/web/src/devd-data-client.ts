@@ -47,12 +47,16 @@ export function isServerHttpDataSurface(): boolean {
 export class DevdDataClient {
   private revision: number | null = null
 
+  private acceptRevision(revision: number): void {
+    this.revision = Math.max(this.revision ?? revision, revision)
+  }
+
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`/api/data${path}`, init)
     const body = (await response.json()) as any
     if (!response.ok) {
       if (response.status === 409 && body.code === "revision_conflict") {
-        this.revision = body.actualRevision
+        this.acceptRevision(body.actualRevision)
         throw new DevdDataConflictError(body.actualRevision, body.error)
       }
       throw new Error(body.error ?? `DEVD data request failed (${response.status}).`)
@@ -74,13 +78,13 @@ export class DevdDataClient {
         adjustments: number
       }
     }>("/status")
-    this.revision = status.revision
+    this.acceptRevision(status.revision)
     return status
   }
 
   async snapshot(): Promise<RuntimeStoreSnapshot> {
     const response = await this.request<RevisionResponse<RuntimeStoreSnapshot>>("/runtime/snapshot")
-    this.revision = response.revision
+    this.acceptRevision(response.revision)
     return response.data
   }
 
@@ -91,14 +95,14 @@ export class DevdDataClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ expectedRevision, args }),
     })
-    this.revision = response.revision
+    this.acceptRevision(response.revision)
     return response.data
   }
 
   async listMaterials(query = "", includeArchived = false) {
     const params = new URLSearchParams({ query, includeArchived: String(includeArchived) })
     const response = await this.request<RevisionResponse<any[]>>(`/inventory/materials?${params}`)
-    this.revision = response.revision
+    this.acceptRevision(response.revision)
     return response.data
   }
 
@@ -106,7 +110,7 @@ export class DevdDataClient {
     const params = new URLSearchParams()
     if (materialId) params.set("materialId", materialId)
     const response = await this.request<RevisionResponse<any[]>>(`/inventory/adjustments?${params}`)
-    this.revision = response.revision
+    this.acceptRevision(response.revision)
     return response.data
   }
 
@@ -117,13 +121,13 @@ export class DevdDataClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ expectedRevision, args }),
     })
-    this.revision = response.revision
+    this.acceptRevision(response.revision)
     return response.data
   }
 
   async exportArchive() {
     const response = await this.request<RevisionResponse<any>>("/archive")
-    this.revision = response.revision
+    this.acceptRevision(response.revision)
     return response.data
   }
 
@@ -145,7 +149,7 @@ export class DevdDataClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ expectedRevision, archiveHash, mode, archive }),
     })
-    this.revision = response.revision
+    this.acceptRevision(response.revision)
     return response.data
   }
 
@@ -156,7 +160,7 @@ export class DevdDataClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ expectedRevision }),
     })
-    this.revision = response.revision
+    this.acceptRevision(response.revision)
     return response.data
   }
 

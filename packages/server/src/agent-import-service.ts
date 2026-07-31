@@ -227,6 +227,9 @@ export class AgentImportService {
     if (current.revision !== args.expectedRevision) {
       throw new Error("This import item changed. Refresh before saving it again.")
     }
+    if (current.pendingTemplateEventId) {
+      throw new Error("Template input is pending. Complete it before editing this item.")
+    }
     const next = agentImportItemSchema.parse({
       ...args.item,
       id: current.id,
