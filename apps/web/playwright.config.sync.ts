@@ -29,6 +29,7 @@ export default defineConfig({
     cwd: repoRoot,
     env: {
       TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "0",
+      TUCKMARK_DATA_DIR: syncRoot,
       HOME: process.env.HOME ?? "",
       PATH: process.env.PATH ?? "",
       NODE_ENV: "test",

@@ -404,6 +404,34 @@ describe("AgentImportService", () => {
     expect(fulfilled.proposal.items[0]?.material.description).toBe("user edit")
   })
 
+  it("persists edited template fields before confirmation", async () => {
+    const dataDir = await createDataDir()
+    const service = new AgentImportService(dataDir)
+    const session = service.createSession({
+      sessionId: "agent-import-session-template-fields",
+      secret,
+      proposal: newItemOnlyProposal(),
+    })
+    const item = session.proposal.items[0]
+    if (!item) {
+      throw new Error("Mock proposal has no item.")
+    }
+
+    service.updateItem({
+      sessionId: session.id,
+      secret,
+      itemId: item.id,
+      expectedRevision: item.revision,
+      item: { ...item, templateInput: { name: "Edited mock regulator" } },
+    })
+    await service.confirm(session.id, secret)
+
+    const created = (await service.listInventory()).find(
+      (material) => material.fullName === "Mock regulator"
+    )
+    expect(created?.labelBindings[0]?.fieldOverrides).toEqual({ name: "Edited mock regulator" })
+  })
+
   it("keeps the existing template event open when a replacement request is invalid", async () => {
     const dataDir = await createDataDir()
     const service = new AgentImportService(dataDir)

@@ -111,6 +111,47 @@ describe("DevdDataService", () => {
     })
   })
 
+  it("rejects duplicate records inside an imported archive", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const archive = await service.exportArchive()
+    const timestamp = "2026-07-01T00:00:00.000Z"
+    const template = {
+      id: "duplicate-template",
+      name: "Duplicate template",
+      description: "",
+      width: 40,
+      height: 20,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      archivedAt: null,
+      currentVersionId: "duplicate-version",
+      fieldOrder: [],
+    }
+    archive.runtime.templates.push(template, { ...template })
+    await expect(service.inspectArchive(archive)).rejects.toThrow("duplicate template")
+
+    const materialArchive = await service.exportArchive()
+    const material = {
+      id: "duplicate-material-a",
+      fullName: "Duplicate material",
+      description: "",
+      matrixCode: "DUPLICATE-MATRIX",
+      packagingRemark: "",
+      currentQuantity: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      archivedAt: null,
+      labelBindings: [],
+    }
+    materialArchive.inventory.materials.push(material, {
+      ...material,
+      id: "duplicate-material-b",
+    })
+    await expect(service.inspectArchive(materialArchive)).rejects.toThrow("duplicate material name")
+  })
+
   it("recovers a prepared transaction through the shared data service", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
     cleanupPaths.push(root)

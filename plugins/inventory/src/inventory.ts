@@ -20,7 +20,13 @@ export type InventoryTemplateBinding = z.infer<typeof inventoryTemplateBindingSc
 export const inventoryDatasheetSchema = z
   .object({
     title: z.string().min(1).default("Datasheet"),
-    url: z.string().url().optional(),
+    url: z
+      .string()
+      .url()
+      .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+        message: "Datasheet URLs must use HTTP or HTTPS.",
+      })
+      .optional(),
     source: z.enum(["manufacturer", "authorized-distributor"]).optional(),
     missingReason: z.string().min(1).optional(),
   })

@@ -244,7 +244,7 @@ export class AgentImportService {
       kind: current.kind,
       revision: current.revision + 1,
       template: current.template,
-      templateInput: current.templateInput,
+      templateInput: pendingEvent ? current.templateInput : args.item.templateInput,
       pendingTemplateEventId: current.pendingTemplateEventId,
     })
     session.proposal.items[index] = next

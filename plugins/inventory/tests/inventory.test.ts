@@ -48,6 +48,21 @@ describe("inventory plugin", () => {
     })
   })
 
+  it("only accepts HTTP(S) datasheet links", () => {
+    expect(() =>
+      inventoryMaterialSchema.parse({
+        ...material,
+        datasheets: [{ title: "Unsafe", url: "javascript:alert(1)" }],
+      })
+    ).toThrow("Datasheet URLs must use HTTP or HTTPS.")
+    expect(
+      inventoryMaterialSchema.parse({
+        ...material,
+        datasheets: [{ title: "Safe", url: "https://manufacturer.example/datasheet.pdf" }],
+      }).datasheets
+    ).toEqual([{ title: "Safe", url: "https://manufacturer.example/datasheet.pdf" }])
+  })
+
   it("applies correction adjustments using an absolute target quantity", () => {
     const result = applyInventoryAdjustment({
       material,

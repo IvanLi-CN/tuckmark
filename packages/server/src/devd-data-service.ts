@@ -848,7 +848,57 @@ export class DevdDataService {
   }
 
   private parseArchive(input: unknown): DevdDataArchive {
-    return devdDataArchiveSchema.parse(clone(input)) as DevdDataArchive
+    const archive = devdDataArchiveSchema.parse(clone(input)) as DevdDataArchive
+    this.ensureArchiveRecordsAreUnique(archive)
+    return archive
+  }
+
+  private ensureArchiveRecordsAreUnique(archive: DevdDataArchive): void {
+    const assertUnique = (description: string, values: Array<string | undefined>) => {
+      const seen = new Set<string>()
+      for (const value of values) {
+        if (!value) continue
+        if (seen.has(value)) {
+          throw new Error(`Archive contains duplicate ${description}: ${value}.`)
+        }
+        seen.add(value)
+      }
+    }
+
+    assertUnique(
+      "template",
+      (archive.runtime.templates as TemplateRecord[]).map((item) => item.id)
+    )
+    assertUnique(
+      "version",
+      (archive.runtime.versions as VersionRecord[]).map((item) => item.id)
+    )
+    assertUnique(
+      "template version",
+      (archive.runtime.versions as VersionRecord[]).map(
+        (item) => `${item.templateId}:${item.version}`
+      )
+    )
+    assertUnique(
+      "working copy",
+      (archive.runtime.workingCopies as WorkingCopyRecord[]).map((item) => item.sourceKey)
+    )
+    assertUnique(
+      "material",
+      archive.inventory.materials.map((item) => item.id)
+    )
+    assertUnique(
+      "material name",
+      archive.inventory.materials.map((item) => item.fullName)
+    )
+    assertUnique(
+      "matrix code",
+      archive.inventory.materials.map((item) => item.matrixCode)
+    )
+    assertUnique(
+      "adjustment",
+      archive.inventory.adjustments.map((item) => item.id)
+    )
   }
 
   private hashArchive(archive: DevdDataArchive): string {
