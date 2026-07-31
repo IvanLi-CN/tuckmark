@@ -106,3 +106,7 @@ suggestion after 10 seconds, while the terminal state appears after one minute.
 The terminal state deliberately requires an owner action: startup never repairs
 caches, activates a worker, or reloads automatically, and it protects the
 installed complete version and all browser user data.
+
+The install-identity surface was later clarified so browser-static builds keep
+the standard icon, maskable safe-zone icon, Apple Touch icon, and favicon
+contracts distinct instead of relying on one PNG for every browser context.

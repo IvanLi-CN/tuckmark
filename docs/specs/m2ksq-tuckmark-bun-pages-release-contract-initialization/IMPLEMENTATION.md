@@ -28,7 +28,11 @@
   from the same runtime build metadata truth source. The browser-static service
   worker explicitly bypasses cache handling for this file so the probe never
   enters app-shell precache.
-- `apps/web/public/pwa/` stores generated Tuckmark maskable PNG icons.
+- `apps/web/public/pwa/` stores the generated PWA icon family: standard `any`
+  PNGs, separate safe-zone `maskable` PNGs, Apple Touch icons, and SVG/PNG/ICO
+  favicon fallbacks. The canonical light and dark logo vectors remain under
+  `output/brand/vector/` and the Web product mark imports the light workbench
+  asset from `apps/web/src/assets/`.
 - `apps/web/src/pwa-lifecycle.ts` owns service worker registration, update
   detection, low-frequency background rechecks, stale-tab catch-up triggers,
   `SKIP_WAITING`, reload-on-controller-change behavior, and a same-origin

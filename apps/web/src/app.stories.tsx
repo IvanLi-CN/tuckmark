@@ -299,6 +299,14 @@ export const Home: Story = {
   },
 }
 
+export const HomeLight: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/"],
+    theme: "light",
+  },
+}
+
 export const HomeDark: Story = {
   args: {
     context: runtimeContext,

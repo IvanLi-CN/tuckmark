@@ -63,28 +63,74 @@ describe("PWA build assets", () => {
         }),
         expect.objectContaining({
           tag: "link",
-          attrs: expect.objectContaining({ rel: "icon", href: "./pwa/tuckmark-icon-192.png" }),
+          attrs: expect.objectContaining({ rel: "icon", href: "./pwa/tuckmark-favicon.svg" }),
+        }),
+        expect.objectContaining({
+          tag: "link",
+          attrs: expect.objectContaining({
+            rel: "apple-touch-icon",
+            href: "./pwa/tuckmark-apple-touch-icon-120.png",
+          }),
+        }),
+        expect.objectContaining({
+          tag: "link",
+          attrs: expect.objectContaining({
+            rel: "apple-touch-icon",
+            href: "./pwa/tuckmark-apple-touch-icon-152.png",
+          }),
+        }),
+        expect.objectContaining({
+          tag: "link",
+          attrs: expect.objectContaining({
+            rel: "apple-touch-icon",
+            href: "./pwa/tuckmark-apple-touch-icon-167.png",
+          }),
+        }),
+        expect.objectContaining({
+          tag: "link",
+          attrs: expect.objectContaining({
+            rel: "apple-touch-icon",
+            href: "./pwa/tuckmark-apple-touch-icon-180.png",
+          }),
         }),
       ])
     )
   })
 
   it("uses relative manifest and icon URLs for browser-static Pages builds", () => {
-    expect(createPwaManifest()).toMatchObject({
+    const manifest = createPwaManifest()
+
+    expect(manifest).toMatchObject({
       start_url: "./",
       scope: "./",
       display: "standalone",
-      icons: [
-        {
-          src: "./pwa/tuckmark-icon-192.png",
-          purpose: "any maskable",
-        },
-        {
-          src: "./pwa/tuckmark-icon-512.png",
-          purpose: "any maskable",
-        },
-      ],
     })
+    expect(manifest.icons).toEqual([
+      {
+        src: "./pwa/tuckmark-icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "./pwa/tuckmark-icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "./pwa/tuckmark-icon-maskable-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
+        src: "./pwa/tuckmark-icon-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+    ])
   })
 
   it("generates a service worker that publishes only complete offline app versions", () => {

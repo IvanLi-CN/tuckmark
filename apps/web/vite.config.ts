@@ -88,20 +88,32 @@ export function createPwaManifest(): PwaManifest {
     start_url: "./",
     scope: "./",
     display: "standalone",
-    background_color: "#f8f3eb",
+    background_color: "#F6EFE6",
     theme_color: "#9b6a44",
     icons: [
       {
         src: "./pwa/tuckmark-icon-192.png",
         sizes: "192x192",
         type: "image/png",
-        purpose: "any maskable",
+        purpose: "any",
       },
       {
         src: "./pwa/tuckmark-icon-512.png",
         sizes: "512x512",
         type: "image/png",
-        purpose: "any maskable",
+        purpose: "any",
+      },
+      {
+        src: "./pwa/tuckmark-icon-maskable-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
+        src: "./pwa/tuckmark-icon-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
       },
     ],
   }
@@ -132,15 +144,84 @@ export function createPwaHtmlTags(): HtmlTagDescriptor[] {
       tag: "link",
       attrs: {
         rel: "icon",
-        type: "image/png",
-        sizes: "192x192",
-        href: "./pwa/tuckmark-icon-192.png",
+        type: "image/svg+xml",
+        href: "./pwa/tuckmark-favicon.svg",
       },
       injectTo: "head",
     },
     {
       tag: "link",
-      attrs: { rel: "apple-touch-icon", href: "./pwa/tuckmark-icon-192.png" },
+      attrs: {
+        rel: "icon",
+        type: "image/png",
+        sizes: "32x32",
+        href: "./pwa/tuckmark-favicon-32.png",
+      },
+      injectTo: "head",
+    },
+    {
+      tag: "link",
+      attrs: {
+        rel: "icon",
+        type: "image/png",
+        sizes: "48x48",
+        href: "./pwa/tuckmark-favicon-48.png",
+      },
+      injectTo: "head",
+    },
+    {
+      tag: "link",
+      attrs: {
+        rel: "icon",
+        type: "image/png",
+        sizes: "16x16",
+        href: "./pwa/tuckmark-favicon-16.png",
+      },
+      injectTo: "head",
+    },
+    {
+      tag: "link",
+      attrs: { rel: "icon", type: "image/x-icon", href: "./pwa/favicon.ico" },
+      injectTo: "head",
+    },
+    {
+      tag: "link",
+      attrs: {
+        rel: "apple-touch-icon",
+        type: "image/png",
+        sizes: "120x120",
+        href: "./pwa/tuckmark-apple-touch-icon-120.png",
+      },
+      injectTo: "head",
+    },
+    {
+      tag: "link",
+      attrs: {
+        rel: "apple-touch-icon",
+        type: "image/png",
+        sizes: "152x152",
+        href: "./pwa/tuckmark-apple-touch-icon-152.png",
+      },
+      injectTo: "head",
+    },
+    {
+      tag: "link",
+      attrs: {
+        rel: "apple-touch-icon",
+        type: "image/png",
+        sizes: "167x167",
+        href: "./pwa/tuckmark-apple-touch-icon-167.png",
+      },
+      injectTo: "head",
+    },
+    {
+      tag: "link",
+      attrs: {
+        rel: "apple-touch-icon",
+        type: "image/png",
+        sizes: "180x180",
+        href: "./pwa/tuckmark-apple-touch-icon-180.png",
+      },
       injectTo: "head",
     },
   ]
@@ -285,6 +366,61 @@ function tuckmarkPwaPlugin(
         {
           url: "./pwa/tuckmark-icon-512.png",
           revision: "pwa-icon-512",
+        },
+        {
+          tier: "shell",
+          url: "./pwa/tuckmark-icon-maskable-192.png",
+          revision: "pwa-icon-maskable-192",
+        },
+        {
+          tier: "shell",
+          url: "./pwa/tuckmark-icon-maskable-512.png",
+          revision: "pwa-icon-maskable-512",
+        },
+        {
+          tier: "shell",
+          url: "./pwa/tuckmark-apple-touch-icon-120.png",
+          revision: "pwa-apple-touch-icon-120",
+        },
+        {
+          tier: "shell",
+          url: "./pwa/tuckmark-apple-touch-icon-152.png",
+          revision: "pwa-apple-touch-icon-152",
+        },
+        {
+          tier: "shell",
+          url: "./pwa/tuckmark-apple-touch-icon-167.png",
+          revision: "pwa-apple-touch-icon-167",
+        },
+        {
+          tier: "shell",
+          url: "./pwa/tuckmark-apple-touch-icon-180.png",
+          revision: "pwa-apple-touch-icon-180",
+        },
+        {
+          tier: "shell",
+          url: "./pwa/tuckmark-favicon.svg",
+          revision: "pwa-favicon-svg",
+        },
+        {
+          tier: "shell",
+          url: "./pwa/tuckmark-favicon-16.png",
+          revision: "pwa-favicon-16",
+        },
+        {
+          tier: "shell",
+          url: "./pwa/tuckmark-favicon-32.png",
+          revision: "pwa-favicon-32",
+        },
+        {
+          tier: "shell",
+          url: "./pwa/tuckmark-favicon-48.png",
+          revision: "pwa-favicon-48",
+        },
+        {
+          tier: "shell",
+          url: "./pwa/favicon.ico",
+          revision: "pwa-favicon-ico",
         },
       ]
 

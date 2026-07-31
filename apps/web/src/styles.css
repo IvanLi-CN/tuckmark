@@ -1813,22 +1813,42 @@
   }
 
   .tm-product-mark {
-    @apply flex items-center gap-3;
+    display: block;
+    width: 13.5rem;
+    max-width: 100%;
+    flex: none;
   }
 
-  .tm-product-mark__chip {
-    @apply grid place-items-center rounded-[1.1rem];
-    background: var(--tm-product-mark-surface);
-    box-shadow: var(--tm-product-mark-shadow);
+  .tm-product-mark__asset {
+    display: block;
+    width: 100%;
+    height: auto;
   }
 
-  .tm-product-mark__glyph {
-    @apply font-black;
-    color: var(--tm-product-mark-foreground);
+  .tm-product-mark__asset--dark {
+    display: none;
   }
 
-  .tm-product-mark__copy {
-    @apply grid gap-0.5;
+  .tm-theme-scope--dark .tm-product-mark__asset--light {
+    display: none;
+  }
+
+  .tm-theme-scope--dark .tm-product-mark__asset--dark {
+    display: block;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .tm-theme-scope:not(.tm-theme-scope--light) .tm-product-mark__asset--light {
+      display: none;
+    }
+
+    .tm-theme-scope:not(.tm-theme-scope--light) .tm-product-mark__asset--dark {
+      display: block;
+    }
+  }
+
+  .tm-product-mark--compact {
+    width: 10rem;
   }
 
   .tm-nav__link {

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="210 380 290 290" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="title">
+  <title id="title">Tuckmark mark</title>
+  <defs>
+    <linearGradient id="left-fold-fill" x1=".48" y1="0" x2=".52" y2="1"><stop offset="0" stop-color="#5D371F"/><stop offset=".48" stop-color="#5A351E"/><stop offset="1" stop-color="#58351E"/></linearGradient>
+    <linearGradient id="upper-fold-fill" x1=".45" y1="0" x2=".55" y2="1"><stop offset="0" stop-color="#4F311E"/><stop offset=".5" stop-color="#4D301E"/><stop offset="1" stop-color="#4D311F"/></linearGradient>
+    <linearGradient id="lower-fold-fill" x1="1" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#DF9B58"/><stop offset=".5" stop-color="#E39D5D"/><stop offset="1" stop-color="#E6A563"/></linearGradient>
+    <linearGradient id="right-fold-fill" x1="0" y1=".5" x2="1" y2=".5"><stop offset="0" stop-color="#DF9652"/><stop offset=".01" stop-color="#D78747"/><stop offset=".02" stop-color="#D2783C"/><stop offset=".03" stop-color="#CE6C32"/><stop offset=".05" stop-color="#CB662D"/><stop offset=".2" stop-color="#CB6630"/><stop offset="1" stop-color="#CC6830"/></linearGradient>
+  </defs>
+  <g id="mark" aria-label="Four independently traced folded faces">
+    <path id="left-fold" data-part="left-fold" fill="url(#left-fold-fill)" transform="translate(0 1024) scale(.1 -.1)" d="M2724 5845c-133-135-245-256-248-268-14-58 2-75 257-284 160-131 252-200 262-197 13 5 15 71 15 500v494h-22c-17 1-89-66-264-245Z"/>
+    <path id="upper-fold" data-part="upper-fold" fill="url(#upper-fold-fill)" transform="translate(0 1024) scale(.1 -.1)" d="M3001 5813c1-153 4-267 6-253 3 14 10 31 15 38 8 9 127 12 530 12h520l217 221c119 122 217 230 219 240 3 18-18 19-752 19h-756l1-277Z"/>
+    <path id="lower-fold" data-part="lower-fold" fill="url(#lower-fold-fill)" transform="translate(0 1024) scale(.1 -.1)" d="M3483 5208c-133-134-246-255-252-269-6-16-10-199-10-452 0-357 2-427 14-437 12-10 57 31 255 229l240 242v465c0 255-1 464-3 464-1 0-111-109-244-242Z"/>
+    <path id="right-fold" data-part="right-fold" fill="url(#right-fold-fill)" transform="translate(0 1024) scale(.1 -.1)" d="M3779 5488c-13-5-32-19-41-31-16-20-18-49-16-302 1-154 4-266 6-250 2 17 8 36 14 43 8 9 66 12 225 12h215l247 251c135 138 247 257 249 265 3 10-8 14-40 14-24 0-221 2-439 3-218 2-407 0-420-5Z"/>
+  </g>
+</svg>
