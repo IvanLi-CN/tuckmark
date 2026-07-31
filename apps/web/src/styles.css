@@ -1816,8 +1816,35 @@
     display: block;
     width: 13.5rem;
     max-width: 100%;
-    height: auto;
     flex: none;
+  }
+
+  .tm-product-mark__asset {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .tm-product-mark__asset--dark {
+    display: none;
+  }
+
+  .tm-theme-scope--dark .tm-product-mark__asset--light {
+    display: none;
+  }
+
+  .tm-theme-scope--dark .tm-product-mark__asset--dark {
+    display: block;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .tm-theme-scope:not(.tm-theme-scope--light) .tm-product-mark__asset--light {
+      display: none;
+    }
+
+    .tm-theme-scope:not(.tm-theme-scope--light) .tm-product-mark__asset--dark {
+      display: block;
+    }
   }
 
   .tm-product-mark--compact {

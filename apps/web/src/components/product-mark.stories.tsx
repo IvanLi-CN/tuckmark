@@ -10,16 +10,28 @@ const meta = {
     layout: "padded",
   },
   decorators: [
-    (Story) => (
-      <div
-        className="tm-theme-scope tm-theme-scope--light min-h-48 bg-background p-8"
-        style={{ backgroundColor: "#f6efe6", backgroundImage: "none" }}
-      >
-        <div className="max-w-sm rounded-lg border border-border bg-card p-6">
-          <Story />
+    (Story, context) => {
+      const isDark = context.name === "Dark"
+
+      return (
+        <div
+          className={
+            isDark
+              ? "tm-theme-scope tm-theme-scope--dark dark min-h-48 bg-background p-8"
+              : "tm-theme-scope tm-theme-scope--light min-h-48 bg-background p-8"
+          }
+          style={{ backgroundColor: isDark ? "#120f0d" : "#f6efe6", backgroundImage: "none" }}
+        >
+          {isDark ? (
+            <Story />
+          ) : (
+            <div className="max-w-sm rounded-lg border border-border bg-card p-6">
+              <Story />
+            </div>
+          )}
         </div>
-      </div>
-    ),
+      )
+    },
   ],
 } satisfies Meta<typeof ProductMark>
 
@@ -40,6 +52,10 @@ export const Gallery: Story = {
       </section>
     </div>
   ),
+}
+
+export const Dark: Story = {
+  render: () => <ProductMark />,
 }
 
 export const Default: Story = {}

@@ -45,16 +45,24 @@ describe("ProductMark", () => {
   it("renders the approved full-logo asset rather than reconstructing its wordmark", async () => {
     await renderProductMark()
 
-    const logo = document.querySelector("img[alt='Tuckmark']") as HTMLImageElement | null
+    const productMark = document.querySelector("[role='img'][aria-label='Tuckmark']")
+    const lightLogo = document.querySelector(
+      ".tm-product-mark__asset--light"
+    ) as HTMLImageElement | null
+    const darkLogo = document.querySelector(
+      ".tm-product-mark__asset--dark"
+    ) as HTMLImageElement | null
 
-    expect(logo?.src).toContain("tuckmark-full-logo-light.svg")
+    expect(productMark).not.toBeNull()
+    expect(lightLogo?.src).toContain("tuckmark-full-logo-light.svg")
+    expect(darkLogo?.src).toContain("tuckmark-full-logo-dark.svg")
     expect(document.body.textContent).not.toContain("Label Workbench")
   })
 
   it("keeps the compact variant as the same complete logo", async () => {
     await renderProductMark(true)
 
-    const logo = document.querySelector("img[alt='Tuckmark']")
+    const logo = document.querySelector("[role='img'][aria-label='Tuckmark']")
 
     expect(logo?.className).toContain("tm-product-mark--compact")
   })
