@@ -48,8 +48,12 @@ async function runCliWithEnv(args: string[], env: Record<string, string>) {
 }
 
 async function runCliAllowFailure(args: string[]) {
+  return await runCliWithEnvAllowFailure(args, {})
+}
+
+async function runCliWithEnvAllowFailure(args: string[], env: Record<string, string>) {
   try {
-    return await runCli(args)
+    return await runCliWithEnv(args, env)
   } catch (error) {
     const failure = error as Error & { stderr?: string; stdout?: string; code?: number }
     return {
@@ -418,6 +422,24 @@ describe("cli smoke", () => {
         workingCopies: 1,
       },
     })
+  })
+
+  it("refuses direct writes to a freshly configured DEVD directory", {
+    timeout: 20_000,
+  }, async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-devd-owned-"))
+    tempDirs.push(dataDir)
+
+    const result = await runCliWithEnvAllowFailure(
+      ["inventory", "create", "--full-name", "Mock protected material", "--data-dir", dataDir],
+      { TUCKMARK_DATA_DIR: dataDir }
+    )
+
+    expect(result).toMatchObject({ failed: true, code: 1 })
+    expect(result.stderr).toContain("owned by DEVD")
+    await expect(
+      readFile(path.join(dataDir, "inventory", "materials", "inventory-material.json"), "utf8")
+    ).rejects.toMatchObject({ code: "ENOENT" })
   })
 
   it("creates, adjusts, and prints inventory from the shared directory", {

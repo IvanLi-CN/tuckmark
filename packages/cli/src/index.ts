@@ -223,15 +223,23 @@ function parseDataDirFlag(args: string[]): string | undefined {
 }
 
 async function assertDirectoryIsNotDevdOwned(dataDir: string): Promise<void> {
-  try {
-    await readFile(path.join(dataDir, ".tuckmark", "state.json"), "utf8")
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return
-    throw error
+  const configuredDevdDir = process.env.TUCKMARK_DATA_DIR?.trim()
+  if (configuredDevdDir && path.resolve(configuredDevdDir) === path.resolve(dataDir)) {
+    throw new Error(
+      "This directory is owned by DEVD. Use the server-http data API instead of direct CLI writes."
+    )
   }
-  throw new Error(
-    "This directory is owned by DEVD. Use the server-http data API instead of direct CLI writes."
-  )
+  for (const filename of ["devd-owner.json", "state.json"]) {
+    try {
+      await readFile(path.join(dataDir, ".tuckmark", filename), "utf8")
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+      throw error
+    }
+    throw new Error(
+      "This directory is owned by DEVD. Use the server-http data API instead of direct CLI writes."
+    )
+  }
 }
 
 async function handlePreview(args: string[]): Promise<void> {

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
+import { mkdirSync, writeFileSync } from "node:fs"
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import {
@@ -19,6 +20,7 @@ import { z } from "zod"
 const STATE_SCHEMA = "tuckmark.devd-data-state.v1"
 const TRANSACTION_SCHEMA = "tuckmark.devd-data-transaction.v1"
 const MANIFEST_SCHEMA = "tuckmark.data-dir-manifest.v1"
+const OWNER_SCHEMA = "tuckmark.devd-owner.v1"
 const DEFAULT_SETTINGS = {
   version: 2,
   updatedAt: "1970-01-01T00:00:00.000Z",
@@ -231,6 +233,21 @@ function isMissing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException)?.code === "ENOENT"
 }
 
+function claimDataDirectory(dataDir: string): void {
+  const ownerPath = path.join(dataDir, ".tuckmark", "devd-owner.json")
+  try {
+    mkdirSync(path.dirname(ownerPath), { recursive: true })
+    writeFileSync(
+      ownerPath,
+      `${JSON.stringify({ schema: OWNER_SCHEMA, claimedAt: new Date().toISOString() })}\n`,
+      { encoding: "utf8", flag: "wx" }
+    )
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return
+    throw error
+  }
+}
+
 async function readJsonIfPresent<T>(filePath: string): Promise<T | null> {
   try {
     return JSON.parse(await readFile(filePath, "utf8")) as T
@@ -277,6 +294,7 @@ export class DevdDataService {
 
   constructor(private readonly dataDir: string) {
     if (!dataDir.trim()) throw new DevdDataUnavailableError("Data directory is not configured.")
+    claimDataDirectory(dataDir)
   }
 
   static fromEnvironment(): DevdDataService | null {
@@ -899,6 +917,62 @@ export class DevdDataService {
       "adjustment",
       archive.inventory.adjustments.map((item) => item.id)
     )
+
+    const templates = new Map(
+      (archive.runtime.templates as TemplateRecord[]).map((template) => [template.id, template])
+    )
+    const versions = new Map(
+      (archive.runtime.versions as VersionRecord[]).map((version) => [version.id, version])
+    )
+    for (const version of archive.runtime.versions as VersionRecord[]) {
+      if (!templates.has(version.templateId)) {
+        throw new Error(
+          `Archive version ${version.id} references unknown template ${version.templateId}.`
+        )
+      }
+    }
+    for (const template of templates.values()) {
+      const version = versions.get(template.currentVersionId)
+      if (!version || version.templateId !== template.id) {
+        throw new Error(
+          `Archive template ${template.id} references unknown current version ${template.currentVersionId}.`
+        )
+      }
+    }
+    for (const workingCopy of archive.runtime.workingCopies as WorkingCopyRecord[]) {
+      if (workingCopy.templateId && !templates.has(workingCopy.templateId)) {
+        throw new Error(
+          `Archive working copy ${workingCopy.sourceKey} references unknown template ${workingCopy.templateId}.`
+        )
+      }
+      if (
+        workingCopy.source.kind === "user-template" &&
+        (!workingCopy.templateId ||
+          workingCopy.source.templateId !== workingCopy.templateId ||
+          !templates.has(workingCopy.source.templateId))
+      ) {
+        throw new Error(
+          `Archive working copy ${workingCopy.sourceKey} has an invalid template source.`
+        )
+      }
+    }
+    const materialIds = new Set(archive.inventory.materials.map((material) => material.id))
+    for (const adjustment of archive.inventory.adjustments) {
+      if (!materialIds.has(adjustment.materialId)) {
+        throw new Error(
+          `Archive adjustment ${adjustment.id} references unknown material ${adjustment.materialId}.`
+        )
+      }
+    }
+    for (const material of archive.inventory.materials) {
+      for (const binding of material.labelBindings) {
+        if (binding.templateSource === "user-template" && !templates.has(binding.templateId)) {
+          throw new Error(
+            `Archive material ${material.id} references unknown user template ${binding.templateId}.`
+          )
+        }
+      }
+    }
   }
 
   private hashArchive(archive: DevdDataArchive): string {

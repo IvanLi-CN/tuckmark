@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -30,6 +30,17 @@ function mockDocument(name: string) {
 }
 
 describe("DevdDataService", () => {
+  it("claims an empty directory before the first data mutation", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+
+    new DevdDataService(root)
+
+    await expect(
+      readFile(path.join(root, ".tuckmark", "devd-owner.json"), "utf8")
+    ).resolves.toContain("tuckmark.devd-owner.v1")
+  })
+
   it("persists a template command and rejects a stale revision", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
     cleanupPaths.push(root)
@@ -70,6 +81,15 @@ describe("DevdDataService", () => {
       archivedAt: null,
       currentVersionId: "same-version",
       fieldOrder: [],
+    })
+    archive.runtime.versions.push({
+      id: "same-version",
+      templateId: "same-template",
+      version: 1,
+      kind: "saved",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      label: "Mock imported version",
+      document: mockDocument("Imported"),
     })
     await service.mutateRuntime({
       command: "replace-snapshot",
@@ -150,6 +170,41 @@ describe("DevdDataService", () => {
       id: "duplicate-material-b",
     })
     await expect(service.inspectArchive(materialArchive)).rejects.toThrow("duplicate material name")
+  })
+
+  it("rejects archives with orphaned cross-record references", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const archive = await service.exportArchive()
+    archive.inventory.adjustments.push({
+      id: "orphan-adjustment",
+      materialId: "missing-material",
+      kind: "in",
+      quantityDelta: 3,
+      targetQuantity: null,
+      quantityAfter: 3,
+      note: "mock orphan",
+      actor: "mock",
+      createdAt: "2026-07-01T00:00:00.000Z",
+    })
+
+    await expect(service.inspectArchive(archive)).rejects.toThrow("unknown material")
+
+    const templateArchive = await service.exportArchive()
+    templateArchive.runtime.templates.push({
+      id: "orphan-template",
+      name: "Orphan template",
+      description: "",
+      width: 40,
+      height: 20,
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      archivedAt: null,
+      currentVersionId: "missing-version",
+      fieldOrder: [],
+    })
+    await expect(service.inspectArchive(templateArchive)).rejects.toThrow("unknown current version")
   })
 
   it("recovers a prepared transaction through the shared data service", async () => {

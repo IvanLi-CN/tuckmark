@@ -53,5 +53,17 @@ describe("DEVD data HTTP contract", () => {
       headers: { host: "rebind.example", origin: "http://rebind.example" },
     })
     expect(rebindingOrigin.status).toBe(403)
+
+    const remoteApp = createApp(undefined, {
+      devdDataService: new DevdDataService(root),
+      clientAddress: () => "192.0.2.45",
+    })
+    const remoteServer = remoteApp.listen(0)
+    cleanup.push(() => new Promise<void>((resolve) => remoteServer.close(() => resolve())))
+    const remoteBaseUrl = `http://127.0.0.1:${(remoteServer.address() as AddressInfo).port}`
+    const spoofedHost = await fetch(`${remoteBaseUrl}/api/data/status`, {
+      headers: { host: "localhost" },
+    })
+    expect(spoofedHost.status).toBe(403)
   })
 })

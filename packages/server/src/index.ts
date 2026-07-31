@@ -195,6 +195,7 @@ function sendError(res: express.Response, error: unknown): void {
 
 export type CreateAppOptions = {
   agentImportService?: AgentImportService | null
+  clientAddress?: (request: express.Request) => string | undefined
   devdDataService?: DevdDataService | null
 }
 
@@ -288,6 +289,12 @@ function isLoopbackHostname(hostname: string): boolean {
   return hostname === "127.0.0.1" || hostname === "::1" || hostname === "localhost"
 }
 
+function isLoopbackClientAddress(address: string | undefined): boolean {
+  if (!address) return false
+  const normalized = address.toLowerCase().replace(/^::ffff:/u, "")
+  return normalized === "::1" || /^127(?:\.\d{1,3}){3}$/u.test(normalized)
+}
+
 export function createApp(
   service: ServerService = new TuckmarkService(),
   options: CreateAppOptions = {}
@@ -296,10 +303,15 @@ export function createApp(
   const devdDataService = options.devdDataService ?? DevdDataService.fromEnvironment()
   const agentImportService =
     options.agentImportService ?? AgentImportService.fromEnvironment(devdDataService ?? undefined)
+  const clientAddress = options.clientAddress ?? ((request) => request.socket.remoteAddress)
   app.use(cors())
   app.use(express.json({ limit: "10mb" }))
 
   const requireLocalAppOrigin: express.RequestHandler = (req, res, next) => {
+    if (!isLoopbackClientAddress(clientAddress(req))) {
+      res.status(403).json({ status: "error", error: "DEVD only accepts loopback requests." })
+      return
+    }
     if (!isLoopbackHostname(req.hostname)) {
       res.status(403).json({ status: "error", error: "DEVD only accepts loopback requests." })
       return
