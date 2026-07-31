@@ -795,7 +795,6 @@
   gap: 16px;
   margin-top: 28px;
   border-top: 1px solid var(--border);
-  background: color-mix(in oklab, var(--background) 94%, white);
   padding: 14px 16px;
   color: var(--muted-foreground);
   font-size: 13px;
