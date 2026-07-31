@@ -386,7 +386,7 @@
 .tm-agent-import__table th {
   border-bottom: 1px solid var(--border);
   background: color-mix(in oklab, var(--muted) 70%, var(--card));
-  padding: 6px 2px;
+  padding: 6px 12px;
   color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 700;
@@ -395,7 +395,7 @@
 
 .tm-agent-import__table td {
   border-top: 1px solid color-mix(in oklab, var(--border) 78%, transparent);
-  padding: 4px 2px;
+  padding: 4px 12px;
 }
 
 .tm-agent-import__table tbody tr:first-child td {
