@@ -51,12 +51,12 @@ Confirmation writes are server-owned and recoverable. Selected new items create 
 
 - CLI catalog and inventory commands read DEVD data; `--devd-url` wins over `TUCKMARK_DEVD_URL` and either omission fails.
 - The create command opens an authorized confirmation URL unless `--no-open` is supplied.
-- The page presents separate editable tables for new-material and restock records. New-material primary intake fields are edited inline, while its supplementary fields, label preview, and template fields expand in a detail row. It supports non-blocking attention/datasheet warnings and selection. Restock controls edit only the persisted intake values (selection, quantity, and source note); target material details stay visible and read-only because confirmation writes only its inbound adjustment.
+- The page presents separate editable tables for new-material and restock records. Table cells display their value by default and enter an editor only after the user clicks that cell; `Enter` or blur returns to display mode, while `Escape` restores the value present before editing began. New-material supplementary fields, label preview, and template fields expand in a detail row. It supports non-blocking attention/datasheet warnings and selection. Restock controls edit only the persisted intake values (selection, quantity, and source note); target material details stay visible and read-only because confirmation writes only its inbound adjustment.
 - Template switches produce an Agent event, wait state, and fresh field preview after fulfillment.
 - Tests use mocked order-derived proposals only. No real order file, session secret, product body, or screenshot is committed.
 
 ## Visual Evidence
 
-Mock-only desktop confirmation route, covering both **new items** and **restock existing inventory**, editable datasheet and template fields, a non-blocking identity reminder, and a missing-datasheet warning:
+Mock-only desktop confirmation route, covering both **new items** and **restock existing inventory**, display-first table cells that enter editing on click, editable detail fields, a non-blocking identity reminder, and a missing-datasheet warning:
 
 ![Agent-assisted inventory intake confirmation page](assets/agent-import-ui-demo.png)

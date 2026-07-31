@@ -609,6 +609,154 @@ function AgentImportTableRow(props: AgentImportTableRowProps) {
   )
 }
 
+type InlineEditableCellProps = {
+  label: string
+  value: string
+  disabled?: boolean
+  type?: React.HTMLInputTypeAttribute
+  min?: number
+  onChange: (value: string) => void
+}
+
+function InlineEditableCell({
+  label,
+  value,
+  disabled = false,
+  type = "text",
+  min,
+  onChange,
+}: InlineEditableCellProps) {
+  const [editing, setEditing] = React.useState(false)
+  const originalValue = React.useRef(value)
+
+  React.useEffect(() => {
+    if (disabled) {
+      setEditing(false)
+    }
+  }, [disabled])
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="tm-agent-import__editable-cell"
+        aria-label={`编辑${label}`}
+        title={`编辑${label}`}
+        disabled={disabled}
+        onClick={() => {
+          originalValue.current = value
+          setEditing(true)
+        }}
+      >
+        <span>{value || "—"}</span>
+      </button>
+    )
+  }
+
+  return (
+    <Input
+      autoFocus
+      aria-label={label}
+      className="w-full tm-agent-import__cell-editor"
+      density="compact"
+      size="lg"
+      type={type}
+      min={min}
+      value={value}
+      disabled={disabled}
+      onFocus={(event) => event.currentTarget.select()}
+      onChange={(event) => onChange(event.target.value)}
+      onBlur={() => setEditing(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault()
+          event.currentTarget.blur()
+        }
+        if (event.key === "Escape") {
+          event.preventDefault()
+          onChange(originalValue.current)
+          event.currentTarget.blur()
+        }
+      }}
+    />
+  )
+}
+
+type InlineEditableSelectCellProps = {
+  label: string
+  value: string
+  displayValue: string
+  options: Array<{ value: string; label: string }>
+  disabled?: boolean
+  onChange: (value: string) => void
+}
+
+function InlineEditableSelectCell({
+  label,
+  value,
+  displayValue,
+  options,
+  disabled = false,
+  onChange,
+}: InlineEditableSelectCellProps) {
+  const [editing, setEditing] = React.useState(false)
+  const selectRef = React.useRef<HTMLSelectElement>(null)
+
+  React.useEffect(() => {
+    if (disabled) {
+      setEditing(false)
+    }
+  }, [disabled])
+
+  React.useEffect(() => {
+    if (editing) {
+      selectRef.current?.focus()
+    }
+  }, [editing])
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="tm-agent-import__editable-cell"
+        aria-label={`编辑${label}`}
+        title={`编辑${label}`}
+        disabled={disabled}
+        onClick={() => setEditing(true)}
+      >
+        <span>{displayValue || "—"}</span>
+      </button>
+    )
+  }
+
+  return (
+    <select
+      ref={selectRef}
+      aria-label={label}
+      className="tm-agent-import__select tm-agent-import__select--compact"
+      value={value}
+      disabled={disabled}
+      onBlur={() => setEditing(false)}
+      onChange={(event) => {
+        onChange(event.target.value)
+        setEditing(false)
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault()
+          setEditing(false)
+        }
+      }}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 function NewItemTableRow({
   draft,
   disabled,
@@ -648,78 +796,58 @@ function NewItemTableRow({
           </label>
         </td>
         <td>
-          <Input
-            aria-label="物料全名"
-            className="w-full"
-            density="compact"
-            size="lg"
+          <InlineEditableCell
+            label="物料全名"
             value={item.material.fullName}
             disabled={disabled}
-            onChange={(event) => updateMaterial("fullName", event.target.value)}
+            onChange={(value) => updateMaterial("fullName", value)}
           />
         </td>
         <td>
-          <Input
-            aria-label="基础型号"
-            className="w-full"
-            density="compact"
-            size="lg"
+          <InlineEditableCell
+            label="基础型号"
             value={item.material.baseName ?? ""}
             disabled={disabled}
-            onChange={(event) => updateMaterial("baseName", event.target.value)}
+            onChange={(value) => updateMaterial("baseName", value)}
           />
         </td>
         <td>
-          <Input
-            aria-label="变体"
-            className="w-full"
-            density="compact"
-            size="lg"
+          <InlineEditableCell
+            label="变体"
             value={item.material.variantName ?? ""}
             disabled={disabled}
-            onChange={(event) => updateMaterial("variantName", event.target.value)}
+            onChange={(value) => updateMaterial("variantName", value)}
           />
         </td>
         <td>
-          <Input
-            aria-label="封装"
-            className="w-full"
-            density="compact"
-            size="lg"
+          <InlineEditableCell
+            label="封装"
             value={item.material.packageName ?? ""}
             disabled={disabled}
-            onChange={(event) => updateMaterial("packageName", event.target.value)}
+            onChange={(value) => updateMaterial("packageName", value)}
           />
         </td>
         <td>
-          <Input
-            aria-label="入库数量"
-            className="w-full"
-            density="compact"
-            size="lg"
+          <InlineEditableCell
+            label="入库数量"
             type="number"
-            min="1"
-            value={item.quantity}
+            min={1}
+            value={String(item.quantity)}
             disabled={disabled}
-            onChange={(event) =>
+            onChange={(value) =>
               onChange((current) => ({
                 ...current,
-                quantity: Math.max(1, Number.parseInt(event.target.value, 10) || 1),
+                quantity: Math.max(1, Number.parseInt(value, 10) || 1),
               }))
             }
           />
         </td>
         <td>
-          <Input
-            aria-label="来源备注"
-            className="w-full"
-            density="compact"
-            size="lg"
+          <InlineEditableCell
+            label="来源备注"
             value={item.sourceNote}
             disabled={disabled}
-            onChange={(event) =>
-              onChange((current) => ({ ...current, sourceNote: event.target.value }))
-            }
+            onChange={(value) => onChange((current) => ({ ...current, sourceNote: value }))}
           />
         </td>
         <td>
@@ -727,31 +855,28 @@ function NewItemTableRow({
         </td>
         <td>
           <div className="tm-agent-import__template-cell">
-            <select
-              aria-label="标签模板"
-              className="tm-agent-import__select tm-agent-import__select--compact"
+            <InlineEditableSelectCell
+              label="标签模板"
               value={item.template ? templateKey(item.template) : ""}
+              displayValue={item.template?.name ?? "未选择模板"}
+              options={templateOptions.map((template) => ({
+                value: templateKey(template),
+                label: `${template.name}${
+                  manualTemplates.some(
+                    (candidate) => templateKey(candidate) === templateKey(template)
+                  )
+                    ? "（本地）"
+                    : ""
+                }`,
+              }))}
               disabled={disabled || waitingForAgent || saving}
-              onChange={(event) => {
-                const next = templateOptions.find(
-                  (template) => templateKey(template) === event.target.value
-                )
+              onChange={(value) => {
+                const next = templateOptions.find((template) => templateKey(template) === value)
                 if (next) {
                   onRequestTemplate(next, localTemplateFor(next))
                 }
               }}
-            >
-              {templateOptions.map((template) => (
-                <option key={templateKey(template)} value={templateKey(template)}>
-                  {template.name}
-                  {manualTemplates.some(
-                    (candidate) => templateKey(candidate) === templateKey(template)
-                  )
-                    ? "（本地）"
-                    : ""}
-                </option>
-              ))}
-            </select>
+            />
             {waitingForAgent ? (
               <span className="tm-agent-import__template-status">
                 <LoaderCircle className="size-4 animate-spin" />
@@ -955,14 +1080,7 @@ function RestockItemTableRow({
         <span>{item.material.description || "既有物料；保留它原有的标签绑定。"}</span>
       </td>
       <td>
-        <Input
-          aria-label="目标物料 ID"
-          className="w-full"
-          density="compact"
-          size="lg"
-          value={item.targetMaterialId ?? ""}
-          disabled
-        />
+        <span className="tm-agent-import__cell-copy">{item.targetMaterialId || "未提供"}</span>
       </td>
       <td>
         <span className="tm-agent-import__cell-copy">
@@ -974,34 +1092,26 @@ function RestockItemTableRow({
         <span className="tm-agent-import__cell-copy">{item.material.packageName || "未提供"}</span>
       </td>
       <td>
-        <Input
-          aria-label="入库数量"
-          className="w-full"
-          density="compact"
-          size="lg"
+        <InlineEditableCell
+          label="入库数量"
           type="number"
-          min="1"
-          value={item.quantity}
+          min={1}
+          value={String(item.quantity)}
           disabled={disabled}
-          onChange={(event) =>
+          onChange={(value) =>
             onChange((current) => ({
               ...current,
-              quantity: Math.max(1, Number.parseInt(event.target.value, 10) || 1),
+              quantity: Math.max(1, Number.parseInt(value, 10) || 1),
             }))
           }
         />
       </td>
       <td>
-        <Input
-          aria-label="来源备注"
-          className="w-full"
-          density="compact"
-          size="lg"
+        <InlineEditableCell
+          label="来源备注"
           value={item.sourceNote}
           disabled={disabled}
-          onChange={(event) =>
-            onChange((current) => ({ ...current, sourceNote: event.target.value }))
-          }
+          onChange={(value) => onChange((current) => ({ ...current, sourceNote: value }))}
         />
       </td>
       <td>

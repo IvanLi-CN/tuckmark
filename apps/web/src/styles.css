@@ -479,6 +479,39 @@
   text-align: center;
 }
 
+.tm-agent-import__editable-cell {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  padding: 7px 8px;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tm-agent-import__editable-cell:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--muted) 66%, var(--card));
+}
+
+.tm-agent-import__editable-cell:focus-visible {
+  border-color: color-mix(in oklab, var(--ring) 72%, var(--border));
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 18%, transparent);
+}
+
+.tm-agent-import__editable-cell:disabled {
+  color: var(--muted-foreground);
+  cursor: default;
+}
+
 .tm-agent-import__item-actions {
   display: flex;
   justify-content: center;

@@ -38,6 +38,9 @@ export const ReadyToConfirm: Story = {
     await expect(canvas.getByRole("table", { name: "增加库存" })).toBeVisible()
     await expect(canvas.getAllByLabelText("导入此物料")[0]).toBeChecked()
     await expect(canvas.getAllByRole("button", { name: "保存当前编辑" })).toHaveLength(2)
+    await userEvent.click(canvas.getByRole("button", { name: "编辑物料全名" }))
+    await expect(canvas.getByLabelText("物料全名")).toHaveFocus()
+    await userEvent.keyboard("{Escape}")
     await userEvent.click(canvas.getByRole("button", { name: "展开物料详情" }))
     await expect(canvas.getByLabelText("描述")).toBeVisible()
   },
@@ -92,6 +95,7 @@ export const TemplateSwitchRequestsAgentInput: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: "编辑标签模板" }))
     await userEvent.selectOptions(canvas.getByLabelText("标签模板"), "system:shipping-compact")
     await expect(canvas.getByText("等待 Agent 补全", { exact: true })).toBeVisible()
     await expect(canvas.getByRole("button", { name: "确认导入选中项" })).toBeDisabled()
