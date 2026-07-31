@@ -71,3 +71,9 @@ Archive imports are explicitly selected as `merge` or `replace`. Merge accepts o
 Mock-only desktop confirmation route, covering both **new items** and **restock existing inventory**, display-first table cells that enter editing on click, editable detail fields, a non-blocking identity reminder, and a missing-datasheet warning:
 
 ![Agent-assisted inventory intake confirmation page](assets/agent-import-ui-demo.png)
+
+PR: include
+
+Mock fixture system page after DEVD became the `server-http` data owner. `source_type=mock_ui`; `target_program=mock-only`; `capture_scope=browser-viewport`; `sensitive_exclusion=real orders, data directories, session keys, and unrelated applications`; `submission_gate=approved`.
+
+![DEVD system storage status](assets/devd-system-storage.jpg)
