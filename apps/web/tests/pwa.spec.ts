@@ -392,7 +392,7 @@ test.describe("browser-static launch recovery", () => {
     await expect(page.getByRole("alert", { name: "Tuckmark 无法启动工作台" })).toBeVisible({
       timeout: 5_000,
     })
-    expect(runtimeRequests).toBe(1)
+    await expect.poll(() => runtimeRequests, { timeout: 5_000 }).toBe(1)
     await expect
       .poll(() =>
         page.evaluate(() => window.sessionStorage.getItem("tuckmark.pwa-waiting-worker-activated"))
