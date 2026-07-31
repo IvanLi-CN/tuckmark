@@ -498,7 +498,7 @@
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  padding: 0 8px;
+  padding: 0 10px;
   color: var(--foreground);
   font: inherit;
   font-size: 13px;
