@@ -2270,34 +2270,6 @@
     min-width: 0;
   }
 
-  .tm-action-button-tooltip {
-    position: fixed;
-    z-index: 60;
-    max-width: min(14rem, calc(100vw - 1rem));
-    transform: translateY(2px);
-    border: 1px solid color-mix(in oklab, var(--border) 78%, black);
-    border-radius: 0.5rem;
-    background: rgba(34, 28, 24, 0.96);
-    color: white;
-    opacity: 0;
-    pointer-events: none;
-    padding: 0.35rem 0.5rem;
-    box-shadow: 0 10px 24px rgba(44, 34, 25, 0.18);
-    font-size: 0.72rem;
-    font-weight: 500;
-    line-height: 1;
-    overflow-wrap: anywhere;
-    transition:
-      opacity 120ms ease,
-      transform 120ms ease;
-    white-space: nowrap;
-  }
-
-  .tm-action-button-tooltip--positioned {
-    opacity: 1;
-    transform: translateY(0);
-  }
-
   .tm-action-button__control {
     min-width: 0;
   }

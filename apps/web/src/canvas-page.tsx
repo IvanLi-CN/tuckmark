@@ -131,6 +131,12 @@ import {
   SheetTrigger,
 } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "./components/ui/tooltip.js"
 import { defaultDraftRenderOptions } from "./demo-data.js"
 import {
   buildCanvasDimensionOptions,
@@ -2598,6 +2604,29 @@ function CanvasSection({
   )
 }
 
+function CanvasDisabledReasonTooltip({
+  reason,
+  children,
+}: {
+  reason?: string
+  children: React.ReactNode
+}) {
+  if (!reason) {
+    return children
+  }
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">{children}</span>
+        </TooltipTrigger>
+        <TooltipContent>{reason}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 function useMediaQuery(query: string) {
   const getMatches = React.useCallback(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -3048,7 +3077,6 @@ function CanvasToolbar({
                 size="sm"
                 variant={state.snapEnabled ? "default" : "outline"}
                 aria-pressed={state.snapEnabled}
-                title="吸附"
                 disabled={interactionLocked}
                 onClick={() =>
                   onChange((current) => {
@@ -3207,7 +3235,7 @@ function CanvasLayerPanel({
   onChange: React.Dispatch<React.SetStateAction<CanvasPageState>>
 }) {
   const selectedCount = state.selectedIds.length
-  const clipboardUnsupportedTitle = clipboardSupported
+  const clipboardUnsupportedReason = clipboardSupported
     ? undefined
     : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
 
@@ -3227,26 +3255,28 @@ function CanvasLayerPanel({
       className="tm-inspector-section tm-inspector-section--layers"
       aside={
         <div className="tm-layer-section__actions">
-          <Button
-            size="sm"
-            variant="outline"
-            title={clipboardUnsupportedTitle}
-            disabled={selectedCount === 0 || !clipboardSupported}
-            onClick={() => void onCopy()}
-          >
-            <Copy className="size-4" />
-            拷贝
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            title={clipboardUnsupportedTitle}
-            disabled={readOnly || !clipboardSupported}
-            onClick={() => void onPaste()}
-          >
-            <ArrowDownToLine className="size-4" />
-            粘贴
-          </Button>
+          <CanvasDisabledReasonTooltip reason={clipboardUnsupportedReason}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={selectedCount === 0 || !clipboardSupported}
+              onClick={() => void onCopy()}
+            >
+              <Copy className="size-4" />
+              拷贝
+            </Button>
+          </CanvasDisabledReasonTooltip>
+          <CanvasDisabledReasonTooltip reason={clipboardUnsupportedReason}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={readOnly || !clipboardSupported}
+              onClick={() => void onPaste()}
+            >
+              <ArrowDownToLine className="size-4" />
+              粘贴
+            </Button>
+          </CanvasDisabledReasonTooltip>
           <Button
             size="sm"
             variant="outline"
@@ -3296,7 +3326,6 @@ function CanvasLayerPanel({
                     readOnly
                     tabIndex={-1}
                     value={element.meta.name}
-                    title={element.meta.name}
                     density="compact"
                     size="sm"
                     className="tm-choice__title"
@@ -3460,30 +3489,36 @@ function CanvasInspector({
         </div>
         <CanvasSection title="批量操作" description="对当前选择执行一次性动作。">
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              title={
+            <CanvasDisabledReasonTooltip
+              reason={
                 clipboardSupported ? undefined : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
               }
-              disabled={!clipboardSupported}
-              onClick={() => void onCopy()}
             >
-              <Copy className="size-4" />
-              拷贝
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              title={
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!clipboardSupported}
+                onClick={() => void onCopy()}
+              >
+                <Copy className="size-4" />
+                拷贝
+              </Button>
+            </CanvasDisabledReasonTooltip>
+            <CanvasDisabledReasonTooltip
+              reason={
                 clipboardSupported ? undefined : "当前环境不支持按钮拷贝或粘贴，请使用键盘快捷键。"
               }
-              disabled={readOnly || !clipboardSupported}
-              onClick={() => void onPaste()}
             >
-              <ArrowDownToLine className="size-4" />
-              粘贴
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={readOnly || !clipboardSupported}
+                onClick={() => void onPaste()}
+              >
+                <ArrowDownToLine className="size-4" />
+                粘贴
+              </Button>
+            </CanvasDisabledReasonTooltip>
             <Button
               type="button"
               variant="outline"

@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { Copy, Eye, Plus, Trash2, Upload } from "lucide-react"
+import { expect, userEvent, within } from "storybook/test"
 
 import { ActionButton } from "./action-button.js"
 
@@ -53,4 +54,10 @@ export const Gallery: Story = {
       </section>
     </div>
   ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const button = canvas.getByRole("button", { name: "导入模板" })
+    await userEvent.hover(button)
+    await expect(within(document.body).getByRole("tooltip")).toHaveTextContent("导入模板")
+  },
 }

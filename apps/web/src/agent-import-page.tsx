@@ -24,6 +24,12 @@ import { Badge } from "./components/ui/badge.js"
 import { Button } from "./components/ui/button.js"
 import { Input } from "./components/ui/input.js"
 import { Label } from "./components/ui/label.js"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "./components/ui/tooltip.js"
 import { cn } from "./lib/utils.js"
 import type { UserTemplateSummary } from "./types.js"
 import { listUserTemplates } from "./user-template-store.js"
@@ -638,19 +644,25 @@ function InlineEditableCell({
 
   if (!editing) {
     return (
-      <button
-        type="button"
-        className="tm-agent-import__editable-cell"
-        aria-label={`编辑${label}`}
-        title={`编辑${label}`}
-        disabled={disabled}
-        onClick={() => {
-          originalValue.current = value
-          setEditing(true)
-        }}
-      >
-        <span>{value || "—"}</span>
-      </button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="tm-agent-import__editable-cell"
+              aria-label={`编辑${label}`}
+              disabled={disabled}
+              onClick={() => {
+                originalValue.current = value
+                setEditing(true)
+              }}
+            >
+              <span>{value || "—"}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>编辑{label}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     )
   }
 
@@ -717,16 +729,22 @@ function InlineEditableSelectCell({
 
   if (!editing) {
     return (
-      <button
-        type="button"
-        className="tm-agent-import__editable-cell"
-        aria-label={`编辑${label}`}
-        title={`编辑${label}`}
-        disabled={disabled}
-        onClick={() => setEditing(true)}
-      >
-        <span>{displayValue || "—"}</span>
-      </button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="tm-agent-import__editable-cell"
+              aria-label={`编辑${label}`}
+              disabled={disabled}
+              onClick={() => setEditing(true)}
+            >
+              <span>{displayValue || "—"}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>编辑{label}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     )
   }
 
@@ -891,28 +909,40 @@ function NewItemTableRow({
         </td>
         <td className="tm-agent-import__table-cell--action">
           <div className="tm-agent-import__item-actions">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              aria-label={expanded ? "收起标签预览" : "预览标签"}
-              title={expanded ? "收起标签预览" : "预览标签"}
-              onClick={onToggleDetails}
-            >
-              <Eye className="size-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              aria-label={expanded ? "收起物料详情" : "展开物料详情"}
-              title={expanded ? "收起物料详情" : "展开物料详情"}
-              onClick={onToggleDetails}
-            >
-              <Pencil className="size-4" />
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    aria-label={expanded ? "收起标签预览" : "预览标签"}
+                    onClick={onToggleDetails}
+                  >
+                    <Eye className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{expanded ? "收起标签预览" : "预览标签"}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    aria-label={expanded ? "收起物料详情" : "展开物料详情"}
+                    onClick={onToggleDetails}
+                  >
+                    <Pencil className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{expanded ? "收起物料详情" : "展开物料详情"}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <SaveItemAction saving={saving} disabled={disabled} onSave={onSave} />
           </div>
         </td>
@@ -1193,18 +1223,24 @@ function SaveItemAction({
   return saving ? (
     <LoaderCircle className="size-4 animate-spin text-muted-foreground" aria-label="正在保存" />
   ) : (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      className="tm-agent-import__save-action size-7"
-      aria-label="保存当前编辑"
-      title="保存当前编辑"
-      disabled={disabled}
-      onClick={onSave}
-    >
-      <Save className="size-4" />
-    </Button>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="tm-agent-import__save-action size-7"
+            aria-label="保存当前编辑"
+            disabled={disabled}
+            onClick={onSave}
+          >
+            <Save className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>保存当前编辑</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 
