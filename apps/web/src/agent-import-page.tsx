@@ -895,7 +895,7 @@ function NewItemTableRow({
               type="button"
               variant="ghost"
               size="icon"
-              className="size-6"
+              className="size-7"
               aria-label={expanded ? "收起标签预览" : "预览标签"}
               title={expanded ? "收起标签预览" : "预览标签"}
               onClick={onToggleDetails}
@@ -906,7 +906,7 @@ function NewItemTableRow({
               type="button"
               variant="ghost"
               size="icon"
-              className="size-6"
+              className="size-7"
               aria-label={expanded ? "收起物料详情" : "展开物料详情"}
               title={expanded ? "收起物料详情" : "展开物料详情"}
               onClick={onToggleDetails}
