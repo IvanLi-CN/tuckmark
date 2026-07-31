@@ -1813,21 +1813,15 @@
   }
 
   .tm-product-mark {
-    @apply flex items-center gap-3;
-  }
-
-  .tm-product-mark__chip {
-    @apply grid place-items-center;
-  }
-
-  .tm-product-mark__logo {
     display: block;
-    width: auto;
+    width: 13.5rem;
     max-width: 100%;
+    height: auto;
+    flex: none;
   }
 
-  .tm-product-mark__copy {
-    @apply grid gap-0.5;
+  .tm-product-mark--compact {
+    width: 10rem;
   }
 
   .tm-nav__link {

@@ -31,11 +31,11 @@ export const Gallery: Story = {
   render: () => (
     <div className="grid max-w-sm gap-8" data-testid="product-mark-gallery">
       <section className="grid gap-3">
-        <h2 className="text-sm font-semibold text-foreground">Header mark</h2>
+        <h2 className="text-sm font-semibold text-foreground">Header full logo</h2>
         <ProductMark />
       </section>
       <section className="grid gap-3">
-        <h2 className="text-sm font-semibold text-foreground">Compact mark</h2>
+        <h2 className="text-sm font-semibold text-foreground">Compact full logo</h2>
         <ProductMark compact />
       </section>
     </div>
