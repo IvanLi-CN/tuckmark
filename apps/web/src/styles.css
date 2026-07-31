@@ -409,7 +409,7 @@
 
 .tm-agent-import__table th:first-child,
 .tm-agent-import__table td:first-child {
-  padding-left: 12px;
+  padding-inline: 12px;
 }
 
 .tm-agent-import__row--excluded td {
