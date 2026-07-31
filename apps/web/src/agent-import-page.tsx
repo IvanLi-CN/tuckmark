@@ -1077,7 +1077,6 @@ function RestockItemTableRow({
       </td>
       <td className="tm-agent-import__target-material">
         <strong>{item.material.fullName}</strong>
-        <span>{item.material.description || "既有物料；保留它原有的标签绑定。"}</span>
       </td>
       <td>
         <span className="tm-agent-import__cell-copy">{item.targetMaterialId || "未提供"}</span>

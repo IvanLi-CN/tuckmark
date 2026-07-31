@@ -373,11 +373,11 @@
 }
 
 .tm-agent-import__table--new {
-  min-width: 1330px;
+  min-width: 0;
 }
 
 .tm-agent-import__table--restock {
-  min-width: 1220px;
+  min-width: 0;
 }
 
 .tm-agent-import__table th,
@@ -468,6 +468,71 @@
 
 .tm-agent-import__column--action {
   width: 80px;
+}
+
+.tm-agent-import__table--new .tm-agent-import__column--select {
+  width: 5.5%;
+}
+
+.tm-agent-import__table--new .tm-agent-import__column--full-name {
+  width: 11.5%;
+}
+
+.tm-agent-import__table--new .tm-agent-import__column--base-name,
+.tm-agent-import__table--new .tm-agent-import__column--datasheet {
+  width: 9.5%;
+}
+
+.tm-agent-import__table--new .tm-agent-import__column--variant {
+  width: 7.5%;
+}
+
+.tm-agent-import__table--new .tm-agent-import__column--package {
+  width: 7%;
+}
+
+.tm-agent-import__table--new .tm-agent-import__column--quantity {
+  width: 6%;
+}
+
+.tm-agent-import__table--new .tm-agent-import__column--source,
+.tm-agent-import__table--new .tm-agent-import__column--template {
+  width: 11.5%;
+}
+
+.tm-agent-import__table--new .tm-agent-import__column--attention {
+  width: 15%;
+}
+
+.tm-agent-import__table--new .tm-agent-import__column--action {
+  width: 5.5%;
+}
+
+.tm-agent-import__table--restock .tm-agent-import__column--select,
+.tm-agent-import__table--restock .tm-agent-import__column--action {
+  width: 5.5%;
+}
+
+.tm-agent-import__table--restock .tm-agent-import__column--target,
+.tm-agent-import__table--restock .tm-agent-import__column--target-id {
+  width: 16%;
+}
+
+.tm-agent-import__table--restock .tm-agent-import__column--model {
+  width: 12.5%;
+}
+
+.tm-agent-import__table--restock .tm-agent-import__column--package,
+.tm-agent-import__table--restock .tm-agent-import__column--quantity {
+  width: 7.5%;
+}
+
+.tm-agent-import__table--restock .tm-agent-import__column--source {
+  width: 12.5%;
+}
+
+.tm-agent-import__table--restock .tm-agent-import__column--attention {
+  width: 17%;
 }
 
 .tm-agent-import__table-cell--select {
@@ -658,23 +723,12 @@
   font-size: 12px;
 }
 
-.tm-agent-import__target-material {
-  display: grid;
-  gap: 4px;
-}
-
 .tm-agent-import__target-material > strong {
   display: flex;
   min-height: 28px;
   align-items: center;
   font-size: 13px;
   line-height: 18px;
-}
-
-.tm-agent-import__target-material > span {
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 16px;
 }
 
 .tm-agent-import__no-attention {
