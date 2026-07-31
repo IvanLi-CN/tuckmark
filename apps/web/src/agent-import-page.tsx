@@ -1184,7 +1184,7 @@ function SaveItemAction({
       type="button"
       variant="ghost"
       size="icon"
-      className="size-9"
+      className="tm-agent-import__save-action size-9"
       aria-label="保存当前编辑"
       title="保存当前编辑"
       disabled={disabled}

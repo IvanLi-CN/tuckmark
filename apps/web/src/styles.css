@@ -474,6 +474,10 @@
   white-space: nowrap;
 }
 
+.tm-agent-import__selection {
+  padding-top: 2px;
+}
+
 .tm-agent-import__table-cell--action {
   padding-inline: 2px;
   text-align: center;
@@ -518,6 +522,11 @@
   display: flex;
   justify-content: center;
   gap: 2px;
+}
+
+.tm-agent-import__table-cell--action > .tm-agent-import__save-action,
+.tm-agent-import__table-cell--action > .tm-agent-import__item-actions {
+  margin-top: -8px;
 }
 
 .tm-agent-import__field-grid,
@@ -650,13 +659,14 @@
 
 .tm-agent-import__target-material > strong {
   font-size: 13px;
+  line-height: 18px;
 }
 
 .tm-agent-import__target-material > span,
 .tm-agent-import__no-attention {
   color: var(--muted-foreground);
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 18px;
 }
 
 .tm-agent-import__cell-copy,
@@ -665,7 +675,7 @@
   overflow: hidden;
   color: var(--muted-foreground);
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -682,7 +692,7 @@
   gap: 6px;
   color: color-mix(in oklab, #8a5d0a 84%, var(--foreground));
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 18px;
 }
 
 .tm-agent-import__attention-copy svg {
@@ -692,7 +702,6 @@
 
 .tm-agent-import__no-attention {
   display: block;
-  padding: 6px 0;
 }
 
 .tm-agent-import__empty {
