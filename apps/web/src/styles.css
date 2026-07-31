@@ -480,14 +480,16 @@
 }
 
 .tm-agent-import__editable-cell {
-  display: block;
+  display: flex;
+  min-height: 32px;
+  align-items: flex-start;
   width: 100%;
   min-width: 0;
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  padding: 7px 8px;
+  padding: 0 8px;
   color: var(--foreground);
   font: inherit;
   font-size: 13px;
