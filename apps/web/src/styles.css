@@ -1817,14 +1817,13 @@
   }
 
   .tm-product-mark__chip {
-    @apply grid place-items-center rounded-[1.1rem];
-    background: var(--tm-product-mark-surface);
-    box-shadow: var(--tm-product-mark-shadow);
+    @apply grid place-items-center;
   }
 
-  .tm-product-mark__glyph {
-    @apply font-black;
-    color: var(--tm-product-mark-foreground);
+  .tm-product-mark__logo {
+    display: block;
+    width: auto;
+    max-width: 100%;
   }
 
   .tm-product-mark__copy {

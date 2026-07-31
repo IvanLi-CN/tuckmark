@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="147" height="190" viewBox="95 86 147 190" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="title">
+  <title id="title">Tuckmark light theme earth-tone mark</title>
+  <defs>
+    <clipPath id="top" clipPathUnits="userSpaceOnUse">
+      <polygon points="95,86 242,86 242,152 95,191"/>
+    </clipPath>
+    <clipPath id="middle" clipPathUnits="userSpaceOnUse">
+      <polygon points="95,150 242,193 242,222 174,276 95,237"/>
+    </clipPath>
+    <g id="body" transform="translate(0,338) scale(.1,-.1)" fill="currentColor" stroke="none">
+      <path d="M1420 2241 l-385 -200 -5 -213 c-3 -117 -4 -261 -2 -319 l3 -106 107 -58 c59 -32 232 -127 384 -212 152 -84 281 -153 286 -153 5 0 112 58 237 130 126 72 232 130 237 130 4 0 8 4 8 10 0 5 -51 35 -112 66 -62 31 -255 132 -429 225 l-317 168 -196 -100 c-108 -55 -196 -98 -196 -96 0 13 170 102 662 351 416 209 556 275 581 274 39 -1 57 7 57 27 0 13 -500 275 -524 275 -6 0 -184 -90 -396 -199z"/>
+    </g>
+    <g id="tail" transform="translate(0,338) scale(.1,-.1)" fill="currentColor" stroke="none">
+      <path d="M2295 1221 c-17 -10 -120 -71 -230 -136 -110 -65 -204 -121 -208 -125 -8 -7 451 -260 472 -260 13 0 16 526 3 534 -4 2 -21 -3 -37 -13z"/>
+    </g>
+  </defs>
+  <g color="#6D4120" clip-path="url(#top)"><use href="#body"/></g>
+  <g color="#B96F3A" clip-path="url(#middle)"><use href="#body"/></g>
+  <g color="#D7A46E"><use href="#tail"/></g>
+</svg>

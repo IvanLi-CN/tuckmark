@@ -207,8 +207,31 @@ test("browser-static build ships complete PWA assets without remote font depende
   expect(versionMetadata).toEqual(PLAYWRIGHT_BUILD_METADATA)
   expect(manifest.start_url).toBe("./")
   expect(manifest.scope).toBe("./")
-  expect(manifest.icons.some((icon) => icon.src === "./pwa/tuckmark-icon-192.png")).toBe(true)
-  expect(manifest.icons.every((icon) => icon.purpose?.includes("maskable"))).toBe(true)
+  expect(manifest.icons).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ src: "./pwa/tuckmark-icon-192.png", purpose: "any" }),
+      expect.objectContaining({ src: "./pwa/tuckmark-icon-512.png", purpose: "any" }),
+      expect.objectContaining({ src: "./pwa/tuckmark-icon-maskable-192.png", purpose: "maskable" }),
+      expect.objectContaining({ src: "./pwa/tuckmark-icon-maskable-512.png", purpose: "maskable" }),
+    ])
+  )
+  await Promise.all(
+    [
+      "favicon.ico",
+      "tuckmark-apple-touch-icon-120.png",
+      "tuckmark-apple-touch-icon-152.png",
+      "tuckmark-apple-touch-icon-167.png",
+      "tuckmark-apple-touch-icon-180.png",
+      "tuckmark-favicon-16.png",
+      "tuckmark-favicon-32.png",
+      "tuckmark-favicon-48.png",
+      "tuckmark-favicon.svg",
+      "tuckmark-icon-192.png",
+      "tuckmark-icon-512.png",
+      "tuckmark-icon-maskable-192.png",
+      "tuckmark-icon-maskable-512.png",
+    ].map((fileName) => fs.access(path.join(distRoot, "pwa", fileName)))
+  )
   expect(serviceWorker).toContain('"./index.html"')
   expect(serviceWorker).toContain('"./404.html"')
   expect(serviceWorker).toContain('"./pwa/tuckmark-icon-192.png"')
@@ -219,6 +242,12 @@ test("browser-static build ships complete PWA assets without remote font depende
   expect(serviceWorker).toContain("cache.match(CACHE_READY_MARKER)")
   expect(serviceWorker).not.toContain("WARM_ASSETS")
   expect(serviceWorker).not.toContain("INSTALL_TIERS")
+  expect(serviceWorker).toContain('"./pwa/tuckmark-icon-maskable-192.png"')
+  expect(serviceWorker).toContain('"./pwa/tuckmark-icon-maskable-512.png"')
+  expect(serviceWorker).toContain('"./pwa/tuckmark-apple-touch-icon-180.png"')
+  expect(serviceWorker).toContain('"./pwa/tuckmark-apple-touch-icon-120.png"')
+  expect(serviceWorker).toContain('"./pwa/tuckmark-apple-touch-icon-152.png"')
+  expect(serviceWorker).toContain('"./pwa/tuckmark-apple-touch-icon-167.png"')
   expect(serviceWorker).toContain("SKIP_WAITING")
   expect(serviceWorker).toContain('const VERSION_METADATA_URL = "./version.json"')
   expect(serviceWorker).toContain("requestUrl.pathname.endsWith(VERSION_METADATA_URL.slice(1))")
