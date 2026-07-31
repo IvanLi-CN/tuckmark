@@ -38,6 +38,7 @@ export const ReadyToConfirm: Story = {
     await expect(canvas.getByRole("table", { name: "增加库存" })).toBeVisible()
     await expect(canvas.getAllByLabelText("导入此物料")[0]).toBeChecked()
     await expect(canvas.getAllByRole("button", { name: "保存当前编辑" })).toHaveLength(2)
+    await expect(canvas.queryByRole("button", { name: "展开物料详情" })).not.toBeInTheDocument()
     await userEvent.click(canvas.getByRole("button", { name: "编辑物料全名" }))
     await expect(canvas.getByLabelText("物料全名")).toHaveFocus()
     await userEvent.keyboard("{Escape}")

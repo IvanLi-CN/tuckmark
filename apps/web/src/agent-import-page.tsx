@@ -11,7 +11,6 @@ import {
   Eye,
   LoaderCircle,
   PackagePlus,
-  Pencil,
   Save,
   Warehouse,
 } from "lucide-react"
@@ -924,23 +923,6 @@ function NewItemTableRow({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>{expanded ? "收起标签预览" : "预览标签"}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-7"
-                    aria-label={expanded ? "收起物料详情" : "展开物料详情"}
-                    onClick={onToggleDetails}
-                  >
-                    <Pencil className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{expanded ? "收起物料详情" : "展开物料详情"}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             <SaveItemAction saving={saving} disabled={disabled} onSave={onSave} />
