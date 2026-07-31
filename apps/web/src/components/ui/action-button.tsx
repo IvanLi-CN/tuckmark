@@ -15,6 +15,8 @@ type ActionButtonProps = Omit<ButtonProps, "children" | "size"> & {
   selected?: boolean
 }
 
+const longPressDelayMs = 520
+
 const ActionButton = React.forwardRef<HTMLSpanElement, ActionButtonProps>(function ActionButton(
   {
     name,
@@ -23,17 +25,33 @@ const ActionButton = React.forwardRef<HTMLSpanElement, ActionButtonProps>(functi
     size = "sm",
     selected,
     className,
+    onPointerDown,
+    onPointerUp,
+    onPointerCancel,
+    onPointerLeave,
+    onBlur,
     "aria-pressed": ariaPressed,
     ...props
   },
   forwardedRef
 ) {
   const anchorRef = React.useRef<HTMLSpanElement | null>(null)
+  const longPressTimer = React.useRef<number | null>(null)
+  const [tooltipOpen, setTooltipOpen] = React.useState(false)
   const showsText = mode !== "icon"
   const showsIcon = mode !== "text" && Icon
   const showsTooltip = mode === "icon"
   const buttonSize = size === "xs" ? "sm" : size
   const isTab = props.role === "tab"
+
+  const clearLongPress = React.useCallback(() => {
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }, [])
+
+  React.useEffect(() => clearLongPress, [clearLongPress])
 
   const setAnchorRef = React.useCallback(
     (node: HTMLSpanElement | null) => {
@@ -59,6 +77,36 @@ const ActionButton = React.forwardRef<HTMLSpanElement, ActionButtonProps>(functi
         selected && "tm-action-button__control--selected",
         className
       )}
+      onPointerDown={(event) => {
+        if (showsTooltip && event.pointerType === "touch") {
+          clearLongPress()
+          longPressTimer.current = window.setTimeout(() => setTooltipOpen(true), longPressDelayMs)
+        }
+        onPointerDown?.(event)
+      }}
+      onPointerUp={(event) => {
+        clearLongPress()
+        onPointerUp?.(event)
+      }}
+      onPointerCancel={(event) => {
+        clearLongPress()
+        setTooltipOpen(false)
+        onPointerCancel?.(event)
+      }}
+      onPointerLeave={(event) => {
+        clearLongPress()
+        setTooltipOpen(false)
+        onPointerLeave?.(event)
+      }}
+      onBlur={(event) => {
+        clearLongPress()
+        setTooltipOpen(false)
+        onBlur?.(event)
+      }}
+      onClick={(event) => {
+        setTooltipOpen(false)
+        props.onClick?.(event)
+      }}
     >
       {showsIcon ? <Icon className="size-4" aria-hidden="true" /> : null}
       {showsText ? <span>{name}</span> : null}
@@ -76,7 +124,7 @@ const ActionButton = React.forwardRef<HTMLSpanElement, ActionButtonProps>(functi
     >
       {showsTooltip ? (
         <TooltipProvider>
-          <Tooltip>
+          <Tooltip open={tooltipOpen} onOpenChange={setTooltipOpen}>
             <TooltipTrigger asChild>{button}</TooltipTrigger>
             <TooltipContent>{name}</TooltipContent>
           </Tooltip>

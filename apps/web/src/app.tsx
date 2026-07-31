@@ -6,6 +6,7 @@ import {
 } from "./agent-import-demo-data.js"
 import { AgentImportPage } from "./agent-import-page.js"
 import type { ApiClient } from "./api-client.js"
+import { AppLaunchSplash } from "./app-launch-splash.js"
 import type { AppContext } from "./types.js"
 
 const LazyWorkbenchApp = React.lazy(async () => {
@@ -23,10 +24,25 @@ export type AppProps = {
   bootstrapState?: AppBootstrapState
 }
 
+export function resolveAppRoutePathname(pathname: string, basePath = ""): string {
+  const normalizedBasePath = basePath.replace(/\/+$/u, "")
+  if (
+    normalizedBasePath &&
+    (pathname === normalizedBasePath || pathname.startsWith(`${normalizedBasePath}/`))
+  ) {
+    return pathname.slice(normalizedBasePath.length) || "/"
+  }
+  return pathname
+}
+
 export function App(props: AppProps = {}) {
-  if (typeof window !== "undefined" && /^\/agent-import\/[^/]+/u.test(window.location.pathname)) {
+  const pathname =
+    typeof window === "undefined"
+      ? ""
+      : resolveAppRoutePathname(window.location.pathname, props.context?.basePath)
+  if (/^\/agent-import\/[^/]+/u.test(pathname)) {
     if (
-      window.location.pathname === "/agent-import/demo" &&
+      pathname === "/agent-import/demo" &&
       new URLSearchParams(window.location.search).get("ui_demo") === "1"
     ) {
       return (
@@ -34,14 +50,13 @@ export function App(props: AppProps = {}) {
           sessionId="demo-agent-import-session"
           initialSession={createAgentImportDemoSession()}
           client={createAgentImportDemoClient()}
-          localTemplatesLoader={async () => []}
         />
       )
     }
     return <AgentImportPage />
   }
   return (
-    <React.Suspense fallback={null}>
+    <React.Suspense fallback={<AppLaunchSplash />}>
       <LazyWorkbenchApp {...props} startupShell="auto" />
     </React.Suspense>
   )

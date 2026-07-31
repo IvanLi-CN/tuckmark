@@ -17,7 +17,8 @@ describe("DEVD data HTTP contract", () => {
   it("exposes status and maps stale commands to a 409 conflict", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-routes-"))
     cleanup.push(() => rm(root, { recursive: true, force: true }))
-    const app = createApp(undefined, { devdDataService: new DevdDataService(root) })
+    const dataService = new DevdDataService(root)
+    const app = createApp(undefined, { devdDataService: dataService })
     const server = app.listen(0)
     cleanup.push(() => new Promise<void>((resolve) => server.close(() => resolve())))
     const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -39,6 +40,51 @@ describe("DEVD data HTTP contract", () => {
       error: "Data revision changed from 9 to 0.",
     })
 
+    const invalidMaterial = await fetch(`${baseUrl}/api/data/inventory/save-material`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ expectedRevision: 0, args: {} }),
+    })
+    expect(invalidMaterial.status).toBe(400)
+
+    const invalidTemplate = await fetch(`${baseUrl}/api/data/runtime/save-template`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        expectedRevision: 0,
+        args: { name: "Missing mock dimensions", document: {} },
+      }),
+    })
+    expect(invalidTemplate.status).toBe(400)
+    expect(
+      await fetch(`${baseUrl}/api/data/status`).then((response) => response.json())
+    ).toMatchObject({
+      revision: 0,
+    })
+
+    const rejectedLocalTemplate = await fetch(
+      `${baseUrl}/api/agent-import/sessions/mock/items/mock/template-input`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expectedRevision: 0,
+          template: {
+            source: "user-template",
+            id: "browser-local-template",
+            name: "Browser-local Mock Template",
+            fields: [],
+            recommendedUses: [],
+          },
+          localTemplate: {},
+        }),
+      }
+    )
+    expect(rejectedLocalTemplate.status).toBe(400)
+    expect(((await rejectedLocalTemplate.json()) as { error: string }).error).toContain(
+      "Unrecognized key"
+    )
+
     const crossOrigin = await fetch(`${baseUrl}/api/data/status`, {
       headers: { origin: "https://unrelated.example" },
     })
@@ -49,13 +95,18 @@ describe("DEVD data HTTP contract", () => {
     })
     expect(localProxyOrigin.status).toBe(200)
 
+    const bracketedIpv6Host = await fetch(`${baseUrl}/api/data/status`, {
+      headers: { host: `[::1]:${(server.address() as AddressInfo).port}` },
+    })
+    expect(bracketedIpv6Host.status).toBe(200)
+
     const rebindingOrigin = await fetch(`${baseUrl}/api/data/status`, {
       headers: { host: "rebind.example", origin: "http://rebind.example" },
     })
     expect(rebindingOrigin.status).toBe(403)
 
     const remoteApp = createApp(undefined, {
-      devdDataService: new DevdDataService(root),
+      devdDataService: dataService,
       clientAddress: () => "192.0.2.45",
     })
     const remoteServer = remoteApp.listen(0)

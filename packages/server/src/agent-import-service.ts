@@ -6,13 +6,11 @@ import { presetTemplates } from "@tuckmark/core"
 import {
   type AgentImportEvent,
   type AgentImportItem,
-  type AgentImportLocalTemplate,
   type AgentImportProposal,
   type AgentImportSession,
   type AgentImportTemplate,
   agentImportEventSchema,
   agentImportItemSchema,
-  agentImportLocalTemplateSchema,
   agentImportProposalSchema,
   agentImportSessionSchema,
   agentImportTemplateSchema,
@@ -59,11 +57,15 @@ const sharedTemplateVersionSchema = z.object({
 
 type ManagedSession = AgentImportSession & {
   secretHash: Buffer
-  localTemplates: Map<string, AgentImportLocalTemplate>
 }
 
 export type AgentImportCatalog = {
   templates: AgentImportTemplate[]
+}
+
+export type AgentImportRestockTarget = {
+  itemId: string
+  material: InventoryMaterial
 }
 
 export type AgentImportCreateSessionInput = {
@@ -171,11 +173,32 @@ export class AgentImportService {
   }
 
   async catalog(): Promise<AgentImportCatalog> {
+    await this.dataService.currentRevision()
     return { templates: await this.listTemplates() }
   }
 
   async listInventory(query?: string): Promise<InventoryMaterial[]> {
     return (await this.dataService.readMaterials(query ?? "", false)).data
+  }
+
+  async resolveRestockTargets(
+    sessionId: string,
+    secret: string
+  ): Promise<AgentImportRestockTarget[]> {
+    const session = this.requireSession(sessionId, secret)
+    const materials = new Map(
+      (await this.dataService.readMaterials("", true)).data.map((material) => [
+        material.id,
+        material,
+      ])
+    )
+    return session.proposal.items
+      .filter((item) => item.kind === "restock")
+      .flatMap((item) => {
+        const material = item.targetMaterialId ? materials.get(item.targetMaterialId) : undefined
+        if (!material || material.archivedAt) return []
+        return [{ itemId: item.id, material }]
+      })
   }
 
   createSession(input: AgentImportCreateSessionInput): AgentImportSession {
@@ -186,7 +209,15 @@ export class AgentImportService {
     if (input.secret.length < SECRET_BYTES) {
       throw new Error("Agent import session key is too short.")
     }
-    const proposal = agentImportProposalSchema.parse(input.proposal)
+    const submittedProposal = agentImportProposalSchema.parse(input.proposal)
+    const proposal: AgentImportProposal = {
+      ...submittedProposal,
+      items: submittedProposal.items.map((item) => ({
+        ...item,
+        revision: 0,
+        pendingTemplateEventId: null,
+      })),
+    }
     const now = new Date().toISOString()
     const session: ManagedSession = {
       id: input.sessionId,
@@ -196,7 +227,6 @@ export class AgentImportService {
       proposal,
       events: [],
       secretHash: hashSecret(input.secret),
-      localTemplates: new Map(),
     }
     this.sessions.set(session.id, session)
     return cloneSession(session)
@@ -238,15 +268,24 @@ export class AgentImportService {
     if (current.pendingTemplateEventId && !pendingEvent) {
       throw new Error("Template input event is no longer open.")
     }
-    const next = agentImportItemSchema.parse({
-      ...args.item,
-      id: current.id,
-      kind: current.kind,
-      revision: current.revision + 1,
-      template: current.template,
-      templateInput: pendingEvent ? current.templateInput : args.item.templateInput,
-      pendingTemplateEventId: current.pendingTemplateEventId,
-    })
+    const next =
+      current.kind === "restock"
+        ? agentImportItemSchema.parse({
+            ...current,
+            selected: args.item.selected,
+            quantity: args.item.quantity,
+            sourceNote: args.item.sourceNote,
+            revision: current.revision + 1,
+          })
+        : agentImportItemSchema.parse({
+            ...args.item,
+            id: current.id,
+            kind: current.kind,
+            revision: current.revision + 1,
+            template: current.template,
+            templateInput: pendingEvent ? current.templateInput : args.item.templateInput,
+            pendingTemplateEventId: current.pendingTemplateEventId,
+          })
     session.proposal.items[index] = next
     if (pendingEvent) {
       pendingEvent.revision = next.revision
@@ -254,14 +293,20 @@ export class AgentImportService {
     return cloneSession(session)
   }
 
-  requestTemplateInput(args: {
+  async requestTemplateInput(args: {
     sessionId: string
     secret: string
     itemId: string
     expectedRevision: number
     template: AgentImportTemplate
-    localTemplate?: AgentImportLocalTemplate
-  }): AgentImportSession {
+  }): Promise<AgentImportSession> {
+    const requested = agentImportTemplateSchema.parse(args.template)
+    const template = (await this.catalog()).templates.find(
+      (candidate) => templateKey(candidate) === templateKey(requested)
+    )
+    if (!template) {
+      throw new Error(`Label template ${templateKey(requested)} was not found.`)
+    }
     const session = this.requireOpenSession(args.sessionId, args.secret)
     const index = this.requireItemIndex(session, args.itemId)
     const current = session.proposal.items[index]
@@ -274,22 +319,10 @@ export class AgentImportService {
     if (current.revision !== args.expectedRevision) {
       throw new Error("This import item changed. Refresh before changing its template.")
     }
-    const template = agentImportTemplateSchema.parse(args.template)
-    const localTemplate = args.localTemplate
-      ? agentImportLocalTemplateSchema.parse(args.localTemplate)
-      : undefined
-    if (localTemplate) {
-      if (templateKey(localTemplate.template) !== templateKey(template)) {
-        throw new Error("Local template snapshot does not match the selected template.")
-      }
-    }
     for (const event of session.events) {
       if (event.itemId === current.id && event.status === "open") {
         event.status = "superseded"
       }
-    }
-    if (localTemplate) {
-      session.localTemplates.set(templateKey(template), localTemplate)
     }
     const event = agentImportEventSchema.parse({
       id: `agent-import-event-${randomUUID()}`,
@@ -453,7 +486,6 @@ export class AgentImportService {
       (await this.listTemplates()).map((template) => [templateKey(template), template])
     )
     const writes: Array<{ relativePath: string; value: unknown }> = []
-    const persistedLocalTemplates = new Map<string, AgentImportTemplate>()
     const initialMaterialUpdatedAt = new Map(
       materials.map((material) => [material.id, material.updatedAt])
     )
@@ -468,35 +500,22 @@ export class AgentImportService {
         if (!item.template) {
           throw new Error(`New material ${item.material.fullName} needs a label template.`)
         }
-        const localTemplate = session.localTemplates.get(templateKey(item.template))
         const catalogTemplate = catalog.get(templateKey(item.template))
-        if (!localTemplate && !catalogTemplate) {
+        if (!catalogTemplate) {
           throw new Error(`Label template ${templateKey(item.template)} was not found.`)
         }
-        const selectedTemplate = localTemplate ? item.template : catalogTemplate
-        if (!selectedTemplate) throw new Error("Label template was not found.")
-        ensureRequiredTemplateInput(selectedTemplate, item.templateInput)
+        ensureRequiredTemplateInput(catalogTemplate, item.templateInput)
         if (materials.some((candidate) => candidate.fullName === item.material.fullName)) {
           throw new Error(`Material ${item.material.fullName} already exists.`)
         }
-        if (
-          item.material.matrixCode?.trim() &&
-          materials.some((candidate) => candidate.matrixCode === item.material.matrixCode)
-        ) {
-          throw new Error(
-            `Matrix code ${item.material.matrixCode} is already used by another material.`
-          )
+        const matrixCode = item.material.matrixCode?.trim() || undefined
+        if (matrixCode && materials.some((candidate) => candidate.matrixCode === matrixCode)) {
+          throw new Error(`Matrix code ${matrixCode} is already used by another material.`)
         }
-        const bindingTemplate = await this.persistLocalTemplateIfNeeded({
-          template: selectedTemplate,
-          localTemplate,
-          persistedLocalTemplates,
-          writes,
-          now,
-        })
         material = inventoryMaterialSchema.parse({
           id: `inventory-material-${randomUUID()}`,
           ...item.material,
+          matrixCode,
           currentQuantity: 0,
           createdAt: now,
           updatedAt: now,
@@ -504,9 +523,9 @@ export class AgentImportService {
           labelBindings: [
             {
               id: `inventory-label-binding-${randomUUID()}`,
-              templateSource: bindingTemplate.source,
-              templateId: bindingTemplate.id,
-              templateName: bindingTemplate.name,
+              templateSource: catalogTemplate.source,
+              templateId: catalogTemplate.id,
+              templateName: catalogTemplate.name,
               printQuantity: item.labelPrintQuantity ?? 1,
               fieldOverrides: item.templateInput,
               createdAt: now,
@@ -570,88 +589,6 @@ export class AgentImportService {
       return
     }
     await this.commitWrites(writes, expectedRevision)
-  }
-
-  private async persistLocalTemplateIfNeeded(args: {
-    template: AgentImportTemplate
-    localTemplate: AgentImportLocalTemplate | undefined
-    persistedLocalTemplates: Map<string, AgentImportTemplate>
-    writes: Array<{ relativePath: string; value: unknown }>
-    now: string
-  }): Promise<AgentImportTemplate> {
-    if (!args.localTemplate) {
-      return args.template
-    }
-
-    try {
-      await readFile(
-        path.join(this.dataDir, "templates", safeFilename(args.template.id), "template.json"),
-        "utf8"
-      )
-      return args.template
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error
-      }
-    }
-
-    const sourceKey = templateKey(args.template)
-    const existing = args.persistedLocalTemplates.get(sourceKey)
-    if (existing) {
-      return existing
-    }
-
-    const templateId = `user-template-${randomUUID()}`
-    const versionId = `user-template-version-${randomUUID()}`
-    const document = {
-      ...args.localTemplate.document,
-      id: `shared-template-${templateId}`,
-      name: args.template.name,
-      source: { kind: "user-template", templateId },
-      templateId,
-      baseVersionId: undefined,
-      lastSavedAt: args.now,
-    }
-    const persisted = agentImportTemplateSchema.parse({
-      ...args.template,
-      id: templateId,
-      recommendedUses: [],
-    })
-    args.writes.push({
-      relativePath: path.join("templates", `${safeFilename(templateId)}`, "template.json"),
-      value: {
-        id: templateId,
-        name: args.template.name,
-        description: args.localTemplate.description,
-        width: document.width,
-        height: document.height,
-        createdAt: args.now,
-        updatedAt: args.now,
-        archivedAt: null,
-        currentVersionId: versionId,
-        fieldOrder: document.fields.map((field) => field.key),
-        recommendedUses: [],
-      },
-    })
-    args.writes.push({
-      relativePath: path.join(
-        "templates",
-        `${safeFilename(templateId)}`,
-        "versions",
-        `${safeFilename(versionId)}.json`
-      ),
-      value: {
-        id: versionId,
-        templateId,
-        version: 1,
-        kind: "saved",
-        createdAt: args.now,
-        label: "Imported local template",
-        document,
-      },
-    })
-    args.persistedLocalTemplates.set(sourceKey, persisted)
-    return persisted
   }
 
   private async readAllMaterials(): Promise<InventoryMaterial[]> {

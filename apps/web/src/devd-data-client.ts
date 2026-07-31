@@ -20,6 +20,23 @@ import type {
 declare const __TUCKMARK_WEB_SURFACE__: "server-http" | "browser-static"
 
 type RevisionResponse<T> = { revision: number; data: T }
+type SettingsUpdater =
+  | Partial<Omit<RuntimeStoreAppSettings, "version" | "updatedAt">>
+  | ((
+      current: RuntimeStoreAppSettings
+    ) => Partial<Omit<RuntimeStoreAppSettings, "version" | "updatedAt">>)
+
+type PendingAutosave = {
+  args: RuntimeStoreSaveWorkingCopyArgs
+  inFlight: boolean
+  timer: ReturnType<typeof setTimeout> | null
+  waiters: Array<{
+    resolve: (value: CanvasWorkingCopyIndexEntry) => void
+    reject: (error: unknown) => void
+  }>
+}
+
+const AUTOSAVE_COALESCE_MS = 150
 
 export class DevdDataConflictError extends Error {
   readonly code = "revision_conflict"
@@ -46,8 +63,20 @@ export function isServerHttpDataSurface(): boolean {
 
 export class DevdDataClient {
   private revision: number | null = null
+  private mutationQueue: Promise<void> = Promise.resolve()
+  private readonly pendingAutosaves = new Map<string, PendingAutosave>()
 
   private acceptRevision(revision: number): void {
+    if (this.revision !== null && revision < this.revision) {
+      throw new DevdDataConflictError(
+        this.revision,
+        "DEVD data changed while this response was loading. Refresh and retry your edit."
+      )
+    }
+    this.revision = revision
+  }
+
+  private rememberRevision(revision: number): void {
     this.revision = Math.max(this.revision ?? revision, revision)
   }
 
@@ -56,12 +85,32 @@ export class DevdDataClient {
     const body = (await response.json()) as any
     if (!response.ok) {
       if (response.status === 409 && body.code === "revision_conflict") {
-        this.acceptRevision(body.actualRevision)
+        this.rememberRevision(body.actualRevision)
         throw new DevdDataConflictError(body.actualRevision, body.error)
       }
       throw new Error(body.error ?? `DEVD data request failed (${response.status}).`)
     }
     return body as T
+  }
+
+  private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.mutationQueue
+    let release: () => void = () => undefined
+    this.mutationQueue = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    return previous.then(operation).finally(release)
+  }
+
+  private async sendRuntimeCommand<T>(command: string, args: unknown): Promise<T> {
+    const expectedRevision = this.revision ?? (await this.status()).revision
+    const response = await this.request<RevisionResponse<T>>(`/runtime/${command}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ expectedRevision, args }),
+    })
+    this.acceptRevision(response.revision)
+    return response.data
   }
 
   async status() {
@@ -89,14 +138,67 @@ export class DevdDataClient {
   }
 
   async runtimeCommand<T>(command: string, args: unknown): Promise<T> {
-    const expectedRevision = this.revision ?? (await this.status()).revision
-    const response = await this.request<RevisionResponse<T>>(`/runtime/${command}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ expectedRevision, args }),
+    return this.enqueueMutation(() => this.sendRuntimeCommand<T>(command, args))
+  }
+
+  async updateSettings(updater: SettingsUpdater): Promise<RuntimeStoreAppSettings> {
+    return this.enqueueMutation(async () => {
+      const snapshot = await this.snapshot()
+      const current = normalizeRuntimeAppSettings(
+        snapshot.settings ?? createDefaultRuntimeAppSettings()
+      )
+      const patch = typeof updater === "function" ? updater(current) : updater
+      return await this.sendRuntimeCommand<RuntimeStoreAppSettings>("save-settings", { patch })
     })
-    this.acceptRevision(response.revision)
-    return response.data
+  }
+
+  saveAutosave(args: RuntimeStoreSaveWorkingCopyArgs): Promise<CanvasWorkingCopyIndexEntry> {
+    const key = sourceKey(args.source)
+    let pending = this.pendingAutosaves.get(key)
+    if (!pending) {
+      pending = { args, inFlight: false, timer: null, waiters: [] }
+      this.pendingAutosaves.set(key, pending)
+      this.scheduleAutosave(key, pending)
+    } else {
+      pending.args = args
+    }
+    return new Promise<CanvasWorkingCopyIndexEntry>((resolve, reject) => {
+      pending?.waiters.push({ resolve, reject })
+    })
+  }
+
+  private scheduleAutosave(key: string, pending: PendingAutosave): void {
+    if (pending.inFlight || pending.timer) return
+    pending.timer = setTimeout(() => {
+      pending.timer = null
+      void this.flushAutosave(key, pending)
+    }, AUTOSAVE_COALESCE_MS)
+  }
+
+  private async flushAutosave(key: string, pending: PendingAutosave): Promise<void> {
+    if (this.pendingAutosaves.get(key) !== pending || pending.inFlight) return
+    const args = pending.args
+    pending.inFlight = true
+    try {
+      const result = await this.runtimeCommand<CanvasWorkingCopyIndexEntry>("save-autosave", args)
+      pending.inFlight = false
+      if (pending.args !== args) {
+        this.scheduleAutosave(key, pending)
+        return
+      }
+      this.pendingAutosaves.delete(key)
+      for (const { resolve } of pending.waiters.splice(0)) resolve(result)
+    } catch (error) {
+      pending.inFlight = false
+      if (error instanceof DevdDataConflictError) {
+        // request() retained the authoritative revision, so the same draft can
+        // be safely retried without dropping its coalesced callers.
+        this.scheduleAutosave(key, pending)
+        return
+      }
+      this.pendingAutosaves.delete(key)
+      for (const { reject } of pending.waiters.splice(0)) reject(error)
+    }
   }
 
   async listMaterials(query = "", includeArchived = false) {
@@ -115,14 +217,16 @@ export class DevdDataClient {
   }
 
   async inventoryCommand<T>(command: string, args: unknown): Promise<T> {
-    const expectedRevision = this.revision ?? (await this.status()).revision
-    const response = await this.request<RevisionResponse<T>>(`/inventory/${command}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ expectedRevision, args }),
+    return this.enqueueMutation(async () => {
+      const expectedRevision = this.revision ?? (await this.status()).revision
+      const response = await this.request<RevisionResponse<T>>(`/inventory/${command}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedRevision, args }),
+      })
+      this.acceptRevision(response.revision)
+      return response.data
     })
-    this.acceptRevision(response.revision)
-    return response.data
   }
 
   async exportArchive() {
@@ -143,25 +247,29 @@ export class DevdDataClient {
   }
 
   async importArchive(archive: unknown, archiveHash: string, mode: "merge" | "replace") {
-    const expectedRevision = this.revision ?? (await this.status()).revision
-    const response = await this.request<RevisionResponse<unknown>>("/archive/import", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ expectedRevision, archiveHash, mode, archive }),
+    return this.enqueueMutation(async () => {
+      const expectedRevision = this.revision ?? (await this.status()).revision
+      const response = await this.request<RevisionResponse<unknown>>("/archive/import", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedRevision, archiveHash, mode, archive }),
+      })
+      this.acceptRevision(response.revision)
+      return response.data
     })
-    this.acceptRevision(response.revision)
-    return response.data
   }
 
   async createBackup() {
-    const expectedRevision = this.revision ?? (await this.status()).revision
-    const response = await this.request<RevisionResponse<{ name: string }>>("/backups", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ expectedRevision }),
+    return this.enqueueMutation(async () => {
+      const expectedRevision = this.revision ?? (await this.status()).revision
+      const response = await this.request<RevisionResponse<{ name: string }>>("/backups", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedRevision }),
+      })
+      this.acceptRevision(response.revision)
+      return response.data
     })
-    this.acceptRevision(response.revision)
-    return response.data
   }
 
   invalidate(_revision: number): void {
@@ -291,7 +399,7 @@ export class HttpRuntimeStore implements RuntimeStore {
     await devdDataClient.runtimeCommand("purge-template", { templateId })
   }
   async saveAutosave(args: RuntimeStoreSaveWorkingCopyArgs) {
-    return await devdDataClient.runtimeCommand<CanvasWorkingCopyIndexEntry>("save-autosave", args)
+    return await devdDataClient.saveAutosave(args)
   }
   async replaceWorkingCopy(args: RuntimeStoreSaveWorkingCopyArgs) {
     return await devdDataClient.runtimeCommand<CanvasWorkingCopyIndexEntry>(
@@ -323,9 +431,7 @@ export class HttpRuntimeStore implements RuntimeStore {
           current: RuntimeStoreAppSettings
         ) => Partial<Omit<RuntimeStoreAppSettings, "version" | "updatedAt">>)
   ) {
-    const current = await this.loadAppSettings()
-    const patch = typeof updater === "function" ? updater(current) : updater
-    return await devdDataClient.runtimeCommand<RuntimeStoreAppSettings>("save-settings", { patch })
+    return await devdDataClient.updateSettings(updater)
   }
   async exportSnapshot() {
     return await devdDataClient.snapshot()

@@ -15,6 +15,7 @@ import {
 import { agentImportProposalSchema } from "@tuckmark/inventory"
 import { z } from "zod"
 
+import { deriveAgentImportWebUrl } from "./agent-import-url.js"
 import {
   adjustInventoryMaterialInDirectory,
   archiveInventoryMaterialInDirectory,
@@ -145,8 +146,8 @@ function printHelp(): void {
       "  tuckmark inventory restore --id <id> [--data-dir <dir>]",
       "  tuckmark agent-import catalog --devd-url <url>",
       "  tuckmark agent-import inventory --devd-url <url> [--query <text>]",
-      "  tuckmark agent-import create --file <proposal.json> --devd-url <url> [--no-open] [--credential-file <path>]",
-      "  tuckmark agent-import open --session <id> [--credential-file <path>]",
+      "  tuckmark agent-import create --file <proposal.json> --devd-url <url> [--web-url <url>] [--no-open] [--credential-file <path>]",
+      "  tuckmark agent-import open --session <id> [--web-url <url>] [--credential-file <path>]",
       "  tuckmark agent-import wait --session <id> --devd-url <url> [--timeout-ms <ms>] [--credential-file <path>]",
       "  tuckmark agent-import fulfill --session <id> --event <id> --revision <n> --input <json> --devd-url <url> [--credential-file <path>]",
       "  tuckmark inventory delete --id <id> [--data-dir <dir>]",
@@ -508,6 +509,7 @@ const agentImportCredentialSchema = z.object({
   sessionId: z.string().min(1),
   secret: z.string().min(32),
   devdUrl: z.string().url(),
+  webUrl: z.string().url().optional(),
   expiresAt: z.string().min(1),
 })
 
@@ -523,6 +525,21 @@ function resolveDevdUrl(args: string[], fallback?: string): string {
     throw new Error("DEVD URL must use http or https.")
   }
   return parsed.toString().replace(/\/$/, "")
+}
+
+function resolveAgentImportWebUrl(args: string[], devdUrl: string, fallback?: string): string {
+  const raw = parseFlag(args, "--web-url") ?? process.env.TUCKMARK_WEB_URL ?? fallback
+  if (raw?.trim()) {
+    const parsed = new URL(raw)
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error("Web URL must use http or https.")
+    }
+    return parsed.toString().replace(/\/$/, "")
+  }
+
+  const serverPort = process.env.TUCKMARK_SERVER_PORT ?? "5210"
+  const webPort = process.env.TUCKMARK_WEB_PORT ?? "5173"
+  return deriveAgentImportWebUrl({ devdUrl, serverPort, webPort })
 }
 
 function defaultAgentImportCredentialPath(sessionId: string): string {
@@ -604,8 +621,8 @@ async function launchConfirmationUrl(url: string): Promise<void> {
   })
 }
 
-function confirmationUrl(devdUrl: string, credential: AgentImportCredential): string {
-  return `${devdUrl}/agent-import/${encodeURIComponent(credential.sessionId)}#key=${encodeURIComponent(credential.secret)}`
+function confirmationUrl(webUrl: string, credential: AgentImportCredential): string {
+  return `${webUrl}/agent-import/${encodeURIComponent(credential.sessionId)}#key=${encodeURIComponent(credential.secret)}`
 }
 
 async function handleAgentImportCommand(args: string[]): Promise<void> {
@@ -632,6 +649,7 @@ async function handleAgentImportCommand(args: string[]): Promise<void> {
     }
     case "create": {
       const devdUrl = resolveDevdUrl(rest)
+      const webUrl = resolveAgentImportWebUrl(rest, devdUrl)
       const proposal = agentImportProposalSchema.parse(
         JSON.parse(await readFile(path.resolve(requireFlag(rest, "--file")), "utf8"))
       )
@@ -649,6 +667,7 @@ async function handleAgentImportCommand(args: string[]): Promise<void> {
         sessionId: response.session.id,
         secret,
         devdUrl,
+        webUrl,
         expiresAt: response.session.expiresAt,
       })
       const credentialFile = path.resolve(
@@ -657,7 +676,7 @@ async function handleAgentImportCommand(args: string[]): Promise<void> {
       )
       await writeAgentImportCredential(credentialFile, credential)
       if (!hasFlag(rest, "--no-open")) {
-        await launchConfirmationUrl(confirmationUrl(devdUrl, credential))
+        await launchConfirmationUrl(confirmationUrl(webUrl, credential))
       }
       console.log(
         JSON.stringify(
@@ -665,6 +684,7 @@ async function handleAgentImportCommand(args: string[]): Promise<void> {
             sessionId: credential.sessionId,
             expiresAt: credential.expiresAt,
             credentialFile,
+            confirmationOrigin: webUrl,
             opened: !hasFlag(rest, "--no-open"),
           },
           null,
@@ -676,7 +696,8 @@ async function handleAgentImportCommand(args: string[]): Promise<void> {
     case "open": {
       const credential = await readAgentImportCredential(rest)
       const devdUrl = resolveDevdUrl(rest, credential.devdUrl)
-      await launchConfirmationUrl(confirmationUrl(devdUrl, credential))
+      const webUrl = resolveAgentImportWebUrl(rest, devdUrl, credential.webUrl)
+      await launchConfirmationUrl(confirmationUrl(webUrl, credential))
       console.log(JSON.stringify({ sessionId: credential.sessionId, opened: true }, null, 2))
       return
     }
@@ -688,7 +709,20 @@ async function handleAgentImportCommand(args: string[]): Promise<void> {
         throw new Error("--timeout-ms must be zero or greater.")
       }
       const deadline = Date.now() + timeoutMs
-      do {
+      const emit = (events: unknown[]) => {
+        console.log(
+          JSON.stringify(
+            {
+              sessionId: credential.sessionId,
+              events,
+              waiting: events.length === 0,
+            },
+            null,
+            2
+          )
+        )
+      }
+      while (true) {
         const result = await requestDevd<{
           events: unknown[]
         }>({
@@ -696,24 +730,17 @@ async function handleAgentImportCommand(args: string[]): Promise<void> {
           pathname: `/api/agent-import/sessions/${encodeURIComponent(credential.sessionId)}/events`,
           secret: credential.secret,
         })
-        if (result.events.length > 0 || Date.now() >= deadline) {
-          console.log(
-            JSON.stringify(
-              {
-                sessionId: credential.sessionId,
-                events: result.events,
-                waiting: result.events.length === 0,
-              },
-              null,
-              2
-            )
-          )
+        if (result.events.length > 0) {
+          emit(result.events)
           return
         }
-        await new Promise<void>((resolve) =>
-          setTimeout(resolve, Math.min(1_000, deadline - Date.now()))
-        )
-      } while (Date.now() < deadline)
+        const remaining = deadline - Date.now()
+        if (remaining <= 0) {
+          emit([])
+          return
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, Math.min(1_000, remaining)))
+      }
       return
     }
     case "fulfill": {
@@ -896,6 +923,7 @@ async function handleInventoryCommand(args: string[]): Promise<void> {
 
   switch (subcommand) {
     case "list": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       const materials = await listInventoryMaterialsFromDirectory({
         dataDir,
         query: parseFlag(rest, "--query") ?? "",
@@ -905,6 +933,7 @@ async function handleInventoryCommand(args: string[]): Promise<void> {
       return
     }
     case "show": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       const materialId = requireFlag(rest, "--id")
       const material = await readInventoryMaterialFromDirectory(dataDir, materialId)
       if (!material) {

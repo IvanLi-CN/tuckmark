@@ -30,7 +30,6 @@ export const ReadyToConfirm: Story = {
   args: {
     initialSession: createAgentImportDemoSession(),
     client: createAgentImportDemoClient(),
-    localTemplatesLoader: async () => [],
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -83,7 +82,6 @@ export const TemplateWaitingForAgent: Story = {
       ],
     }),
     client: createAgentImportDemoClient(),
-    localTemplatesLoader: async () => [],
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -97,7 +95,6 @@ export const Completed: Story = {
   args: {
     initialSession: createAgentImportDemoSession({ state: "completed" }),
     client: createAgentImportDemoClient(),
-    localTemplatesLoader: async () => [],
   },
 }
 
@@ -105,7 +102,6 @@ export const TemplateSwitchRequestsAgentInput: Story = {
   args: {
     initialSession: createAgentImportDemoSession(),
     client: createAgentImportDemoClient(),
-    localTemplatesLoader: async () => [],
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)

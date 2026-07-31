@@ -1,9 +1,9 @@
 import type {
   AgentImportEvent,
   AgentImportItem,
-  AgentImportLocalTemplate,
   AgentImportSession,
   AgentImportTemplate,
+  InventoryMaterial,
 } from "@tuckmark/inventory"
 
 type SessionResponse = { session: AgentImportSession }
@@ -19,6 +19,10 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
 
 export interface AgentImportClient {
   getSession(sessionId: string, secret: string): Promise<AgentImportSession>
+  getRestockTargets(
+    sessionId: string,
+    secret: string
+  ): Promise<Array<{ itemId: string; material: InventoryMaterial }>>
   updateItem(args: {
     sessionId: string
     secret: string
@@ -32,7 +36,6 @@ export interface AgentImportClient {
     itemId: string
     expectedRevision: number
     template: AgentImportTemplate
-    localTemplate?: AgentImportLocalTemplate
   }): Promise<AgentImportSession>
   confirm(sessionId: string, secret: string): Promise<AgentImportSession>
   listEvents(sessionId: string, secret: string): Promise<AgentImportEvent[]>
@@ -47,6 +50,19 @@ export class HttpAgentImportClient implements AgentImportClient {
       { headers: { "x-tuckmark-agent-import-key": secret } }
     )
     return response.session
+  }
+
+  async getRestockTargets(
+    sessionId: string,
+    secret: string
+  ): Promise<Array<{ itemId: string; material: InventoryMaterial }>> {
+    const response = await requestJson<{
+      targets: Array<{ itemId: string; material: InventoryMaterial }>
+    }>(
+      `${this.apiBasePath}/agent-import/sessions/${encodeURIComponent(sessionId)}/restock-targets`,
+      { headers: { "x-tuckmark-agent-import-key": secret } }
+    )
+    return response.targets
   }
 
   async updateItem(args: {
@@ -76,7 +92,6 @@ export class HttpAgentImportClient implements AgentImportClient {
     itemId: string
     expectedRevision: number
     template: AgentImportTemplate
-    localTemplate?: AgentImportLocalTemplate
   }): Promise<AgentImportSession> {
     const response = await requestJson<SessionResponse>(
       `${this.apiBasePath}/agent-import/sessions/${encodeURIComponent(args.sessionId)}/items/${encodeURIComponent(args.itemId)}/template-input`,
@@ -89,7 +104,6 @@ export class HttpAgentImportClient implements AgentImportClient {
         body: JSON.stringify({
           expectedRevision: args.expectedRevision,
           template: args.template,
-          localTemplate: args.localTemplate,
         }),
       }
     )

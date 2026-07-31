@@ -1114,7 +1114,11 @@ export function useWorkbenchController({
         setDataDirectoryStatus((current) => ({ ...current, connectionState }))
       },
       onEvent: (event) => {
-        if (event.domains.includes("templates") || event.domains.includes("archive")) {
+        if (
+          event.domains.includes("templates") ||
+          event.domains.includes("settings") ||
+          event.domains.includes("archive")
+        ) {
           void refreshUserTemplates()
           void refreshArchivedUserTemplates()
           void refreshRenderOptionsFromStore()

@@ -1,6 +1,14 @@
 import { createHash, randomUUID } from "node:crypto"
-import { mkdirSync, writeFileSync } from "node:fs"
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs"
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 import {
   applyInventoryAdjustment,
@@ -9,8 +17,11 @@ import {
   type InventoryAdjustment,
   type InventoryAdjustmentInput,
   type InventoryMaterial,
+  inventoryAdjustmentInputSchema,
   inventoryAdjustmentSchema,
+  inventoryDatasheetSchema,
   inventoryMaterialSchema,
+  inventoryTemplateBindingSchema,
   materialMatchesQuery,
   sortInventoryAdjustmentsNewestFirst,
   sortInventoryMaterialsByName,
@@ -21,6 +32,14 @@ const STATE_SCHEMA = "tuckmark.devd-data-state.v1"
 const TRANSACTION_SCHEMA = "tuckmark.devd-data-transaction.v1"
 const MANIFEST_SCHEMA = "tuckmark.data-dir-manifest.v1"
 const OWNER_SCHEMA = "tuckmark.devd-owner.v1"
+const LIVE_LOCK_SCHEMA = "tuckmark.devd-live-lock.v1"
+const LIVE_LOCK_RECOVERY_SUFFIX = ".recovery"
+const MAX_SAVED_TEMPLATE_VERSIONS = 20
+const MAX_AUTOSAVED_TEMPLATE_VERSIONS = 10
+const AUTOSAVE_INTERVAL_MS = 5 * 60 * 1000
+const MAX_PROTECTION_SNAPSHOTS = 20
+const claimedDataDirectories = new Map<string, { lockPath: string; token: string }>()
+let liveLockExitHandlerRegistered = false
 const DEFAULT_SETTINGS = {
   version: 2,
   updatedAt: "1970-01-01T00:00:00.000Z",
@@ -164,6 +183,37 @@ const templateRecordSchema = z.object({
     .optional(),
 })
 
+const dataIdentifierSchema = z.string().trim().min(1)
+const canvasDraftSourceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("scratch"), presetId: dataIdentifierSchema }),
+  z.object({ kind: z.literal("preset-template"), presetId: dataIdentifierSchema }),
+  z.object({ kind: z.literal("user-template"), templateId: dataIdentifierSchema }),
+])
+const canvasDraftDocumentSchema = z
+  .object({
+    version: z.literal(1),
+    unit: z.literal("mm").optional(),
+    id: dataIdentifierSchema,
+    presetId: dataIdentifierSchema,
+    name: dataIdentifierSchema,
+    source: canvasDraftSourceSchema,
+    templateId: dataIdentifierSchema.optional(),
+    baseVersionId: dataIdentifierSchema.optional(),
+    lastSavedAt: z.string().min(1).optional(),
+    width: z.number().finite().positive(),
+    height: z.number().finite().positive(),
+    renderOptions: z.record(z.string(), z.unknown()).optional(),
+    recommendedUses: z
+      .array(z.object({ scope: dataIdentifierSchema, weight: z.number().int().min(1).max(100) }))
+      .optional(),
+    fields: z.array(
+      z.object({ key: dataIdentifierSchema, label: dataIdentifierSchema }).passthrough()
+    ),
+    elements: z.array(z.record(z.string(), z.unknown())),
+    editor: z.object({ gridEnabled: z.boolean(), snapEnabled: z.boolean() }),
+  })
+  .passthrough()
+
 const versionRecordSchema = z.object({
   id: z.string().min(1),
   templateId: z.string().min(1),
@@ -202,6 +252,68 @@ const devdDataArchiveSchema = z.object({
   }),
 })
 
+const workingCopyArgsSchema = z.object({
+  templateId: dataIdentifierSchema.optional(),
+  source: canvasDraftSourceSchema,
+  document: canvasDraftDocumentSchema,
+  sourceVersionId: dataIdentifierSchema.optional(),
+})
+const materialReferenceArgsSchema = z
+  .object({ id: dataIdentifierSchema.optional(), materialId: dataIdentifierSchema.optional() })
+  .refine((value) => Boolean(value.id || value.materialId), {
+    message: "A material identifier is required.",
+  })
+const runtimeMutationArgsSchemas = {
+  "save-template": z.object({
+    templateId: dataIdentifierSchema.optional(),
+    name: dataIdentifierSchema,
+    description: z.string().optional(),
+    sourceVersionId: dataIdentifierSchema.optional(),
+    document: canvasDraftDocumentSchema,
+  }),
+  "rename-template": z.object({ templateId: dataIdentifierSchema, name: dataIdentifierSchema }),
+  "archive-template": z.object({ templateId: dataIdentifierSchema }),
+  "restore-template": z.object({ templateId: dataIdentifierSchema }),
+  "purge-template": z.object({ templateId: dataIdentifierSchema }),
+  "save-autosave": workingCopyArgsSchema,
+  "replace-working-copy": workingCopyArgsSchema,
+  "clear-working-copy": z.object({ source: canvasDraftSourceSchema }),
+  "clear-template-autosaves": z.object({ templateId: dataIdentifierSchema }),
+  "save-settings": z.object({ patch: z.record(z.string(), z.unknown()) }),
+  "replace-snapshot": z.object({
+    snapshot: z.object({
+      schema: z.literal("tuckmark.runtime-export.v1"),
+      exportedAt: z.string().min(1),
+      snapshotUpdatedAt: z.string().nullable(),
+      settings: z.record(z.string(), z.unknown()),
+      templates: z.array(templateRecordSchema),
+      versions: z.array(versionRecordSchema),
+      workingCopies: z.array(workingCopyRecordSchema),
+    }),
+  }),
+} satisfies Record<RuntimeMutation["command"], z.ZodType>
+const inventoryMutationArgsSchemas = {
+  "save-material": z.object({
+    id: dataIdentifierSchema.optional(),
+    fullName: dataIdentifierSchema,
+    baseName: z.string().optional(),
+    variantName: z.string().optional(),
+    packageName: z.string().optional(),
+    description: z.string().optional(),
+    matrixCode: z.string().optional(),
+    packagingRemark: z.string().optional(),
+    labelBindings: z.array(inventoryTemplateBindingSchema).optional(),
+    datasheets: z.array(inventoryDatasheetSchema).optional(),
+  }),
+  "archive-material": materialReferenceArgsSchema,
+  "restore-material": materialReferenceArgsSchema,
+  "delete-material": materialReferenceArgsSchema,
+  "apply-adjustment": z.object({
+    materialId: dataIdentifierSchema,
+    input: inventoryAdjustmentInputSchema,
+  }),
+} satisfies Record<InventoryMutation["command"], z.ZodType>
+
 export type DevdArchiveInspection = {
   archiveHash: string
   summary: {
@@ -233,19 +345,229 @@ function isMissing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException)?.code === "ENOENT"
 }
 
-function claimDataDirectory(dataDir: string): void {
-  const ownerPath = path.join(dataDir, ".tuckmark", "devd-owner.json")
+type DevdLiveLock = {
+  schema: typeof LIVE_LOCK_SCHEMA
+  pid: number
+  token: string
+  claimedAt: string
+}
+
+function isLiveLock(value: unknown): value is DevdLiveLock {
+  if (!value || typeof value !== "object") return false
+  const candidate = value as Partial<DevdLiveLock>
+  return (
+    candidate.schema === LIVE_LOCK_SCHEMA &&
+    typeof candidate.pid === "number" &&
+    Number.isSafeInteger(candidate.pid) &&
+    candidate.pid > 0 &&
+    typeof candidate.token === "string" &&
+    candidate.token.length > 0 &&
+    typeof candidate.claimedAt === "string" &&
+    candidate.claimedAt.length > 0
+  )
+}
+
+function processIsAlive(pid: number): boolean {
   try {
-    mkdirSync(path.dirname(ownerPath), { recursive: true })
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM"
+  }
+}
+
+function releaseLiveLock(resolvedDataDir: string, lockPath: string, token: string): void {
+  claimedDataDirectories.delete(resolvedDataDir)
+  try {
+    const current = JSON.parse(readFileSync(lockPath, "utf8")) as unknown
+    if (isLiveLock(current) && current.token === token) {
+      unlinkSync(lockPath)
+    }
+  } catch {
+    // A stopped process must not remove a newer owner's lock.
+  }
+}
+
+function registerLiveLockExitHandler(): void {
+  if (liveLockExitHandlerRegistered) return
+  liveLockExitHandlerRegistered = true
+  process.once("exit", () => {
+    for (const [resolvedDataDir, claim] of claimedDataDirectories) {
+      releaseLiveLock(resolvedDataDir, claim.lockPath, claim.token)
+    }
+  })
+}
+
+function releaseRecoveryLock(recoveryPath: string, token: string): void {
+  try {
+    const current = JSON.parse(readFileSync(recoveryPath, "utf8")) as unknown
+    if (isLiveLock(current) && current.token === token) {
+      unlinkSync(recoveryPath)
+    }
+  } catch {
+    // Recovery guard ownership changed or was already released.
+  }
+}
+
+function sameLiveLock(left: DevdLiveLock, right: DevdLiveLock): boolean {
+  return left.token === right.token && left.pid === right.pid && left.claimedAt === right.claimedAt
+}
+
+function recoveryLockIsOwned(recoveryPath: string, expected: DevdLiveLock): boolean {
+  try {
+    const current = JSON.parse(readFileSync(recoveryPath, "utf8")) as unknown
+    return isLiveLock(current) && sameLiveLock(current, expected)
+  } catch {
+    return false
+  }
+}
+
+function reclaimStaleRecoveryLock(recoveryPath: string): boolean {
+  let expected: DevdLiveLock
+  try {
+    const current = JSON.parse(readFileSync(recoveryPath, "utf8")) as unknown
+    if (!isLiveLock(current)) {
+      throw new DevdDataUnavailableError("The DEVD stale-lock recovery guard is invalid.")
+    }
+    expected = current
+  } catch (error) {
+    if (error instanceof DevdDataUnavailableError) throw error
+    if (isMissing(error)) return false
+    throw new DevdDataUnavailableError("The DEVD stale-lock recovery guard is unreadable.")
+  }
+  if (processIsAlive(expected.pid)) return false
+
+  const retiredPath = `${recoveryPath}.stale-${randomUUID()}`
+  try {
+    renameSync(recoveryPath, retiredPath)
+  } catch (error) {
+    if (isMissing(error)) return false
+    throw error
+  }
+
+  try {
+    const retired = JSON.parse(readFileSync(retiredPath, "utf8")) as unknown
+    if (!isLiveLock(retired) || !sameLiveLock(retired, expected)) {
+      try {
+        writeFileSync(recoveryPath, `${JSON.stringify(retired)}\n`, {
+          encoding: "utf8",
+          flag: "wx",
+        })
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+      }
+      return false
+    }
+    if (processIsAlive(retired.pid)) return false
+    return true
+  } finally {
+    try {
+      unlinkSync(retiredPath)
+    } catch {
+      // The contender that owns this retirement path has already removed it.
+    }
+  }
+}
+
+function retireStaleLiveLock(lockPath: string, expected: DevdLiveLock): boolean {
+  const recoveryPath = `${lockPath}${LIVE_LOCK_RECOVERY_SUFFIX}`
+  const recovery: DevdLiveLock = {
+    schema: LIVE_LOCK_SCHEMA,
+    pid: process.pid,
+    token: randomUUID(),
+    claimedAt: new Date().toISOString(),
+  }
+  try {
+    writeFileSync(recoveryPath, `${JSON.stringify(recovery)}\n`, { encoding: "utf8", flag: "wx" })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false
+    throw error
+  }
+
+  const retiredPath = `${lockPath}.stale-${randomUUID()}`
+  try {
+    let current: unknown
+    try {
+      current = JSON.parse(readFileSync(lockPath, "utf8")) as unknown
+    } catch (error) {
+      if (isMissing(error)) return true
+      throw new DevdDataUnavailableError("The DEVD live-owner lock is unreadable.")
+    }
+    if (!isLiveLock(current) || !sameLiveLock(current, expected)) {
+      return false
+    }
+    if (processIsAlive(current.pid)) return false
+    if (!recoveryLockIsOwned(recoveryPath, recovery)) return false
+
+    // A recovery guard serializes the check-and-rename sequence. Claimants that
+    // observe it leave the live lock untouched, so a replacement can never be retired.
+    renameSync(lockPath, retiredPath)
+    unlinkSync(retiredPath)
+    return true
+  } finally {
+    releaseRecoveryLock(recoveryPath, recovery.token)
+  }
+}
+
+function claimDataDirectory(dataDir: string): void {
+  mkdirSync(dataDir, { recursive: true })
+  const resolvedDataDir = realpathSync(dataDir)
+  if (claimedDataDirectories.has(resolvedDataDir)) {
+    throw new DevdDataUnavailableError("This DEVD data directory already has a live owner.")
+  }
+
+  const controlDirectory = path.join(resolvedDataDir, ".tuckmark")
+  const ownerPath = path.join(controlDirectory, "devd-owner.json")
+  try {
+    mkdirSync(controlDirectory, { recursive: true })
     writeFileSync(
       ownerPath,
       `${JSON.stringify({ schema: OWNER_SCHEMA, claimedAt: new Date().toISOString() })}\n`,
       { encoding: "utf8", flag: "wx" }
     )
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return
-    throw error
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
   }
+
+  const lockPath = path.join(controlDirectory, "devd-live.lock")
+  const lock: DevdLiveLock = {
+    schema: LIVE_LOCK_SCHEMA,
+    pid: process.pid,
+    token: randomUUID(),
+    claimedAt: new Date().toISOString(),
+  }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const recoveryPath = `${lockPath}${LIVE_LOCK_RECOVERY_SUFFIX}`
+    if (existsSync(recoveryPath)) {
+      if (!reclaimStaleRecoveryLock(recoveryPath)) {
+        throw new DevdDataUnavailableError("DEVD stale-lock recovery is already in progress.")
+      }
+      continue
+    }
+    try {
+      writeFileSync(lockPath, `${JSON.stringify(lock)}\n`, { encoding: "utf8", flag: "wx" })
+      claimedDataDirectories.set(resolvedDataDir, { lockPath, token: lock.token })
+      registerLiveLockExitHandler()
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+    }
+
+    let existing: unknown
+    try {
+      existing = JSON.parse(readFileSync(lockPath, "utf8")) as unknown
+    } catch {
+      throw new DevdDataUnavailableError("The DEVD live-owner lock is unreadable.")
+    }
+    if (!isLiveLock(existing)) {
+      throw new DevdDataUnavailableError("The DEVD live-owner lock is invalid.")
+    }
+    if (processIsAlive(existing.pid)) {
+      throw new DevdDataUnavailableError("This DEVD data directory already has a live owner.")
+    }
+    retireStaleLiveLock(lockPath, existing)
+  }
+  throw new DevdDataUnavailableError("Unable to acquire the DEVD data-directory live-owner lock.")
 }
 
 async function readJsonIfPresent<T>(filePath: string): Promise<T | null> {
@@ -347,10 +669,15 @@ export class DevdDataService {
       )
       if (workingCopy) workingCopies.push(workingCopy)
     }
-    const scratch = await readJsonIfPresent<WorkingCopyRecord>(
+    for (const kind of ["scratch", "preset-template"] as const) {
+      for (const filePath of await listJsonFiles(path.join(this.dataDir, "drafts", kind))) {
+        workingCopies.push(JSON.parse(await readFile(filePath, "utf8")) as WorkingCopyRecord)
+      }
+    }
+    const legacyScratch = await readJsonIfPresent<WorkingCopyRecord>(
       path.join(this.dataDir, "drafts", "scratch.json")
     )
-    if (scratch) workingCopies.push(scratch)
+    if (legacyScratch) workingCopies.push(legacyScratch)
     const settings =
       (await readJsonIfPresent<Record<string, any>>(
         path.join(this.dataDir, "settings", "app-settings.json")
@@ -435,13 +762,20 @@ export class DevdDataService {
   }
 
   async mutateRuntime(input: RuntimeMutation): Promise<{ revision: number; data: any }> {
+    const args = runtimeMutationArgsSchemas[input.command].parse(input.args)
     return await this.serialize(async () => {
       await this.recoverTransactions()
       await this.assertRevision(input.expectedRevision)
       const snapshot = await this.runtimeSnapshot(false)
-      const result = this.applyRuntimeCommand(snapshot, input.command, input.args)
-      const writes = this.snapshotWrites(result.snapshot)
-      const deletes = await this.snapshotDeletes(result.snapshot)
+      const materials = await this.listMaterials("", true, false)
+      const result = this.applyRuntimeCommand(snapshot, materials, input.command, args)
+      const { writes, deletes } =
+        input.command === "replace-snapshot"
+          ? {
+              writes: this.snapshotWrites(result.snapshot),
+              deletes: await this.snapshotDeletes(result.snapshot),
+            }
+          : this.runtimeDelta(snapshot, result.snapshot)
       const revision = await this.commit({
         expectedRevision: input.expectedRevision,
         writes,
@@ -454,27 +788,19 @@ export class DevdDataService {
   }
 
   async mutateInventory(input: InventoryMutation): Promise<{ revision: number; data: any }> {
+    const args = inventoryMutationArgsSchemas[input.command].parse(input.args)
     return await this.serialize(async () => {
       await this.recoverTransactions()
       await this.assertRevision(input.expectedRevision)
       const materials = await this.listMaterials("", true, false)
       const adjustments = await this.listAdjustments(undefined, false)
-      const result = this.applyInventoryCommand(materials, adjustments, input.command, input.args)
-      const writes: JsonWrite[] = result.materials.map((material) => ({
-        relativePath: `inventory/materials/${safeSegment(material.id)}.json`,
-        value: material,
-      }))
-      writes.push(
-        ...result.adjustments.map((adjustment) => ({
-          relativePath: `inventory/adjustments/${safeSegment(adjustment.id)}.json`,
-          value: adjustment,
-        }))
+      const result = this.applyInventoryCommand(materials, adjustments, input.command, args)
+      const { writes, deletes } = this.inventoryDelta(
+        materials,
+        adjustments,
+        result.materials,
+        result.adjustments
       )
-      const existingMaterialIds = new Set(materials.map((item) => item.id))
-      const nextMaterialIds = new Set(result.materials.map((item) => item.id))
-      const deletes = [...existingMaterialIds]
-        .filter((id) => !nextMaterialIds.has(id))
-        .map((id) => `inventory/materials/${safeSegment(id)}.json`)
       const revision = await this.commit({
         expectedRevision: input.expectedRevision,
         writes,
@@ -563,17 +889,32 @@ export class DevdDataService {
           ? archive.inventory.adjustments
           : [...currentAdjustments, ...archive.inventory.adjustments]
       const protection = this.buildArchive(currentRuntime, currentMaterials, currentAdjustments)
+      const runtimeChanges =
+        input.mode === "replace"
+          ? {
+              writes: this.snapshotWrites(runtime),
+              deletes: await this.snapshotDeletes(runtime),
+            }
+          : this.runtimeDelta(currentRuntime, runtime)
+      const inventoryChanges =
+        input.mode === "replace"
+          ? {
+              writes: this.inventoryWrites(materials, adjustments),
+              deletes: await this.inventoryDeletes(materials, adjustments),
+            }
+          : this.inventoryDelta(currentMaterials, currentAdjustments, materials, adjustments)
       const writes = [
-        ...this.snapshotWrites(runtime),
-        ...this.inventoryWrites(materials, adjustments),
+        ...runtimeChanges.writes,
+        ...inventoryChanges.writes,
         {
           relativePath: `backups/protection/${Date.now()}-${randomUUID()}.json`,
           value: protection,
         },
       ]
       const deletes = [
-        ...(await this.snapshotDeletes(runtime)),
-        ...(await this.inventoryDeletes(materials, adjustments)),
+        ...runtimeChanges.deletes,
+        ...inventoryChanges.deletes,
+        ...(await this.protectionSnapshotDeletes()),
       ]
       const revision = await this.commit({
         expectedRevision: input.expectedRevision,
@@ -628,7 +969,12 @@ export class DevdDataService {
     })
   }
 
-  private applyRuntimeCommand(snapshot: any, command: RuntimeMutation["command"], args: any) {
+  private applyRuntimeCommand(
+    snapshot: any,
+    materials: InventoryMaterial[],
+    command: RuntimeMutation["command"],
+    args: any
+  ) {
     const now = new Date().toISOString()
     const templates: TemplateRecord[] = clone(snapshot.templates)
     const versions: VersionRecord[] = clone(snapshot.versions)
@@ -673,6 +1019,7 @@ export class DevdDataService {
         if (entry?.templateId === templateId && entry?.kind === "autosave")
           versions.splice(index, 1)
       }
+      this.pruneTemplateVersions(versions, templateId, "saved", MAX_SAVED_TEMPLATE_VERSIONS)
       const template: TemplateRecord = {
         id: templateId,
         name: args.name,
@@ -684,7 +1031,7 @@ export class DevdDataService {
         archivedAt: existing?.archivedAt ?? null,
         currentVersionId: versionId,
         fieldOrder: (document.fields ?? []).map((field: any) => field.key),
-        recommendedUses: existing?.recommendedUses ?? [],
+        recommendedUses: document.recommendedUses ?? existing?.recommendedUses ?? [],
       }
       if (existing) Object.assign(existing, template)
       else templates.push(template)
@@ -722,6 +1069,17 @@ export class DevdDataService {
     } else if (command === "purge-template") {
       const index = templates.findIndex((item) => item.id === args.templateId)
       if (index < 0) throw new DevdDataNotFoundError("Template was not found.")
+      const material = materials.find((item) =>
+        item.labelBindings.some(
+          (binding) =>
+            binding.templateSource === "user-template" && binding.templateId === args.templateId
+        )
+      )
+      if (material) {
+        throw new Error(
+          `Template is still referenced by the inventory material ${material.fullName}.`
+        )
+      }
       templates.splice(index, 1)
       for (let i = versions.length - 1; i >= 0; i -= 1)
         if (versions[i]?.templateId === args.templateId) versions.splice(i, 1)
@@ -745,7 +1103,7 @@ export class DevdDataService {
           .filter((item) => item.templateId === args.templateId && item.kind === "autosave")
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
           .at(-1)
-        if (!last || Date.parse(now) - Date.parse(last.createdAt) >= 30_000) {
+        if (!last || Date.parse(now) - Date.parse(last.createdAt) >= AUTOSAVE_INTERVAL_MS) {
           versions.push({
             id: `user-template-autosave-${randomUUID()}`,
             templateId: args.templateId,
@@ -760,6 +1118,12 @@ export class DevdDataService {
             sourceVersionId: args.sourceVersionId,
             document: clone(args.document),
           })
+          this.pruneTemplateVersions(
+            versions,
+            args.templateId,
+            "autosave",
+            MAX_AUTOSAVED_TEMPLATE_VERSIONS
+          )
         }
       }
       data = workingCopy
@@ -1042,12 +1406,63 @@ export class DevdDataService {
       })
     }
     for (const working of snapshot.workingCopies as WorkingCopyRecord[]) {
-      const relativePath = working.templateId
-        ? `templates/${safeSegment(working.templateId)}/working-copy.json`
-        : "drafts/scratch.json"
+      const relativePath =
+        working.source.kind === "user-template"
+          ? `templates/${safeSegment(working.source.templateId)}/working-copy.json`
+          : `drafts/${working.source.kind}/${safeSegment(working.source.presetId)}.json`
       writes.push({ relativePath, value: working })
     }
     return writes
+  }
+
+  private runtimeDelta(previous: any, next: any): { writes: JsonWrite[]; deletes: string[] } {
+    return this.writeDelta(this.snapshotWrites(previous), this.snapshotWrites(next))
+  }
+
+  private pruneTemplateVersions(
+    versions: VersionRecord[],
+    templateId: string,
+    kind: VersionRecord["kind"],
+    limit: number
+  ): void {
+    const retained = new Set(
+      versions
+        .filter((version) => version.templateId === templateId && version.kind === kind)
+        .sort(
+          (left, right) =>
+            right.createdAt.localeCompare(left.createdAt) || right.version - left.version
+        )
+        .slice(0, limit)
+        .map((version) => version.id)
+    )
+    for (let index = versions.length - 1; index >= 0; index -= 1) {
+      const version = versions[index]
+      if (
+        version?.templateId === templateId &&
+        version.kind === kind &&
+        !retained.has(version.id)
+      ) {
+        versions.splice(index, 1)
+      }
+    }
+  }
+
+  private async protectionSnapshotDeletes(): Promise<string[]> {
+    const root = path.join(this.dataDir, "backups", "protection")
+    const snapshots = await Promise.all(
+      (await listJsonFiles(root)).map(async (filePath) => ({
+        filePath,
+        mtimeMs: (await stat(filePath)).mtimeMs,
+      }))
+    )
+    return snapshots
+      .sort(
+        (left, right) =>
+          right.mtimeMs - left.mtimeMs ||
+          path.basename(right.filePath).localeCompare(path.basename(left.filePath))
+      )
+      .slice(MAX_PROTECTION_SNAPSHOTS - 1)
+      .map((snapshot) => `backups/protection/${path.basename(snapshot.filePath)}`)
   }
 
   private async snapshotDeletes(snapshot: any): Promise<string[]> {
@@ -1064,6 +1479,11 @@ export class DevdDataService {
       }
     }
     existing.push("drafts/scratch.json")
+    for (const kind of ["scratch", "preset-template"] as const) {
+      for (const filePath of await listJsonFiles(path.join(this.dataDir, "drafts", kind))) {
+        existing.push(`drafts/${kind}/${path.basename(filePath)}`)
+      }
+    }
     return existing.filter((relativePath) => !desired.has(relativePath))
   }
 
@@ -1081,6 +1501,37 @@ export class DevdDataService {
         value: item,
       })),
     ]
+  }
+
+  private inventoryDelta(
+    previousMaterials: InventoryMaterial[],
+    previousAdjustments: InventoryAdjustment[],
+    nextMaterials: InventoryMaterial[],
+    nextAdjustments: InventoryAdjustment[]
+  ): { writes: JsonWrite[]; deletes: string[] } {
+    return this.writeDelta(
+      this.inventoryWrites(previousMaterials, previousAdjustments),
+      this.inventoryWrites(nextMaterials, nextAdjustments)
+    )
+  }
+
+  private writeDelta(
+    previous: JsonWrite[],
+    next: JsonWrite[]
+  ): { writes: JsonWrite[]; deletes: string[] } {
+    const currentByPath = new Map(previous.map((item) => [item.relativePath, item.value]))
+    const nextByPath = new Map(next.map((item) => [item.relativePath, item.value]))
+    const writes = [...nextByPath]
+      .filter(
+        ([relativePath, value]) =>
+          JSON.stringify(currentByPath.get(relativePath)) !== JSON.stringify(value)
+      )
+      .map(([relativePath, value]) => ({ relativePath, value }))
+      .sort((left, right) => left.relativePath.localeCompare(right.relativePath))
+    const deletes = [...currentByPath.keys()]
+      .filter((relativePath) => !nextByPath.has(relativePath))
+      .sort()
+    return { writes, deletes }
   }
 
   private async inventoryDeletes(

@@ -113,6 +113,83 @@ async function createDataDir(): Promise<string> {
 }
 
 describe("AgentImportService", () => {
+  it("rejects duplicate agent proposal item IDs before creating a session", async () => {
+    const dataDir = await createDataDir()
+    const service = new AgentImportService(dataDir)
+    const duplicate = proposal()
+    const firstItem = duplicate.items[0]
+    if (!firstItem) {
+      throw new Error("Mock proposal is missing its first item.")
+    }
+    duplicate.items = duplicate.items.map((item, index) =>
+      index === 1 ? { ...item, id: firstItem.id } : item
+    )
+
+    expect(() =>
+      service.createSession({
+        sessionId: "agent-import-session-duplicate-ids",
+        secret,
+        proposal: duplicate,
+      })
+    ).toThrow("Agent import item IDs must be unique.")
+  })
+
+  it("recovers a prepared DEVD transaction before listing the import catalog", async () => {
+    const dataDir = await createDataDir()
+    const service = new AgentImportService(dataDir)
+    const createdAt = "2026-07-02T00:00:00.000Z"
+    await mkdir(path.join(dataDir, ".tuckmark", "transactions"), { recursive: true })
+    await writeFile(
+      path.join(dataDir, ".tuckmark", "transactions", "1-recover-catalog.json"),
+      JSON.stringify({
+        schema: "tuckmark.devd-data-transaction.v1",
+        revision: 1,
+        writes: [
+          {
+            relativePath: "templates/recovered-template/template.json",
+            value: {
+              id: "recovered-template",
+              name: "Recovered mock template",
+              description: "Recovered from a mock prepared transaction",
+              width: 40,
+              height: 20,
+              createdAt,
+              updatedAt: createdAt,
+              archivedAt: null,
+              currentVersionId: "recovered-version",
+              fieldOrder: [],
+              recommendedUses: [],
+            },
+          },
+          {
+            relativePath: "templates/recovered-template/versions/recovered-version.json",
+            value: {
+              id: "recovered-version",
+              templateId: "recovered-template",
+              version: 1,
+              kind: "saved",
+              createdAt,
+              label: "Recovered mock template",
+              document: { fields: [] },
+            },
+          },
+        ],
+        deletes: [],
+        event: { revision: 1, domains: ["templates"], reason: "mock-recovery" },
+      })
+    )
+
+    const catalog = await service.catalog()
+
+    expect(catalog.templates).toContainEqual(
+      expect.objectContaining({
+        source: "user-template",
+        id: "recovered-template",
+        name: "Recovered mock template",
+      })
+    )
+  })
+
   it("authenticates a session, exposes template metadata, and commits both intake classes", async () => {
     const dataDir = await createDataDir()
     const service = new AgentImportService(dataDir)
@@ -175,6 +252,76 @@ describe("AgentImportService", () => {
     })
   })
 
+  it("keeps active restock targets available when a different target is stale", async () => {
+    const dataDir = await createDataDir()
+    const service = new AgentImportService(dataDir)
+    await writeFile(
+      path.join(dataDir, "inventory", "materials", "archived-material.json"),
+      JSON.stringify({
+        id: "archived-material",
+        fullName: "Archived mock material",
+        description: "mock archived data",
+        matrixCode: "MOCK-ARCHIVED",
+        packagingRemark: "box",
+        currentQuantity: 1,
+        createdAt: "2026-07-01T00:00:00.000Z",
+        updatedAt: "2026-07-01T00:00:00.000Z",
+        archivedAt: "2026-07-02T00:00:00.000Z",
+        labelBindings: [],
+      })
+    )
+    const activeRestock = proposal().items.find((item) => item.kind === "restock")
+    if (!activeRestock) throw new Error("Mock proposal has no restock item.")
+    const session = service.createSession({
+      sessionId: "agent-import-session-partial-restock-targets",
+      secret,
+      proposal: {
+        schema: "tuckmark.agent-import.v1",
+        sourceNote: "mock receipt",
+        items: [
+          activeRestock,
+          {
+            ...activeRestock,
+            id: "stale-restock-item",
+            targetMaterialId: "removed-material",
+          },
+          {
+            ...activeRestock,
+            id: "archived-restock-item",
+            targetMaterialId: "archived-material",
+          },
+        ],
+      },
+    })
+
+    await expect(service.resolveRestockTargets(session.id, secret)).resolves.toEqual([
+      expect.objectContaining({
+        itemId: activeRestock.id,
+        material: expect.objectContaining({ id: "existing-material" }),
+      }),
+    ])
+  })
+
+  it("normalizes server-owned item state in a new proposal", async () => {
+    const dataDir = await createDataDir()
+    const service = new AgentImportService(dataDir)
+    const invalid = newItemOnlyProposal()
+    const item = invalid.items[0]
+    if (!item) throw new Error("Mock proposal has no item.")
+    invalid.items = [{ ...item, revision: 42, pendingTemplateEventId: "external-event" }]
+
+    const session = service.createSession({
+      sessionId: "agent-import-session-external-pending-event",
+      secret,
+      proposal: invalid,
+    })
+
+    expect(session.proposal.items[0]).toMatchObject({
+      revision: 0,
+      pendingTemplateEventId: null,
+    })
+  })
+
   it("accumulates repeated restocks for one material without losing an adjustment", async () => {
     const dataDir = await createDataDir()
     const service = new AgentImportService(dataDir)
@@ -211,7 +358,7 @@ describe("AgentImportService", () => {
     ).toBe(12)
   })
 
-  it("preserves an item's intake kind when the confirmation page updates it", async () => {
+  it("preserves a restock's immutable target when the confirmation page updates it", async () => {
     const dataDir = await createDataDir()
     const service = new AgentImportService(dataDir)
     const session = service.createSession({
@@ -226,9 +373,63 @@ describe("AgentImportService", () => {
       secret,
       itemId: restock.id,
       expectedRevision: restock.revision,
-      item: { ...restock, kind: "new" },
+      item: {
+        ...restock,
+        kind: "new",
+        targetMaterialId: "redirected-material",
+        targetMaterialUpdatedAt: "2030-01-01T00:00:00.000Z",
+        material: {
+          ...restock.material,
+          fullName: "Redirected mock material",
+        },
+        quantity: 7,
+        sourceNote: "edited mock receipt note",
+      },
     })
-    expect(updated.proposal.items.find((item) => item.id === restock.id)?.kind).toBe("restock")
+    expect(updated.proposal.items.find((item) => item.id === restock.id)).toMatchObject({
+      kind: "restock",
+      targetMaterialId: "existing-material",
+      targetMaterialUpdatedAt: "2026-07-01T00:00:00.000Z",
+      material: restock.material,
+      quantity: 7,
+      sourceNote: "edited mock receipt note",
+    })
+  })
+
+  it("resolves restock display data from the authoritative DEVD target", async () => {
+    const dataDir = await createDataDir()
+    const service = new AgentImportService(dataDir)
+    const session = service.createSession({
+      sessionId: "agent-import-session-restock-target",
+      secret,
+      proposal: {
+        ...proposal(),
+        items: proposal().items.map((item) =>
+          item.kind === "restock"
+            ? {
+                ...item,
+                material: {
+                  ...item.material,
+                  fullName: "Spoofed mock proposal material",
+                  baseName: "SPOOF-100",
+                  packageName: "SPOOF",
+                },
+              }
+            : item
+        ),
+      },
+    })
+
+    await expect(service.resolveRestockTargets(session.id, secret)).resolves.toEqual([
+      expect.objectContaining({
+        itemId: "restock-item",
+        material: expect.objectContaining({
+          id: "existing-material",
+          fullName: "Existing mock resistor",
+          matrixCode: "MOCK-RES-10K",
+        }),
+      }),
+    ])
   })
 
   it("enforces matrix-code uniqueness and searches every inventory identity field", async () => {
@@ -246,7 +447,7 @@ describe("AgentImportService", () => {
     duplicate.items = [
       {
         ...item,
-        material: { ...item.material, matrixCode: "MOCK-RES-10K" },
+        material: { ...item.material, matrixCode: " MOCK-RES-10K " },
       },
     ]
     const session = service.createSession({
@@ -261,7 +462,7 @@ describe("AgentImportService", () => {
     ])
   })
 
-  it("copies a manually selected browser-local template into the shared directory", async () => {
+  it("rejects a user template that is absent from the DEVD catalog", async () => {
     const dataDir = await createDataDir()
     const service = new AgentImportService(dataDir)
     const session = service.createSession({
@@ -269,19 +470,12 @@ describe("AgentImportService", () => {
       secret,
       proposal: newItemOnlyProposal(),
     })
-    const selected = service.requestTemplateInput({
-      sessionId: session.id,
-      secret,
-      itemId: "new-item",
-      expectedRevision: 0,
-      template: {
-        source: "user-template",
-        id: "browser-local-template",
-        name: "Browser-local Mock Template",
-        fields: [{ key: "name", label: "Name", required: true, multiline: false }],
-        recommendedUses: [],
-      },
-      localTemplate: {
+    await expect(
+      service.requestTemplateInput({
+        sessionId: session.id,
+        secret,
+        itemId: "new-item",
+        expectedRevision: 0,
         template: {
           source: "user-template",
           id: "browser-local-template",
@@ -289,53 +483,47 @@ describe("AgentImportService", () => {
           fields: [{ key: "name", label: "Name", required: true, multiline: false }],
           recommendedUses: [],
         },
-        description: "Mock browser-local template",
-        document: {
-          version: 1,
-          id: "browser-local-document",
-          presetId: "mock-preset",
-          name: "Browser-local Mock Template",
-          width: 50,
-          height: 30,
-          fields: [
-            {
-              key: "name",
-              label: "Name",
-              defaultValue: "",
-              multiline: false,
-              bindings: [],
-            },
-          ],
-          elements: [],
-          editor: { gridEnabled: true, snapEnabled: true },
-        },
-      },
-    })
-    const event = selected.events[0]
-    if (!event) {
-      throw new Error("Mock local-template event was not created.")
-    }
-    service.fulfillTemplateInput({
-      sessionId: session.id,
+      })
+    ).rejects.toThrow("Label template user-template:browser-local-template was not found.")
+    expect(service.listEvents(session.id, secret)).toHaveLength(0)
+    expect((await service.listInventory()).map((material) => material.id)).toEqual([
+      "existing-material",
+    ])
+  })
+
+  it("uses the DEVD catalog fields for a selected template event", async () => {
+    const dataDir = await createDataDir()
+    const service = new AgentImportService(dataDir)
+    const session = service.createSession({
+      sessionId: "agent-import-session-authoritative-template",
       secret,
-      eventId: event.id,
-      expectedRevision: event.revision,
-      input: { name: "Mock regulator" },
+      proposal: newItemOnlyProposal(),
     })
 
-    await service.confirm(session.id, secret)
-    const created = (await service.listInventory()).find(
-      (material) => material.fullName === "Mock regulator"
+    const selected = await service.requestTemplateInput({
+      sessionId: session.id,
+      secret,
+      itemId: "new-item",
+      expectedRevision: 0,
+      template: {
+        source: "system",
+        id: "shipping-compact",
+        name: "Stale client template",
+        fields: [{ key: "wrong", label: "Wrong field", required: true, multiline: false }],
+        recommendedUses: [],
+      },
+    })
+
+    expect(selected.events[0]?.template).toMatchObject({
+      source: "system",
+      id: "shipping-compact",
+      name: "Compact Shipping Label",
+    })
+    expect(selected.events[0]?.template.fields).toEqual(
+      expect.arrayContaining([
+        { key: "recipient", label: "Recipient", required: true, multiline: false },
+      ])
     )
-    const binding = created?.labelBindings[0]
-    expect(binding?.templateId).toMatch(/^user-template-/u)
-    expect(binding?.templateId).not.toBe("browser-local-template")
-    expect(
-      await readFile(
-        path.join(dataDir, "templates", binding?.templateId ?? "missing", "template.json"),
-        "utf8"
-      )
-    ).toContain("Browser-local Mock Template")
   })
 
   it("preserves ordinary item edits while template input is pending", async () => {
@@ -347,7 +535,7 @@ describe("AgentImportService", () => {
       proposal: newItemOnlyProposal(),
     })
 
-    const templateChanged = service.requestTemplateInput({
+    const templateChanged = await service.requestTemplateInput({
       sessionId: session.id,
       secret,
       itemId: "new-item",
@@ -387,7 +575,7 @@ describe("AgentImportService", () => {
         secret,
         eventId: event.id,
         expectedRevision: event.revision,
-        input: { recipient: "Mock recipient" },
+        input: { recipient: "Mock recipient", address: "Mock address", orderId: "Mock order" },
       })
     ).toThrow("revision does not match")
 
@@ -396,7 +584,7 @@ describe("AgentImportService", () => {
       secret,
       eventId: event.id,
       expectedRevision: edited.events[0]?.revision ?? -1,
-      input: { recipient: "Mock recipient" },
+      input: { recipient: "Mock recipient", address: "Mock address", orderId: "Mock order" },
     })
 
     expect(fulfilled.events[0]?.status).toBe("fulfilled")
@@ -432,7 +620,7 @@ describe("AgentImportService", () => {
     expect(created?.labelBindings[0]?.fieldOverrides).toEqual({ name: "Edited mock regulator" })
   })
 
-  it("keeps the existing template event open when a replacement request is invalid", async () => {
+  it("keeps the existing template event open when a replacement request is stale", async () => {
     const dataDir = await createDataDir()
     const service = new AgentImportService(dataDir)
     const session = service.createSession({
@@ -440,7 +628,7 @@ describe("AgentImportService", () => {
       secret,
       proposal: newItemOnlyProposal(),
     })
-    const requested = service.requestTemplateInput({
+    const requested = await service.requestTemplateInput({
       sessionId: session.id,
       secret,
       itemId: "new-item",
@@ -459,36 +647,15 @@ describe("AgentImportService", () => {
       throw new Error("Mock template event was not created.")
     }
 
-    expect(() =>
+    await expect(
       service.requestTemplateInput({
         sessionId: session.id,
         secret,
         itemId: item.id,
-        expectedRevision: item.revision,
+        expectedRevision: item.revision - 1,
         template: item.template ?? event.template,
-        localTemplate: {
-          template: {
-            source: "user-template",
-            id: "different-template",
-            name: "Different Template",
-            fields: [],
-            recommendedUses: [],
-          },
-          description: "Mock mismatch",
-          document: {
-            version: 1,
-            id: "mock-local-template-document",
-            presetId: "mock-preset",
-            name: "Different Template",
-            width: 40,
-            height: 20,
-            fields: [],
-            elements: [],
-            editor: { gridEnabled: true, snapEnabled: true },
-          },
-        },
       })
-    ).toThrow("Local template snapshot does not match")
+    ).rejects.toThrow("This import item changed")
 
     const afterFailure = service.getSession(session.id, secret)
     expect(afterFailure.events).toEqual([event])
@@ -503,7 +670,7 @@ describe("AgentImportService", () => {
       secret,
       proposal: proposal(),
     })
-    const requested = service.requestTemplateInput({
+    const requested = await service.requestTemplateInput({
       sessionId: session.id,
       secret,
       itemId: "new-item",
@@ -548,7 +715,7 @@ describe("AgentImportService", () => {
       secret,
       proposal: newItemOnlyProposal(),
     })
-    const changed = service.requestTemplateInput({
+    const changed = await service.requestTemplateInput({
       sessionId: session.id,
       secret,
       itemId: "new-item",
@@ -588,7 +755,7 @@ describe("AgentImportService", () => {
     })
     const item = session.proposal.items[0]
     if (!item) throw new Error("Mock proposal has no item.")
-    service.requestTemplateInput({
+    await service.requestTemplateInput({
       sessionId: session.id,
       secret,
       itemId: item.id,

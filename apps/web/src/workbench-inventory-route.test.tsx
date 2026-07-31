@@ -175,6 +175,41 @@ describe("WorkbenchInventoryRoute", () => {
     expect(document.body.textContent).toContain("TPS62933DRLR")
   })
 
+  it("refreshes adjustment history after an inventory revision event", async () => {
+    const material = {
+      id: "inventory-material-1",
+      fullName: "TPS62933DRLR",
+      description: "同步降压 28V",
+      packagingRemark: "编带一盘 3000pcs",
+      currentQuantity: 128,
+      createdAt: "2026-07-20T09:00:00.000Z",
+      updatedAt: "2026-07-20T10:30:00.000Z",
+      archivedAt: null,
+      labelBindings: [],
+    }
+    inventoryStoreMocks.listInventoryMaterials.mockResolvedValue([material])
+    inventoryStoreMocks.listInventoryAdjustments.mockResolvedValue([])
+
+    await renderNode(
+      createInventoryRouteNode(
+        createController({ context: { surface: "server-http" } }),
+        "/inventory/inventory-material-1"
+      )
+    )
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("tuckmark:devd-data-revision", {
+          detail: { domains: ["inventory"] },
+        })
+      )
+      await flush(6)
+    })
+
+    expect(inventoryStoreMocks.listInventoryMaterials).toHaveBeenCalledTimes(2)
+    expect(inventoryStoreMocks.listInventoryAdjustments).toHaveBeenCalledTimes(2)
+  })
+
   it("keeps the inventory page free of data-directory setup prompts", async () => {
     inventoryStoreMocks.listInventoryMaterials.mockResolvedValue([])
 

@@ -871,6 +871,26 @@ describe("canvas-editor-model monochrome contract", () => {
     )
   })
 
+  it("retains package recommended uses in the imported draft", () => {
+    const draft = createDraftFromUserTemplatePackage({
+      schema: "tuckmark.user-template-package.v1",
+      id: "recommended-package",
+      name: "Recommended package",
+      description: "mock package",
+      canvas: { width: 320, height: 160 },
+      fields: [],
+      elements: [],
+      sampleInput: {},
+      renderOptions: {},
+      tags: [],
+      recommendedUses: [{ scope: "electronics", weight: 90 }],
+    })
+
+    expect(draft).toMatchObject({
+      recommendedUses: [{ scope: "electronics", weight: 90 }],
+    })
+  })
+
   it("assigns a fallback width to widthless system template text elements when imported", () => {
     const template = getSystemTemplateById("shipping-compact")
     const draft = createDraftFromSystemTemplate(template)

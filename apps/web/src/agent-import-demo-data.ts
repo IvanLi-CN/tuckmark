@@ -1,4 +1,9 @@
-import type { AgentImportItem, AgentImportSession, AgentImportTemplate } from "@tuckmark/inventory"
+import type {
+  AgentImportItem,
+  AgentImportSession,
+  AgentImportTemplate,
+  InventoryMaterial,
+} from "@tuckmark/inventory"
 
 import type { AgentImportClient } from "./agent-import-client.js"
 
@@ -27,6 +32,24 @@ const shippingTemplate: AgentImportTemplate = {
     { key: "orderId", label: "物料码", required: true, multiline: false },
   ],
   recommendedUses: [{ scope: "shipping", weight: 100 }],
+}
+
+const demoRestockTargets: Record<string, InventoryMaterial> = {
+  "inventory-material-demo-resistor": {
+    id: "inventory-material-demo-resistor",
+    fullName: "RC0603FR-0710KL",
+    baseName: "RC0603FR",
+    variantName: "10K 1%",
+    packageName: "0603",
+    description: "既有物料；保留它原有的标签绑定。",
+    packagingRemark: "整盘",
+    currentQuantity: 2_400,
+    createdAt: "2030-07-28T08:00:00.000Z",
+    updatedAt: "2030-07-29T08:00:00.000Z",
+    archivedAt: null,
+    labelBindings: [],
+    datasheets: [],
+  },
 }
 
 function cloneSession(session: AgentImportSession): AgentImportSession {
@@ -114,6 +137,13 @@ export function createAgentImportDemoClient(
   return {
     async getSession() {
       return cloneSession(session)
+    },
+    async getRestockTargets() {
+      return session.proposal.items.flatMap((item) => {
+        if (item.kind !== "restock" || !item.targetMaterialId) return []
+        const material = demoRestockTargets[item.targetMaterialId]
+        return material ? [{ itemId: item.id, material }] : []
+      })
     },
     async updateItem(args) {
       session = {

@@ -1,8 +1,8 @@
 import type {
   AgentImportItem,
-  AgentImportLocalTemplate,
   AgentImportSession,
   AgentImportTemplate,
+  InventoryMaterial,
 } from "@tuckmark/inventory"
 import {
   AlertTriangle,
@@ -20,6 +20,7 @@ import { buildSvg, getTemplateById } from "../../../packages/core/src/web.js"
 import { type AgentImportClient, HttpAgentImportClient } from "./agent-import-client.js"
 import {
   type AgentImportItemDraft,
+  isCurrentAgentImportSession,
   reconcileAgentImportDrafts,
 } from "./agent-import-draft-reconciliation.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
@@ -34,8 +35,6 @@ import {
   TooltipTrigger,
 } from "./components/ui/tooltip.js"
 import { cn } from "./lib/utils.js"
-import type { UserTemplateSummary } from "./types.js"
-import { listUserTemplates } from "./user-template-store.js"
 
 type ItemDraft = AgentImportItemDraft
 
@@ -43,56 +42,17 @@ type AgentImportPageProps = {
   sessionId?: string
   secret?: string
   client?: AgentImportClient
-  localTemplatesLoader?: () => Promise<UserTemplateSummary[]>
   initialSession?: AgentImportSession
 }
 
 const defaultAgentImportClient = new HttpAgentImportClient()
 
-type ManualTemplate = {
-  template: AgentImportTemplate
-  snapshot: AgentImportLocalTemplate
-}
-
-function toManualTemplate(template: UserTemplateSummary): ManualTemplate | null {
-  if (!template.document) {
-    return null
-  }
-  const agentTemplate: AgentImportTemplate = {
-    source: "user-template",
-    id: template.id,
-    name: template.name,
-    fields: template.fields.map((field) => ({
-      key: field.key,
-      label: field.label,
-      required: false,
-      multiline: field.multiline,
-    })),
-    recommendedUses: [],
-  }
-  return {
-    template: agentTemplate,
-    snapshot: {
-      template: agentTemplate,
-      description: template.description,
-      document: template.document,
-    },
-  }
-}
-
 function templateKey(template: AgentImportTemplate): string {
   return `${template.source}:${template.id}`
 }
 
-function resolveItemTemplates(
-  item: AgentImportItem,
-  manualTemplates: AgentImportTemplate[]
-): AgentImportTemplate[] {
-  const values = [
-    ...(item.template ? [item.template] : []),
-    ...item.templateAlternatives,
-    ...manualTemplates,
-  ]
+function resolveItemTemplates(item: AgentImportItem): AgentImportTemplate[] {
+  const values = [...(item.template ? [item.template] : []), ...item.templateAlternatives]
   return values.filter(
     (template, index) =>
       values.findIndex((candidate) => templateKey(candidate) === templateKey(template)) === index
@@ -140,23 +100,29 @@ export function AgentImportPage({
   sessionId = sessionIdFromLocation(),
   secret = secretFromLocation(),
   client = defaultAgentImportClient,
-  localTemplatesLoader = listUserTemplates,
   initialSession,
 }: AgentImportPageProps) {
   const [session, setSession] = React.useState<AgentImportSession | null>(initialSession ?? null)
   const [drafts, setDrafts] = React.useState<Record<string, ItemDraft>>(() =>
     initialSession ? reconcileAgentImportDrafts({}, initialSession) : {}
   )
-  const [manualTemplates, setManualTemplates] = React.useState<ManualTemplate[]>([])
+  const [restockTargets, setRestockTargets] = React.useState<Record<string, InventoryMaterial>>({})
   const [expandedItemIds, setExpandedItemIds] = React.useState<Set<string>>(() => new Set())
   const [loading, setLoading] = React.useState(!initialSession)
   const [savingItemId, setSavingItemId] = React.useState<string | null>(null)
   const [confirming, setConfirming] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const latestSessionRef = React.useRef<AgentImportSession | null>(initialSession ?? null)
 
   const applySession = React.useCallback((next: AgentImportSession) => {
+    const current = latestSessionRef.current
+    if (current && !isCurrentAgentImportSession(next, current)) {
+      return false
+    }
+    latestSessionRef.current = next
     setSession(next)
     setDrafts((current) => reconcileAgentImportDrafts(current, next))
+    return true
   }, [])
 
   const loadSession = React.useCallback(async () => {
@@ -184,16 +150,33 @@ export function AgentImportPage({
   }, [initialSession, loadSession])
 
   React.useEffect(() => {
-    void localTemplatesLoader()
-      .then((templates) =>
-        setManualTemplates(
-          templates
-            .map(toManualTemplate)
-            .filter((template): template is ManualTemplate => Boolean(template))
-        )
-      )
-      .catch(() => setManualTemplates([]))
-  }, [localTemplatesLoader])
+    const targetSessionId = sessionId ?? session?.id
+    if (!targetSessionId || !session) {
+      setRestockTargets({})
+      return
+    }
+    let cancelled = false
+    void client
+      .getRestockTargets(targetSessionId, secret ?? "")
+      .then((targets) => {
+        if (!cancelled) {
+          setRestockTargets(
+            Object.fromEntries(targets.map((target) => [target.itemId, target.material]))
+          )
+        }
+      })
+      .catch((targetError) => {
+        if (!cancelled) {
+          setRestockTargets({})
+          setError(
+            targetError instanceof Error ? targetError.message : "无法解析 DEVD 中的目标物料。"
+          )
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [client, secret, session, sessionId])
 
   React.useEffect(() => {
     if (!sessionId || !secret || !session || session.state !== "open") {
@@ -203,8 +186,9 @@ export function AgentImportPage({
       void client
         .getSession(sessionId, secret)
         .then((next) => {
-          applySession(next)
-          setError(null)
+          if (applySession(next)) {
+            setError(null)
+          }
         })
         .catch((pollError) => {
           setError(pollError instanceof Error ? pollError.message : "无法刷新导入会话。")
@@ -265,11 +249,7 @@ export function AgentImportPage({
   }, [])
 
   const requestTemplate = React.useCallback(
-    async (
-      itemId: string,
-      template: AgentImportTemplate,
-      localTemplate: AgentImportLocalTemplate | undefined
-    ) => {
+    async (itemId: string, template: AgentImportTemplate) => {
       const draft = drafts[itemId]
       if (!draft || !sessionId) {
         return
@@ -294,7 +274,6 @@ export function AgentImportPage({
           itemId,
           expectedRevision: savedItem.revision,
           template,
-          localTemplate,
         })
         applySession(next)
         setError(null)
@@ -347,6 +326,9 @@ export function AgentImportPage({
     (item) => item.selected && item.pendingTemplateEventId
   )
   const isCompleted = session.state === "completed"
+  const hasUnresolvedRestockTarget = restockItems.some(
+    (item) => drafts[item.id]?.item.selected && !restockTargets[item.id]
+  )
 
   return (
     <main className="tm-agent-import" aria-live="polite">
@@ -399,19 +381,11 @@ export function AgentImportPage({
               draft={draft}
               disabled={isCompleted}
               expanded={expandedItemIds.has(item.id)}
-              manualTemplates={manualTemplates.map((template) => template.template)}
-              localTemplateFor={(template) =>
-                manualTemplates.find(
-                  (candidate) => templateKey(candidate.template) === templateKey(template)
-                )?.snapshot
-              }
               saving={savingItemId === item.id}
               onChange={(update) => updateDraft(item.id, update)}
               onSave={() => void saveItem(item.id)}
               onToggleDetails={() => toggleItemDetails(item.id)}
-              onRequestTemplate={(template, localTemplate) =>
-                void requestTemplate(item.id, template, localTemplate)
-              }
+              onRequestTemplate={(template) => void requestTemplate(item.id, template)}
             />
           ) : null
         })}
@@ -432,9 +406,8 @@ export function AgentImportPage({
               key={item.id}
               draft={draft}
               disabled={isCompleted}
+              restockTarget={restockTargets[item.id]}
               expanded={false}
-              manualTemplates={[]}
-              localTemplateFor={() => undefined}
               saving={savingItemId === item.id}
               onChange={(update) => updateDraft(item.id, update)}
               onSave={() => void saveItem(item.id)}
@@ -458,7 +431,13 @@ export function AgentImportPage({
           type="button"
           size="lg"
           onClick={() => void confirm()}
-          disabled={isCompleted || confirming || Boolean(savingItemId) || pendingTemplateInput}
+          disabled={
+            isCompleted ||
+            confirming ||
+            Boolean(savingItemId) ||
+            pendingTemplateInput ||
+            hasUnresolvedRestockTarget
+          }
         >
           {confirming ? (
             <LoaderCircle className="size-4 animate-spin" />
@@ -585,17 +564,13 @@ function ImportSection({
 type AgentImportTableRowProps = {
   draft: ItemDraft
   disabled: boolean
+  restockTarget?: InventoryMaterial
   expanded: boolean
-  manualTemplates: AgentImportTemplate[]
-  localTemplateFor: (template: AgentImportTemplate) => AgentImportLocalTemplate | undefined
   saving: boolean
   onChange: (update: (item: AgentImportItem) => AgentImportItem) => void
   onSave: () => void
   onToggleDetails: () => void
-  onRequestTemplate: (
-    template: AgentImportTemplate,
-    localTemplate: AgentImportLocalTemplate | undefined
-  ) => void
+  onRequestTemplate: (template: AgentImportTemplate) => void
 }
 
 function AgentImportTableRow(props: AgentImportTableRowProps) {
@@ -775,8 +750,6 @@ function NewItemTableRow({
   draft,
   disabled,
   expanded,
-  manualTemplates,
-  localTemplateFor,
   saving,
   onChange,
   onSave,
@@ -784,7 +757,7 @@ function NewItemTableRow({
   onRequestTemplate,
 }: AgentImportTableRowProps) {
   const item = draft.item
-  const templateOptions = resolveItemTemplates(item, manualTemplates)
+  const templateOptions = resolveItemTemplates(item)
   const waitingForAgent = Boolean(item.pendingTemplateEventId)
   const preview = item.template
     ? renderSystemTemplatePreview(item.template, item.templateInput)
@@ -890,19 +863,13 @@ function NewItemTableRow({
               displayValue={item.template?.name ?? "未选择模板"}
               options={templateOptions.map((template) => ({
                 value: templateKey(template),
-                label: `${template.name}${
-                  manualTemplates.some(
-                    (candidate) => templateKey(candidate) === templateKey(template)
-                  )
-                    ? "（本地）"
-                    : ""
-                }`,
+                label: template.name,
               }))}
               disabled={disabled || waitingForAgent || saving}
               onChange={(value) => {
                 const next = templateOptions.find((template) => templateKey(template) === value)
                 if (next) {
-                  onRequestTemplate(next, localTemplateFor(next))
+                  onRequestTemplate(next)
                 }
               }}
             />
@@ -1095,11 +1062,14 @@ function NewItemTableRow({
 function RestockItemTableRow({
   draft,
   disabled,
+  restockTarget,
   saving,
   onChange,
   onSave,
 }: AgentImportTableRowProps) {
   const item = draft.item
+  const targetUnavailable = !restockTarget
+  const material = restockTarget
   return (
     <tr className={cn(!item.selected && "tm-agent-import__row--excluded")}>
       <td className="tm-agent-import__table-cell--select">
@@ -1115,19 +1085,18 @@ function RestockItemTableRow({
         </label>
       </td>
       <td className="tm-agent-import__target-material">
-        <strong>{item.material.fullName}</strong>
+        <strong>{material?.fullName ?? "正在解析 DEVD 目标物料"}</strong>
       </td>
       <td>
         <span className="tm-agent-import__cell-copy">{item.targetMaterialId || "未提供"}</span>
       </td>
       <td>
         <span className="tm-agent-import__cell-copy">
-          {[item.material.baseName, item.material.variantName].filter(Boolean).join(" · ") ||
-            "未提供"}
+          {[material?.baseName, material?.variantName].filter(Boolean).join(" · ") || "未提供"}
         </span>
       </td>
       <td>
-        <span className="tm-agent-import__cell-copy">{item.material.packageName || "未提供"}</span>
+        <span className="tm-agent-import__cell-copy">{material?.packageName || "未提供"}</span>
       </td>
       <td>
         <InlineEditableCell
@@ -1135,7 +1104,7 @@ function RestockItemTableRow({
           type="number"
           min={1}
           value={String(item.quantity)}
-          disabled={disabled}
+          disabled={disabled || targetUnavailable}
           onChange={(value) =>
             onChange((current) => ({
               ...current,
@@ -1148,18 +1117,22 @@ function RestockItemTableRow({
         <InlineEditableCell
           label="来源备注"
           value={item.sourceNote}
-          disabled={disabled}
+          disabled={disabled || targetUnavailable}
           onChange={(value) => onChange((current) => ({ ...current, sourceNote: value }))}
         />
       </td>
       <td>
-        {item.needsAttention || item.material.datasheets.length ? (
-          <AttentionCell message={item.needsAttention} />
+        {targetUnavailable || item.needsAttention || material?.datasheets?.length ? (
+          <AttentionCell
+            message={
+              targetUnavailable ? "DEVD 中尚未找到可用于确认的目标物料。" : item.needsAttention
+            }
+          />
         ) : null}
-        {!item.material.datasheets.length ? <MissingDatasheetNotice /> : null}
+        {!targetUnavailable && !material?.datasheets?.length ? <MissingDatasheetNotice /> : null}
       </td>
       <td className="tm-agent-import__table-cell--action">
-        <SaveItemAction saving={saving} disabled={disabled} onSave={onSave} />
+        <SaveItemAction saving={saving} disabled={disabled || targetUnavailable} onSave={onSave} />
       </td>
     </tr>
   )

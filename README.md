@@ -63,7 +63,7 @@ or `TUCKMARK_DEVD_URL`:
 
 - `tuckmark agent-import catalog --devd-url <url>` lists system and shared-directory templates, including suggested scopes and weights.
 - `tuckmark agent-import inventory --devd-url <url>` lists active inventory for Agent identity decisions.
-- `tuckmark agent-import create --file <proposal.json> --devd-url <url>` opens the user confirmation page; `--no-open` supports headless Agents.
+- `tuckmark agent-import create --file <proposal.json> --devd-url <url> [--web-url <url>]` opens the user confirmation page; `--no-open` supports headless Agents. `--web-url` selects the Web origin independently from the API origin. In the standard local `5210`/`5173` preview pairing, the CLI derives `5173` when omitted.
 - `tuckmark agent-import wait` and `fulfill` let an Agent handle field contracts after the user changes a new-material template.
 
 The confirmation page keeps **new items** and **inventory restocks** separate. It
@@ -80,6 +80,10 @@ Use `skills/tuckmark-agent-import-user` outside a source checkout and
 ### Recommended startup path
 
 Use `bun run dev:preview` for normal product development.
+
+Unless `TUCKMARK_DATA_DIR` is provided, this command creates a disposable
+temporary DEVD directory and passes it to the server. Set the variable to a
+dedicated development directory only when intentionally preserving mock data.
 
 This is the default developer entrypoint because it starts:
 

@@ -341,6 +341,7 @@ class MemoryUserTemplateStore implements RuntimeStore {
       archivedAt: existing?.archivedAt ?? null,
       currentVersionId: version.id,
       fieldOrder: document.fields.map((field) => field.key),
+      recommendedUses: document.recommendedUses ?? existing?.recommendedUses ?? [],
     }
 
     this.templates.set(templateId, template)
@@ -996,6 +997,7 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
       archivedAt: current?.template.archivedAt ?? null,
       currentVersionId: version.id,
       fieldOrder: document.fields.map((field) => field.key),
+      recommendedUses: document.recommendedUses ?? current?.template.recommendedUses ?? [],
     }
     const workingCopy: CanvasWorkingCopyIndexEntry = {
       sourceKey: createSourceKey({ kind: "user-template", templateId }),

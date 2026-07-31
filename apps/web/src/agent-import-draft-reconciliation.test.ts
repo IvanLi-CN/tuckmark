@@ -1,9 +1,27 @@
 import { describe, expect, it } from "vitest"
 
 import { createAgentImportDemoSession } from "./agent-import-demo-data.js"
-import { reconcileAgentImportDrafts } from "./agent-import-draft-reconciliation.js"
+import {
+  isCurrentAgentImportSession,
+  reconcileAgentImportDrafts,
+} from "./agent-import-draft-reconciliation.js"
 
 describe("reconcileAgentImportDrafts", () => {
+  it("rejects a poll response that predates the active item or terminal state", () => {
+    const current = createAgentImportDemoSession()
+    const advanced = {
+      ...current,
+      proposal: {
+        ...current.proposal,
+        items: current.proposal.items.map((item) => ({ ...item, revision: item.revision + 1 })),
+      },
+      state: "completed" as const,
+    }
+
+    expect(isCurrentAgentImportSession(current, advanced)).toBe(false)
+    expect(isCurrentAgentImportSession(advanced, current)).toBe(true)
+  })
+
   it("keeps an unsaved ordinary edit when a pending template event is fulfilled", () => {
     const waiting = createAgentImportDemoSession()
     const waitingItem = waiting.proposal.items.find((item) => item.id === "demo-new-regulator")

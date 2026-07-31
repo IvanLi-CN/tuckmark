@@ -5,6 +5,25 @@ export type AgentImportItemDraft = {
   serverRevision: number
 }
 
+function sessionStateRank(state: AgentImportSession["state"]): number {
+  return state === "open" ? 0 : 1
+}
+
+/** Rejects a late poll that would restore older item revisions or an earlier terminal state. */
+export function isCurrentAgentImportSession(
+  next: AgentImportSession,
+  current: AgentImportSession
+): boolean {
+  if (next.id !== current.id || sessionStateRank(next.state) < sessionStateRank(current.state)) {
+    return false
+  }
+  const nextItems = new Map(next.proposal.items.map((item) => [item.id, item]))
+  return current.proposal.items.every((item) => {
+    const nextItem = nextItems.get(item.id)
+    return Boolean(nextItem && nextItem.revision >= item.revision)
+  })
+}
+
 /** Preserves local non-template edits while an Agent fulfills the matching template event. */
 export function reconcileAgentImportDrafts(
   current: Record<string, AgentImportItemDraft>,

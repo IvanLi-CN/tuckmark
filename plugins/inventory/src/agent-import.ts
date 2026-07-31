@@ -22,42 +22,6 @@ export const agentImportTemplateSchema = z.object({
 })
 export type AgentImportTemplate = z.infer<typeof agentImportTemplateSchema>
 
-const agentImportLocalTemplateDocumentSchema = z
-  .object({
-    version: z.literal(1),
-    id: z.string().min(1),
-    presetId: z.string().min(1),
-    name: z.string().min(1),
-    width: z.number().positive(),
-    height: z.number().positive(),
-    fields: z.array(
-      z.object({
-        key: z.string().min(1),
-        label: z.string().min(1),
-        defaultValue: z.string().default(""),
-        sampleValue: z.string().optional(),
-        multiline: z.boolean().default(false),
-        bindings: z.array(z.string()).default([]),
-      })
-    ),
-    elements: z.array(z.unknown()),
-    editor: z.object({
-      gridEnabled: z.boolean().default(true),
-      snapEnabled: z.boolean().default(true),
-    }),
-  })
-  .passthrough()
-
-/** A browser-local template snapshot supplied only when a user explicitly selects it. */
-export const agentImportLocalTemplateSchema = z.object({
-  template: agentImportTemplateSchema.refine((template) => template.source === "user-template", {
-    message: "Local template snapshots must use the user-template source.",
-  }),
-  description: z.string().default(""),
-  document: agentImportLocalTemplateDocumentSchema,
-})
-export type AgentImportLocalTemplate = z.infer<typeof agentImportLocalTemplateSchema>
-
 export const agentImportDatasheetSchema = z
   .object({
     title: z.string().min(1).default("Datasheet"),
@@ -117,11 +81,25 @@ export const agentImportItemSchema = agentImportItemBaseSchema.superRefine((valu
 })
 export type AgentImportItem = z.infer<typeof agentImportItemSchema>
 
-export const agentImportProposalSchema = z.object({
-  schema: z.literal("tuckmark.agent-import.v1"),
-  sourceNote: z.string().default(""),
-  items: z.array(agentImportItemSchema).min(1),
-})
+export const agentImportProposalSchema = z
+  .object({
+    schema: z.literal("tuckmark.agent-import.v1"),
+    sourceNote: z.string().default(""),
+    items: z.array(agentImportItemSchema).min(1),
+  })
+  .superRefine((value, context) => {
+    const itemIds = new Set<string>()
+    for (const [index, item] of value.items.entries()) {
+      if (itemIds.has(item.id)) {
+        context.addIssue({
+          code: "custom",
+          message: "Agent import item IDs must be unique.",
+          path: ["items", index, "id"],
+        })
+      }
+      itemIds.add(item.id)
+    }
+  })
 export type AgentImportProposal = z.infer<typeof agentImportProposalSchema>
 
 export const agentImportEventSchema = z.object({

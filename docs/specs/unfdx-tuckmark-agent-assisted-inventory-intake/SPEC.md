@@ -53,7 +53,7 @@ Confirmation writes are server-owned and recoverable. Selected new items create 
 
 In `server-http`, DEVD is the sole owner of templates, versions, working copies, application settings, inventory, backups, and archive imports. The Web app uses resource command endpoints with a persisted global revision; every mutation supplies `expectedRevision`, and stale writes receive `409 revision_conflict`. SSE events contain only the revision, affected domains, and reason, allowing open Web clients to invalidate and refetch without exposing business data, paths, session keys, or import contents.
 
-Starting DEVD claims its configured directory with a durable ownership marker before the first data mutation. CLI write commands refuse a directory selected by `TUCKMARK_DATA_DIR` or already claimed by DEVD, so they cannot create an unrevisioned side channel. DEVD data and Agent Import routes accept only requests whose connected peer is loopback; `Host` and `Origin` headers never establish local trust for a non-loopback client.
+Starting DEVD claims its configured directory with a durable ownership marker and one live PID-scoped lock before serving mutations. A surviving live owner is rejected, while a lock from a dead process is recovered safely. Client resource commands serialize local mutations so each request carries the revision returned by its predecessor. CLI write commands refuse a directory selected by `TUCKMARK_DATA_DIR` or already claimed by DEVD, so they cannot create an unrevisioned side channel. DEVD data and Agent Import routes accept only requests whose connected peer is loopback; `Host` and `Origin` headers never establish local trust for a non-loopback client.
 
 `browser-static` retains browser-local persistence. It is not a fallback for `server-http`, does not request a directory on behalf of DEVD, and is never migrated automatically.
 
@@ -62,7 +62,7 @@ Archive imports are explicitly selected as `merge` or `replace`. Archive validat
 ## Acceptance Criteria
 
 - CLI catalog and inventory commands read DEVD data; `--devd-url` wins over `TUCKMARK_DEVD_URL` and either omission fails.
-- The create command opens an authorized confirmation URL unless `--no-open` is supplied.
+- The create command opens an authorized confirmation URL unless `--no-open` is supplied. Its Web origin is independently selectable with `--web-url` / `TUCKMARK_WEB_URL`; local development derives the paired Web port from the configured server and Web ports when no origin is supplied.
 - The page presents separate editable tables for new-material and restock records. Table cells display their value by default and enter an editor only after the user clicks that cell; `Enter` or blur returns to display mode, while `Escape` restores the value present before editing began. New-material supplementary fields, label preview, and template fields expand in a detail row. It supports non-blocking attention/datasheet warnings and selection. Restock controls edit only the persisted intake values (selection, quantity, and source note); target material details stay visible and read-only because confirmation writes only its inbound adjustment.
 - Template switches produce an Agent event, wait state, and fresh field preview after fulfillment.
 - Tests use mocked order-derived proposals only. No real order file, session secret, product body, or screenshot is committed.
@@ -70,12 +70,19 @@ Archive imports are explicitly selected as `merge` or `replace`. Archive validat
 
 ## Visual Evidence
 
-Mock-only desktop confirmation route, covering both **new items** and **restock existing inventory**, display-first table cells that enter editing on click, editable detail fields, a non-blocking identity reminder, and a missing-datasheet warning:
+Mock-only Storybook confirmation route, covering both **new items** and **restock existing inventory**. The restock row resolves its read-only material identity from DEVD rather than the Agent proposal; display-first table cells still enter editing on click, and the page retains its non-blocking identity and missing-datasheet warnings. `source_type=storybook_canvas`; `target_program=mock-only`; `capture_scope=browser-viewport`; `sensitive_exclusion=real orders, data directories, session keys, and unrelated applications`; `submission_gate=approved`.
 
+PR: include
 ![Agent-assisted inventory intake confirmation page](./assets/agent-import-ui-demo.png)
 
 PR: include
 
 Mock fixture system page after DEVD became the `server-http` data owner. `source_type=mock_ui`; `target_program=mock-only`; `capture_scope=browser-viewport`; `sensitive_exclusion=real orders, data directories, session keys, and unrelated applications`; `submission_gate=approved`.
 
-![DEVD system storage status](./assets/devd-system-storage.jpg)
+PR: include
+![DEVD system storage status](./assets/devd-system-mock.png)
+
+Mock-only icon action after the 520 ms touch long-press interaction. `source_type=storybook_canvas`; `target_program=mock-only`; `capture_scope=element`; `sensitive_exclusion=N/A`; `submission_gate=approved`.
+
+PR: include
+![Action button touch long press tooltip](./assets/action-button-touch-long-press.png)

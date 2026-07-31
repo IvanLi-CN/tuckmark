@@ -25,7 +25,6 @@ import {
 } from "@tuckmark/core"
 import {
   agentImportItemSchema,
-  agentImportLocalTemplateSchema,
   agentImportProposalSchema,
   agentImportTemplateSchema,
 } from "@tuckmark/inventory"
@@ -177,11 +176,12 @@ const updateAgentImportItemSchema = z.object({
   item: agentImportItemSchema,
 })
 
-const requestAgentImportTemplateSchema = z.object({
-  expectedRevision: z.number().int().min(0),
-  template: agentImportTemplateSchema,
-  localTemplate: agentImportLocalTemplateSchema.optional(),
-})
+const requestAgentImportTemplateSchema = z
+  .object({
+    expectedRevision: z.number().int().min(0),
+    template: agentImportTemplateSchema,
+  })
+  .strict()
 
 const fulfillAgentImportTemplateSchema = z.object({
   expectedRevision: z.number().int().min(0),
@@ -286,7 +286,8 @@ function requireAgentImportKey(req: express.Request): string {
 }
 
 function isLoopbackHostname(hostname: string): boolean {
-  return hostname === "127.0.0.1" || hostname === "::1" || hostname === "localhost"
+  const normalized = hostname.toLowerCase().replace(/^\[/u, "").replace(/\]$/u, "")
+  return normalized === "127.0.0.1" || normalized === "::1" || normalized === "localhost"
 }
 
 function isLoopbackClientAddress(address: string | undefined): boolean {
@@ -730,6 +731,19 @@ export function createApp(
     }
   })
 
+  app.get("/api/agent-import/sessions/:sessionId/restock-targets", async (req, res) => {
+    try {
+      res.json({
+        targets: await requireAgentImportService(agentImportService).resolveRestockTargets(
+          req.params.sessionId,
+          requireAgentImportKey(req)
+        ),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
   app.put("/api/agent-import/sessions/:sessionId/items/:itemId", (req, res) => {
     try {
       const payload = updateAgentImportItemSchema.parse(req.body)
@@ -746,23 +760,24 @@ export function createApp(
     }
   })
 
-  app.post("/api/agent-import/sessions/:sessionId/items/:itemId/template-input", (req, res) => {
-    try {
-      const payload = requestAgentImportTemplateSchema.parse(req.body)
-      const { localTemplate, ...request } = payload
-      res.json({
-        session: requireAgentImportService(agentImportService).requestTemplateInput({
-          sessionId: req.params.sessionId,
-          secret: requireAgentImportKey(req),
-          itemId: req.params.itemId,
-          ...request,
-          ...(localTemplate ? { localTemplate } : {}),
-        }),
-      })
-    } catch (error) {
-      sendError(res, error)
+  app.post(
+    "/api/agent-import/sessions/:sessionId/items/:itemId/template-input",
+    async (req, res) => {
+      try {
+        const payload = requestAgentImportTemplateSchema.parse(req.body)
+        res.json({
+          session: await requireAgentImportService(agentImportService).requestTemplateInput({
+            sessionId: req.params.sessionId,
+            secret: requireAgentImportKey(req),
+            itemId: req.params.itemId,
+            ...payload,
+          }),
+        })
+      } catch (error) {
+        sendError(res, error)
+      }
     }
-  })
+  )
 
   app.post("/api/agent-import/sessions/:sessionId/events/:eventId/fulfill", (req, res) => {
     try {

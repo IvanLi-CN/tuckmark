@@ -1,13 +1,18 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { DevdDataConflictError, DevdDataService } from "./devd-data-service.js"
+import {
+  DevdDataConflictError,
+  DevdDataService,
+  DevdDataUnavailableError,
+} from "./devd-data-service.js"
 
 const cleanupPaths: string[] = []
 
 afterEach(async () => {
+  vi.useRealTimers()
   await Promise.all(
     cleanupPaths.splice(0).map((root) => rm(root, { recursive: true, force: true }))
   )
@@ -41,6 +46,55 @@ describe("DevdDataService", () => {
     ).resolves.toContain("tuckmark.devd-owner.v1")
   })
 
+  it("rejects a second live owner and recovers a stale process lock", async () => {
+    const liveRoot = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    const staleRoot = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(liveRoot, staleRoot)
+
+    new DevdDataService(liveRoot)
+    expect(() => new DevdDataService(liveRoot)).toThrow(DevdDataUnavailableError)
+
+    await mkdir(path.join(staleRoot, ".tuckmark"), { recursive: true })
+    await writeFile(
+      path.join(staleRoot, ".tuckmark", "devd-live.lock"),
+      JSON.stringify({
+        schema: "tuckmark.devd-live-lock.v1",
+        pid: 2147483647,
+        token: "stale-mock-owner",
+        claimedAt: "2030-07-01T00:00:00.000Z",
+      })
+    )
+    new DevdDataService(staleRoot)
+    await expect(
+      readFile(path.join(staleRoot, ".tuckmark", "devd-live.lock"), "utf8")
+    ).resolves.toContain(`"pid":${process.pid}`)
+  })
+
+  it("reclaims a recovery guard left behind by a stopped process", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const controlDirectory = path.join(root, ".tuckmark")
+    await mkdir(controlDirectory, { recursive: true })
+    await writeFile(
+      path.join(controlDirectory, "devd-live.lock.recovery"),
+      JSON.stringify({
+        schema: "tuckmark.devd-live-lock.v1",
+        pid: 2147483647,
+        token: "stale-mock-recovery",
+        claimedAt: "2030-07-01T00:00:00.000Z",
+      })
+    )
+
+    new DevdDataService(root)
+
+    await expect(
+      readFile(path.join(controlDirectory, "devd-live.lock"), "utf8")
+    ).resolves.toContain(`"pid":${process.pid}`)
+    await expect(
+      stat(path.join(controlDirectory, "devd-live.lock.recovery"))
+    ).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
   it("persists a template command and rejects a stale revision", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
     cleanupPaths.push(root)
@@ -63,6 +117,236 @@ describe("DevdDataService", () => {
         args: { templateId: saved.data.template.id, name: "Stale rename" },
       })
     ).rejects.toBeInstanceOf(DevdDataConflictError)
+  })
+
+  it("persists scratch and preset working copies at source-specific paths", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+
+    await service.mutateRuntime({
+      command: "replace-working-copy",
+      expectedRevision: 0,
+      args: {
+        source: { kind: "scratch", presetId: "custom" },
+        document: mockDocument("Scratch mock"),
+      },
+    })
+    await service.mutateRuntime({
+      command: "replace-working-copy",
+      expectedRevision: 1,
+      args: {
+        source: { kind: "preset-template", presetId: "shipping-wide" },
+        document: {
+          ...mockDocument("Preset mock"),
+          presetId: "shipping-wide",
+          source: { kind: "preset-template", presetId: "shipping-wide" },
+        },
+      },
+    })
+
+    await expect(
+      readFile(path.join(root, "drafts", "scratch", "custom.json"), "utf8")
+    ).resolves.toContain("Scratch mock")
+    await expect(
+      readFile(path.join(root, "drafts", "preset-template", "shipping-wide.json"), "utf8")
+    ).resolves.toContain("Preset mock")
+    expect((await service.runtimeSnapshot()).workingCopies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceKey: "scratch:custom" }),
+        expect.objectContaining({ sourceKey: "preset:shipping-wide" }),
+      ])
+    )
+  })
+
+  it("persists template recommendations carried by an imported draft", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+
+    await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: 0,
+      args: {
+        name: "Recommended mock template",
+        document: {
+          ...mockDocument("Recommended mock template"),
+          recommendedUses: [{ scope: "electronics", weight: 90 }],
+        },
+      },
+    })
+
+    expect((await service.runtimeSnapshot()).templates[0]).toMatchObject({
+      recommendedUses: [{ scope: "electronics", weight: 90 }],
+    })
+  })
+
+  it("retains bounded saved and autosaved versions at the established cadence", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-07-01T00:00:00.000Z"))
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    let revision = 0
+    let templateId = ""
+
+    for (let version = 1; version <= 21; version += 1) {
+      const saved = await service.mutateRuntime({
+        command: "save-template",
+        expectedRevision: revision,
+        args: {
+          ...(templateId ? { templateId } : {}),
+          name: "Retained mock template",
+          document: mockDocument(`Saved ${version}`),
+        },
+      })
+      revision = saved.revision
+      templateId = saved.data.template.id
+      vi.advanceTimersByTime(1)
+    }
+
+    let snapshot = await service.runtimeSnapshot()
+    const savedVersions = snapshot.versions.filter(
+      (version) => version.templateId === templateId && version.kind === "saved"
+    )
+    expect(savedVersions).toHaveLength(20)
+    expect(savedVersions.map((version) => version.version).sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 20 }, (_, index) => index + 2)
+    )
+
+    await service.mutateRuntime({
+      command: "save-autosave",
+      expectedRevision: revision,
+      args: {
+        templateId,
+        source: { kind: "user-template", templateId },
+        document: mockDocument("Too soon"),
+      },
+    })
+    revision += 1
+    expect(
+      (await service.runtimeSnapshot()).versions.filter((version) => version.kind === "autosave")
+    ).toHaveLength(1)
+
+    for (let autosave = 2; autosave <= 11; autosave += 1) {
+      vi.advanceTimersByTime(5 * 60 * 1000)
+      const saved = await service.mutateRuntime({
+        command: "save-autosave",
+        expectedRevision: revision,
+        args: {
+          templateId,
+          source: { kind: "user-template", templateId },
+          document: mockDocument(`Autosave ${autosave}`),
+        },
+      })
+      revision = saved.revision
+    }
+
+    snapshot = await service.runtimeSnapshot()
+    const autosaves = snapshot.versions
+      .filter((version) => version.templateId === templateId && version.kind === "autosave")
+      .sort((left, right) => left.version - right.version)
+    expect(autosaves).toHaveLength(10)
+    expect(autosaves.at(0)?.version).toBe(23)
+    expect(autosaves.at(-1)?.version).toBe(32)
+  })
+
+  it("writes only runtime records changed by a routine command", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const first = await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: 0,
+      args: { name: "Unchanged mock template", document: mockDocument("Unchanged mock template") },
+    })
+    const second = await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: 1,
+      args: { name: "Renamed mock template", document: mockDocument("Renamed mock template") },
+    })
+    const untouchedPath = path.join(root, "templates", first.data.template.id, "template.json")
+    const before = await stat(untouchedPath)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await service.mutateRuntime({
+      command: "rename-template",
+      expectedRevision: 2,
+      args: { templateId: second.data.template.id, name: "Renamed mock template again" },
+    })
+
+    expect((await stat(untouchedPath)).mtimeMs).toBe(before.mtimeMs)
+  })
+
+  it("writes only inventory records changed by a routine adjustment", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    await service.mutateInventory({
+      command: "save-material",
+      expectedRevision: 0,
+      args: { id: "unchanged-material", fullName: "Unchanged mock material" },
+    })
+    await service.mutateInventory({
+      command: "save-material",
+      expectedRevision: 1,
+      args: { id: "adjusted-material", fullName: "Adjusted mock material" },
+    })
+    const untouchedPath = path.join(root, "inventory", "materials", "unchanged-material.json")
+    const before = await stat(untouchedPath)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await service.mutateInventory({
+      command: "apply-adjustment",
+      expectedRevision: 2,
+      args: { materialId: "adjusted-material", input: { kind: "in", quantity: 3 } },
+    })
+
+    expect((await stat(untouchedPath)).mtimeMs).toBe(before.mtimeMs)
+  })
+
+  it("rejects purging a template referenced by an inventory label", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const saved = await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: 0,
+      args: { name: "Mock label", document: mockDocument("Mock label") },
+    })
+    const templateId = saved.data.template.id
+    const timestamp = "2026-07-01T00:00:00.000Z"
+    await service.mutateInventory({
+      command: "save-material",
+      expectedRevision: 1,
+      args: {
+        id: "mock-material",
+        fullName: "Mock material",
+        labelBindings: [
+          {
+            id: "mock-binding",
+            templateSource: "user-template",
+            templateId,
+            templateName: "Mock label",
+            printQuantity: 1,
+            fieldOverrides: {},
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        ],
+      },
+    })
+
+    await expect(
+      service.mutateRuntime({
+        command: "purge-template",
+        expectedRevision: 2,
+        args: { templateId },
+      })
+    ).rejects.toThrow("still referenced by the inventory material")
+    expect((await service.runtimeSnapshot()).templates.map((template) => template.id)).toContain(
+      templateId
+    )
   })
 
   it("rejects conflicting archive merges and protects replace imports", async () => {
@@ -96,6 +380,14 @@ describe("DevdDataService", () => {
       expectedRevision: 0,
       args: { snapshot: archive.runtime },
     })
+    await service.mutateRuntime({
+      command: "replace-working-copy",
+      expectedRevision: 1,
+      args: {
+        source: { kind: "scratch", presetId: "custom" },
+        document: mockDocument("Discarded scratch mock"),
+      },
+    })
     const inspection = await service.inspectArchive(archive)
     expect(inspection.conflicts).toContain("template:same-template")
     await expect(
@@ -103,7 +395,7 @@ describe("DevdDataService", () => {
         archive,
         archiveHash: inspection.archiveHash,
         mode: "merge",
-        expectedRevision: 1,
+        expectedRevision: 2,
       })
     ).rejects.toThrow("Archive merge conflicts")
 
@@ -111,10 +403,37 @@ describe("DevdDataService", () => {
       archive,
       archiveHash: inspection.archiveHash,
       mode: "replace",
-      expectedRevision: 1,
+      expectedRevision: 2,
     })
-    expect(replaced.revision).toBe(2)
+    expect(replaced.revision).toBe(3)
     expect((await readdir(path.join(root, "backups", "protection"))).length).toBe(1)
+    await expect(
+      readFile(path.join(root, "drafts", "scratch", "custom.json"), "utf8")
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    })
+    expect((await service.runtimeSnapshot()).workingCopies).toEqual([])
+  })
+
+  it("retains only the newest twenty DEVD protection snapshots", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const archive = await service.exportArchive()
+    const inspection = await service.inspectArchive(archive)
+    let revision = 0
+
+    for (let index = 0; index < 21; index += 1) {
+      const result = await service.importArchive({
+        archive,
+        archiveHash: inspection.archiveHash,
+        mode: "replace",
+        expectedRevision: revision,
+      })
+      revision = result.revision
+    }
+
+    expect((await readdir(path.join(root, "backups", "protection"))).length).toBe(20)
   })
 
   it("rejects an incomplete archive before creating a transaction", async () => {

@@ -9,6 +9,7 @@ import { promisify } from "node:util"
 
 import { afterEach, beforeAll, describe, expect, it } from "vitest"
 
+import { deriveAgentImportWebUrl } from "./agent-import-url.js"
 import { resolveInventoryPrintSource } from "./shared-data-directory.js"
 
 const execFileAsync = promisify(execFile)
@@ -84,6 +85,16 @@ describe("cli smoke", () => {
     expect(true).toBe(true)
   })
 
+  it("derives the paired Web port for bracketed IPv6 DEVD URLs", () => {
+    expect(
+      deriveAgentImportWebUrl({
+        devdUrl: "http://[::1]:5210",
+        serverPort: "5210",
+        webPort: "5173",
+      })
+    ).toBe("http://[::1]:5173")
+  })
+
   it("uses the DEVD agent-import API without printing the session secret", {
     timeout: 20_000,
   }, async () => {
@@ -131,6 +142,7 @@ describe("cli smoke", () => {
       })
     )
 
+    let eventsAvailable = true
     const received: {
       createBody?: { sessionId: string; secret: string }
       fulfillHeader?: string | undefined
@@ -175,23 +187,25 @@ describe("cli smoke", () => {
       if (request.method === "GET" && request.url?.endsWith("/events")) {
         response.end(
           JSON.stringify({
-            events: [
-              {
-                id: "mock-event",
-                type: "template-input-requested",
-                itemId: "mock-new-item",
-                revision: 1,
-                template: {
-                  source: "system",
-                  id: "cable-tag",
-                  name: "Cable Tag",
-                  fields: [{ key: "name", label: "Name", required: true, multiline: false }],
-                  recommendedUses: [{ scope: "electronics", weight: 90 }],
-                },
-                createdAt: "2026-07-30T11:00:00.000Z",
-                status: "open",
-              },
-            ],
+            events: eventsAvailable
+              ? [
+                  {
+                    id: "mock-event",
+                    type: "template-input-requested",
+                    itemId: "mock-new-item",
+                    revision: 1,
+                    template: {
+                      source: "system",
+                      id: "cable-tag",
+                      name: "Cable Tag",
+                      fields: [{ key: "name", label: "Name", required: true, multiline: false }],
+                      recommendedUses: [{ scope: "electronics", weight: 90 }],
+                    },
+                    createdAt: "2026-07-30T11:00:00.000Z",
+                    status: "open",
+                  },
+                ]
+              : [],
           })
         )
         return
@@ -230,16 +244,27 @@ describe("cli smoke", () => {
           baseUrl,
           "--no-open",
         ],
-        { TUCKMARK_DEVD_URL: "http://127.0.0.1:1" }
+        {
+          TUCKMARK_DEVD_URL: "http://127.0.0.1:1",
+          TUCKMARK_SERVER_PORT: new URL(baseUrl).port,
+          TUCKMARK_WEB_PORT: "5173",
+        }
       )
-      const created = JSON.parse(create.stdout) as { sessionId: string; opened: boolean }
+      const created = JSON.parse(create.stdout) as {
+        sessionId: string
+        opened: boolean
+        confirmationOrigin: string
+      }
       const credential = JSON.parse(await readFile(credentialPath, "utf8")) as {
         secret: string
         sessionId: string
+        webUrl?: string
       }
 
       expect(created.opened).toBe(false)
       expect(created.sessionId).toBe(credential.sessionId)
+      expect(created.confirmationOrigin).toBe("http://127.0.0.1:5173")
+      expect(credential.webUrl).toBe("http://127.0.0.1:5173")
       expect(received.createBody?.secret).toBe(credential.secret)
       expect(create.stdout).not.toContain(credential.secret)
 
@@ -265,6 +290,29 @@ describe("cli smoke", () => {
         ).stdout
       ) as { events: Array<{ id: string }> }
       expect(waiting.events[0]?.id).toBe("mock-event")
+
+      eventsAvailable = false
+      const timedOut = JSON.parse(
+        (
+          await runCli([
+            "agent-import",
+            "wait",
+            "--session",
+            created.sessionId,
+            "--credential-file",
+            credentialPath,
+            "--devd-url",
+            baseUrl,
+            "--timeout-ms",
+            "100",
+          ])
+        ).stdout
+      ) as { sessionId: string; events: unknown[]; waiting: boolean }
+      expect(timedOut).toEqual({
+        sessionId: created.sessionId,
+        events: [],
+        waiting: true,
+      })
 
       await runCli([
         "agent-import",
@@ -440,6 +488,13 @@ describe("cli smoke", () => {
     await expect(
       readFile(path.join(dataDir, "inventory", "materials", "inventory-material.json"), "utf8")
     ).rejects.toMatchObject({ code: "ENOENT" })
+
+    const readResult = await runCliWithEnvAllowFailure(
+      ["inventory", "list", "--data-dir", dataDir],
+      { TUCKMARK_DATA_DIR: dataDir }
+    )
+    expect(readResult).toMatchObject({ failed: true, code: 1 })
+    expect(readResult.stderr).toContain("owned by DEVD")
   })
 
   it("creates, adjusts, and prints inventory from the shared directory", {

@@ -292,6 +292,26 @@ export default function WorkbenchInventoryRoute({
     [isDetailRoute, search, selectedMaterialId, showArchived, startupReady, storyState]
   )
 
+  const refreshAdjustments = React.useCallback(async () => {
+    if (storyState) {
+      setAdjustments(
+        selectedMaterialId
+          ? storyState.adjustments.filter((item) => item.materialId === selectedMaterialId)
+          : []
+      )
+      return
+    }
+    if (!startupReady || !selectedMaterialId) {
+      setAdjustments([])
+      return
+    }
+    try {
+      setAdjustments(await listInventoryAdjustments(selectedMaterialId))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }, [selectedMaterialId, startupReady, storyState])
+
   React.useEffect(() => {
     onRouteChunkReady?.()
   }, [onRouteChunkReady])
@@ -306,38 +326,16 @@ export default function WorkbenchInventoryRoute({
       const detail = (raw as CustomEvent<{ domains?: string[] }>).detail
       if (detail?.domains?.includes("inventory") || detail?.domains?.includes("archive")) {
         void refresh(search)
+        void refreshAdjustments()
       }
     }
     window.addEventListener("tuckmark:devd-data-revision", onRevision)
     return () => window.removeEventListener("tuckmark:devd-data-revision", onRevision)
-  }, [controller.context?.surface, refresh, search])
+  }, [controller.context?.surface, refresh, refreshAdjustments, search])
 
   React.useEffect(() => {
-    if (storyState) {
-      return
-    }
-    if (!startupReady || !selectedMaterialId) {
-      setAdjustments([])
-      return
-    }
-
-    let cancelled = false
-    void listInventoryAdjustments(selectedMaterialId)
-      .then((nextAdjustments) => {
-        if (!cancelled) {
-          setAdjustments(nextAdjustments)
-        }
-      })
-      .catch((cause) => {
-        if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : String(cause))
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [selectedMaterialId, startupReady, storyState])
+    void refreshAdjustments()
+  }, [refreshAdjustments])
 
   React.useEffect(() => {
     if (!selectedMaterial) {
