@@ -36,6 +36,11 @@ and a reproducible worktree bootstrap path.
   every executable static asset, HTML entry, manifest, and icon and then written
   its version-ready marker. A partial cache must never answer navigation or
   asset requests.
+- The PWA manifest declares separate standard `any` and safe-zone `maskable`
+  icons, while entry HTML provides SVG/PNG/ICO favicon fallbacks and the Apple
+  Touch icon sizes required by installed browser surfaces.
+- After the first successful online load, the browser-static runtime must open
+  from cached app-shell resources while offline.
 - Browser-static updates are non-blocking: a newly detected version caches
   silently in the background, then prompts the user to update only when the
   runtime has confirmed a newer build through either a ready waiting worker or
