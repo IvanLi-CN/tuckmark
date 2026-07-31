@@ -48,5 +48,10 @@ describe("DEVD data HTTP contract", () => {
       headers: { origin: "http://127.0.0.1:5173" },
     })
     expect(localProxyOrigin.status).toBe(200)
+
+    const rebindingOrigin = await fetch(`${baseUrl}/api/data/status`, {
+      headers: { host: "rebind.example", origin: "http://rebind.example" },
+    })
+    expect(rebindingOrigin.status).toBe(403)
   })
 })

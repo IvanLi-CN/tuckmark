@@ -42,6 +42,7 @@ describe("DevdDataClient", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     await devdDataClient.snapshot()
+    devdDataClient.invalidate(8)
     await expect(
       devdDataClient.runtimeCommand("save-settings", { patch: {} })
     ).rejects.toBeInstanceOf(DevdDataConflictError)

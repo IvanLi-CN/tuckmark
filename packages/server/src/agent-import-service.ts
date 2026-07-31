@@ -534,10 +534,10 @@ export class AgentImportService {
             throw new Error(`Restock material ${item.targetMaterialId} was not found.`)
           })()
         ensureInventoryMaterialActive(material, "入库")
-        if (
-          item.targetMaterialUpdatedAt &&
-          initialMaterialUpdatedAt.get(material.id) !== item.targetMaterialUpdatedAt
-        ) {
+        if (!item.targetMaterialUpdatedAt) {
+          throw new Error(`Restock material ${material.fullName} is missing its session timestamp.`)
+        }
+        if (initialMaterialUpdatedAt.get(material.id) !== item.targetMaterialUpdatedAt) {
           throw new Error(
             `Restock material ${material.fullName} changed while this session was open.`
           )

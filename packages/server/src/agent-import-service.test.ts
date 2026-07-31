@@ -513,6 +513,27 @@ describe("AgentImportService", () => {
     expect(materials.map((material) => material.id)).toEqual(["existing-material"])
   })
 
+  it("rejects a restock that lacks the session target timestamp", async () => {
+    const dataDir = await createDataDir()
+    const service = new AgentImportService(dataDir)
+    const invalid = proposal()
+    invalid.items = invalid.items.map((item) =>
+      item.kind === "restock" ? { ...item, targetMaterialUpdatedAt: undefined } : item
+    )
+    const session = service.createSession({
+      sessionId: "agent-import-session-missing-target-timestamp",
+      secret,
+      proposal: invalid,
+    })
+
+    await expect(service.confirm(session.id, secret)).rejects.toThrow(
+      "missing its session timestamp"
+    )
+    expect((await service.listInventory()).map((material) => material.id)).toEqual([
+      "existing-material",
+    ])
+  })
+
   it("recovers a prepared transaction before reading inventory", async () => {
     const dataDir = await createDataDir()
     await mkdir(path.join(dataDir, "inventory", "agent-import-transactions"), { recursive: true })

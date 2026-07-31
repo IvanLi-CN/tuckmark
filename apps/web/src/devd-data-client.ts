@@ -160,8 +160,8 @@ export class DevdDataClient {
     return response.data
   }
 
-  invalidate(revision: number): void {
-    if (this.revision === null || revision > this.revision) this.revision = revision
+  invalidate(_revision: number): void {
+    // An SSE revision only invalidates cached data. Writes remain based on a completed read.
   }
 }
 

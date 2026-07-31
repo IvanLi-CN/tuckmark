@@ -284,6 +284,10 @@ function requireAgentImportKey(req: express.Request): string {
   return key
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "::1" || hostname === "localhost"
+}
+
 export function createApp(
   service: ServerService = new TuckmarkService(),
   options: CreateAppOptions = {}
@@ -296,16 +300,15 @@ export function createApp(
   app.use(express.json({ limit: "10mb" }))
 
   const requireLocalAppOrigin: express.RequestHandler = (req, res, next) => {
+    if (!isLoopbackHostname(req.hostname)) {
+      res.status(403).json({ status: "error", error: "DEVD only accepts loopback requests." })
+      return
+    }
     const origin = req.header("origin")
     if (!origin) return next()
     try {
       const originUrl = new URL(origin)
-      const requestHost = req.hostname
-      const loopbackHosts = new Set(["127.0.0.1", "::1", "localhost"])
-      if (
-        originUrl.host === req.header("host") ||
-        (loopbackHosts.has(originUrl.hostname) && loopbackHosts.has(requestHost))
-      ) {
+      if (originUrl.host === req.header("host") || isLoopbackHostname(originUrl.hostname)) {
         return next()
       }
     } catch {
