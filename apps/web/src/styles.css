@@ -328,18 +328,16 @@
 
 .tm-agent-import__section-title {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
 }
 
 .tm-agent-import__section-title > span {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid color-mix(in oklab, var(--primary) 38%, var(--border));
-  border-radius: 8px;
   color: var(--primary);
 }
 
