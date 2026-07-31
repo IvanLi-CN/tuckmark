@@ -407,6 +407,11 @@
   border-left: 1px solid color-mix(in oklab, var(--border) 62%, transparent);
 }
 
+.tm-agent-import__table th:first-child,
+.tm-agent-import__table td:first-child {
+  padding-left: 12px;
+}
+
 .tm-agent-import__row--excluded td {
   background: color-mix(in oklab, var(--muted) 28%, var(--card));
   color: var(--muted-foreground);
@@ -791,7 +796,7 @@
   margin-top: 28px;
   border-top: 1px solid var(--border);
   background: color-mix(in oklab, var(--background) 94%, white);
-  padding: 14px 0;
+  padding: 14px 16px;
   color: var(--muted-foreground);
   font-size: 13px;
 }
