@@ -41,8 +41,9 @@ export const ReadyToConfirm: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "编辑物料全名" }))
     await expect(canvas.getByLabelText("物料全名")).toHaveFocus()
     await userEvent.keyboard("{Escape}")
-    await userEvent.click(canvas.getByRole("button", { name: "展开物料详情" }))
-    await expect(canvas.getByLabelText("描述")).toBeVisible()
+    await userEvent.click(canvas.getByRole("button", { name: "预览标签" }))
+    await expect(canvas.getByRole("img", { name: "Cable Tag预览" })).toBeVisible()
+    await expect(canvas.getByRole("button", { name: "收起标签预览" })).toBeVisible()
   },
 }
 

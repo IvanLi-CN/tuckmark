@@ -471,7 +471,7 @@
 }
 
 .tm-agent-import__table--new .tm-agent-import__column--select {
-  width: 5.5%;
+  width: 4%;
 }
 
 .tm-agent-import__table--new .tm-agent-import__column--full-name {
@@ -501,14 +501,17 @@
 }
 
 .tm-agent-import__table--new .tm-agent-import__column--attention {
-  width: 15%;
+  width: 13.5%;
 }
 
 .tm-agent-import__table--new .tm-agent-import__column--action {
-  width: 5.5%;
+  width: 8.5%;
 }
 
-.tm-agent-import__table--restock .tm-agent-import__column--select,
+.tm-agent-import__table--restock .tm-agent-import__column--select {
+  width: 4%;
+}
+
 .tm-agent-import__table--restock .tm-agent-import__column--action {
   width: 5.5%;
 }
@@ -528,7 +531,7 @@
 }
 
 .tm-agent-import__table--restock .tm-agent-import__column--source {
-  width: 12.5%;
+  width: 14%;
 }
 
 .tm-agent-import__table--restock .tm-agent-import__column--attention {

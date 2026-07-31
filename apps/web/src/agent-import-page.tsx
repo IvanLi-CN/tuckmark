@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
+  Eye,
   LoaderCircle,
   PackagePlus,
   Pencil,
@@ -571,7 +572,7 @@ function ImportSection({
                   注意
                 </th>
                 <th className="tm-agent-import__column--action" scope="col">
-                  <span className="sr-only">保存</span>
+                  <span className="sr-only">操作</span>
                 </th>
               </tr>
             </thead>
@@ -894,7 +895,18 @@ function NewItemTableRow({
               type="button"
               variant="ghost"
               size="icon"
-              className="size-7"
+              className="size-6"
+              aria-label={expanded ? "收起标签预览" : "预览标签"}
+              title={expanded ? "收起标签预览" : "预览标签"}
+              onClick={onToggleDetails}
+            >
+              <Eye className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-6"
               aria-label={expanded ? "收起物料详情" : "展开物料详情"}
               title={expanded ? "收起物料详情" : "展开物料详情"}
               onClick={onToggleDetails}
