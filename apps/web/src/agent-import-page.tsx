@@ -18,6 +18,10 @@ import React from "react"
 import { buildSvg, getTemplateById } from "../../../packages/core/src/web.js"
 
 import { type AgentImportClient, HttpAgentImportClient } from "./agent-import-client.js"
+import {
+  type AgentImportItemDraft,
+  reconcileAgentImportDrafts,
+} from "./agent-import-draft-reconciliation.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
 import { Button } from "./components/ui/button.js"
@@ -33,10 +37,7 @@ import { cn } from "./lib/utils.js"
 import type { UserTemplateSummary } from "./types.js"
 import { listUserTemplates } from "./user-template-store.js"
 
-type ItemDraft = {
-  item: AgentImportItem
-  serverRevision: number
-}
+type ItemDraft = AgentImportItemDraft
 
 type AgentImportPageProps = {
   sessionId?: string
@@ -77,21 +78,6 @@ function toManualTemplate(template: UserTemplateSummary): ManualTemplate | null 
       document: template.document,
     },
   }
-}
-
-function reconcileDrafts(
-  current: Record<string, ItemDraft>,
-  session: AgentImportSession
-): Record<string, ItemDraft> {
-  const next: Record<string, ItemDraft> = {}
-  for (const item of session.proposal.items) {
-    const previous = current[item.id]
-    next[item.id] =
-      previous && previous.serverRevision === item.revision
-        ? previous
-        : { item, serverRevision: item.revision }
-  }
-  return next
 }
 
 function templateKey(template: AgentImportTemplate): string {
@@ -159,7 +145,7 @@ export function AgentImportPage({
 }: AgentImportPageProps) {
   const [session, setSession] = React.useState<AgentImportSession | null>(initialSession ?? null)
   const [drafts, setDrafts] = React.useState<Record<string, ItemDraft>>(() =>
-    initialSession ? reconcileDrafts({}, initialSession) : {}
+    initialSession ? reconcileAgentImportDrafts({}, initialSession) : {}
   )
   const [manualTemplates, setManualTemplates] = React.useState<ManualTemplate[]>([])
   const [expandedItemIds, setExpandedItemIds] = React.useState<Set<string>>(() => new Set())
@@ -170,7 +156,7 @@ export function AgentImportPage({
 
   const applySession = React.useCallback((next: AgentImportSession) => {
     setSession(next)
-    setDrafts((current) => reconcileDrafts(current, next))
+    setDrafts((current) => reconcileAgentImportDrafts(current, next))
   }, [])
 
   const loadSession = React.useCallback(async () => {

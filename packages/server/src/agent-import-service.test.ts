@@ -338,7 +338,7 @@ describe("AgentImportService", () => {
     ).toContain("Browser-local Mock Template")
   })
 
-  it("rejects item edits while template input is pending", async () => {
+  it("preserves ordinary item edits while template input is pending", async () => {
     const dataDir = await createDataDir()
     const service = new AgentImportService(dataDir)
     const session = service.createSession({
@@ -370,26 +370,146 @@ describe("AgentImportService", () => {
     if (!changedItem) {
       throw new Error("Mock item was not returned.")
     }
+    const edited = service.updateItem({
+      sessionId: session.id,
+      secret,
+      itemId: changedItem.id,
+      expectedRevision: changedItem.revision,
+      item: { ...changedItem, material: { ...changedItem.material, description: "user edit" } },
+    })
+    const editedItem = edited.proposal.items[0]
+    expect(editedItem?.material.description).toBe("user edit")
+    expect(edited.events[0]?.revision).toBe(editedItem?.revision)
+
     expect(() =>
-      service.updateItem({
+      service.fulfillTemplateInput({
         sessionId: session.id,
         secret,
-        itemId: changedItem.id,
-        expectedRevision: changedItem.revision,
-        item: { ...changedItem, material: { ...changedItem.material, description: "user edit" } },
+        eventId: event.id,
+        expectedRevision: event.revision,
+        input: { recipient: "Mock recipient" },
       })
-    ).toThrow("Template input is pending")
+    ).toThrow("revision does not match")
 
     const fulfilled = service.fulfillTemplateInput({
       sessionId: session.id,
       secret,
       eventId: event.id,
-      expectedRevision: event.revision,
+      expectedRevision: edited.events[0]?.revision ?? -1,
       input: { recipient: "Mock recipient" },
     })
 
     expect(fulfilled.events[0]?.status).toBe("fulfilled")
     expect(fulfilled.proposal.items[0]?.pendingTemplateEventId).toBeNull()
+    expect(fulfilled.proposal.items[0]?.material.description).toBe("user edit")
+  })
+
+  it("keeps the existing template event open when a replacement request is invalid", async () => {
+    const dataDir = await createDataDir()
+    const service = new AgentImportService(dataDir)
+    const session = service.createSession({
+      sessionId: "agent-import-session-invalid-template-request",
+      secret,
+      proposal: newItemOnlyProposal(),
+    })
+    const requested = service.requestTemplateInput({
+      sessionId: session.id,
+      secret,
+      itemId: "new-item",
+      expectedRevision: 0,
+      template: {
+        source: "system",
+        id: "shipping-compact",
+        name: "Compact Shipping Label",
+        fields: [{ key: "recipient", label: "Recipient", required: true, multiline: false }],
+        recommendedUses: [],
+      },
+    })
+    const event = requested.events[0]
+    const item = requested.proposal.items[0]
+    if (!event || !item) {
+      throw new Error("Mock template event was not created.")
+    }
+
+    expect(() =>
+      service.requestTemplateInput({
+        sessionId: session.id,
+        secret,
+        itemId: item.id,
+        expectedRevision: item.revision,
+        template: item.template ?? event.template,
+        localTemplate: {
+          template: {
+            source: "user-template",
+            id: "different-template",
+            name: "Different Template",
+            fields: [],
+            recommendedUses: [],
+          },
+          description: "Mock mismatch",
+          document: {
+            version: 1,
+            id: "mock-local-template-document",
+            presetId: "mock-preset",
+            name: "Different Template",
+            width: 40,
+            height: 20,
+            fields: [],
+            elements: [],
+            editor: { gridEnabled: true, snapEnabled: true },
+          },
+        },
+      })
+    ).toThrow("Local template snapshot does not match")
+
+    const afterFailure = service.getSession(session.id, secret)
+    expect(afterFailure.events).toEqual([event])
+    expect(afterFailure.proposal.items[0]?.pendingTemplateEventId).toBe(event.id)
+  })
+
+  it("allows confirmation after a pending item is deselected", async () => {
+    const dataDir = await createDataDir()
+    const service = new AgentImportService(dataDir)
+    const session = service.createSession({
+      sessionId: "agent-import-session-deselect-pending",
+      secret,
+      proposal: proposal(),
+    })
+    const requested = service.requestTemplateInput({
+      sessionId: session.id,
+      secret,
+      itemId: "new-item",
+      expectedRevision: 0,
+      template: {
+        source: "system",
+        id: "shipping-compact",
+        name: "Compact Shipping Label",
+        fields: [{ key: "recipient", label: "Recipient", required: true, multiline: false }],
+        recommendedUses: [],
+      },
+    })
+    const pendingItem = requested.proposal.items.find((item) => item.id === "new-item")
+    if (!pendingItem) {
+      throw new Error("Mock pending item was not returned.")
+    }
+
+    service.updateItem({
+      sessionId: session.id,
+      secret,
+      itemId: pendingItem.id,
+      expectedRevision: pendingItem.revision,
+      item: { ...pendingItem, selected: false },
+    })
+
+    const completed = await service.confirm(session.id, secret)
+    expect(completed.state).toBe("completed")
+    expect(
+      (await service.listInventory()).find((material) => material.fullName === "Mock regulator")
+    ).toBeUndefined()
+    expect(
+      (await service.listInventory()).find((material) => material.id === "existing-material")
+        ?.currentQuantity
+    ).toBe(9)
   })
 
   it("requires every requested template field before accepting an Agent fulfillment", async () => {

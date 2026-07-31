@@ -85,6 +85,12 @@ export const TemplateWaitingForAgent: Story = {
     client: createAgentImportDemoClient(),
     localTemplatesLoader: async () => [],
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole("button", { name: "编辑物料全名" })).toBeEnabled()
+    await expect(canvas.getByRole("button", { name: "编辑标签模板" })).toBeDisabled()
+    await expect(canvas.getByRole("button", { name: "确认导入选中项" })).toBeDisabled()
+  },
 }
 
 export const Completed: Story = {

@@ -227,17 +227,30 @@ export class AgentImportService {
     if (current.revision !== args.expectedRevision) {
       throw new Error("This import item changed. Refresh before saving it again.")
     }
-    if (current.pendingTemplateEventId) {
-      throw new Error("Template input is pending. Complete it before editing this item.")
+    const pendingEvent = current.pendingTemplateEventId
+      ? session.events.find(
+          (event) =>
+            event.id === current.pendingTemplateEventId &&
+            event.itemId === current.id &&
+            event.status === "open"
+        )
+      : undefined
+    if (current.pendingTemplateEventId && !pendingEvent) {
+      throw new Error("Template input event is no longer open.")
     }
     const next = agentImportItemSchema.parse({
       ...args.item,
       id: current.id,
       kind: current.kind,
       revision: current.revision + 1,
+      template: current.template,
+      templateInput: current.templateInput,
       pendingTemplateEventId: current.pendingTemplateEventId,
     })
     session.proposal.items[index] = next
+    if (pendingEvent) {
+      pendingEvent.revision = next.revision
+    }
     return cloneSession(session)
   }
 
@@ -261,17 +274,21 @@ export class AgentImportService {
     if (current.revision !== args.expectedRevision) {
       throw new Error("This import item changed. Refresh before changing its template.")
     }
+    const template = agentImportTemplateSchema.parse(args.template)
+    const localTemplate = args.localTemplate
+      ? agentImportLocalTemplateSchema.parse(args.localTemplate)
+      : undefined
+    if (localTemplate) {
+      if (templateKey(localTemplate.template) !== templateKey(template)) {
+        throw new Error("Local template snapshot does not match the selected template.")
+      }
+    }
     for (const event of session.events) {
       if (event.itemId === current.id && event.status === "open") {
         event.status = "superseded"
       }
     }
-    const template = agentImportTemplateSchema.parse(args.template)
-    if (args.localTemplate) {
-      const localTemplate = agentImportLocalTemplateSchema.parse(args.localTemplate)
-      if (templateKey(localTemplate.template) !== templateKey(template)) {
-        throw new Error("Local template snapshot does not match the selected template.")
-      }
+    if (localTemplate) {
       session.localTemplates.set(templateKey(template), localTemplate)
     }
     const event = agentImportEventSchema.parse({
