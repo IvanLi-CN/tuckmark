@@ -3,7 +3,8 @@ import { expect, test } from "@playwright/test"
 test.describe("agent-assisted inventory intake", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 })
-    await page.goto("/agent-import/demo?ui_demo=1")
+    await page.goto(`/?__tuckmark_redirect__=${encodeURIComponent("/agent-import/demo?ui_demo=1")}`)
+    await expect(page).toHaveURL(/\/agent-import\/demo\?ui_demo=1/u)
   })
 
   test("separates new and restock items while keeping attention non-blocking", async ({ page }) => {

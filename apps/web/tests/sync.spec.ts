@@ -1,134 +1,89 @@
-import { expect, test } from "@playwright/test"
+import { type APIRequestContext, expect, test } from "@playwright/test"
 
-import {
-  clearServerSyncState,
-  createDraftDocument,
-  createServerRecentActivityState,
-  readBrowserStorage,
-  readServerSyncState,
-  seedBrowserLocalState,
-  writeServerSyncState,
-} from "./sync-helpers.js"
+type DevdStatus = { revision: number }
 
-test.beforeEach(async () => {
-  await clearServerSyncState()
-})
+async function currentRevision(request: APIRequestContext): Promise<number> {
+  const response = await request.get("/api/data/status")
+  expect(response.ok()).toBe(true)
+  return ((await response.json()) as DevdStatus).revision
+}
 
-test("server-http startup hydrates recent activity from persisted sync state", async ({ page }) => {
-  await writeServerSyncState(createServerRecentActivityState())
-
-  await page.goto("/")
-
-  await expect(page.getByRole("heading", { name: "打印工作台" })).toBeVisible()
-  await expect(page.getByText("Server HTTP", { exact: false }).first()).toBeVisible()
-  await expect(page.getByText("Runtime mode", { exact: false }).first()).toBeVisible()
-  await expect(page.getByText("Shipping Label")).toBeVisible()
-  await expect(page.getByText("Server P2")).toBeVisible()
-})
-
-test("server-http canvas restores a locally persisted draft after reload", async ({ page }) => {
-  const draft = createDraftDocument({
-    name: "Recovered Shipping Draft",
-  })
-  await seedBrowserLocalState(page, {
-    draftByPreset: {
-      "shipping-wide": draft,
+async function writeRuntimeWorkingCopy(request: APIRequestContext, name: string): Promise<void> {
+  const response = await request.post("/api/data/runtime/replace-working-copy", {
+    data: {
+      expectedRevision: await currentRevision(request),
+      args: {
+        source: { kind: "scratch", presetId: "shipping-wide" },
+        document: {
+          version: 1,
+          unit: "mm",
+          id: "shipping-wide",
+          presetId: "shipping-wide",
+          name,
+          source: { kind: "scratch", presetId: "shipping-wide" },
+          width: 100,
+          height: 60,
+          fields: [],
+          elements: [],
+          editor: { gridEnabled: true, snapEnabled: true },
+        },
+      },
     },
+  })
+  expect(response.ok()).toBe(true)
+}
+
+test("server-http system status reads DEVD data instead of browser-local state", async ({
+  page,
+  request,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("tuckmark.sync-state.v1", '{"browserOnly":true}')
+  })
+  const response = await request.post("/api/data/inventory/save-material", {
+    data: {
+      expectedRevision: await currentRevision(request),
+      args: {
+        id: "sync-mock-material",
+        fullName: "DEVD Sync Mock Material",
+        description: "Temporary CI fixture.",
+        matrixCode: "SYNC-MOCK-01",
+      },
+    },
+  })
+  expect(response.ok()).toBe(true)
+
+  await page.goto("/system")
+
+  await expect(page.getByRole("heading", { name: "DEVD 数据存储" })).toBeVisible()
+  await expect(page.getByText("当前页面不会请求浏览器目录权限。")).toBeVisible()
+  await expect(page.getByText("1 物料", { exact: false })).toBeVisible()
+  await expect(
+    page.evaluate(() => window.localStorage.getItem("tuckmark.sync-state.v1"))
+  ).resolves.toContain("browserOnly")
+})
+
+test("server-http canvas restores the DEVD working copy and ignores browser drafts", async ({
+  page,
+  request,
+}) => {
+  await writeRuntimeWorkingCopy(request, "DEVD Shipping Draft")
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "tuckmark:canvas-draft:v1:shipping-wide",
+      JSON.stringify({ name: "Browser Fallback Draft" })
+    )
   })
 
   await page.goto("/canvas")
 
   await expect(page.getByText("标签编辑台")).toBeVisible()
-  await expect(page.getByText("当前草稿：Recovered Shipping Draft")).toBeVisible()
-  await expect(await readBrowserStorage(page, "tuckmark:canvas-draft:v1:shipping-wide")).toContain(
-    "Recovered Shipping Draft"
-  )
+  await expect(page.getByText("当前草稿：DEVD Shipping Draft")).toBeVisible()
+  await expect(
+    page.evaluate(() => window.localStorage.getItem("tuckmark:canvas-draft:v1:shipping-wide"))
+  ).resolves.toContain("Browser Fallback Draft")
 
   await page.reload()
 
-  await expect(page.getByText("标签编辑台")).toBeVisible()
-  await expect(page.getByText("当前草稿：Recovered Shipping Draft")).toBeVisible()
-  await expect(await readBrowserStorage(page, "tuckmark:canvas-draft:v1:shipping-wide")).toContain(
-    "Recovered Shipping Draft"
-  )
-})
-
-test("server-http startup merges browser-local recent prints back into service state", async ({
-  page,
-}) => {
-  const localOnlyState = {
-    ...createServerRecentActivityState(),
-    recentPrintRecords: [
-      {
-        kind: "recent_print" as const,
-        recordId: "print:template:local-offline",
-        version: 1,
-        vectorClock: { browser: 1, service: 0 },
-        updatedAt: "2026-06-28T10:10:00.000Z",
-        hash: "local-offline-hash",
-        deleted: false,
-        conflicts: [],
-        payload: {
-          id: "template:local-offline",
-          title: "local-offline",
-          kind: "template" as const,
-          printedAt: "2026-06-28T10:10:00.000Z",
-          printerName: "Offline Browser P2",
-        },
-      },
-    ],
-  }
-
-  await writeServerSyncState(createServerRecentActivityState())
-  await seedBrowserLocalState(page, {
-    syncState: localOnlyState,
-  })
-
-  await page.goto("/")
-
-  await expect(page.getByRole("heading", { name: "打印工作台" })).toBeVisible()
-
-  await expect
-    .poll(async () => {
-      const state = await readServerSyncState()
-      return state.recentPrintRecords.some(
-        (record) => record.payload.id === "template:local-offline"
-      )
-    })
-    .toBe(true)
-})
-
-test("server-http canvas restores a service-persisted draft on first open", async ({ page }) => {
-  const draft = createDraftDocument({
-    name: "Service Shipping Draft",
-  })
-
-  await writeServerSyncState({
-    ...createServerRecentActivityState(),
-    canvasDraftRecords: [
-      {
-        kind: "canvas_draft",
-        recordId: "draft:shipping-wide",
-        version: 1,
-        vectorClock: { browser: 0, service: 1 },
-        updatedAt: "2026-06-28T10:15:00.000Z",
-        hash: "service-draft-hash",
-        deleted: false,
-        conflicts: [],
-        payload: {
-          presetId: "shipping-wide",
-          draft,
-          savedAt: "2026-06-28T10:15:00.000Z",
-        },
-      },
-    ],
-  })
-
-  await page.goto("/canvas")
-
-  await expect(page.getByText("标签编辑台")).toBeVisible()
-  await expect(page.getByText("当前草稿：Service Shipping Draft")).toBeVisible()
-  await expect(await readBrowserStorage(page, "tuckmark:canvas-draft:v1:shipping-wide")).toContain(
-    "Service Shipping Draft"
-  )
+  await expect(page.getByText("当前草稿：DEVD Shipping Draft")).toBeVisible()
 })

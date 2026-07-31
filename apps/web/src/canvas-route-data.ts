@@ -5,6 +5,7 @@ import {
   getSystemTemplateById,
   loadStoredDraftDocument,
 } from "./canvas-editor-model.js"
+import { isServerHttpDataSurface } from "./devd-data-client.js"
 import type {
   CanvasDraftDocument,
   CanvasDraftSource,
@@ -111,7 +112,7 @@ export async function loadCanvasRouteData(
   }
 
   if (source.kind === "preset-template") {
-    const legacyDraft = loadStoredDraftDocument(source.presetId)
+    const legacyDraft = isServerHttpDataSurface() ? null : loadStoredDraftDocument(source.presetId)
     if (legacyDraft) {
       return {
         draft: {
@@ -137,7 +138,7 @@ export async function loadCanvasRouteData(
     }
   }
 
-  const legacyDraft = loadStoredDraftDocument(source.presetId)
+  const legacyDraft = isServerHttpDataSurface() ? null : loadStoredDraftDocument(source.presetId)
   if (legacyDraft) {
     return {
       draft: {

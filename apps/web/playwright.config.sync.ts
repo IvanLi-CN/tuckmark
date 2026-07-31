@@ -6,6 +6,9 @@ import { defineConfig } from "@playwright/test"
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, "../..")
 const syncRoot = path.join(repoRoot, "work", "playwright-sync")
+const syncPort = Number(process.env.TUCKMARK_SYNC_E2E_PORT ?? "4210")
+const syncBaseURL = `http://127.0.0.1:${syncPort}`
+const browserChannel = process.env.TUCKMARK_E2E_BROWSER_CHANNEL === "chrome" ? "chrome" : undefined
 
 export default defineConfig({
   testDir: "./tests",
@@ -13,7 +16,8 @@ export default defineConfig({
   timeout: 90_000,
   reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: "http://127.0.0.1:4210",
+    baseURL: syncBaseURL,
+    channel: browserChannel,
   },
   webServer: {
     command: [
@@ -21,9 +25,9 @@ export default defineConfig({
       "mkdir -p work/playwright-sync",
       "bun run build",
       "cd work/playwright-sync",
-      "PORT=4210 TUCKMARK_WEB_DIST=../../apps/web/dist node ../../packages/server/dist/index.js",
+      `PORT=${syncPort} TUCKMARK_WEB_DIST=../../apps/web/dist node ../../packages/server/dist/index.js`,
     ].join(" && "),
-    url: "http://127.0.0.1:4210/health",
+    url: `${syncBaseURL}/health`,
     timeout: 240_000,
     reuseExistingServer: false,
     cwd: repoRoot,

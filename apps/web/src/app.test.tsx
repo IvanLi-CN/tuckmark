@@ -898,7 +898,7 @@ async function waitForFetchCallCount(count: number, maxCycles = 32): Promise<voi
 }
 
 async function waitForServerRuntimeReady(): Promise<void> {
-  await waitForFetchCallCount(4)
+  await waitForFetchCallCount(2)
   await waitForDeferredHydrationToFinish()
   await act(async () => {
     await flush(4)
@@ -1620,8 +1620,6 @@ describe("web workbench app", () => {
           },
         ],
       },
-      "GET /api/sync/state": { state: emptySyncState() },
-      "POST /api/sync/state": { state: emptySyncState() },
       "POST /api/preview/template": { artifact: makeArtifact("artifact-1") },
       "GET /api/artifacts/artifact-1/packets": {
         artifactId: "artifact-1",
@@ -1672,8 +1670,6 @@ describe("web workbench app", () => {
           },
         ],
       },
-      "GET /api/sync/state": { state: emptySyncState() },
-      "POST /api/sync/state": { state: emptySyncState() },
     })
 
     Object.defineProperty(window.history, "pushState", {
@@ -1737,8 +1733,6 @@ describe("web workbench app", () => {
           },
         ],
       },
-      "GET /api/sync/state": { state: emptySyncState() },
-      "POST /api/sync/state": { state: emptySyncState() },
       "POST /api/preview/template": { artifact: makeArtifact("artifact-auto-1") },
       "GET /api/artifacts/artifact-auto-1/packets": {
         artifactId: "artifact-auto-1",
@@ -1789,8 +1783,6 @@ describe("web workbench app", () => {
           },
         ],
       },
-      "GET /api/sync/state": { state: emptySyncState() },
-      "POST /api/sync/state": { state: emptySyncState() },
       "POST /api/preview/template": [
         { artifact: makeArtifact("artifact-auto-1") },
         { artifact: makeArtifact("artifact-auto-2") },
@@ -1895,8 +1887,6 @@ describe("web workbench app", () => {
           },
         ],
       },
-      "GET /api/sync/state": { state: emptySyncState() },
-      "POST /api/sync/state": { state: emptySyncState() },
       "POST /api/preview/template": { artifact: makeArtifact("artifact-selectable") },
     })
 
@@ -2768,50 +2758,7 @@ describe("web workbench app", () => {
     )
   })
 
-  it("hydrates recent activity from sync state on server-http startup", async () => {
-    const syncedState = {
-      ...emptySyncState(),
-      updatedAt: "2026-06-28T10:00:00.000Z",
-      templateUsageRecords: [
-        {
-          kind: "template_usage" as const,
-          recordId: "template:shipping-compact",
-          version: 1,
-          vectorClock: { browser: 1, service: 0 },
-          updatedAt: "2026-06-28T10:00:00.000Z",
-          hash: "template-hash",
-          deleted: false,
-          conflicts: [],
-          payload: {
-            id: "shipping-compact",
-            name: "Shipping Label",
-            description: "Recent template",
-            usedAt: "2026-06-28T10:00:00.000Z",
-          },
-        },
-      ],
-      recentPrintRecords: [
-        {
-          kind: "recent_print" as const,
-          recordId: "print:template:shipping-compact",
-          version: 1,
-          vectorClock: { browser: 1, service: 0 },
-          updatedAt: "2026-06-28T10:05:00.000Z",
-          hash: "print-hash",
-          deleted: false,
-          conflicts: [],
-          payload: {
-            id: "template:shipping-compact",
-            title: "shipping-compact",
-            kind: "template" as const,
-            printedAt: "2026-06-28T10:05:00.000Z",
-            printerName: "Mock P2",
-          },
-        },
-      ],
-      canvasDraftRecords: [],
-    }
-
+  it("does not hydrate legacy browser sync activity on server-http startup", async () => {
     queueFetchJsonResponsesByRequest({
       "GET /api/templates": { templates: fallbackTemplates },
       "GET /api/printers": {
@@ -2826,17 +2773,16 @@ describe("web workbench app", () => {
           },
         ],
       },
-      "GET /api/sync/state": { state: syncedState },
-      "POST /api/sync/state": { state: syncedState },
     })
+    window.localStorage.setItem("tuckmark.sync-state.v1", '{"browserOnly":true}')
 
     await renderApp(serverRuntimeContext)
     await waitForServerRuntimeReady()
     await flush(6)
 
-    expect(document.body.textContent).toContain("Shipping Label")
-    expect(document.body.textContent).toContain("Mock P2")
-    expect(fetchMock.mock.calls.some((call) => call[0] === "/api/sync/state")).toBe(true)
+    expect(document.body.textContent).not.toContain("Shipping Label")
+    expect(document.body.textContent).toContain("最近打印还没有打印记录。")
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/api/sync"))).toBe(false)
   })
 
   it("restores browser printer state into the device button label", async () => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   createCanvasDraftRecord,
   createDeletedCanvasDraftRecord,
@@ -65,6 +65,26 @@ describe("web-state-sync", () => {
   beforeEach(() => {
     storage.clear()
     vi.useRealTimers()
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it("does not read or write browser sync state in server-http mode", () => {
+    vi.stubEnv("TUCKMARK_WEB_SURFACE", "server-http")
+    window.localStorage.setItem("tuckmark.sync-state.v1", '{"browserOnly":true}')
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+
+    expect(loadLocalSyncState()).toEqual(emptySyncState())
+    expect(recordCanvasDraftLocally("shipping-wide", draft)).toMatchObject({
+      canvasDraftRecords: [expect.anything()],
+    })
+    expect(window.localStorage.getItem("tuckmark.sync-state.v1")).toBe('{"browserOnly":true}')
+    expect(applySyncStateToBrowser(emptySyncState(), ["shipping-wide"])).toEqual({
+      templates: [],
+      prints: [],
+    })
   })
 
   it("migrates legacy recent activity and draft storage into sync state", () => {

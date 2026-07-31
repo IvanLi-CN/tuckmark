@@ -138,6 +138,7 @@ import {
   TooltipTrigger,
 } from "./components/ui/tooltip.js"
 import { defaultDraftRenderOptions } from "./demo-data.js"
+import { isServerHttpDataSurface } from "./devd-data-client.js"
 import {
   buildCanvasDimensionOptions,
   type CanvasDimension,
@@ -6429,7 +6430,9 @@ export function CanvasWorkspace({
         source: autosaveRouteSource,
         document: autosaveDocument,
       })
-      persistDraftDocument(autosaveDocument)
+      if (!isServerHttpDataSurface()) {
+        persistDraftDocument(autosaveDocument)
+      }
     }
   }, [
     autosaveLiveDraft,

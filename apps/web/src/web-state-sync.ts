@@ -19,6 +19,7 @@ import {
   loadStoredDraftDocument,
   persistDraftDocumentToStorage,
 } from "./canvas-editor-model.js"
+import { isServerHttpDataSurface } from "./devd-data-client.js"
 import {
   emptyRecentActivityState,
   loadRecentActivity,
@@ -183,7 +184,7 @@ function buildLegacySyncSnapshot(stored: SyncState): SyncState {
 }
 
 export function loadLocalSyncState(): SyncState {
-  if (!canUseStorage()) {
+  if (isServerHttpDataSurface() || !canUseStorage()) {
     return emptySyncState()
   }
 
@@ -203,7 +204,7 @@ export function loadLocalSyncState(): SyncState {
 }
 
 export function persistLocalSyncState(state: SyncState): SyncState {
-  if (!canUseStorage()) {
+  if (isServerHttpDataSurface() || !canUseStorage()) {
     return state
   }
   window.localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(state))
@@ -313,6 +314,9 @@ export function applySyncStateToBrowser(
   state: SyncState,
   presetIds: string[]
 ): RecentActivityState {
+  if (isServerHttpDataSurface()) {
+    return emptyRecentActivityState()
+  }
   persistLocalSyncState(state)
 
   const recentActivity = persistRecentActivity({
