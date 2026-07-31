@@ -222,14 +222,14 @@ const versionRecordSchema = z.object({
   createdAt: z.string().min(1),
   label: z.string(),
   sourceVersionId: z.string().optional(),
-  document: z.record(z.string(), z.unknown()),
+  document: canvasDraftDocumentSchema,
 })
 
 const workingCopyRecordSchema = z.object({
   sourceKey: z.string().min(1),
-  source: z.record(z.string(), z.unknown()),
+  source: canvasDraftSourceSchema,
   templateId: z.string().optional(),
-  draft: z.record(z.string(), z.unknown()),
+  draft: canvasDraftDocumentSchema,
   updatedAt: z.string().min(1),
   baseVersionId: z.string().optional(),
 })

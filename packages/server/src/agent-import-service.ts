@@ -158,6 +158,7 @@ async function listDirectories(root: string): Promise<string[]> {
 
 export class AgentImportService {
   private readonly sessions = new Map<string, ManagedSession>()
+  private readonly committingSessionIds = new Set<string>()
   private importCommitQueue: Promise<void> = Promise.resolve()
 
   constructor(
@@ -384,9 +385,14 @@ export class AgentImportService {
   async confirm(sessionId: string, secret: string): Promise<AgentImportSession> {
     return await this.serializeImportCommit(async () => {
       const session = this.requireOpenSession(sessionId, secret)
-      await this.commitProposal(session)
-      session.state = "completed"
-      return cloneSession(session)
+      this.committingSessionIds.add(session.id)
+      try {
+        await this.commitProposal(session)
+        session.state = "completed"
+        return cloneSession(session)
+      } finally {
+        this.committingSessionIds.delete(session.id)
+      }
     })
   }
 
@@ -404,6 +410,9 @@ export class AgentImportService {
     const session = this.requireSession(sessionId, secret)
     if (session.state !== "open") {
       throw new Error("Agent import session is no longer open.")
+    }
+    if (this.committingSessionIds.has(session.id)) {
+      throw new Error("Agent import session is being confirmed.")
     }
     return session
   }

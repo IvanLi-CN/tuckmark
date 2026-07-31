@@ -450,6 +450,45 @@ describe("DevdDataService", () => {
     })
   })
 
+  it("rejects archive working copies and versions with invalid canvas records", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+
+    const invalidWorkingCopyArchive = await service.exportArchive()
+    invalidWorkingCopyArchive.runtime.workingCopies.push({
+      sourceKey: "invalid:mock",
+      source: { kind: "invalid", presetId: "mock" },
+      draft: {},
+      updatedAt: "2026-07-01T00:00:00.000Z",
+    } as any)
+    await expect(service.inspectArchive(invalidWorkingCopyArchive)).rejects.toThrow()
+
+    const invalidVersionArchive = await service.exportArchive()
+    invalidVersionArchive.runtime.templates.push({
+      id: "invalid-version-template",
+      name: "Invalid version template",
+      description: "",
+      width: 40,
+      height: 20,
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      archivedAt: null,
+      currentVersionId: "invalid-version",
+      fieldOrder: [],
+    })
+    invalidVersionArchive.runtime.versions.push({
+      id: "invalid-version",
+      templateId: "invalid-version-template",
+      version: 1,
+      kind: "saved",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      label: "Invalid mock version",
+      document: {},
+    } as any)
+    await expect(service.inspectArchive(invalidVersionArchive)).rejects.toThrow()
+  })
+
   it("rejects duplicate records inside an imported archive", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
     cleanupPaths.push(root)

@@ -7,6 +7,7 @@ import type { AgentImportProposal } from "@tuckmark/inventory"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { AgentImportService } from "./agent-import-service.js"
+import { DevdDataService } from "./devd-data-service.js"
 
 const cleanupPaths: string[] = []
 const secret = randomUUID()
@@ -618,6 +619,50 @@ describe("AgentImportService", () => {
       (material) => material.fullName === "Mock regulator"
     )
     expect(created?.labelBindings[0]?.fieldOverrides).toEqual({ name: "Edited mock regulator" })
+  })
+
+  it("locks a session against edits while its confirmation is committing", async () => {
+    const dataDir = await createDataDir()
+    const dataService = new DevdDataService(dataDir)
+    const service = new AgentImportService(dataDir, dataService)
+    const session = service.createSession({
+      sessionId: "agent-import-session-commit-lock",
+      secret,
+      proposal: newItemOnlyProposal(),
+    })
+    const item = session.proposal.items[0]
+    if (!item) throw new Error("Mock proposal has no item.")
+
+    const commit = dataService.commitJsonWrites.bind(dataService)
+    let allowCommit: (() => void) | undefined
+    const commitBlocked = new Promise<void>((resolve) => {
+      allowCommit = resolve
+    })
+    let enteredCommit: (() => void) | undefined
+    const committing = new Promise<void>((resolve) => {
+      enteredCommit = resolve
+    })
+    vi.spyOn(dataService, "commitJsonWrites").mockImplementation(async (args) => {
+      enteredCommit?.()
+      await commitBlocked
+      return await commit(args)
+    })
+
+    const confirmation = service.confirm(session.id, secret)
+    await committing
+
+    expect(() =>
+      service.updateItem({
+        sessionId: session.id,
+        secret,
+        itemId: item.id,
+        expectedRevision: item.revision,
+        item: { ...item, material: { ...item.material, description: "late mock edit" } },
+      })
+    ).toThrow("being confirmed")
+
+    allowCommit?.()
+    await expect(confirmation).resolves.toMatchObject({ state: "completed" })
   })
 
   it("keeps the existing template event open when a replacement request is stale", async () => {
