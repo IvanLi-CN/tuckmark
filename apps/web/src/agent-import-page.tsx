@@ -894,7 +894,7 @@ function NewItemTableRow({
               type="button"
               variant="ghost"
               size="icon"
-              className="size-8"
+              className="size-7"
               aria-label={expanded ? "收起物料详情" : "展开物料详情"}
               title={expanded ? "收起物料详情" : "展开物料详情"}
               onClick={onToggleDetails}
@@ -1115,7 +1115,9 @@ function RestockItemTableRow({
         />
       </td>
       <td>
-        <AttentionCell message={item.needsAttention} />
+        {item.needsAttention || item.material.datasheets.length ? (
+          <AttentionCell message={item.needsAttention} />
+        ) : null}
         {!item.material.datasheets.length ? <MissingDatasheetNotice /> : null}
       </td>
       <td className="tm-agent-import__table-cell--action">
@@ -1184,7 +1186,7 @@ function SaveItemAction({
       type="button"
       variant="ghost"
       size="icon"
-      className="tm-agent-import__save-action size-8"
+      className="tm-agent-import__save-action size-7"
       aria-label="保存当前编辑"
       title="保存当前编辑"
       disabled={disabled}

@@ -388,7 +388,7 @@
 .tm-agent-import__table th {
   border-bottom: 1px solid var(--border);
   background: color-mix(in oklab, var(--muted) 70%, var(--card));
-  padding: 9px 2px;
+  padding: 6px 2px;
   color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 700;
@@ -397,7 +397,7 @@
 
 .tm-agent-import__table td {
   border-top: 1px solid color-mix(in oklab, var(--border) 78%, transparent);
-  padding: 8px 2px;
+  padding: 4px 2px;
 }
 
 .tm-agent-import__table tbody tr:first-child td {
@@ -475,7 +475,9 @@
 }
 
 .tm-agent-import__selection {
-  min-height: 32px;
+  display: flex;
+  min-height: 28px;
+  align-items: center;
 }
 
 .tm-agent-import__table-cell--action {
@@ -485,7 +487,7 @@
 
 .tm-agent-import__editable-cell,
 .tm-agent-import__cell-editor.tm-agent-import__cell-editor {
-  height: 32px;
+  height: 28px;
   line-height: 18px;
 }
 
@@ -623,8 +625,8 @@
 }
 
 .tm-agent-import__select--compact {
-  height: 32px;
-  padding: 0 8px;
+  height: 28px;
+  padding: 0 2px;
   font-size: 12px;
 }
 
@@ -658,18 +660,23 @@
 
 .tm-agent-import__target-material {
   display: grid;
-  gap: 7px;
+  gap: 4px;
 }
 
 .tm-agent-import__target-material > strong {
   display: flex;
-  min-height: 32px;
+  min-height: 28px;
   align-items: center;
   font-size: 13px;
   line-height: 18px;
 }
 
-.tm-agent-import__target-material > span,
+.tm-agent-import__target-material > span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 16px;
+}
+
 .tm-agent-import__no-attention {
   color: var(--muted-foreground);
   font-size: 12px;
@@ -679,7 +686,7 @@
 .tm-agent-import__cell-copy,
 .tm-agent-import__datasheet-link {
   display: flex;
-  min-height: 32px;
+  min-height: 28px;
   align-items: center;
   overflow: hidden;
   color: var(--muted-foreground);
@@ -697,13 +704,13 @@
 
 .tm-agent-import__attention-copy {
   display: flex;
-  min-height: 32px;
+  min-height: 28px;
   align-items: flex-start;
   gap: 6px;
   color: color-mix(in oklab, #8a5d0a 84%, var(--foreground));
   font-size: 12px;
-  line-height: 18px;
-  padding-top: 7px;
+  line-height: 16px;
+  padding-top: 5px;
 }
 
 .tm-agent-import__attention-copy svg {
@@ -713,7 +720,7 @@
 
 .tm-agent-import__no-attention {
   display: flex;
-  min-height: 32px;
+  min-height: 28px;
   align-items: center;
 }
 
