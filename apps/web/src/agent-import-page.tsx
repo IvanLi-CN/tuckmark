@@ -391,7 +391,7 @@ export function AgentImportPage({
       ) : null}
 
       <ImportSection
-        icon={<PackagePlus className="size-[26px]" />}
+        icon={<PackagePlus className="size-8" />}
         title="新增物品"
         description="创建物料、绑定一个标签模板，并写入入库流水。"
         count={newItems.length}
@@ -425,7 +425,7 @@ export function AgentImportPage({
       </ImportSection>
 
       <ImportSection
-        icon={<Warehouse className="size-[26px]" />}
+        icon={<Warehouse className="size-8" />}
         title="增加库存"
         description="仅向 Agent 指定的已有物料写入入库流水，保留原有标签绑定。"
         count={restockItems.length}

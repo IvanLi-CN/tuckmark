@@ -329,13 +329,13 @@
 .tm-agent-import__section-title {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .tm-agent-import__section-title > span {
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   place-items: center;
   color: var(--primary);
