@@ -86,6 +86,7 @@ The product exposes two explicit Web surfaces:
 - `browser-static`: static browser runtime for GitHub Pages and custom-domain
   root deployment
 - `server-http`: server-backed runtime that exposes `/api`
+- `server-http` uses DEVD as the exclusive owner of templates, drafts, settings, inventory, backups, and archives. Browser-local storage and directory authorization are not fallback data sources on this surface.
 
 The product exposes two explicit Web modes:
 

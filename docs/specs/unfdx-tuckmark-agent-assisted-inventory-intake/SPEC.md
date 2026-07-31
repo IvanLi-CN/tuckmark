@@ -24,14 +24,16 @@ External agents can interpret private order exports and product pages, while Tuc
 
 `tuckmark.agent-import.v1` contains Agent-selected items. Each item is either:
 
-- `new`: a proposed material, a positive inbound quantity, one selected label template, Agent-ranked alternatives, initial field values, optional datasheets, and an optional non-blocking `needsAttention` message.
+- `new`: a proposed material, a positive inbound quantity, a positive label print quantity, one selected label template, Agent-ranked alternatives, initial field values, optional datasheets, and an optional non-blocking `needsAttention` message.
 - `restock`: an Agent-selected stable `targetMaterialId`, a positive inbound quantity, and an optional non-blocking `needsAttention` message. It retains its existing material and label binding rather than receiving a recommendation.
 
 The Agent decides material identity. It may set `needsAttention` when it is uncertain; neither the CLI nor confirmation page forces a separate identity confirmation.
 
+The Agent derives label print quantity from storage packages or independently labeled units rather than copying the inventory quantity. The confirmation table exposes it as an independently editable value and DEVD persists it on the created label binding. Older proposals without the field remain compatible and default to one.
+
 ### Template Catalog
 
-Catalog records expose `recommendedUses[]`, each with a human-readable scope and integer weight. New material recommendations are Agent-authored and ordered by the Agent. A template with an empty scope list remains usable but is not a default recommendation. DEVD catalog responses contain system templates and templates in the shared data directory only. Browser-local templates are selectable only manually in the confirmation page and create a field-completion event.
+Catalog records expose `recommendedUses[]`, each with a human-readable scope and integer weight. New material recommendations are Agent-authored and ordered by the Agent. A template with an empty scope list remains usable but is not a default recommendation. DEVD catalog responses contain system templates and templates in the shared data directory only. In `server-http`, browser-local templates are not read as a fallback and are not migrated automatically.
 
 ### Session Authorization and Lifetime
 
@@ -41,11 +43,19 @@ The CLI creates a high-entropy session identifier and secret. The confirmation U
 
 When the user changes a new material template, DEVD creates a `template-input-requested` event containing the selected template field contract and the item revision. The page freezes only that template panel while it awaits the Agent. The Agent uses the CLI to fulfill the event. A response with an older revision is rejected and never overwrites user edits.
 
-When the user manually selects a browser-local template, the page supplies its canvas snapshot only to the authenticated DEVD session. On successful confirmation, DEVD copies it into the shared directory under a new template ID in the same recoverable transaction; later CLI and server-side printing therefore never depend on browser-local storage.
+Template changes use DEVD catalog records and create field-completion events. Browser-local template snapshots are not imported implicitly; moving browser data into DEVD requires an explicit archive import decision.
 
 ### Confirmed Writes
 
 Confirmation writes are server-owned and recoverable. Selected new items create one material, one label binding, and one inbound adjustment. Selected restocks create only an inbound adjustment for an active existing material. The service serializes commits, accumulates repeated restocks against the latest in-transaction quantity, retains the global matrix-code uniqueness invariant, and refreshes the shared directory manifest. Missing targets, archived targets, conflicts, or concurrent changes abort the transaction without partial visible writes.
+
+### DEVD Data Ownership
+
+In `server-http`, DEVD is the sole owner of templates, versions, working copies, application settings, inventory, backups, and archive imports. The Web app uses resource command endpoints with a persisted global revision; every mutation supplies `expectedRevision`, and stale writes receive `409 revision_conflict`. SSE events contain only the revision, affected domains, and reason, allowing open Web clients to invalidate and refetch without exposing business data, paths, session keys, or import contents.
+
+`browser-static` retains browser-local persistence. It is not a fallback for `server-http`, does not request a directory on behalf of DEVD, and is never migrated automatically.
+
+Archive imports are explicitly selected as `merge` or `replace`. Merge accepts only complete, purely new template and inventory aggregates and preserves current settings; any identifier, material name, matrix code, version, working-copy, or adjustment conflict rejects the entire transaction. Replace creates a protection backup and atomically replaces the managed data set. Both modes revalidate the inspected content hash and expected revision at commit time.
 
 ## Acceptance Criteria
 
@@ -54,6 +64,7 @@ Confirmation writes are server-owned and recoverable. Selected new items create 
 - The page presents separate editable tables for new-material and restock records. Table cells display their value by default and enter an editor only after the user clicks that cell; `Enter` or blur returns to display mode, while `Escape` restores the value present before editing began. New-material supplementary fields, label preview, and template fields expand in a detail row. It supports non-blocking attention/datasheet warnings and selection. Restock controls edit only the persisted intake values (selection, quantity, and source note); target material details stay visible and read-only because confirmation writes only its inbound adjustment.
 - Template switches produce an Agent event, wait state, and fresh field preview after fulfillment.
 - Tests use mocked order-derived proposals only. No real order file, session secret, product body, or screenshot is committed.
+- `/system` reports the DEVD directory basename, health, revision, SSE state, and exact managed counts without directory authorization or cross-tab lease controls.
 
 ## Visual Evidence
 

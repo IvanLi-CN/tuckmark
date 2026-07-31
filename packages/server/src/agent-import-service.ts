@@ -22,10 +22,10 @@ import {
   type InventoryAdjustment,
   type InventoryMaterial,
   inventoryMaterialSchema,
-  materialMatchesQuery,
-  sortInventoryMaterialsByName,
 } from "@tuckmark/inventory"
 import { z } from "zod"
+
+import { DevdDataService } from "./devd-data-service.js"
 
 const SESSION_TTL_MS = 30 * 60 * 1000
 const SECRET_BYTES = 32
@@ -189,11 +189,16 @@ export class AgentImportService {
   private readonly sessions = new Map<string, ManagedSession>()
   private importCommitQueue: Promise<void> = Promise.resolve()
 
-  constructor(private readonly dataDir: string) {}
+  constructor(
+    private readonly dataDir: string,
+    private readonly dataService = new DevdDataService(dataDir)
+  ) {}
 
-  static fromEnvironment(): AgentImportService | null {
+  static fromEnvironment(dataService?: DevdDataService): AgentImportService | null {
     const dataDir = process.env.TUCKMARK_DATA_DIR?.trim()
-    return dataDir ? new AgentImportService(dataDir) : null
+    return dataDir
+      ? new AgentImportService(dataDir, dataService ?? new DevdDataService(dataDir))
+      : null
   }
 
   async catalog(): Promise<AgentImportCatalog> {
@@ -202,16 +207,7 @@ export class AgentImportService {
 
   async listInventory(query?: string): Promise<InventoryMaterial[]> {
     await this.recoverTransactions()
-    const files = await listJsonFiles(path.join(this.dataDir, "inventory", "materials"))
-    const materials = await Promise.all(
-      files.map(async (filePath) =>
-        inventoryMaterialSchema.parse(JSON.parse(await readFile(filePath, "utf8")))
-      )
-    )
-    return materials
-      .filter((material) => !material.archivedAt)
-      .filter((material) => materialMatchesQuery(material, query ?? ""))
-      .sort(sortInventoryMaterialsByName)
+    return (await this.dataService.readMaterials(query ?? "", false)).data
   }
 
   createSession(input: AgentImportCreateSessionInput): AgentImportSession {
@@ -266,6 +262,7 @@ export class AgentImportService {
     const next = agentImportItemSchema.parse({
       ...args.item,
       id: current.id,
+      kind: current.kind,
       revision: current.revision + 1,
       pendingTemplateEventId: current.pendingTemplateEventId,
     })
@@ -462,6 +459,7 @@ export class AgentImportService {
   private async commitProposal(session: ManagedSession): Promise<void> {
     const proposal = session.proposal
     await this.recoverTransactions()
+    const expectedRevision = await this.dataService.currentRevision()
     const materials = await this.readAllMaterials()
     const selectedItems = proposal.items.filter((item) => item.selected)
     const catalog = new Map(
@@ -475,16 +473,22 @@ export class AgentImportService {
     const now = new Date().toISOString()
 
     for (const item of selectedItems) {
+      if (item.pendingTemplateEventId) {
+        throw new Error(`Template input is still pending for ${item.material.fullName}.`)
+      }
       let material: InventoryMaterial
       if (item.kind === "new") {
         if (!item.template) {
           throw new Error(`New material ${item.material.fullName} needs a label template.`)
         }
         const localTemplate = session.localTemplates.get(templateKey(item.template))
-        if (!localTemplate && !catalog.has(templateKey(item.template))) {
+        const catalogTemplate = catalog.get(templateKey(item.template))
+        if (!localTemplate && !catalogTemplate) {
           throw new Error(`Label template ${templateKey(item.template)} was not found.`)
         }
-        ensureRequiredTemplateInput(item.template, item.templateInput)
+        const selectedTemplate = localTemplate ? item.template : catalogTemplate
+        if (!selectedTemplate) throw new Error("Label template was not found.")
+        ensureRequiredTemplateInput(selectedTemplate, item.templateInput)
         if (materials.some((candidate) => candidate.fullName === item.material.fullName)) {
           throw new Error(`Material ${item.material.fullName} already exists.`)
         }
@@ -497,7 +501,7 @@ export class AgentImportService {
           )
         }
         const bindingTemplate = await this.persistLocalTemplateIfNeeded({
-          template: item.template,
+          template: selectedTemplate,
           localTemplate,
           persistedLocalTemplates,
           writes,
@@ -516,7 +520,7 @@ export class AgentImportService {
               templateSource: bindingTemplate.source,
               templateId: bindingTemplate.id,
               templateName: bindingTemplate.name,
-              printQuantity: 1,
+              printQuantity: item.labelPrintQuantity ?? 1,
               fieldOverrides: item.templateInput,
               createdAt: now,
               updatedAt: now,
@@ -578,7 +582,7 @@ export class AgentImportService {
     if (!writes.length) {
       return
     }
-    await this.commitWrites(writes)
+    await this.commitWrites(writes, expectedRevision)
   }
 
   private async persistLocalTemplateIfNeeded(args: {
@@ -673,23 +677,15 @@ export class AgentImportService {
   }
 
   private async commitWrites(
-    writes: Array<{ relativePath: string; value: unknown }>
+    writes: Array<{ relativePath: string; value: unknown }>,
+    expectedRevision: number
   ): Promise<void> {
-    const transactionId = `agent-import-transaction-${randomUUID()}`
-    const transactionPath = path.join(
-      this.dataDir,
-      "inventory",
-      "agent-import-transactions",
-      `${transactionId}.json`
-    )
-    const transaction = agentImportTransactionSchema.parse({
-      schema: "tuckmark.agent-import-transaction.v1",
+    await this.dataService.commitJsonWrites({
       writes,
+      domains: ["templates", "inventory"],
+      reason: "agent-import-confirmed",
+      expectedRevision,
     })
-    await writeJsonAtomic(transactionPath, transaction)
-    await this.applyWrites(transaction.writes)
-    await this.refreshDataDirectoryManifest()
-    await rm(transactionPath, { force: true })
   }
 
   private async recoverTransactions(): Promise<void> {

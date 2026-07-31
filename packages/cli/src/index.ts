@@ -222,6 +222,18 @@ function parseDataDirFlag(args: string[]): string | undefined {
   return parseFlag(args, "--data-dir")
 }
 
+async function assertDirectoryIsNotDevdOwned(dataDir: string): Promise<void> {
+  try {
+    await readFile(path.join(dataDir, ".tuckmark", "state.json"), "utf8")
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+    throw error
+  }
+  throw new Error(
+    "This directory is owned by DEVD. Use the server-http data API instead of direct CLI writes."
+  )
+}
+
 async function handlePreview(args: string[]): Promise<void> {
   const templateArg = parseFlag(args, "--template")
   const canvasArg = parseFlag(args, "--canvas")
@@ -814,6 +826,7 @@ async function handleTemplateCommand(args: string[]): Promise<void> {
       return
     }
     case "import": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       const templatePackage = await readTemplatePackageFromArgs(rest)
       const imported = await importSharedUserTemplatePackage({
         dataDir,
@@ -828,6 +841,7 @@ async function handleTemplateCommand(args: string[]): Promise<void> {
       return
     }
     case "rename": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       const renamed = await renameSharedUserTemplate({
         dataDir,
         templateId: requireFlag(rest, "--id"),
@@ -837,16 +851,19 @@ async function handleTemplateCommand(args: string[]): Promise<void> {
       return
     }
     case "archive": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       const archived = await archiveSharedUserTemplate(dataDir, requireFlag(rest, "--id"))
       console.log(JSON.stringify({ dataDir, template: archived }, null, 2))
       return
     }
     case "restore": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       const restored = await restoreSharedUserTemplate(dataDir, requireFlag(rest, "--id"))
       console.log(JSON.stringify({ dataDir, template: restored }, null, 2))
       return
     }
     case "delete": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       await deleteSharedUserTemplate(dataDir, requireFlag(rest, "--id"))
       console.log(JSON.stringify({ ok: true, dataDir }, null, 2))
       return
@@ -893,6 +910,7 @@ async function handleInventoryCommand(args: string[]): Promise<void> {
       return
     }
     case "create": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       const labelBindings = parseLabelBindings(rest)
       const material = await saveInventoryMaterialToDirectory({
         dataDir,
@@ -921,6 +939,7 @@ async function handleInventoryCommand(args: string[]): Promise<void> {
       return
     }
     case "update": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       const materialId = requireFlag(rest, "--id")
       const current = await readInventoryMaterialFromDirectory(dataDir, materialId)
       if (!current) {
@@ -953,21 +972,25 @@ async function handleInventoryCommand(args: string[]): Promise<void> {
       return
     }
     case "archive": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       const material = await archiveInventoryMaterialInDirectory(dataDir, requireFlag(rest, "--id"))
       console.log(JSON.stringify({ dataDir, material }, null, 2))
       return
     }
     case "restore": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       const material = await restoreInventoryMaterialInDirectory(dataDir, requireFlag(rest, "--id"))
       console.log(JSON.stringify({ dataDir, material }, null, 2))
       return
     }
     case "delete": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       await deleteInventoryMaterialFromDirectory(dataDir, requireFlag(rest, "--id"))
       console.log(JSON.stringify({ ok: true, dataDir }, null, 2))
       return
     }
     case "adjust": {
+      await assertDirectoryIsNotDevdOwned(dataDir)
       const kind = z.enum(["in", "out", "correction"]).parse(requireFlag(rest, "--kind"))
       const quantity = parseIntegerFlag(rest, "--quantity")
       const targetQuantity = parseIntegerFlag(rest, "--target-quantity")

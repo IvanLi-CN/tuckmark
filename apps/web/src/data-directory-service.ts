@@ -26,6 +26,7 @@ import type {
   RuntimeExportArchiveV1,
   RuntimeSnapshotSummary,
 } from "./data-directory-types.js"
+import { devdDataClient, isServerHttpDataSurface } from "./devd-data-client.js"
 import {
   readBrowserLocalInventorySnapshot,
   writeBrowserLocalInventorySnapshot,
@@ -857,6 +858,9 @@ export async function writeRuntimeSnapshotToDirectoryHandle(
 }
 
 export function supportsDataDirectoryFeatures(): boolean {
+  if (isServerHttpDataSurface()) {
+    return false
+  }
   return supportsDirectoryHandles()
 }
 
@@ -941,6 +945,9 @@ export async function detachDataDirectory(): Promise<void> {
 export async function restoreRuntimeFromConfiguredDirectoryIfNeeded(): Promise<
   "restored" | "skipped"
 > {
+  if (isServerHttpDataSurface()) {
+    return "skipped"
+  }
   const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     return "skipped"
@@ -1174,6 +1181,73 @@ function resolveHealth(args: {
 export async function getDataDirectoryStatus(
   leaseState?: CrossTabLeaseState
 ): Promise<DataDirectoryStatus> {
+  if (isServerHttpDataSurface()) {
+    const now = new Date().toISOString()
+    let status: Awaited<ReturnType<typeof devdDataClient.status>>
+    try {
+      status = await devdDataClient.status()
+    } catch (error) {
+      return {
+        owner: "devd",
+        revision: undefined,
+        connectionState: "reconnecting",
+        supported: true,
+        configured: false,
+        directoryName: null,
+        permissionState: "granted",
+        health: "error",
+        manifest: null,
+        lastSyncAt: null,
+        lastError: error instanceof Error ? error.message : String(error),
+        backups: [],
+        leaseRole: "unsupported",
+        leaseExpiresAt: null,
+        runtimeSummary: {
+          exportedAt: now,
+          snapshotUpdatedAt: null,
+          templates: 0,
+          versions: 0,
+          workingCopies: 0,
+          materials: 0,
+          adjustments: 0,
+        },
+      }
+    }
+    return {
+      owner: "devd",
+      revision: status.revision,
+      connectionState: "connected",
+      supported: true,
+      configured: status.configured,
+      directoryName: status.directoryName,
+      permissionState: "granted",
+      health: status.health,
+      manifest: {
+        schema: "tuckmark.data-dir-manifest.v1",
+        generatedAt: now,
+        snapshotUpdatedAt: now,
+        source: "runtime-sync",
+        files: {
+          settings: "settings/app-settings.json",
+          templatesDir: "templates",
+          draftsDir: "drafts",
+          inventoryDir: "inventory",
+          backupsDir: "backups",
+        },
+        counts: status.counts,
+      },
+      lastSyncAt: now,
+      lastError: null,
+      backups: [],
+      leaseRole: "writer",
+      leaseExpiresAt: null,
+      runtimeSummary: {
+        exportedAt: now,
+        snapshotUpdatedAt: now,
+        ...status.counts,
+      },
+    }
+  }
   const runtimeSnapshot = await exportRuntimeSnapshot()
   const runtimeSummary = toRuntimeSummary(runtimeSnapshot)
   const supported = supportsDataDirectoryFeatures()
@@ -1251,6 +1325,9 @@ export async function getDataDirectoryStatus(
 }
 
 export async function tryBackgroundMirrorSync(coordinator: CrossTabCoordinator): Promise<void> {
+  if (isServerHttpDataSurface()) {
+    return
+  }
   if (!(await hasConfiguredDataDirectory())) {
     return
   }

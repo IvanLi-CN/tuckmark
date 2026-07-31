@@ -57,6 +57,7 @@ export function createAgentImportDemoSession(
       ],
     },
     quantity: 120,
+    labelPrintQuantity: 2,
     sourceNote: "Mock 订单提案 · 收货批次 A",
     needsAttention: "型号后缀来自商品标题，建议在导入前核对封装。",
     template: cableTemplate,

@@ -6,6 +6,7 @@ import {
   readRuntimeSnapshotFromDirectoryHandle,
   writeRuntimeSnapshotToDirectoryHandle,
 } from "./data-directory-service.js"
+import { HttpRuntimeStore, isServerHttpDataSurface } from "./devd-data-client.js"
 import { normalizeCanvasDraftDocumentUnits } from "./lib/canvas-units.js"
 import {
   createDefaultRuntimeAppSettings,
@@ -1491,6 +1492,9 @@ async function resolveConfiguredDirectoryStore(): Promise<RuntimeStore | null> {
 async function resolveStore() {
   if (!storePromise) {
     storePromise = (async () => {
+      if (isServerHttpDataSurface()) {
+        return new HttpRuntimeStore()
+      }
       const directoryStore = await resolveConfiguredDirectoryStore()
       if (directoryStore) {
         return directoryStore

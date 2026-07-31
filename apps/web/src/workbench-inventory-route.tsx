@@ -301,6 +301,18 @@ export default function WorkbenchInventoryRoute({
   }, [refresh])
 
   React.useEffect(() => {
+    if (controller.context?.surface !== "server-http") return
+    const onRevision = (raw: Event) => {
+      const detail = (raw as CustomEvent<{ domains?: string[] }>).detail
+      if (detail?.domains?.includes("inventory") || detail?.domains?.includes("archive")) {
+        void refresh(search)
+      }
+    }
+    window.addEventListener("tuckmark:devd-data-revision", onRevision)
+    return () => window.removeEventListener("tuckmark:devd-data-revision", onRevision)
+  }, [controller.context?.surface, refresh, search])
+
+  React.useEffect(() => {
     if (storyState) {
       return
     }

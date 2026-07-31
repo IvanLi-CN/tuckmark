@@ -461,6 +461,10 @@
   width: 90px;
 }
 
+.tm-agent-import__column--label-quantity {
+  width: 72px;
+}
+
 .tm-agent-import__column--source {
   width: 150px;
 }
@@ -495,16 +499,20 @@
 }
 
 .tm-agent-import__table--new .tm-agent-import__column--quantity {
-  width: 6%;
+  width: 5.5%;
+}
+
+.tm-agent-import__table--new .tm-agent-import__column--label-quantity {
+  width: 5.5%;
 }
 
 .tm-agent-import__table--new .tm-agent-import__column--source,
 .tm-agent-import__table--new .tm-agent-import__column--template {
-  width: 11.5%;
+  width: 10.5%;
 }
 
 .tm-agent-import__table--new .tm-agent-import__column--attention {
-  width: 13.5%;
+  width: 12%;
 }
 
 .tm-agent-import__table--new .tm-agent-import__column--action {

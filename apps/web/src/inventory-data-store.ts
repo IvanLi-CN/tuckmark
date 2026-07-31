@@ -21,6 +21,7 @@ import {
   resolveDirectoryHandleFromDirectoryHandle,
   writeTextFileToDirectoryHandle,
 } from "./data-directory-service.js"
+import { devdDataClient, isServerHttpDataSurface } from "./devd-data-client.js"
 import {
   readBrowserLocalInventorySnapshot,
   writeBrowserLocalInventorySnapshot,
@@ -253,6 +254,9 @@ export async function listInventoryMaterials(
   query = "",
   options: ListInventoryMaterialsOptions = {}
 ): Promise<InventoryMaterial[]> {
+  if (isServerHttpDataSurface()) {
+    return await devdDataClient.listMaterials(query, options.includeArchived ?? false)
+  }
   const persistence = await resolveInventoryPersistence()
   if (persistence.kind === "data-directory") {
     await recoverInventoryTransactions(persistence.handle)
@@ -270,6 +274,9 @@ export async function listInventoryMaterials(
 export async function listInventoryAdjustments(
   materialId?: string
 ): Promise<InventoryAdjustment[]> {
+  if (isServerHttpDataSurface()) {
+    return await devdDataClient.listAdjustments(materialId)
+  }
   const persistence = await resolveInventoryPersistence()
   if (persistence.kind === "data-directory") {
     await recoverInventoryTransactions(persistence.handle)
@@ -286,6 +293,9 @@ export async function listInventoryAdjustments(
 export async function saveInventoryMaterial(
   args: InventoryMaterialSaveArgs
 ): Promise<InventoryMaterial> {
+  if (isServerHttpDataSurface()) {
+    return await devdDataClient.inventoryCommand<InventoryMaterial>("save-material", args)
+  }
   const persistence = await resolveInventoryPersistence()
   if (persistence.kind !== "data-directory") {
     const snapshot = readBrowserLocalInventorySnapshot()
@@ -358,6 +368,11 @@ export async function saveInventoryMaterial(
 }
 
 export async function archiveInventoryMaterial(materialId: string): Promise<InventoryMaterial> {
+  if (isServerHttpDataSurface()) {
+    return await devdDataClient.inventoryCommand<InventoryMaterial>("archive-material", {
+      materialId,
+    })
+  }
   const persistence = await resolveInventoryPersistence()
   if (persistence.kind !== "data-directory") {
     const snapshot = readBrowserLocalInventorySnapshot()
@@ -400,6 +415,11 @@ export async function archiveInventoryMaterial(materialId: string): Promise<Inve
 }
 
 export async function restoreInventoryMaterial(materialId: string): Promise<InventoryMaterial> {
+  if (isServerHttpDataSurface()) {
+    return await devdDataClient.inventoryCommand<InventoryMaterial>("restore-material", {
+      materialId,
+    })
+  }
   const persistence = await resolveInventoryPersistence()
   if (persistence.kind !== "data-directory") {
     const snapshot = readBrowserLocalInventorySnapshot()
@@ -442,6 +462,10 @@ export async function restoreInventoryMaterial(materialId: string): Promise<Inve
 }
 
 export async function deleteInventoryMaterial(materialId: string): Promise<void> {
+  if (isServerHttpDataSurface()) {
+    await devdDataClient.inventoryCommand("delete-material", { materialId })
+    return
+  }
   const persistence = await resolveInventoryPersistence()
   if (persistence.kind !== "data-directory") {
     const snapshot = readBrowserLocalInventorySnapshot()
@@ -485,6 +509,9 @@ export async function applyInventoryMaterialAdjustment(args: {
   material: InventoryMaterial
   adjustment: InventoryAdjustment
 }> {
+  if (isServerHttpDataSurface()) {
+    return await devdDataClient.inventoryCommand("apply-adjustment", args)
+  }
   const persistence = await resolveInventoryPersistence()
   if (persistence.kind !== "data-directory") {
     const snapshot = readBrowserLocalInventorySnapshot()
@@ -538,6 +565,13 @@ export async function readInventoryMaterial(materialId: string): Promise<Invento
 }
 
 export async function getInventoryDataDirectoryReady(): Promise<boolean> {
+  if (isServerHttpDataSurface()) {
+    try {
+      return (await devdDataClient.status()).health === "healthy"
+    } catch {
+      return false
+    }
+  }
   const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     return false

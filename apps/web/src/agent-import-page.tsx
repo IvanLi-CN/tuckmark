@@ -46,6 +46,8 @@ type AgentImportPageProps = {
   initialSession?: AgentImportSession
 }
 
+const defaultAgentImportClient = new HttpAgentImportClient()
+
 type ManualTemplate = {
   template: AgentImportTemplate
   snapshot: AgentImportLocalTemplate
@@ -151,7 +153,7 @@ function formatExpiry(expiresAt: string): string {
 export function AgentImportPage({
   sessionId = sessionIdFromLocation(),
   secret = secretFromLocation(),
-  client = new HttpAgentImportClient(),
+  client = defaultAgentImportClient,
   localTemplatesLoader = listUserTemplates,
   initialSession,
 }: AgentImportPageProps) {
@@ -541,6 +543,9 @@ function ImportSection({
                     <th className="tm-agent-import__column--quantity" scope="col">
                       数量
                     </th>
+                    <th className="tm-agent-import__column--label-quantity" scope="col">
+                      标签数
+                    </th>
                     <th className="tm-agent-import__column--source" scope="col">
                       来源
                     </th>
@@ -713,6 +718,7 @@ function InlineEditableSelectCell({
 }: InlineEditableSelectCellProps) {
   const [editing, setEditing] = React.useState(false)
   const selectRef = React.useRef<HTMLSelectElement>(null)
+  const originalValue = React.useRef(value)
 
   React.useEffect(() => {
     if (disabled) {
@@ -736,7 +742,10 @@ function InlineEditableSelectCell({
               className="tm-agent-import__editable-cell"
               aria-label={`编辑${label}`}
               disabled={disabled}
-              onClick={() => setEditing(true)}
+              onClick={() => {
+                originalValue.current = value
+                setEditing(true)
+              }}
             >
               <span>{displayValue || "—"}</span>
             </button>
@@ -762,6 +771,7 @@ function InlineEditableSelectCell({
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault()
+          if (value !== originalValue.current) onChange(originalValue.current)
           setEditing(false)
         }
       }}
@@ -862,6 +872,21 @@ function NewItemTableRow({
         </td>
         <td>
           <InlineEditableCell
+            label="标签数量"
+            type="number"
+            min={1}
+            value={String(item.labelPrintQuantity ?? 1)}
+            disabled={disabled}
+            onChange={(value) =>
+              onChange((current) => ({
+                ...current,
+                labelPrintQuantity: Math.max(1, Number.parseInt(value, 10) || 1),
+              }))
+            }
+          />
+        </td>
+        <td>
+          <InlineEditableCell
             label="来源备注"
             value={item.sourceNote}
             disabled={disabled}
@@ -931,7 +956,7 @@ function NewItemTableRow({
       </tr>
       {expanded ? (
         <tr className="tm-agent-import__detail-row">
-          <td colSpan={11}>
+          <td colSpan={12}>
             <div className="tm-agent-import__details">
               <section className="tm-agent-import__detail-section" aria-label="物料补充字段">
                 <h3>物料补充</h3>
@@ -970,7 +995,9 @@ function NewItemTableRow({
                             ...current,
                             material: {
                               ...current.material,
-                              datasheets: [{ ...firstDatasheet, title: event.target.value }],
+                              datasheets: current.material.datasheets.map((entry, index) =>
+                                index === 0 ? { ...entry, title: event.target.value } : entry
+                              ),
                             },
                           }))
                         }
@@ -988,38 +1015,40 @@ function NewItemTableRow({
                             ...current,
                             material: {
                               ...current.material,
-                              datasheets: [
-                                { ...firstDatasheet, url: event.target.value || undefined },
-                              ],
+                              datasheets: current.material.datasheets.map((entry, index) =>
+                                index === 0
+                                  ? { ...entry, url: event.target.value || undefined }
+                                  : entry
+                              ),
                             },
                           }))
                         }
                       />
                     </Field>
-                    {firstDatasheet.missingReason ? (
-                      <Field label="缺失原因" className="tm-agent-import__field--full">
-                        <Input
-                          density="compact"
-                          size="lg"
-                          value={firstDatasheet.missingReason}
-                          disabled={disabled}
-                          onChange={(event) =>
-                            onChange((current) => ({
-                              ...current,
-                              material: {
-                                ...current.material,
-                                datasheets: [
-                                  {
-                                    ...firstDatasheet,
-                                    missingReason: event.target.value || undefined,
-                                  },
-                                ],
-                              },
-                            }))
-                          }
-                        />
-                      </Field>
-                    ) : null}
+                    <Field label="缺失原因" className="tm-agent-import__field--full">
+                      <Input
+                        density="compact"
+                        size="lg"
+                        value={firstDatasheet.missingReason ?? ""}
+                        disabled={disabled}
+                        onChange={(event) =>
+                          onChange((current) => ({
+                            ...current,
+                            material: {
+                              ...current.material,
+                              datasheets: current.material.datasheets.map((entry, index) =>
+                                index === 0
+                                  ? {
+                                      ...entry,
+                                      missingReason: event.target.value || undefined,
+                                    }
+                                  : entry
+                              ),
+                            },
+                          }))
+                        }
+                      />
+                    </Field>
                   </div>
                 ) : (
                   <MissingDatasheetNotice />

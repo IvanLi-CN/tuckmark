@@ -28,6 +28,7 @@ import type {
   DataDirectoryStatus,
   RuntimeSnapshotSummary,
 } from "./data-directory-types.js"
+import { devdDataClient } from "./devd-data-client.js"
 import type { WorkbenchDataDirectoryDialogState } from "./workbench-controller.js"
 
 type DataStorageCardProps = {
@@ -108,6 +109,204 @@ function getHealthBadge(status: DataDirectoryStatus) {
     case "error":
       return <Badge variant="destructive">需要处理</Badge>
   }
+}
+
+function getConnectionLabel(status: DataDirectoryStatus): string {
+  return status.connectionState === "connected" ? "已连接" : "正在重连"
+}
+
+function DevdDataStorageCard({ status }: { status: DataDirectoryStatus }) {
+  const inputRef = React.useRef<HTMLInputElement | null>(null)
+  const [busy, setBusy] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+  const [pending, setPending] = React.useState<{
+    archive: unknown
+    archiveHash: string
+    summary: Record<string, number>
+    conflicts: string[]
+  } | null>(null)
+  const run = async (name: string, work: () => Promise<void>) => {
+    setBusy(name)
+    setError(null)
+    try {
+      await work()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "DEVD 操作失败。")
+    } finally {
+      setBusy(null)
+    }
+  }
+  const exportArchive = () =>
+    run("export", async () => {
+      const archive = await devdDataClient.exportArchive()
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(archive, null, 2)], { type: "application/json" })
+      )
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = `tuckmark-devd-${Date.now()}.json`
+      anchor.click()
+      URL.revokeObjectURL(url)
+    })
+  const inspectFile = (file: File) =>
+    run("inspect", async () => {
+      const archive = JSON.parse(await file.text()) as unknown
+      const inspection = await devdDataClient.inspectArchive(archive)
+      setPending({ archive, ...inspection })
+    })
+  const importArchive = (mode: "merge" | "replace") =>
+    run(`import-${mode}`, async () => {
+      if (!pending) return
+      await devdDataClient.importArchive(pending.archive, pending.archiveHash, mode)
+      setPending(null)
+      window.location.reload()
+    })
+  return (
+    <>
+      <Card className="tm-panel">
+        <CardHeader className="gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle as="h2">DEVD 数据存储</CardTitle>
+            {getHealthBadge(status)}
+          </div>
+          <div className="text-sm text-muted-foreground">
+            模板、草稿、库存与应用设置由本机 DEVD 统一持久化。当前页面不会请求浏览器目录权限。
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          {status.health === "healthy" ? (
+            <Alert>
+              <CheckCircle2 className="mt-0.5 size-4" />
+              <AlertTitle>DEVD 数据服务正常</AlertTitle>
+              <AlertDescription>数据命令与实时失效通知均通过本机服务处理。</AlertDescription>
+            </Alert>
+          ) : (
+            <Alert variant="destructive">
+              <AlertCircle className="mt-0.5 size-4" />
+              <AlertTitle>DEVD 数据服务不可用</AlertTitle>
+              <AlertDescription>
+                {status.lastError ?? "无法读取服务状态，请检查 DEVD。"}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="grid gap-3 text-sm text-muted-foreground">
+            <div className="tm-list-item">
+              <span>数据目录</span>
+              <strong>{status.directoryName ?? "不可用"}</strong>
+            </div>
+            <div className="tm-list-item">
+              <span>全局 revision</span>
+              <strong>{status.revision ?? "未读取"}</strong>
+            </div>
+            <div className="tm-list-item">
+              <span>实时连接</span>
+              <strong>{getConnectionLabel(status)}</strong>
+            </div>
+            <div className="tm-list-item">
+              <span>当前数据集</span>
+              <strong>{summarizeSnapshot(status.runtimeSummary)}</strong>
+            </div>
+          </div>
+          {error ? (
+            <Alert variant="destructive">
+              <AlertCircle className="mt-0.5 size-4" />
+              <AlertTitle>DEVD 操作失败</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={Boolean(busy)}
+              onClick={() =>
+                void run("backup", async () => {
+                  await devdDataClient.createBackup()
+                })
+              }
+            >
+              <ArrowDownToLine className="size-4" />
+              <span>立即备份</span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={Boolean(busy)}
+              onClick={() => void exportArchive()}
+            >
+              <ArrowUpToLine className="size-4" />
+              <span>导出数据</span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={Boolean(busy)}
+              onClick={() => inputRef.current?.click()}
+            >
+              <ArrowDownToLine className="size-4" />
+              <span>导入数据</span>
+            </Button>
+            <input
+              ref={inputRef}
+              hidden
+              type="file"
+              accept=".json,application/json"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                event.currentTarget.value = ""
+                if (file) void inspectFile(file)
+              }}
+            />
+          </div>
+        </CardContent>
+      </Card>
+      <Dialog open={Boolean(pending)} onOpenChange={(open) => !open && setPending(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认导入 DEVD 数据</DialogTitle>
+            <DialogDescription>
+              合并只接受纯新增数据；替换会先创建保护备份，再整库写入。
+            </DialogDescription>
+          </DialogHeader>
+          {pending ? (
+            <div className="grid gap-2 text-sm text-muted-foreground">
+              <div className="tm-list-item">
+                <span>快照规模</span>
+                <strong>{`${pending.summary.templates ?? 0} 模板 / ${pending.summary.materials ?? 0} 物料 / ${pending.summary.adjustments ?? 0} 流水`}</strong>
+              </div>
+              <div className="tm-list-item">
+                <span>合并预检</span>
+                <strong>
+                  {pending.conflicts.length === 0 ? "无冲突" : `${pending.conflicts.length} 项冲突`}
+                </strong>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter className="flex-wrap">
+            <Button type="button" variant="outline" onClick={() => setPending(null)}>
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={Boolean(pending?.conflicts.length) || Boolean(busy)}
+              onClick={() => void importArchive("merge")}
+            >
+              合并新增
+            </Button>
+            <Button
+              type="button"
+              disabled={Boolean(busy)}
+              onClick={() => void importArchive("replace")}
+            >
+              备份并替换
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
 }
 
 function getLeaseAlert(status: DataDirectoryStatus, onTakeOverWrites: () => void) {
@@ -271,6 +470,10 @@ export function SystemDataStorageCard({
   onTakeOverWrites,
 }: DataStorageCardProps) {
   const importInputRef = React.useRef<HTMLInputElement | null>(null)
+
+  if (status.owner === "devd") {
+    return <DevdDataStorageCard status={status} />
+  }
 
   return (
     <>

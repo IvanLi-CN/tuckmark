@@ -34,6 +34,12 @@ import express from "express"
 import { z } from "zod"
 
 import { AgentImportService } from "./agent-import-service.js"
+import {
+  DevdDataConflictError,
+  DevdDataNotFoundError,
+  DevdDataService,
+  DevdDataUnavailableError,
+} from "./devd-data-service.js"
 
 export interface ServerService {
   listTemplates(): Promise<Awaited<ReturnType<TuckmarkService["listTemplates"]>>>
@@ -189,7 +195,77 @@ function sendError(res: express.Response, error: unknown): void {
 
 export type CreateAppOptions = {
   agentImportService?: AgentImportService | null
+  devdDataService?: DevdDataService | null
 }
+
+function requireDevdDataService(service: DevdDataService | null): DevdDataService {
+  if (!service) {
+    throw new DevdDataUnavailableError(
+      "DEVD data access requires TUCKMARK_DATA_DIR in server-http mode."
+    )
+  }
+  return service
+}
+
+function sendDataError(res: express.Response, error: unknown): void {
+  if (error instanceof DevdDataConflictError) {
+    res.status(409).json({
+      status: "error",
+      code: error.code,
+      expectedRevision: error.expectedRevision,
+      actualRevision: error.actualRevision,
+      error: error.message,
+    })
+    return
+  }
+  if (error instanceof DevdDataNotFoundError) {
+    res.status(404).json({ status: "error", code: error.code, error: error.message })
+    return
+  }
+  if (error instanceof DevdDataUnavailableError) {
+    res.status(503).json({ status: "error", code: error.code, error: error.message })
+    return
+  }
+  if (error instanceof z.ZodError) {
+    res.status(400).json({ status: "error", code: "validation_error", error: error.message })
+    return
+  }
+  sendError(res, error)
+}
+
+const runtimeDataCommandSchema = z.enum([
+  "save-template",
+  "rename-template",
+  "archive-template",
+  "restore-template",
+  "purge-template",
+  "save-autosave",
+  "replace-working-copy",
+  "clear-working-copy",
+  "clear-template-autosaves",
+  "save-settings",
+  "replace-snapshot",
+])
+
+const inventoryDataCommandSchema = z.enum([
+  "save-material",
+  "archive-material",
+  "restore-material",
+  "delete-material",
+  "apply-adjustment",
+])
+
+const dataMutationSchema = z.object({
+  expectedRevision: z.number().int().min(0),
+  args: z.record(z.string(), z.unknown()).default({}),
+})
+
+const archiveImportSchema = z.object({
+  expectedRevision: z.number().int().min(0),
+  archiveHash: z.string().regex(/^[a-f0-9]{64}$/),
+  mode: z.enum(["merge", "replace"]),
+  archive: z.unknown(),
+})
 
 function requireAgentImportService(service: AgentImportService | null): AgentImportService {
   if (!service) {
@@ -213,12 +289,166 @@ export function createApp(
   options: CreateAppOptions = {}
 ): express.Express {
   const app = express()
-  const agentImportService = options.agentImportService ?? AgentImportService.fromEnvironment()
+  const devdDataService = options.devdDataService ?? DevdDataService.fromEnvironment()
+  const agentImportService =
+    options.agentImportService ?? AgentImportService.fromEnvironment(devdDataService ?? undefined)
   app.use(cors())
   app.use(express.json({ limit: "10mb" }))
 
+  const requireLocalAppOrigin: express.RequestHandler = (req, res, next) => {
+    const origin = req.header("origin")
+    if (!origin) return next()
+    try {
+      const originUrl = new URL(origin)
+      const requestHost = req.hostname
+      const loopbackHosts = new Set(["127.0.0.1", "::1", "localhost"])
+      if (
+        originUrl.host === req.header("host") ||
+        (loopbackHosts.has(originUrl.hostname) && loopbackHosts.has(requestHost))
+      ) {
+        return next()
+      }
+    } catch {
+      // Invalid origins are rejected below.
+    }
+    res.status(403).json({ status: "error", error: "Cross-origin DEVD access is forbidden." })
+  }
+  app.use("/api/data", requireLocalAppOrigin)
+  app.use("/api/agent-import", requireLocalAppOrigin)
+
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", name: "tuckmark" })
+  })
+
+  app.get("/api/data/status", async (_req, res) => {
+    try {
+      res.json(await requireDevdDataService(devdDataService).status())
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.get("/api/data/runtime/snapshot", async (_req, res) => {
+    try {
+      res.json(await requireDevdDataService(devdDataService).readRuntimeSnapshot())
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.post("/api/data/runtime/:command", async (req, res) => {
+    try {
+      const command = runtimeDataCommandSchema.parse(req.params.command)
+      const payload = dataMutationSchema.parse(req.body)
+      res.json(
+        await requireDevdDataService(devdDataService).mutateRuntime({
+          command,
+          expectedRevision: payload.expectedRevision,
+          args: payload.args,
+        })
+      )
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.get("/api/data/inventory/materials", async (req, res) => {
+    try {
+      const service = requireDevdDataService(devdDataService)
+      const query = typeof req.query.query === "string" ? req.query.query : ""
+      const includeArchived = req.query.includeArchived === "true"
+      res.json(await service.readMaterials(query, includeArchived))
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.get("/api/data/inventory/adjustments", async (req, res) => {
+    try {
+      const service = requireDevdDataService(devdDataService)
+      const materialId = typeof req.query.materialId === "string" ? req.query.materialId : undefined
+      res.json(await service.readAdjustments(materialId))
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.post("/api/data/inventory/:command", async (req, res) => {
+    try {
+      const command = inventoryDataCommandSchema.parse(req.params.command)
+      const payload = dataMutationSchema.parse(req.body)
+      res.json(
+        await requireDevdDataService(devdDataService).mutateInventory({
+          command,
+          expectedRevision: payload.expectedRevision,
+          args: payload.args,
+        })
+      )
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.get("/api/data/events", async (req, res) => {
+    try {
+      const service = requireDevdDataService(devdDataService)
+      res.status(200)
+      res.set({
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        "content-type": "text/event-stream",
+      })
+      res.flushHeaders()
+      res.write("retry: 3000\n\n")
+      const unsubscribe = service.subscribe((event) => {
+        res.write(`id: ${event.revision}\n`)
+        res.write("event: data-revision\n")
+        res.write(`data: ${JSON.stringify(event)}\n\n`)
+      })
+      const heartbeat = setInterval(() => res.write(": keepalive\n\n"), 15_000)
+      req.on("close", () => {
+        clearInterval(heartbeat)
+        unsubscribe()
+      })
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.get("/api/data/archive", async (_req, res) => {
+    try {
+      res.json(await requireDevdDataService(devdDataService).readArchive())
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.post("/api/data/archive/inspect", async (req, res) => {
+    try {
+      res.json({ data: await requireDevdDataService(devdDataService).inspectArchive(req.body) })
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.post("/api/data/archive/import", async (req, res) => {
+    try {
+      const payload = archiveImportSchema.parse(req.body)
+      res.json(await requireDevdDataService(devdDataService).importArchive(payload))
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.post("/api/data/backups", async (req, res) => {
+    try {
+      const expectedRevision = z
+        .object({ expectedRevision: z.number().int().min(0) })
+        .parse(req.body).expectedRevision
+      res.json(await requireDevdDataService(devdDataService).createBackup(expectedRevision))
+    } catch (error) {
+      sendDataError(res, error)
+    }
   })
 
   app.get("/api/templates", async (_req, res) => {
@@ -571,12 +801,13 @@ export function createApp(
 
 export function startServer(
   service: ServerService = new TuckmarkService(),
-  port = Number(process.env.PORT ?? 5210)
+  port = Number(process.env.PORT ?? 5210),
+  host = process.env.TUCKMARK_SERVER_HOST?.trim() || "127.0.0.1"
 ) {
   assertServerSidePrintRuntimeReady()
   const app = createApp(service)
-  return app.listen(port, () => {
-    console.log(`tuckmark server listening on http://localhost:${port}`)
+  return app.listen(port, host, () => {
+    console.log(`tuckmark server listening on http://${host}:${port}`)
   })
 }
 

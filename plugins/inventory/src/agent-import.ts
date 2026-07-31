@@ -61,7 +61,13 @@ export type AgentImportLocalTemplate = z.infer<typeof agentImportLocalTemplateSc
 export const agentImportDatasheetSchema = z
   .object({
     title: z.string().min(1).default("Datasheet"),
-    url: z.string().url().optional(),
+    url: z
+      .string()
+      .url()
+      .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+        message: "Datasheet URLs must use HTTP or HTTPS.",
+      })
+      .optional(),
     source: z.enum(["manufacturer", "authorized-distributor"]).optional(),
     missingReason: z.string().min(1).optional(),
   })
@@ -90,6 +96,7 @@ const agentImportItemBaseSchema = z.object({
   targetMaterialId: z.string().min(1).optional(),
   targetMaterialUpdatedAt: z.string().min(1).optional(),
   quantity: z.number().int().positive(),
+  labelPrintQuantity: z.number().int().positive().optional(),
   sourceNote: z.string().default(""),
   needsAttention: z.string().min(1).optional(),
   template: agentImportTemplateSchema.optional(),

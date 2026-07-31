@@ -43,6 +43,7 @@ import type {
   DataDirectoryStatus,
 } from "./data-directory-types.js"
 import { buildInputFromTemplate, fallbackTemplates } from "./demo-data.js"
+import { subscribeDevdDataEvents } from "./devd-data-client.js"
 import {
   type CanvasDimension,
   getCanvasDotsCapabilityMessage,
@@ -1102,6 +1103,32 @@ export function useWorkbenchController({
     refreshUserTemplates,
     runtimeEventTabId,
     scheduleDataDirectorySync,
+  ])
+
+  React.useEffect(() => {
+    if (context.surface !== "server-http" || context.mode !== "runtime") {
+      return
+    }
+    return subscribeDevdDataEvents({
+      onConnectionChange: (connectionState) => {
+        setDataDirectoryStatus((current) => ({ ...current, connectionState }))
+      },
+      onEvent: (event) => {
+        if (event.domains.includes("templates") || event.domains.includes("archive")) {
+          void refreshUserTemplates()
+          void refreshArchivedUserTemplates()
+          void refreshRenderOptionsFromStore()
+        }
+        void refreshDataDirectoryStatus()
+      },
+    })
+  }, [
+    context.mode,
+    context.surface,
+    refreshArchivedUserTemplates,
+    refreshDataDirectoryStatus,
+    refreshRenderOptionsFromStore,
+    refreshUserTemplates,
   ])
 
   const scheduleSync = React.useCallback(() => {

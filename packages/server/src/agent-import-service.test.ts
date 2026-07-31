@@ -28,6 +28,7 @@ function proposal(overrides: Partial<AgentImportProposal> = {}): AgentImportProp
         kind: "new",
         selected: true,
         quantity: 5,
+        labelPrintQuantity: 3,
         material: {
           fullName: "Mock regulator",
           baseName: "MR-100",
@@ -154,6 +155,7 @@ describe("AgentImportService", () => {
       labelBindings: [
         {
           templateId: "cable-tag",
+          printQuantity: 3,
           fieldOverrides: { name: "Mock regulator" },
         },
       ],
@@ -207,6 +209,26 @@ describe("AgentImportService", () => {
     expect(
       adjustments.find((material) => material.id === "existing-material")?.currentQuantity
     ).toBe(12)
+  })
+
+  it("preserves an item's intake kind when the confirmation page updates it", async () => {
+    const dataDir = await createDataDir()
+    const service = new AgentImportService(dataDir)
+    const session = service.createSession({
+      sessionId: "agent-import-session-kind-immutable",
+      secret,
+      proposal: proposal(),
+    })
+    const restock = session.proposal.items.find((item) => item.kind === "restock")
+    if (!restock) throw new Error("Mock proposal has no restock item.")
+    const updated = service.updateItem({
+      sessionId: session.id,
+      secret,
+      itemId: restock.id,
+      expectedRevision: restock.revision,
+      item: { ...restock, kind: "new" },
+    })
+    expect(updated.proposal.items.find((item) => item.id === restock.id)?.kind).toBe("restock")
   })
 
   it("enforces matrix-code uniqueness and searches every inventory identity field", async () => {
@@ -403,6 +425,32 @@ describe("AgentImportService", () => {
       })
     ).toThrow("Recipient")
     expect(service.listEvents(session.id, secret)).toHaveLength(1)
+  })
+
+  it("rejects confirmation while template input remains pending", async () => {
+    const dataDir = await createDataDir()
+    const service = new AgentImportService(dataDir)
+    const session = service.createSession({
+      sessionId: "agent-import-session-pending-confirm",
+      secret,
+      proposal: newItemOnlyProposal(),
+    })
+    const item = session.proposal.items[0]
+    if (!item) throw new Error("Mock proposal has no item.")
+    service.requestTemplateInput({
+      sessionId: session.id,
+      secret,
+      itemId: item.id,
+      expectedRevision: item.revision,
+      template: {
+        source: "system",
+        id: "cable-tag",
+        name: "Cable",
+        fields: [],
+        recommendedUses: [],
+      },
+    })
+    await expect(service.confirm(session.id, secret)).rejects.toThrow("still pending")
   })
 
   it("rejects a new-material binding for a template absent from the catalog", async () => {

@@ -21,12 +21,14 @@ test.describe("agent-assisted inventory intake", () => {
       page.getByRole("table", { name: "新增物品" }).getByRole("columnheader", { name: "数据手册" })
     ).toBeVisible()
     await expect(
-      page.getByRole("table", { name: "增加库存" }).getByRole("columnheader", { name: "物料" })
+      page
+        .getByRole("table", { name: "增加库存" })
+        .getByRole("columnheader", { name: "物料", exact: true })
     ).toBeVisible()
     await expect(page.getByText("型号后缀来自商品标题，建议在导入前核对封装。")).toBeVisible()
     await expect(page.getByText("未提供数据手册")).toBeVisible()
     await expect(
-      page.getByText("补库存沿用目标物料的资料与标签绑定；可调整入库数量、来源备注和是否导入。")
+      page.getByText("仅向 Agent 指定的已有物料写入入库流水，保留原有标签绑定。")
     ).toBeVisible()
     await expect(page.getByRole("button", { name: "确认导入选中项" })).toBeEnabled()
   })
@@ -45,7 +47,7 @@ test.describe("agent-assisted inventory intake", () => {
   test("preserves current edits before requesting a replacement template contract", async ({
     page,
   }) => {
-    await page.getByRole("button", { name: "展开物料详情" }).click()
+    await page.getByRole("button", { name: "预览标签" }).click()
     await page.getByLabel("描述").first().fill("Mock draft edited before template replacement")
     await page.getByRole("button", { name: "编辑标签模板" }).click()
     await page.getByRole("combobox", { name: "标签模板" }).selectOption("system:shipping-compact")

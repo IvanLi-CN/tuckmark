@@ -28,7 +28,7 @@ Use the released `tuckmark` CLI. Tuckmark itself does not parse order files, inv
 
 3. Interpret the order outside Tuckmark. Decide material identity yourself; do not run name matching that silently converts a new item into a restock. Use `kind: "restock"` only with the exact `targetMaterialId` returned by inventory. Include that material's `updatedAt` as `targetMaterialUpdatedAt`.
 4. Add `needsAttention` when identity, quantity, suffix, or datasheet evidence is uncertain. It is non-blocking: do not force the user to certify the match.
-5. Build a local, temporary `tuckmark.agent-import.v1` proposal. New items must have one default `template`, up to two ordered alternatives, positive quantity, material fields, and optional datasheets. Restocks must keep `template` absent.
+5. Build a local, temporary `tuckmark.agent-import.v1` proposal. New items must have one default `template`, up to two ordered alternatives, positive inventory quantity, positive `labelPrintQuantity`, material fields, and optional datasheets. Derive label quantity from storage packages or independently labeled units; never copy the inventory quantity blindly. Restocks must keep `template` absent.
 
    ```json
    {
@@ -39,6 +39,7 @@ Use the released `tuckmark` CLI. Tuckmark itself does not parse order files, inv
        "kind": "new",
        "selected": true,
        "quantity": 100,
+       "labelPrintQuantity": 1,
        "material": {
          "fullName": "Example IC",
          "description": "",

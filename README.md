@@ -56,6 +56,8 @@ An external Agent can interpret an order, optionally inspect an already-authoriz
 product page, then submit a `tuckmark.agent-import.v1` proposal to a DEVD
 `server-http` instance that owns the shared local directory.
 
+In `server-http`, DEVD exclusively owns templates, drafts, application settings, inventory, backups, and archive operations. The Web app uses `/api/data` revisioned commands and SSE invalidation; browser directory authorization is not used as a fallback. For development and tests, always point `TUCKMARK_DATA_DIR` at a fresh temporary fixture directory.
+
 Start DEVD with `TUCKMARK_DATA_DIR` set. Agent commands require `--devd-url`
 or `TUCKMARK_DEVD_URL`:
 

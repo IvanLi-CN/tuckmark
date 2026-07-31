@@ -112,6 +112,31 @@ describe("SystemDataStorageCard", () => {
     expect(document.body.textContent).toContain("接管写入")
   })
 
+  it("renders DEVD ownership without browser directory controls", async () => {
+    await renderCard({
+      status: {
+        ...baseStatus,
+        owner: "devd",
+        configured: true,
+        directoryName: "tuckmark-fixture",
+        permissionState: "granted",
+        health: "healthy",
+        revision: 17,
+        connectionState: "connected",
+        leaseRole: "unsupported",
+      },
+    })
+
+    expect(document.body.textContent).toContain("DEVD 数据存储")
+    expect(document.body.textContent).toContain("tuckmark-fixture")
+    expect(document.body.textContent).toContain("17")
+    expect(document.body.textContent).toContain("已连接")
+    expect(document.body.textContent).not.toContain("授权目录")
+    expect(document.body.textContent).not.toContain("重新请求权限")
+    expect(document.body.textContent).not.toContain("接管写入")
+    expect(document.body.textContent).not.toContain("立即同步")
+  })
+
   it("renders the import confirmation summary dialog", async () => {
     await renderCard({
       dialog: {
