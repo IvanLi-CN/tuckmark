@@ -388,7 +388,7 @@
 .tm-agent-import__table th {
   border-bottom: 1px solid var(--border);
   background: color-mix(in oklab, var(--muted) 70%, var(--card));
-  padding: 9px 8px;
+  padding: 9px 2px;
   color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 700;
@@ -397,7 +397,7 @@
 
 .tm-agent-import__table td {
   border-top: 1px solid color-mix(in oklab, var(--border) 78%, transparent);
-  padding: 8px;
+  padding: 8px 2px;
 }
 
 .tm-agent-import__table tbody tr:first-child td {
@@ -490,7 +490,7 @@
 }
 
 .tm-agent-import__cell-editor.tm-agent-import__cell-editor {
-  padding-inline: 8px;
+  padding-inline: 2px;
 }
 
 .tm-agent-import__editable-cell {
@@ -502,7 +502,7 @@
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  padding: 0 8px;
+  padding: 0 2px;
   color: var(--foreground);
   font: inherit;
   font-size: 13px;
