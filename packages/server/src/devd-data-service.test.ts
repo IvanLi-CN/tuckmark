@@ -70,6 +70,28 @@ describe("DevdDataService", () => {
     ).resolves.toContain(`"pid":${process.pid}`)
   })
 
+  it("recovers a lock whose PID was reused by another process", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    await mkdir(path.join(root, ".tuckmark"), { recursive: true })
+    await writeFile(
+      path.join(root, ".tuckmark", "devd-live.lock"),
+      JSON.stringify({
+        schema: "tuckmark.devd-live-lock.v1",
+        pid: process.pid,
+        token: "reused-pid-mock-owner",
+        claimedAt: "2030-07-01T00:00:00.000Z",
+        processStartIdentity: "stale-mock-process-start",
+      })
+    )
+
+    new DevdDataService(root)
+
+    await expect(
+      readFile(path.join(root, ".tuckmark", "devd-live.lock"), "utf8")
+    ).resolves.not.toContain("reused-pid-mock-owner")
+  })
+
   it("reclaims a recovery guard left behind by a stopped process", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
     cleanupPaths.push(root)
@@ -487,6 +509,30 @@ describe("DevdDataService", () => {
       document: {},
     } as any)
     await expect(service.inspectArchive(invalidVersionArchive)).rejects.toThrow()
+
+    const invalidElementArchive = await service.exportArchive()
+    invalidElementArchive.runtime.templates.push({
+      id: "invalid-element-template",
+      name: "Invalid element template",
+      description: "",
+      width: 40,
+      height: 20,
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      archivedAt: null,
+      currentVersionId: "invalid-element-version",
+      fieldOrder: [],
+    })
+    invalidElementArchive.runtime.versions.push({
+      id: "invalid-element-version",
+      templateId: "invalid-element-template",
+      version: 1,
+      kind: "saved",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      label: "Invalid mock element",
+      document: { ...mockDocument("Invalid mock element"), elements: [{}] },
+    } as any)
+    await expect(service.inspectArchive(invalidElementArchive)).rejects.toThrow()
   })
 
   it("rejects duplicate records inside an imported archive", async () => {

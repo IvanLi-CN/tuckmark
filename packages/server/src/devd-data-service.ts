@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
 import {
   existsSync,
@@ -189,6 +190,138 @@ const canvasDraftSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("preset-template"), presetId: dataIdentifierSchema }),
   z.object({ kind: z.literal("user-template"), templateId: dataIdentifierSchema }),
 ])
+const finiteNumberSchema = z.number().finite()
+const canvasDraftElementBaseShape = {
+  id: dataIdentifierSchema,
+  meta: z.object({ name: z.string(), visible: z.boolean(), locked: z.boolean() }),
+  binding: z
+    .object({
+      fieldKey: z.string(),
+      kind: z.enum(["text", "barcode", "qr", "datamatrix"]),
+    })
+    .optional(),
+}
+const canvasDraftElementSchema = z
+  .discriminatedUnion("kind", [
+    z.object({
+      ...canvasDraftElementBaseShape,
+      kind: z.literal("text"),
+      x: finiteNumberSchema,
+      y: finiteNumberSchema,
+      width: finiteNumberSchema,
+      height: finiteNumberSchema,
+      fontSize: finiteNumberSchema,
+      fontFamily: z.string().min(1),
+      lineHeight: finiteNumberSchema,
+      fontWeight: z.enum(["normal", "bold"]),
+      align: z.string(),
+      justifyAlign: z.string().optional(),
+      verticalAlign: z.string(),
+      stretchXGrow: z.boolean().optional(),
+      stretchXShrink: z.boolean().optional(),
+      stretchYGrow: z.boolean().optional(),
+      stretchYShrink: z.boolean().optional(),
+      stretchX: z.boolean().optional(),
+      stretchY: z.boolean().optional(),
+      autoWrap: z.boolean(),
+      adaptiveFontSize: z.boolean().optional(),
+      verticalText: z.boolean(),
+      value: z.string(),
+      maxLines: finiteNumberSchema.optional(),
+      rotation: finiteNumberSchema.optional(),
+    }),
+    z.object({
+      ...canvasDraftElementBaseShape,
+      kind: z.literal("rect"),
+      x: finiteNumberSchema,
+      y: finiteNumberSchema,
+      width: finiteNumberSchema,
+      height: finiteNumberSchema,
+      strokeWidth: finiteNumberSchema,
+      fill: z.string(),
+      stroke: z.string(),
+      radius: finiteNumberSchema,
+      rotation: finiteNumberSchema.optional(),
+    }),
+    z.object({
+      ...canvasDraftElementBaseShape,
+      kind: z.literal("circle"),
+      x: finiteNumberSchema,
+      y: finiteNumberSchema,
+      size: finiteNumberSchema,
+      strokeWidth: finiteNumberSchema,
+      fill: z.string(),
+      stroke: z.string(),
+    }),
+    z.object({
+      ...canvasDraftElementBaseShape,
+      kind: z.literal("triangle"),
+      x: finiteNumberSchema,
+      y: finiteNumberSchema,
+      width: finiteNumberSchema,
+      height: finiteNumberSchema,
+      strokeWidth: finiteNumberSchema,
+      fill: z.string(),
+      stroke: z.string(),
+      rotation: finiteNumberSchema.optional(),
+    }),
+    z.object({
+      ...canvasDraftElementBaseShape,
+      kind: z.literal("line"),
+      x: finiteNumberSchema,
+      y: finiteNumberSchema,
+      x2: finiteNumberSchema,
+      y2: finiteNumberSchema,
+      strokeWidth: finiteNumberSchema,
+      stroke: z.string(),
+    }),
+    z.object({
+      ...canvasDraftElementBaseShape,
+      kind: z.literal("barcode"),
+      x: finiteNumberSchema,
+      y: finiteNumberSchema,
+      width: finiteNumberSchema,
+      height: finiteNumberSchema,
+      value: z.string(),
+      format: z.literal("CODE128"),
+      showValue: z.boolean(),
+      rotation: finiteNumberSchema.optional(),
+    }),
+    z.object({
+      ...canvasDraftElementBaseShape,
+      kind: z.literal("qr"),
+      x: finiteNumberSchema,
+      y: finiteNumberSchema,
+      size: finiteNumberSchema,
+      value: z.string(),
+      errorCorrectionLevel: z.enum(["L", "M", "Q", "H"]),
+      rotation: finiteNumberSchema.optional(),
+    }),
+    z.object({
+      ...canvasDraftElementBaseShape,
+      kind: z.literal("datamatrix"),
+      x: finiteNumberSchema,
+      y: finiteNumberSchema,
+      size: finiteNumberSchema,
+      value: z.string(),
+      rotation: finiteNumberSchema.optional(),
+    }),
+  ])
+  .superRefine((element, context) => {
+    if (element.kind !== "text") return
+    const hasLegacyStretchFlags = element.stretchX !== undefined && element.stretchY !== undefined
+    const hasAxisFitFlags =
+      element.stretchXGrow !== undefined &&
+      element.stretchXShrink !== undefined &&
+      element.stretchYGrow !== undefined &&
+      element.stretchYShrink !== undefined
+    if (!hasLegacyStretchFlags && !hasAxisFitFlags) {
+      context.addIssue({
+        code: "custom",
+        message: "Canvas text elements require stretch flags.",
+      })
+    }
+  })
 const canvasDraftDocumentSchema = z
   .object({
     version: z.literal(1),
@@ -209,7 +342,7 @@ const canvasDraftDocumentSchema = z
     fields: z.array(
       z.object({ key: dataIdentifierSchema, label: dataIdentifierSchema }).passthrough()
     ),
-    elements: z.array(z.record(z.string(), z.unknown())),
+    elements: z.array(canvasDraftElementSchema),
     editor: z.object({ gridEnabled: z.boolean(), snapEnabled: z.boolean() }),
   })
   .passthrough()
@@ -350,6 +483,7 @@ type DevdLiveLock = {
   pid: number
   token: string
   claimedAt: string
+  processStartIdentity?: string
 }
 
 function isLiveLock(value: unknown): value is DevdLiveLock {
@@ -363,7 +497,10 @@ function isLiveLock(value: unknown): value is DevdLiveLock {
     typeof candidate.token === "string" &&
     candidate.token.length > 0 &&
     typeof candidate.claimedAt === "string" &&
-    candidate.claimedAt.length > 0
+    candidate.claimedAt.length > 0 &&
+    (candidate.processStartIdentity === undefined ||
+      (typeof candidate.processStartIdentity === "string" &&
+        candidate.processStartIdentity.length > 0))
   )
 }
 
@@ -373,6 +510,36 @@ function processIsAlive(pid: number): boolean {
     return true
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM"
+  }
+}
+
+function readProcessStartIdentity(pid: number): string | null {
+  try {
+    const startedAt = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim()
+    return startedAt || null
+  } catch {
+    return null
+  }
+}
+
+function processOwnsLiveLock(lock: DevdLiveLock): boolean {
+  if (!processIsAlive(lock.pid)) return false
+  if (!lock.processStartIdentity) return true
+  const currentStartIdentity = readProcessStartIdentity(lock.pid)
+  return currentStartIdentity === null || currentStartIdentity === lock.processStartIdentity
+}
+
+function createLiveLock(): DevdLiveLock {
+  const processStartIdentity = readProcessStartIdentity(process.pid)
+  return {
+    schema: LIVE_LOCK_SCHEMA,
+    pid: process.pid,
+    token: randomUUID(),
+    claimedAt: new Date().toISOString(),
+    ...(processStartIdentity ? { processStartIdentity } : {}),
   }
 }
 
@@ -410,7 +577,12 @@ function releaseRecoveryLock(recoveryPath: string, token: string): void {
 }
 
 function sameLiveLock(left: DevdLiveLock, right: DevdLiveLock): boolean {
-  return left.token === right.token && left.pid === right.pid && left.claimedAt === right.claimedAt
+  return (
+    left.token === right.token &&
+    left.pid === right.pid &&
+    left.claimedAt === right.claimedAt &&
+    left.processStartIdentity === right.processStartIdentity
+  )
 }
 
 function recoveryLockIsOwned(recoveryPath: string, expected: DevdLiveLock): boolean {
@@ -435,7 +607,7 @@ function reclaimStaleRecoveryLock(recoveryPath: string): boolean {
     if (isMissing(error)) return false
     throw new DevdDataUnavailableError("The DEVD stale-lock recovery guard is unreadable.")
   }
-  if (processIsAlive(expected.pid)) return false
+  if (processOwnsLiveLock(expected)) return false
 
   const retiredPath = `${recoveryPath}.stale-${randomUUID()}`
   try {
@@ -458,7 +630,7 @@ function reclaimStaleRecoveryLock(recoveryPath: string): boolean {
       }
       return false
     }
-    if (processIsAlive(retired.pid)) return false
+    if (processOwnsLiveLock(retired)) return false
     return true
   } finally {
     try {
@@ -471,12 +643,7 @@ function reclaimStaleRecoveryLock(recoveryPath: string): boolean {
 
 function retireStaleLiveLock(lockPath: string, expected: DevdLiveLock): boolean {
   const recoveryPath = `${lockPath}${LIVE_LOCK_RECOVERY_SUFFIX}`
-  const recovery: DevdLiveLock = {
-    schema: LIVE_LOCK_SCHEMA,
-    pid: process.pid,
-    token: randomUUID(),
-    claimedAt: new Date().toISOString(),
-  }
+  const recovery = createLiveLock()
   try {
     writeFileSync(recoveryPath, `${JSON.stringify(recovery)}\n`, { encoding: "utf8", flag: "wx" })
   } catch (error) {
@@ -496,7 +663,7 @@ function retireStaleLiveLock(lockPath: string, expected: DevdLiveLock): boolean 
     if (!isLiveLock(current) || !sameLiveLock(current, expected)) {
       return false
     }
-    if (processIsAlive(current.pid)) return false
+    if (processOwnsLiveLock(current)) return false
     if (!recoveryLockIsOwned(recoveryPath, recovery)) return false
 
     // A recovery guard serializes the check-and-rename sequence. Claimants that
@@ -530,12 +697,7 @@ function claimDataDirectory(dataDir: string): void {
   }
 
   const lockPath = path.join(controlDirectory, "devd-live.lock")
-  const lock: DevdLiveLock = {
-    schema: LIVE_LOCK_SCHEMA,
-    pid: process.pid,
-    token: randomUUID(),
-    claimedAt: new Date().toISOString(),
-  }
+  const lock = createLiveLock()
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const recoveryPath = `${lockPath}${LIVE_LOCK_RECOVERY_SUFFIX}`
     if (existsSync(recoveryPath)) {
@@ -562,7 +724,7 @@ function claimDataDirectory(dataDir: string): void {
     if (!isLiveLock(existing)) {
       throw new DevdDataUnavailableError("The DEVD live-owner lock is invalid.")
     }
-    if (processIsAlive(existing.pid)) {
+    if (processOwnsLiveLock(existing)) {
       throw new DevdDataUnavailableError("This DEVD data directory already has a live owner.")
     }
     retireStaleLiveLock(lockPath, existing)
