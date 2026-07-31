@@ -534,37 +534,6 @@ describe("AgentImportService", () => {
     ])
   })
 
-  it("recovers a prepared transaction before reading inventory", async () => {
-    const dataDir = await createDataDir()
-    await mkdir(path.join(dataDir, "inventory", "agent-import-transactions"), { recursive: true })
-    await writeFile(
-      path.join(dataDir, "inventory", "agent-import-transactions", "recover.json"),
-      JSON.stringify({
-        schema: "tuckmark.agent-import-transaction.v1",
-        writes: [
-          {
-            relativePath: "inventory/materials/recovered-material.json",
-            value: {
-              id: "recovered-material",
-              fullName: "Recovered mock material",
-              description: "",
-              packagingRemark: "",
-              currentQuantity: 1,
-              createdAt: "2026-07-01T00:00:00.000Z",
-              updatedAt: "2026-07-01T00:00:00.000Z",
-              labelBindings: [],
-            },
-          },
-        ],
-      })
-    )
-    const service = new AgentImportService(dataDir)
-
-    expect((await service.listInventory()).map((material) => material.id)).toContain(
-      "recovered-material"
-    )
-  })
-
   it("removes expired sessions", async () => {
     vi.useFakeTimers()
     const dataDir = await createDataDir()

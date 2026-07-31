@@ -1,5 +1,5 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto"
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 
 import { presetTemplates } from "@tuckmark/core"
@@ -16,7 +16,6 @@ import {
   agentImportProposalSchema,
   agentImportSessionSchema,
   agentImportTemplateSchema,
-  agentImportTransactionSchema,
   applyInventoryAdjustment,
   ensureInventoryMaterialActive,
   type InventoryAdjustment,
@@ -29,8 +28,6 @@ import { DevdDataService } from "./devd-data-service.js"
 
 const SESSION_TTL_MS = 30 * 60 * 1000
 const SECRET_BYTES = 32
-const DATA_DIRECTORY_MANIFEST_SCHEMA = "tuckmark.data-dir-manifest.v1"
-
 const sharedTemplateRecordSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -57,27 +54,6 @@ const sharedTemplateVersionSchema = z.object({
         })
       )
       .default([]),
-  }),
-})
-
-const dataDirectoryManifestSchema = z.object({
-  schema: z.literal(DATA_DIRECTORY_MANIFEST_SCHEMA),
-  generatedAt: z.string().min(1),
-  snapshotUpdatedAt: z.string().nullable(),
-  source: z.enum(["runtime-sync", "backup-archive"]),
-  files: z.object({
-    settings: z.string().min(1),
-    templatesDir: z.string().min(1),
-    draftsDir: z.string().min(1),
-    inventoryDir: z.string().min(1),
-    backupsDir: z.string().min(1),
-  }),
-  counts: z.object({
-    templates: z.number().int().min(0),
-    versions: z.number().int().min(0),
-    workingCopies: z.number().int().min(0),
-    materials: z.number().int().min(0),
-    adjustments: z.number().int().min(0),
   }),
 })
 
@@ -178,13 +154,6 @@ async function listDirectories(root: string): Promise<string[]> {
   }
 }
 
-async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true })
-  const temporaryPath = `${filePath}.${randomUUID()}.tmp`
-  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8")
-  await rename(temporaryPath, filePath)
-}
-
 export class AgentImportService {
   private readonly sessions = new Map<string, ManagedSession>()
   private importCommitQueue: Promise<void> = Promise.resolve()
@@ -206,7 +175,6 @@ export class AgentImportService {
   }
 
   async listInventory(query?: string): Promise<InventoryMaterial[]> {
-    await this.recoverTransactions()
     return (await this.dataService.readMaterials(query ?? "", false)).data
   }
 
@@ -458,7 +426,6 @@ export class AgentImportService {
 
   private async commitProposal(session: ManagedSession): Promise<void> {
     const proposal = session.proposal
-    await this.recoverTransactions()
     const expectedRevision = await this.dataService.currentRevision()
     const materials = await this.readAllMaterials()
     const selectedItems = proposal.items.filter((item) => item.selected)
@@ -688,34 +655,6 @@ export class AgentImportService {
     })
   }
 
-  private async recoverTransactions(): Promise<void> {
-    const root = path.join(this.dataDir, "inventory", "agent-import-transactions")
-    const transactionPaths = await listJsonFiles(root)
-    for (const transactionPath of transactionPaths) {
-      const transaction = agentImportTransactionSchema.parse(
-        JSON.parse(await readFile(transactionPath, "utf8"))
-      )
-      await this.applyWrites(transaction.writes)
-      await rm(transactionPath, { force: true })
-    }
-    if (!transactionPaths.length) {
-      return
-    }
-    await this.refreshDataDirectoryManifest()
-  }
-
-  private async applyWrites(
-    writes: Array<{ relativePath: string; value: unknown }>
-  ): Promise<void> {
-    for (const write of writes) {
-      const resolved = path.resolve(this.dataDir, write.relativePath)
-      if (!resolved.startsWith(`${path.resolve(this.dataDir)}${path.sep}`)) {
-        throw new Error("Invalid import transaction path.")
-      }
-      await writeJsonAtomic(resolved, write.value)
-    }
-  }
-
   private async serializeImportCommit<T>(work: () => Promise<T>): Promise<T> {
     const previous = this.importCommitQueue
     let release: (() => void) | undefined
@@ -727,66 +666,6 @@ export class AgentImportService {
       return await work()
     } finally {
       release?.()
-    }
-  }
-
-  private async refreshDataDirectoryManifest(): Promise<void> {
-    const now = new Date().toISOString()
-    const existing = await this.readDataDirectoryManifest()
-    const templateIds = await listDirectories(path.join(this.dataDir, "templates"))
-    const templateCounts = await Promise.all(
-      templateIds.map(async (templateId) => {
-        const templateRoot = path.join(this.dataDir, "templates", safeFilename(templateId))
-        const topLevelFiles = await listJsonFiles(templateRoot)
-        const versions = await listJsonFiles(path.join(templateRoot, "versions"))
-        return {
-          templates: topLevelFiles.some((filePath) => path.basename(filePath) === "template.json")
-            ? 1
-            : 0,
-          workingCopies: topLevelFiles.some(
-            (filePath) => path.basename(filePath) === "working-copy.json"
-          )
-            ? 1
-            : 0,
-          versions: versions.length,
-        }
-      })
-    )
-    await writeJsonAtomic(path.join(this.dataDir, "manifest.json"), {
-      schema: DATA_DIRECTORY_MANIFEST_SCHEMA,
-      generatedAt: now,
-      snapshotUpdatedAt: now,
-      source: existing?.source ?? "runtime-sync",
-      files: existing?.files ?? {
-        settings: "settings/app-settings.json",
-        templatesDir: "templates",
-        draftsDir: "drafts",
-        inventoryDir: "inventory",
-        backupsDir: "backups",
-      },
-      counts: {
-        templates: templateCounts.reduce((total, count) => total + count.templates, 0),
-        versions: templateCounts.reduce((total, count) => total + count.versions, 0),
-        workingCopies: templateCounts.reduce((total, count) => total + count.workingCopies, 0),
-        materials: (await listJsonFiles(path.join(this.dataDir, "inventory", "materials"))).length,
-        adjustments: (await listJsonFiles(path.join(this.dataDir, "inventory", "adjustments")))
-          .length,
-      },
-    })
-  }
-
-  private async readDataDirectoryManifest(): Promise<z.infer<
-    typeof dataDirectoryManifestSchema
-  > | null> {
-    try {
-      return dataDirectoryManifestSchema.parse(
-        JSON.parse(await readFile(path.join(this.dataDir, "manifest.json"), "utf8"))
-      )
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return null
-      }
-      throw error
     }
   }
 }

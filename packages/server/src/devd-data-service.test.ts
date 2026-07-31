@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -109,5 +109,41 @@ describe("DevdDataService", () => {
     await expect(readdir(path.join(root, ".transactions"))).rejects.toMatchObject({
       code: "ENOENT",
     })
+  })
+
+  it("recovers a prepared transaction through the shared data service", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    await mkdir(path.join(root, ".tuckmark", "transactions"), { recursive: true })
+    await writeFile(
+      path.join(root, ".tuckmark", "transactions", "recover.json"),
+      JSON.stringify({
+        schema: "tuckmark.devd-data-transaction.v1",
+        revision: 1,
+        writes: [
+          {
+            relativePath: "inventory/materials/recovered-material.json",
+            value: {
+              id: "recovered-material",
+              fullName: "Recovered mock material",
+              description: "",
+              packagingRemark: "",
+              currentQuantity: 1,
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z",
+              labelBindings: [],
+            },
+          },
+        ],
+        deletes: [],
+        event: { revision: 1, domains: ["inventory"], reason: "recovered-mock" },
+      })
+    )
+    const service = new DevdDataService(root)
+
+    expect((await service.readMaterials()).data.map((material) => material.id)).toContain(
+      "recovered-material"
+    )
+    expect((await service.status()).revision).toBe(1)
   })
 })
