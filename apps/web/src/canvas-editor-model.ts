@@ -16,7 +16,12 @@ import {
 } from "../../../packages/core/src/web.js"
 
 import type { BrowserPrintSource } from "./browser-print-payload.js"
-import { DEFAULT_CANVAS_GRID_SIZE, normalizeCanvasGridSize } from "./lib/canvas-grid.js"
+import {
+  DEFAULT_CANVAS_GRID_SIZE,
+  DEFAULT_CANVAS_SNAP_STEP,
+  normalizeCanvasGridSize,
+  normalizeCanvasSnapStep,
+} from "./lib/canvas-grid.js"
 import {
   CANVAS_DOTS_PER_MILLIMETER,
   canvasDotsToMillimeters,
@@ -364,6 +369,9 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
       gridSize: normalizeCanvasGridSize(
         (unitDocument.editor as Partial<CanvasDraftDocument["editor"]> | undefined)?.gridSize
       ),
+      snapStep: normalizeCanvasSnapStep(
+        (unitDocument.editor as Partial<CanvasDraftDocument["editor"]> | undefined)?.snapStep
+      ),
     },
     fields: synced.fields,
     elements: synced.elements,
@@ -658,6 +666,7 @@ export function createDraftFromPreset(preset: CanvasDocumentPreset): CanvasDraft
       gridEnabled: true,
       gridSize: DEFAULT_CANVAS_GRID_SIZE,
       snapEnabled: true,
+      snapStep: DEFAULT_CANVAS_SNAP_STEP,
     },
   })
 }
@@ -921,6 +930,7 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
       gridEnabled: true,
       gridSize: DEFAULT_CANVAS_GRID_SIZE,
       snapEnabled: true,
+      snapStep: DEFAULT_CANVAS_SNAP_STEP,
     },
   })
 }

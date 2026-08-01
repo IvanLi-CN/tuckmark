@@ -115,6 +115,7 @@ function createSnapshot(args: {
           gridEnabled: true,
           gridSize: 1 as const,
           snapEnabled: true,
+          snapStep: 1 as const,
         },
       },
     }
@@ -144,6 +145,7 @@ function createSnapshot(args: {
           gridEnabled: true,
           gridSize: 1 as const,
           snapEnabled: true,
+          snapStep: 1 as const,
         },
       },
     }

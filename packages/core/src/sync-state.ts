@@ -65,6 +65,7 @@ export type SharedCanvasDraftDocument = {
     gridEnabled: boolean
     gridSize?: number
     snapEnabled: boolean
+    snapStep?: number
   }
 }
 
@@ -636,6 +637,7 @@ export function createDeletedCanvasDraftRecord(
         gridEnabled: true,
         gridSize: 1,
         snapEnabled: true,
+        snapStep: 1,
       },
     } satisfies SharedCanvasDraftDocument)
   const nextRecord: CanvasDraftRecord = {

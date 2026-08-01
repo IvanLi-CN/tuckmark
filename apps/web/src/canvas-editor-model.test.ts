@@ -269,19 +269,18 @@ describe("canvas-editor-model monochrome contract", () => {
     expect(normalizeDraftDocument(legacyDraft).editor.gridSize).toBe(1)
     expect(normalizeDraftDocument(invalidDraft).editor.gridSize).toBe(1)
     expect(
-      normalizeDraftDocument({ ...draft, editor: { ...draft.editor, gridSize: 2.5 } }).editor
-        .gridSize
-    ).toBe(2.5)
+      normalizeDraftDocument({ ...draft, editor: { ...draft.editor, gridSize: 2 } }).editor.gridSize
+    ).toBe(2)
   })
 
   it("persists the selected grid size with the draft", () => {
     const preset = getPresetById("shipping-wide")
     const draft = createDraftFromPreset(preset)
-    draft.editor.gridSize = 10
+    draft.editor.gridSize = 5
 
     persistDraftDocument(draft)
 
-    expect(loadStoredDraftDocument(preset.id)?.editor.gridSize).toBe(10)
+    expect(loadStoredDraftDocument(preset.id)?.editor.gridSize).toBe(5)
   })
 
   it("migrates legacy baseline text into top-left text containers", () => {

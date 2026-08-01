@@ -3461,10 +3461,19 @@
     position: absolute;
     pointer-events: none;
     z-index: 2;
-    background-image:
-      linear-gradient(to right, var(--tm-stage-grid-line) 1px, transparent 1px),
-      linear-gradient(to bottom, var(--tm-stage-grid-line) 1px, transparent 1px);
-    background-repeat: repeat;
+    overflow: visible;
+  }
+
+  .tm-stage-grid__line {
+    fill: none;
+    stroke: var(--tm-stage-grid-line);
+    stroke-dasharray: 1 4;
+    stroke-linecap: round;
+    stroke-width: 1;
+  }
+
+  .tm-stage-grid__line--major {
+    stroke-dasharray: none;
   }
 
   .tm-stage-paper {

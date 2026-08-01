@@ -776,7 +776,7 @@ export const CanvasWorkspaceGridSizeMenu: Story = {
     },
     docs: {
       description: {
-        story: "右键网格按钮打开五档毫米尺寸菜单，尺寸选择同步画布网格和网格吸附。",
+        story: "右键网格按钮打开 1mm、2mm、5mm 尺寸菜单，右键吸附按钮打开 1/4、1/2、1 格步长菜单。",
       },
     },
   },
@@ -787,7 +787,10 @@ export const CanvasWorkspaceGridSizeMenu: Story = {
     const canvas = within(canvasElement)
     fireEvent.contextMenu(await canvas.findByRole("button", { name: "网格" }))
     await expect(within(document.body).getByText("网格尺寸")).toBeVisible()
-    await expect(within(document.body).getByRole("button", { name: "2.5mm" })).toBeVisible()
+    await expect(within(document.body).getByRole("button", { name: "5mm" })).toBeVisible()
+    fireEvent.contextMenu(await canvas.findByRole("button", { name: "吸附" }))
+    await expect(within(document.body).getByText("吸附步长")).toBeVisible()
+    await expect(within(document.body).getByRole("button", { name: "1/4 格" })).toBeVisible()
   },
 }
 

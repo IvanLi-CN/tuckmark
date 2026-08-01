@@ -2231,11 +2231,13 @@ describe("web workbench app", () => {
   it("uses historical editor settings while viewing a version", () => {
     const currentDraft = createDraftFromPreset(getPresetById("shipping-wide"))
     currentDraft.editor.gridEnabled = false
-    currentDraft.editor.gridSize = 10
+    currentDraft.editor.gridSize = 5
     currentDraft.editor.snapEnabled = false
+    currentDraft.editor.snapStep = 0.5
 
     const versionDraft = createDraftFromPreset(getPresetById("shipping-wide"))
-    versionDraft.editor.gridSize = 2.5
+    versionDraft.editor.gridSize = 2
+    versionDraft.editor.snapStep = 0.25
     const version: UserTemplateVersionSnapshot = {
       id: "version-grid-size",
       templateId: "shipping-wide",
@@ -2247,16 +2249,20 @@ describe("web workbench app", () => {
     }
 
     const preview = openCanvasVersion(createCanvasStateFromDraft(currentDraft), version)
-    expect(preview.liveDraft.editor.gridSize).toBe(10)
-    expect(preview.draft.editor.gridSize).toBe(2.5)
-    expect(preview.gridSize).toBe(2.5)
+    expect(preview.liveDraft.editor.gridSize).toBe(5)
+    expect(preview.draft.editor.gridSize).toBe(2)
+    expect(preview.gridSize).toBe(2)
+    expect(preview.draft.editor.snapStep).toBe(0.25)
+    expect(preview.snapStep).toBe(0.25)
     expect(preview.gridEnabled).toBe(true)
     expect(preview.snapEnabled).toBe(true)
 
     const returned = returnToCurrentCanvasDraft(preview)
     expect(returned.readOnlyVersion).toBeNull()
-    expect(returned.draft.editor.gridSize).toBe(10)
-    expect(returned.gridSize).toBe(10)
+    expect(returned.draft.editor.gridSize).toBe(5)
+    expect(returned.gridSize).toBe(5)
+    expect(returned.draft.editor.snapStep).toBe(0.5)
+    expect(returned.snapStep).toBe(0.5)
     expect(returned.gridEnabled).toBe(false)
     expect(returned.snapEnabled).toBe(false)
   })
@@ -3432,7 +3438,21 @@ describe("web workbench app", () => {
     })
     expect(contextMenuEvent.defaultPrevented).toBe(true)
     expect(gridButton.getAttribute("aria-pressed")).toBe("true")
-    queryButton("2.5mm").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    queryButton("2mm").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await act(async () => {
+      await flush(4)
+    })
+
+    const snapContextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    })
+    queryButton("吸附").dispatchEvent(snapContextMenuEvent)
+    await act(async () => {
+      await flush(4)
+    })
+    expect(snapContextMenuEvent.defaultPrevented).toBe(true)
+    queryButton("1/2 格").dispatchEvent(new MouseEvent("click", { bubbles: true }))
     await act(async () => {
       await flush(4)
     })
@@ -3449,10 +3469,20 @@ describe("web workbench app", () => {
       kind: "user-template",
       templateId: saved.template.id,
     })
-    expect(afterUndo?.draft.editor.gridSize).toBe(2.5)
+    expect(afterUndo?.draft.editor.gridSize).toBe(2)
+    expect(afterUndo?.draft.editor.snapStep).toBe(0.5)
 
     await act(async () => {
       gridButton.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    queryButton("吸附").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }))
+    await act(async () => {
+      await flush(4)
+    })
+    queryButton("1/4 格").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await act(async () => {
       await flush(4)
     })
 
@@ -3466,8 +3496,9 @@ describe("web workbench app", () => {
       templateId: saved.template.id,
     })
     expect(workingCopy?.draft.editor.gridEnabled).toBe(false)
-    expect(workingCopy?.draft.editor.gridSize).toBe(2.5)
+    expect(workingCopy?.draft.editor.gridSize).toBe(2)
     expect(workingCopy?.draft.editor.snapEnabled).toBe(false)
+    expect(workingCopy?.draft.editor.snapStep).toBe(0.25)
   })
 
   it("normalizes transformed element geometry without changing freeform dimensions", () => {

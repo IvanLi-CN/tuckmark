@@ -307,6 +307,7 @@ export function deleteCanvasDraftLocally(presetId: string): SyncState {
         gridEnabled: true,
         gridSize: 1,
         snapEnabled: true,
+        snapStep: 1,
       },
     } satisfies SharedCanvasDraftDocument)
   const seed = recordSeed(existing)

@@ -108,7 +108,7 @@ describe("canvas magnetic snapping", () => {
     expect(result.guides).toHaveLength(0)
   })
 
-  it("uses the selected 2.5mm grid size for grid snapping", () => {
+  it("uses the selected grid size for grid snapping", () => {
     const draft = draftWith([rect("moving", 12.6, 18, 10, 8)])
 
     const result = resolveCanvasSnap(
@@ -117,15 +117,16 @@ describe("canvas magnetic snapping", () => {
         movingIds: ["moving"],
         displayScale: 8,
         enabled: true,
-        gridSize: 2.5,
+        gridSize: 2,
+        snapStep: 0.5,
       },
       { x: 12.6, y: 18, width: 10, height: 8 }
     )
 
-    expect(result.deltaX).toBeCloseTo(-0.1)
+    expect(result.deltaX).toBeCloseTo(0.4)
   })
 
-  it("uses the selected 10mm grid size without changing element priority", () => {
+  it("uses the selected 5mm grid size without changing element priority", () => {
     const draft = draftWith([rect("moving", 19.5, 18, 10, 8)])
 
     const result = resolveCanvasSnap(
@@ -134,13 +135,31 @@ describe("canvas magnetic snapping", () => {
         movingIds: ["moving"],
         displayScale: 8,
         enabled: true,
-        gridSize: 10,
+        gridSize: 5,
       },
       { x: 19.5, y: 18, width: 10, height: 8 }
     )
 
     expect(result.deltaX).toBeCloseTo(0.5)
     expect(result.guides).toHaveLength(0)
+  })
+
+  it("uses quarter-grid snap steps without changing element priority", () => {
+    const draft = draftWith([rect("moving", 12.6, 18, 10, 8)])
+
+    const result = resolveCanvasSnap(
+      {
+        draft,
+        movingIds: ["moving"],
+        displayScale: 8,
+        enabled: true,
+        gridSize: 5,
+        snapStep: 0.25,
+      },
+      { x: 12.6, y: 18, width: 10, height: 8 }
+    )
+
+    expect(result.deltaX).toBeCloseTo(-0.1)
   })
 
   it("keeps ordinary box dragging on edge targets instead of centerlines", () => {

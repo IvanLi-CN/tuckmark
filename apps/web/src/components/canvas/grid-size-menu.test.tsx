@@ -37,7 +37,7 @@ async function renderMenu(onToggle = vi.fn(), onChange = vi.fn()) {
   await act(async () => {
     mountedRoot = ReactDOM.createRoot(rootElement)
     mountedRoot.render(
-      <GridSizeMenu gridEnabled value={2.5} onToggle={onToggle} onChange={onChange} />
+      <GridSizeMenu gridEnabled value={2} onToggle={onToggle} onChange={onChange} />
     )
     await flush()
   })
@@ -61,7 +61,7 @@ afterEach(async () => {
 })
 
 describe("GridSizeMenu", () => {
-  it("opens a five-option custom menu on right click without toggling the grid", async () => {
+  it("opens a three-option custom menu on right click without toggling the grid", async () => {
     const { button, onToggle } = await renderMenu()
     if (!(button instanceof HTMLButtonElement)) {
       throw new Error("Missing grid button")
@@ -76,9 +76,9 @@ describe("GridSizeMenu", () => {
     expect(document.body.textContent).toContain("网格尺寸")
     expect(document.body.textContent).toContain("1mm")
     expect(document.body.textContent).toContain("2mm")
-    expect(document.body.textContent).toContain("2.5mm")
     expect(document.body.textContent).toContain("5mm")
-    expect(document.body.textContent).toContain("10mm")
+    expect(document.body.textContent).not.toContain("2.5mm")
+    expect(document.body.textContent).not.toContain("10mm")
   })
 
   it("opens on a 500ms touch long press and suppresses its click", async () => {
