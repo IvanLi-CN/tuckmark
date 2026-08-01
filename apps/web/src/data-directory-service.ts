@@ -23,7 +23,6 @@ import type {
   DataDirectoryManifestV1,
   DataDirectoryPermissionState,
   DataDirectoryStatus,
-  RuntimeExportArchiveV1,
   RuntimeSnapshotSummary,
 } from "./data-directory-types.js"
 import { devdDataClient, isServerHttpDataSurface } from "./devd-data-client.js"
@@ -53,6 +52,7 @@ const PROTECTION_BACKUPS_DIR = `${BACKUPS_DIR}/protection`
 const SETTINGS_DIR = "settings"
 const TEMPLATES_DIR = "templates"
 const ARCHIVE_SCHEMA = "tuckmark.runtime-export-archive.v1"
+export const TUCKMARK_DATA_ARCHIVE_SCHEMA = "tuckmark.data-archive.v1"
 const MANIFEST_SCHEMA = "tuckmark.data-dir-manifest.v1"
 const PROTECTION_BACKUP_LIMIT = 20
 const STATUS_STORAGE_KEY = "tuckmark.data-directory-status.v1"
@@ -65,6 +65,13 @@ type PersistedStatus = {
 type ManagedDirectoryState = {
   snapshot: RuntimeStoreSnapshot
   inventorySnapshot: InventoryDirectorySnapshot
+}
+
+export type TuckmarkDataArchive = {
+  schema: typeof TUCKMARK_DATA_ARCHIVE_SCHEMA
+  exportedAt: string
+  runtime: RuntimeStoreSnapshot
+  inventory: InventoryDirectorySnapshot
 }
 
 export type DataArchiveInspection = {
@@ -270,6 +277,41 @@ function normalizeSnapshot(snapshot: RuntimeStoreSnapshot): RuntimeStoreSnapshot
         left.sourceKey.localeCompare(right.sourceKey)
     ),
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function createDataArchive(
+  state: ManagedDirectoryState,
+  exportedAt = new Date().toISOString()
+): TuckmarkDataArchive {
+  return {
+    schema: TUCKMARK_DATA_ARCHIVE_SCHEMA,
+    exportedAt,
+    runtime: normalizeSnapshot(state.snapshot),
+    inventory: normalizeInventorySnapshot(state.inventorySnapshot),
+  }
+}
+
+function parseDataArchive(value: unknown): TuckmarkDataArchive {
+  if (
+    !isRecord(value) ||
+    value.schema !== TUCKMARK_DATA_ARCHIVE_SCHEMA ||
+    typeof value.exportedAt !== "string" ||
+    !isRecord(value.runtime) ||
+    !isRecord(value.inventory)
+  ) {
+    throw new Error("ZIP 数据格式不受支持。")
+  }
+  return createDataArchive(
+    {
+      snapshot: value.runtime as RuntimeStoreSnapshot,
+      inventorySnapshot: value.inventory as InventoryDirectorySnapshot,
+    },
+    value.exportedAt
+  )
 }
 
 function buildSnapshotTree(
@@ -762,23 +804,17 @@ async function writeArchiveFile(
   }
 }
 
-function createArchiveBytes(state: ManagedDirectoryState): Uint8Array {
-  const { files } = buildSnapshotTree(state.snapshot, state.inventorySnapshot, "backup-archive")
-  const zipEntries: Record<string, Uint8Array> = {}
-  for (const [path, value] of files) {
-    zipEntries[path] = strToU8(value)
-  }
-  zipEntries["archive.json"] = strToU8(
-    JSON.stringify(
-      {
-        schema: ARCHIVE_SCHEMA,
-        exportedAt: new Date().toISOString(),
-      } satisfies Pick<RuntimeExportArchiveV1, "schema" | "exportedAt">,
-      null,
-      2
-    )
+export function createDataArchiveBytes(archive: TuckmarkDataArchive): Uint8Array {
+  return zipSync(
+    {
+      "archive.json": strToU8(JSON.stringify(archive, null, 2)),
+    },
+    { level: 6 }
   )
-  return zipSync(zipEntries, { level: 6 })
+}
+
+function createArchiveBytes(state: ManagedDirectoryState): Uint8Array {
+  return createDataArchiveBytes(createDataArchive(state))
 }
 
 async function readBackupEntryBytes(
@@ -790,13 +826,20 @@ async function readBackupEntryBytes(
   return new Uint8Array(await file.arrayBuffer())
 }
 
-function parseArchiveBytes(bytes: Uint8Array): ManagedDirectoryState {
+function parseArchiveBytes(bytes: Uint8Array): TuckmarkDataArchive {
   const entries = unzipSync(bytes)
   const archiveMeta = entries["archive.json"]
+  let exportedAt = new Date().toISOString()
   if (archiveMeta) {
-    const parsed = JSON.parse(strFromU8(archiveMeta)) as Partial<RuntimeExportArchiveV1>
-    if (parsed.schema !== ARCHIVE_SCHEMA) {
+    const parsed = JSON.parse(strFromU8(archiveMeta)) as unknown
+    if (isRecord(parsed) && parsed.schema === TUCKMARK_DATA_ARCHIVE_SCHEMA) {
+      return parseDataArchive(parsed)
+    }
+    if (!isRecord(parsed) || parsed.schema !== ARCHIVE_SCHEMA) {
       throw new Error("ZIP 数据格式不受支持。")
+    }
+    if (typeof parsed.exportedAt === "string") {
+      exportedAt = parsed.exportedAt
     }
   }
   const files = new Map<string, string>()
@@ -806,7 +849,11 @@ function parseArchiveBytes(bytes: Uint8Array): ManagedDirectoryState {
     }
     files.set(path, strFromU8(value))
   }
-  return parseDirectoryStateFromFiles(files)
+  return createDataArchive(parseDirectoryStateFromFiles(files), exportedAt)
+}
+
+export async function readDataArchiveFile(file: File): Promise<TuckmarkDataArchive> {
+  return parseArchiveBytes(new Uint8Array(await file.arrayBuffer()))
 }
 
 async function trimProtectionBackups(handle: FileSystemDirectoryHandle): Promise<void> {
@@ -1065,9 +1112,9 @@ export async function inspectConfiguredBackup(
   const archive = parseArchiveBytes(bytes)
   return {
     label: entry.name,
-    snapshot: archive.snapshot,
-    inventorySnapshot: archive.inventorySnapshot,
-    summary: toRuntimeSummary(archive.snapshot, archive.inventorySnapshot),
+    snapshot: archive.runtime,
+    inventorySnapshot: archive.inventory,
+    summary: toRuntimeSummary(archive.runtime, archive.inventory),
   }
 }
 
@@ -1099,13 +1146,12 @@ export async function restoreConfiguredBackup(args: {
 }
 
 export async function inspectImportArchiveFile(file: File): Promise<DataArchiveInspection> {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  const archive = parseArchiveBytes(bytes)
+  const archive = await readDataArchiveFile(file)
   return {
     label: file.name,
-    snapshot: archive.snapshot,
-    inventorySnapshot: archive.inventorySnapshot,
-    summary: toRuntimeSummary(archive.snapshot, archive.inventorySnapshot),
+    snapshot: archive.runtime,
+    inventorySnapshot: archive.inventory,
+    summary: toRuntimeSummary(archive.runtime, archive.inventory),
   }
 }
 

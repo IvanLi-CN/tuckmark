@@ -21,6 +21,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./components/ui/dialog.js"
+import {
+  createDataArchiveBytes,
+  readDataArchiveFile,
+  TUCKMARK_DATA_ARCHIVE_SCHEMA,
+} from "./data-directory-service.js"
 import type {
   DataDirectoryAttachmentInspection,
   DataDirectoryBackupEntry,
@@ -139,18 +144,30 @@ function DevdDataStorageCard({ status }: { status: DataDirectoryStatus }) {
   const exportArchive = () =>
     run("export", async () => {
       const archive = await devdDataClient.exportArchive()
-      const url = URL.createObjectURL(
-        new Blob([JSON.stringify(archive, null, 2)], { type: "application/json" })
-      )
+      const bytes = createDataArchiveBytes({
+        schema: TUCKMARK_DATA_ARCHIVE_SCHEMA,
+        exportedAt: archive.exportedAt,
+        runtime: archive.runtime,
+        inventory: archive.inventory,
+      })
+      const blobBytes = new Uint8Array(bytes.byteLength)
+      blobBytes.set(bytes)
+      const url = URL.createObjectURL(new Blob([blobBytes.buffer], { type: "application/zip" }))
       const anchor = document.createElement("a")
       anchor.href = url
-      anchor.download = `tuckmark-devd-${Date.now()}.json`
+      anchor.download = `tuckmark-export-${Date.now()}.zip`
       anchor.click()
       URL.revokeObjectURL(url)
     })
   const inspectFile = (file: File) =>
     run("inspect", async () => {
-      const archive = JSON.parse(await file.text()) as unknown
+      const dataArchive = await readDataArchiveFile(file)
+      const archive = {
+        schema: "tuckmark.devd-data-archive.v1",
+        exportedAt: dataArchive.exportedAt,
+        runtime: dataArchive.runtime,
+        inventory: dataArchive.inventory,
+      }
       const inspection = await devdDataClient.inspectArchive(archive)
       setPending({ archive, ...inspection })
     })
@@ -236,7 +253,7 @@ function DevdDataStorageCard({ status }: { status: DataDirectoryStatus }) {
               onClick={() => void exportArchive()}
             >
               <ArrowUpToLine className="size-4" />
-              <span>导出数据</span>
+              <span>导出 ZIP 数据</span>
             </Button>
             <Button
               type="button"
@@ -245,13 +262,13 @@ function DevdDataStorageCard({ status }: { status: DataDirectoryStatus }) {
               onClick={() => inputRef.current?.click()}
             >
               <ArrowDownToLine className="size-4" />
-              <span>导入数据</span>
+              <span>导入 ZIP 数据</span>
             </Button>
             <input
               ref={inputRef}
               hidden
               type="file"
-              accept=".json,application/json"
+              accept=".zip,application/zip"
               onChange={(event) => {
                 const file = event.target.files?.[0]
                 event.currentTarget.value = ""
@@ -586,11 +603,11 @@ export function SystemDataStorageCard({
             </Button>
             <Button type="button" variant="outline" onClick={onExportArchive}>
               <ArrowUpToLine className="size-4" />
-              <span>导出数据</span>
+              <span>导出 ZIP 数据</span>
             </Button>
             <Button type="button" variant="outline" onClick={() => importInputRef.current?.click()}>
               <ArrowDownToLine className="size-4" />
-              <span>导入数据</span>
+              <span>导入 ZIP 数据</span>
             </Button>
             <input
               ref={importInputRef}

@@ -92,8 +92,8 @@ describe("SystemDataStorageCard", () => {
 
     expect(document.body.textContent).toContain("未配置")
     expect(document.body.textContent).toContain("统一数据目录，承载模板与库存 JSON 数据树")
-    expect(document.body.textContent).toContain("导出数据")
-    expect(document.body.textContent).toContain("导入数据")
+    expect(document.body.textContent).toContain("导出 ZIP 数据")
+    expect(document.body.textContent).toContain("导入 ZIP 数据")
   })
 
   it("shows a follower warning when another tab owns the write lease", async () => {
@@ -135,6 +135,27 @@ describe("SystemDataStorageCard", () => {
     expect(document.body.textContent).not.toContain("重新请求权限")
     expect(document.body.textContent).not.toContain("接管写入")
     expect(document.body.textContent).not.toContain("立即同步")
+  })
+
+  it("uses the shared ZIP archive contract for DEVD imports", async () => {
+    await renderCard({
+      status: {
+        ...baseStatus,
+        owner: "devd",
+        configured: true,
+        directoryName: "tuckmark-fixture",
+        permissionState: "granted",
+        health: "healthy",
+        revision: 17,
+        connectionState: "connected",
+        leaseRole: "unsupported",
+      },
+    })
+
+    const importInput = document.querySelector('input[type="file"]')
+    expect(importInput?.getAttribute("accept")).toBe(".zip,application/zip")
+    expect(document.body.textContent).toContain("导出 ZIP 数据")
+    expect(document.body.textContent).toContain("导入 ZIP 数据")
   })
 
   it("renders the import confirmation summary dialog", async () => {

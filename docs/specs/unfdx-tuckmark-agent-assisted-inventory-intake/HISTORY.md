@@ -8,6 +8,10 @@ The capability is intentionally orchestrated by the user's Agent. This separates
 
 The main Web runtime and Agent Import share one DEVD transaction and revision authority. This removes split ownership between browser RuntimeStore and server inventory files, while keeping the static browser-only product deliberately independent.
 
+## Unified ZIP Archive
+
+User-facing import and export use one ZIP envelope across browser-static and server-http. The archive contains the runtime snapshot and inventory aggregate needed for either surface, while existing directory ZIP archives remain valid import inputs.
+
 ## DEVD Ownership Boundary
 
 Directory ownership is established before the first revisioned write through a durable marker and exclusive PID-scoped live lock. A stale lock is reclaimed only after its owner is gone, while a live owner is rejected so independent mutation queues cannot overwrite one another. Direct CLI mutations reject both an active DEVD configuration and an existing ownership marker. Loopback transport is verified from the connected peer rather than request headers. Archive completeness includes referential integrity, preventing imported history from creating orphaned template, binding, working-copy, or inventory records.

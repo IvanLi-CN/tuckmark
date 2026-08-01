@@ -18,6 +18,13 @@ const meta = {
   parameters: {
     layout: "padded",
   },
+  decorators: [
+    (Story) => (
+      <div style={{ minHeight: "100vh", padding: 24, background: "#f4f6f8" }}>
+        <Story />
+      </div>
+    ),
+  ],
   args: {
     busy: null,
     dialog: null,
@@ -110,7 +117,12 @@ export const DevdHealthy: Story = {
   },
   play: async ({ canvasElement }) => {
     const text = canvasElement.textContent ?? ""
-    if (!text.includes("DEVD 数据存储") || !text.includes("全局 revision")) {
+    if (
+      !text.includes("DEVD 数据存储") ||
+      !text.includes("全局 revision") ||
+      !text.includes("导出 ZIP 数据") ||
+      !text.includes("导入 ZIP 数据")
+    ) {
       throw new Error("DEVD status content is missing.")
     }
     if (text.includes("授权目录") || text.includes("接管写入")) {

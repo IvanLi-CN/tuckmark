@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { RuntimeStoreSnapshot } from "./runtime-store-contract.js"
@@ -23,6 +24,7 @@ import {
   attachDataDirectory,
   exportRuntimeArchive,
   importRuntimeArchive,
+  inspectImportArchiveFile,
   restoreRuntimeFromConfiguredDirectoryIfNeeded,
   syncConfiguredDataDirectory,
 } from "./data-directory-service.js"
@@ -475,7 +477,7 @@ describe("browser-local inventory archives", () => {
     expect(readBrowserLocalInventorySnapshot()).toMatchObject(localInventorySnapshot)
   })
 
-  it("includes browser-local inventory in an exported archive", async () => {
+  it("exports a unified ZIP that preserves browser-local inventory", async () => {
     handleStoreMocks.loadStoredDataDirectoryHandle.mockResolvedValue(null)
     runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(
       createSnapshot({
@@ -499,9 +501,68 @@ describe("browser-local inventory archives", () => {
     if (!blob) {
       throw new Error("Missing exported archive blob")
     }
-    expect(await blob.text()).toContain("inventory/materials/material-local.json")
+    const entries = unzipSync(new Uint8Array(await blob.arrayBuffer()))
+    expect(Object.keys(entries)).toEqual(["archive.json"])
+    const archiveMetadata = JSON.parse(strFromU8(entries["archive.json"] ?? new Uint8Array()))
+    expect(archiveMetadata).toMatchObject({
+      schema: "tuckmark.data-archive.v1",
+      inventory: { materials: [{ id: "material-local" }] },
+    })
+
+    const inspection = await inspectImportArchiveFile(
+      new File([blob], "tuckmark-export.zip", { type: "application/zip" })
+    )
+    expect(inspection.inventorySnapshot.materials).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "material-local" })])
+    )
     expect(click).toHaveBeenCalledTimes(1)
     expect(revokeObjectUrl).toHaveBeenCalledWith("blob:tuckmark-test")
+  })
+
+  it("keeps legacy directory ZIP exports importable", async () => {
+    const snapshot = createSnapshot({
+      templateIds: [],
+      versionCount: 0,
+      workingCopyCount: 0,
+      updatedAt: "2026-07-17T07:00:00.000Z",
+    })
+    const legacyArchive = zipSync({
+      "archive.json": strToU8(
+        JSON.stringify({
+          schema: "tuckmark.runtime-export-archive.v1",
+          exportedAt: snapshot.exportedAt,
+        })
+      ),
+      "manifest.json": strToU8(
+        JSON.stringify({
+          schema: "tuckmark.data-dir-manifest.v1",
+          generatedAt: snapshot.exportedAt,
+          snapshotUpdatedAt: snapshot.snapshotUpdatedAt,
+          source: "backup-archive",
+          files: {
+            settings: "settings/app-settings.json",
+            templatesDir: "templates",
+            draftsDir: "drafts",
+            inventoryDir: "inventory",
+            backupsDir: "backups",
+          },
+          counts: {
+            templates: 0,
+            versions: 0,
+            workingCopies: 0,
+            materials: 0,
+            adjustments: 0,
+          },
+        })
+      ),
+      "settings/app-settings.json": strToU8(JSON.stringify(snapshot.settings)),
+    })
+
+    const inspection = await inspectImportArchiveFile(
+      new File([legacyArchive], "legacy-export.zip", { type: "application/zip" })
+    )
+    expect(inspection.snapshot.schema).toBe("tuckmark.runtime-export.v1")
+    expect(inspection.inventorySnapshot).toEqual({ materials: [], adjustments: [] })
   })
 })
 
