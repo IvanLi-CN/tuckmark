@@ -16,6 +16,10 @@ User-facing import and export use one ZIP envelope across browser-static and ser
 
 Directory ownership is established before the first revisioned write through a durable marker and exclusive PID-scoped live lock. A stale lock is reclaimed only after its owner is gone, while a live owner is rejected so independent mutation queues cannot overwrite one another. Direct CLI mutations reject both an active DEVD configuration and an existing ownership marker. Loopback transport is verified from the connected peer rather than request headers. Archive completeness includes referential integrity, preventing imported history from creating orphaned template, binding, working-copy, or inventory records.
 
+## Recent Activity Boundary
+
+Recent templates and prints are browser-local presentation metadata rather than DEVD-owned records. Retaining that registry in `server-http` restores its visible history without reintroducing legacy sync requests or a browser fallback for templates, drafts, inventory, settings, archives, or backups.
+
 Restock targets remain immutable after proposal creation, so confirmation edits cannot redirect an inbound adjustment. Agent-import credentials retain the confirmation Web origin separately from the DEVD API origin, which keeps the Vite-backed local confirmation route reachable during normal development.
 
 Web resource commands run through one client mutation chain, so rapid settings and inventory changes use the revision returned by the preceding completed command. Import-session polling rejects responses that would regress an item revision or a terminal session state, and proposal validation rejects duplicate item IDs before a session is created.
