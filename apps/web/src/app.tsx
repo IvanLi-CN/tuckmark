@@ -7,6 +7,7 @@ import {
 import { AgentImportPage } from "./agent-import-page.js"
 import type { ApiClient } from "./api-client.js"
 import { AppLaunchSplash } from "./app-launch-splash.js"
+import { resolveBasePath } from "./runtime.js"
 import type { AppContext } from "./types.js"
 
 const LazyWorkbenchApp = React.lazy(async () => {
@@ -36,10 +37,11 @@ export function resolveAppRoutePathname(pathname: string, basePath = ""): string
 }
 
 export function App(props: AppProps = {}) {
+  const basePath =
+    props.context?.basePath ??
+    resolveBasePath(import.meta.env as Record<string, string | undefined>)
   const pathname =
-    typeof window === "undefined"
-      ? ""
-      : resolveAppRoutePathname(window.location.pathname, props.context?.basePath)
+    typeof window === "undefined" ? "" : resolveAppRoutePathname(window.location.pathname, basePath)
   if (/^\/agent-import\/[^/]+/u.test(pathname)) {
     if (
       pathname === "/agent-import/demo" &&

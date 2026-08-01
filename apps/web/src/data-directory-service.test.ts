@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 
+import type { InventoryDirectorySnapshot } from "@tuckmark/inventory"
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-
-import type { InventoryDirectorySnapshot } from "@tuckmark/inventory"
 
 import type { RuntimeStoreSnapshot } from "./runtime-store-contract.js"
 
@@ -606,7 +605,9 @@ describe("browser-local inventory archives", () => {
     expect(inspection.snapshot.templates).toEqual(snapshot.templates)
     expect(inspection.snapshot.versions).toEqual(snapshot.versions)
     expect(inspection.snapshot.workingCopies).toHaveLength(snapshot.workingCopies.length)
-    expect(inspection.snapshot.workingCopies).toEqual(expect.arrayContaining(snapshot.workingCopies))
+    expect(inspection.snapshot.workingCopies).toEqual(
+      expect.arrayContaining(snapshot.workingCopies)
+    )
     expect(inspection.inventorySnapshot).toEqual(inventorySnapshot)
     expect(click).toHaveBeenCalledTimes(1)
     expect(revokeObjectUrl).toHaveBeenCalledWith("blob:tuckmark-test")
