@@ -255,6 +255,34 @@ describe("canvas-editor-model monochrome contract", () => {
     expect(line.stroke).toBe("#111111")
   })
 
+  it("defaults missing or invalid grid sizes to 1mm and preserves valid sizes", () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const legacyDraft = {
+      ...draft,
+      editor: { ...draft.editor, gridSize: undefined },
+    } as unknown as typeof draft
+    const invalidDraft = {
+      ...draft,
+      editor: { ...draft.editor, gridSize: 3 },
+    } as unknown as typeof draft
+
+    expect(normalizeDraftDocument(legacyDraft).editor.gridSize).toBe(1)
+    expect(normalizeDraftDocument(invalidDraft).editor.gridSize).toBe(1)
+    expect(
+      normalizeDraftDocument({ ...draft, editor: { ...draft.editor, gridSize: 2 } }).editor.gridSize
+    ).toBe(2)
+  })
+
+  it("persists the selected grid size with the draft", () => {
+    const preset = getPresetById("shipping-wide")
+    const draft = createDraftFromPreset(preset)
+    draft.editor.gridSize = 5
+
+    persistDraftDocument(draft)
+
+    expect(loadStoredDraftDocument(preset.id)?.editor.gridSize).toBe(5)
+  })
+
   it("migrates legacy baseline text into top-left text containers", () => {
     const preset = getPresetById("shipping-wide")
     const draft = createDraftFromPreset(preset)

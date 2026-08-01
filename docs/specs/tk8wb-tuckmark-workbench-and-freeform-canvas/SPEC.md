@@ -359,7 +359,10 @@ output.
 - The editor state is versioned as a Web draft document with:
   - document metadata
   - per-layer metadata (`name`, `visible`, `locked`)
-  - editor metadata (`gridEnabled`, `snapEnabled`)
+  - editor metadata (`gridEnabled`, `gridSize`, `snapEnabled`, `snapStep`)
+  - `gridSize` is one of `1`, `2`, or `5` millimeters and `snapStep` is one of
+    `1/4`, `1/2`, or `1` grid. New documents and legacy drafts that omit or
+    contain invalid values use `1mm` and `1 grid` respectively.
 - Scratch and preset-template working copies use the active runtime store:
   browser-static keeps its browser-owned persistence, while server-http uses
   DEVD. No Web surface uses `TuckmarkService` same-device sync for drafts.
@@ -386,6 +389,12 @@ output.
   - horizontal wheel / tilt-wheel stage pan
   - `Space + drag` stage pan
   - `fit to view`
+  - the `网格` toolbar button toggles visibility on ordinary click; right
+    click and a `500ms` touch or pen long press open an anchored custom menu
+    with `1mm`, `2mm`, and `5mm`
+  - the `吸附` toolbar button toggles magnetic snapping on ordinary click;
+    right click and a `500ms` touch or pen long press open an anchored custom
+    menu with `1/4 格`, `1/2 格`, and `1 格`
   - transformer-based resize / rotation with real-time active-edge snapping
   - system clipboard `Copy` / `Paste` for selected elements through keyboard
     clipboard events when focus is not inside editable form controls
@@ -407,11 +416,11 @@ output.
     not paste or otherwise mutate the draft
 - `snapEnabled` governs one shared pointer magnetic-snap policy across ordinary
   and multi-selection dragging, pending clipboard placement, line endpoints,
-  and Transformer resize handles. Ordinary and multi-selection dragging keep
-  using the `1mm` grid, the four canvas edges, and the visible outer bounds of
-  other elements; moving and pending elements are excluded, while visible
-  locked elements remain valid references. Rotated elements use their visible
-  axis-aligned outer bounds.
+  and Transformer resize handles. Ordinary and multi-selection dragging use
+  the effective snap spacing (`gridSize * snapStep`), the four canvas edges, and the visible outer
+  bounds of other elements; moving and pending elements are excluded, while
+  visible locked elements remain valid references. Rotated elements use their
+  visible axis-aligned outer bounds.
 - Direct handles resolve snapping from explicit active sources instead of
   implicit box defaults:
   - line endpoints use their active point on both axes
@@ -420,9 +429,9 @@ output.
   - direct-handle targets additionally include element and canvas centerlines,
     while corner metadata may participate through the same axis projection
     path without changing the guide rendering contract
-- Canvas and element edges use an `8px` screen-space threshold. The grid uses
-  `min(8px, 40% of the current grid spacing)` so low zoom still leaves a free
-  adjustment zone. X and Y resolve independently by screen distance; within
+- Canvas and element edges use an `8px` screen-space threshold. The effective
+  snap spacing uses `min(8px, 40% of the current snap spacing)` so low zoom
+  still leaves a free adjustment zone. X and Y resolve independently by screen distance; within
   `0.5px`, element targets win over canvas targets, which win over grid
   targets.
 - Dragging a selection applies one rigid snapped translation. Line editing
@@ -436,9 +445,22 @@ output.
   the target is left, the interaction ends, or snapping is disabled, and never
   persist, print, or export.
 - The snap toolbar button controls and reports the persistent `snapEnabled`
-  flag. No keyboard modifier temporarily overrides snapping; keyboard arrows
+  flag and its persistent `snapStep` (`1/4`, `1/2`, or `1` grid). No keyboard modifier temporarily overrides snapping; keyboard arrows
   remain exact `1mm` moves, or `10mm` with Shift, outside the pointer-magnetic
   policy.
+- The grid-size menu remains available while grid visibility is disabled.
+  Selecting a size immediately updates the visible editor grid and the base
+  snap spacing, persists with the active draft/working copy/version, closes
+  the menu, and does not create an undo/redo snapshot. A long press that ends
+  before `500ms`, or moves more than `8px`, is cancelled; a successful long
+  press suppresses its follow-up click and never toggles grid visibility.
+- The snap-step menu remains available while snapping is disabled. Selecting a
+  step immediately updates the effective snap spacing, persists with the
+  active draft/working copy/version, closes the menu, and does not create an
+  undo/redo snapshot.
+- The visible editor grid draws solid lines at every `10mm` and dotted lines
+  for all other selected-grid intervals. The grid remains editor-only and does
+  not enter preview, print, or export output.
 - Text elements support double-click inline editing on the stage.
 - Text inspector controls expose:
   - numeric font size
@@ -752,6 +774,14 @@ output.
 - Canvas workspace supports marquee selection, Shift multi-select, stage pan,
   vertical wheel zoom, horizontal wheel pan, and fit-to-view without
   horizontal shell breakage.
+- Canvas grid sizing exposes exactly three options (`1mm`, `2mm`, `5mm`) with a
+  visible current selection, blocks the native browser
+  context menu, and keeps the menu within the toolbar anchor in light, dark,
+  and narrow editor viewports.
+- Canvas snap-step selection exposes exactly three options (`1/4 格`, `1/2
+  格`, `1 格`) with a visible current selection, preserves the ordinary toggle
+  action, blocks the native browser context menu, and keeps the menu within
+  the toolbar anchor in light, dark, and narrow editor viewports.
 - Marquee selection chrome is editor-only stage-space affordance: its border
   remains `1 logical px dashed` at any zoom level while selection bounds and
   hit semantics continue to use canvas-space geometry.
@@ -1315,3 +1345,17 @@ output.
 
   PR: include
   ![Canvas Data Matrix invalid](./assets/canvas-datamatrix-invalid-1280x800.png)
+
+- Storybook canvas capture (`source_type=storybook_canvas`, `target_program=mock-only`,
+  `capture_scope=element`) with the anchored grid-size menu open. It shows only
+  `1mm`, `2mm`, and `5mm`, with `2mm` selected and grid visibility unchanged.
+
+  PR: include
+  ![Canvas grid-size context menu](./assets/canvas-grid-and-snap-menu-grid-options.png)
+
+- Storybook canvas capture (`source_type=storybook_canvas`, `target_program=mock-only`,
+  `capture_scope=element`) with the anchored snap-step menu open. It shows only
+  `1/4 格`, `1/2 格`, and `1 格`, with `1/2 格` selected.
+
+  PR: include
+  ![Canvas snap-step context menu](./assets/canvas-grid-and-snap-menu-snap-options.png)

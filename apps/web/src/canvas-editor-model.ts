@@ -17,6 +17,12 @@ import {
 
 import type { BrowserPrintSource } from "./browser-print-payload.js"
 import {
+  DEFAULT_CANVAS_GRID_SIZE,
+  DEFAULT_CANVAS_SNAP_STEP,
+  normalizeCanvasGridSize,
+  normalizeCanvasSnapStep,
+} from "./lib/canvas-grid.js"
+import {
   CANVAS_DOTS_PER_MILLIMETER,
   canvasDotsToMillimeters,
   canvasDraftDocumentToDotsAtDensity,
@@ -358,6 +364,15 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     templateId: unitDocument.templateId,
     baseVersionId: unitDocument.baseVersionId,
     lastSavedAt: unitDocument.lastSavedAt,
+    editor: {
+      ...unitDocument.editor,
+      gridSize: normalizeCanvasGridSize(
+        (unitDocument.editor as Partial<CanvasDraftDocument["editor"]> | undefined)?.gridSize
+      ),
+      snapStep: normalizeCanvasSnapStep(
+        (unitDocument.editor as Partial<CanvasDraftDocument["editor"]> | undefined)?.snapStep
+      ),
+    },
     fields: synced.fields,
     elements: synced.elements,
   }
@@ -649,7 +664,9 @@ export function createDraftFromPreset(preset: CanvasDocumentPreset): CanvasDraft
     elements: buildPresetElements(preset.id),
     editor: {
       gridEnabled: true,
+      gridSize: DEFAULT_CANVAS_GRID_SIZE,
       snapEnabled: true,
+      snapStep: DEFAULT_CANVAS_SNAP_STEP,
     },
   })
 }
@@ -911,7 +928,9 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
     elements,
     editor: {
       gridEnabled: true,
+      gridSize: DEFAULT_CANVAS_GRID_SIZE,
       snapEnabled: true,
+      snapStep: DEFAULT_CANVAS_SNAP_STEP,
     },
   })
 }

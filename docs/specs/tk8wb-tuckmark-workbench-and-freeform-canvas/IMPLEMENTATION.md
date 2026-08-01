@@ -126,6 +126,10 @@
   - a route-local narrow desktop mode at `960-1279px`
   - a toolbar dedicated to zoom, fit-to-view, grid, snap, undo/redo, and
     reset
+  - controlled `GridSizeMenu` and `SnapStepMenu` toolbar menus with `1mm`,
+    `2mm`, `5mm` grid options and `1/4 格`, `1/2 格`, `1 格` snap-step options;
+    ordinary click toggles the related assist while right click and touch/pen
+    long press open the anchored menu
   - lower-noise panel framing and a cooler stage surface so the editable label
     stays visually dominant
   - dark-theme shell surfaces that keep the white paper base neutral while
@@ -196,7 +200,20 @@
 - Canvas snapping resolves through one pure screen-space magnetic policy behind
   the persistent `snapEnabled` editor flag. It serves ordinary and multi-select
   dragging, pending clipboard placement, line endpoint adjustment, and
-  Transformer resize; keyboard nudges remain exact fixed-distance moves.
+  Transformer resize; keyboard nudges remain exact fixed-distance moves. The
+  effective snap spacing is `gridSize * snapStep`, with `snapStep` normalized to
+  `1` for legacy drafts.
+- The persistent editor draft now carries `CanvasGridSize` and `CanvasSnapStep`
+  values. The background grid, visible-grid bounds, and every snap context read
+  the current grid size, while missing or invalid legacy values normalize to
+  `1mm` and `1 格` respectively.
+- Grid-size and snap-step changes update the active draft/working copy without
+  entering the draft history stack, and are preserved through scratch storage,
+  user-template working copies, saved versions, and sync-compatible draft
+  records.
+- The editor grid renders `10mm` major lines as solid strokes and other grid
+  intervals as dotted strokes; this layer remains outside preview and print
+  compilation.
 - Ordinary drag previews still compare grid lines, canvas edges, and visible
   static element bounds independently on each axis. Direct handles now declare
   their active `min|center|max` sources explicitly, so inactive axes never
@@ -562,6 +579,8 @@
   - default canvas selectable contract
   - text-selected canvas selectable contract
   - DimensionPicker state gallery and filtering interaction
+  - GridSizeMenu and SnapStepMenu galleries and right-click interactions,
+    including all three options for each menu and selected-state feedback
   - full canvas workspace header dimension autocomplete state
   - `/system` data storage card states for unsupported, unconfigured,
     configured healthy, directory-attach choice, backup list, import confirm,

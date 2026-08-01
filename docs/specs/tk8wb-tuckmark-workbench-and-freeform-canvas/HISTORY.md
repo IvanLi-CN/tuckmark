@@ -372,3 +372,21 @@ while the workbench was being productized:
     loading affordance
   - the startup surface now relies on the primary title, terse detail copy,
     and indeterminate progress affordance only
+- Canvas grid sizing is now a persisted editor preference:
+  - `CanvasGridSize` accepts `1`, `2`, and `5` millimeters, with `1mm` as the
+    migration default
+  - background rendering and all existing pointer-snap paths consume the same
+    selected base spacing while `snapEnabled` remains an independent switch
+  - the grid toolbar button keeps its ordinary toggle action and adds an
+    anchored Radix menu for right click and `500ms` touch/pen long press
+  - movement beyond `8px`, early release, and successful-long-press follow-up
+    clicks are handled explicitly so menu configuration cannot accidentally
+    toggle the grid
+- Grid and snap configuration now share the same anchored toolbar-menu
+  interaction while keeping their responsibilities separate:
+  - the visible grid uses solid `10mm` major lines and dotted lines for other
+    selected intervals
+  - `CanvasSnapStep` accepts `1/4`, `1/2`, and `1` grid, and multiplies the
+    selected base grid size for every existing pointer-snap path
+  - both preferences persist with drafts and normalize missing or invalid
+    legacy values to `1mm` and `1 格`

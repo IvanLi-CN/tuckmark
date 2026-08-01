@@ -30,7 +30,7 @@ function mockDocument(name: string) {
     height: 24,
     fields: [{ key: "name", label: "Name", required: false, multiline: false }],
     elements: [],
-    editor: { gridEnabled: true, snapEnabled: true },
+    editor: { gridEnabled: true, gridSize: 1 as const, snapEnabled: true, snapStep: 1 as const },
   }
 }
 
@@ -139,6 +139,39 @@ describe("DevdDataService", () => {
         args: { templateId: saved.data.template.id, name: "Stale rename" },
       })
     ).rejects.toBeInstanceOf(DevdDataConflictError)
+  })
+
+  it("preserves grid and snap settings in templates and working copies", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const document = {
+      ...mockDocument("Configured mock"),
+      editor: {
+        gridEnabled: true,
+        gridSize: 5 as const,
+        snapEnabled: true,
+        snapStep: 0.25 as const,
+      },
+    }
+
+    const saved = await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: 0,
+      args: { name: "Configured mock", document },
+    })
+    await service.mutateRuntime({
+      command: "replace-working-copy",
+      expectedRevision: saved.revision,
+      args: {
+        source: { kind: "scratch", presetId: "configured" },
+        document,
+      },
+    })
+
+    const snapshot = await service.runtimeSnapshot()
+    expect(snapshot.versions.at(-1)?.document.editor).toEqual(document.editor)
+    expect(snapshot.workingCopies.at(-1)?.draft.editor).toEqual(document.editor)
   })
 
   it("persists scratch and preset working copies at source-specific paths", async () => {

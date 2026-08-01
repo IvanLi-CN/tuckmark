@@ -28,6 +28,7 @@ export type CanvasSnapContext = {
   displayScale: number
   enabled: boolean
   gridSize: number
+  snapStep?: number
 }
 
 export type CanvasSnapAxisSource = "min" | "center" | "max"
@@ -165,9 +166,10 @@ function getTolerancePixels(kind: CanvasSnapTargetKind, context: CanvasSnapConte
   if (kind !== "grid") {
     return SNAP_TOLERANCE_PIXELS
   }
+  const snapSize = context.gridSize * (context.snapStep ?? 1)
   return Math.min(
     SNAP_TOLERANCE_PIXELS,
-    Math.max(0, context.gridSize * context.displayScale * GRID_TOLERANCE_RATIO)
+    Math.max(0, snapSize * context.displayScale * GRID_TOLERANCE_RATIO)
   )
 }
 
@@ -202,7 +204,8 @@ function resolveAxisSnap(
   request: CanvasSnapRequest,
   explicitSources: boolean
 ): AxisSnapResult {
-  if (!context.enabled || context.displayScale <= 0 || context.gridSize <= 0) {
+  const snapSize = context.gridSize * (context.snapStep ?? 1)
+  if (!context.enabled || context.displayScale <= 0 || snapSize <= 0) {
     return { delta: 0, guide: null }
   }
 
@@ -215,7 +218,7 @@ function resolveAxisSnap(
   let best: (CanvasSnapCandidate & { distancePixels: number; edgeIndex: number }) | null = null
 
   for (const source of sources) {
-    const gridCoordinate = Math.round(source.coordinate / context.gridSize) * context.gridSize
+    const gridCoordinate = Math.round(source.coordinate / snapSize) * snapSize
     const possibleCandidates = [
       ...candidates,
       {

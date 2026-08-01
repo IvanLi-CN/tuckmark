@@ -23,10 +23,12 @@ import {
   movePendingPasteToPoint,
   normalizeCanvasWheelDeltas,
   normalizeTransformedElementGeometry,
+  openCanvasVersion,
   panViewportByWheel,
   preloadCanvasWorkspaceRouteData,
   projectCanvasTransformerBoxToStage,
   projectStageTransformerBoxToCanvas,
+  returnToCurrentCanvasDraft,
   startClipboardPastePlacement,
   zoomViewportAtPointer,
 } from "./canvas-page.js"
@@ -34,7 +36,12 @@ import { buildInputFromTemplate, fallbackTemplates } from "./demo-data.js"
 import { CANVAS_DOTS_PER_MILLIMETER } from "./lib/canvas-units.js"
 import { loadRecentActivity } from "./lib/recent-activity.js"
 import type { PwaUpdateSnapshot } from "./pwa-lifecycle.js"
-import type { AppContext, CanvasDraftElement, PreviewArtifact } from "./types.js"
+import type {
+  AppContext,
+  CanvasDraftElement,
+  PreviewArtifact,
+  UserTemplateVersionSnapshot,
+} from "./types.js"
 import * as userTemplateStoreModule from "./user-template-store.js"
 import {
   archiveUserTemplate,
@@ -2221,6 +2228,45 @@ describe("web workbench app", () => {
     expect(confirmedState.outputStatus).toContain("已粘贴 1 个图层。")
   })
 
+  it("uses historical editor settings while viewing a version", () => {
+    const currentDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    currentDraft.editor.gridEnabled = false
+    currentDraft.editor.gridSize = 5
+    currentDraft.editor.snapEnabled = false
+    currentDraft.editor.snapStep = 0.5
+
+    const versionDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    versionDraft.editor.gridSize = 2
+    versionDraft.editor.snapStep = 0.25
+    const version: UserTemplateVersionSnapshot = {
+      id: "version-grid-size",
+      templateId: "shipping-wide",
+      version: 1,
+      kind: "saved",
+      createdAt: "2026-07-18T00:00:00.000Z",
+      label: "已保存版本 1",
+      document: versionDraft,
+    }
+
+    const preview = openCanvasVersion(createCanvasStateFromDraft(currentDraft), version)
+    expect(preview.liveDraft.editor.gridSize).toBe(5)
+    expect(preview.draft.editor.gridSize).toBe(2)
+    expect(preview.gridSize).toBe(2)
+    expect(preview.draft.editor.snapStep).toBe(0.25)
+    expect(preview.snapStep).toBe(0.25)
+    expect(preview.gridEnabled).toBe(true)
+    expect(preview.snapEnabled).toBe(true)
+
+    const returned = returnToCurrentCanvasDraft(preview)
+    expect(returned.readOnlyVersion).toBeNull()
+    expect(returned.draft.editor.gridSize).toBe(5)
+    expect(returned.gridSize).toBe(5)
+    expect(returned.draft.editor.snapStep).toBe(0.5)
+    expect(returned.snapStep).toBe(0.5)
+    expect(returned.gridEnabled).toBe(false)
+    expect(returned.snapEnabled).toBe(false)
+  })
+
   it("does not route a nested Transformer handle event into element dragging", () => {
     const transformer = {
       className: "Transformer",
@@ -3381,8 +3427,62 @@ describe("web workbench app", () => {
     )
     await flush(8)
 
+    const gridButton = queryButton("网格")
+    const contextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    })
+    gridButton.dispatchEvent(contextMenuEvent)
     await act(async () => {
-      queryButton("网格").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+    expect(contextMenuEvent.defaultPrevented).toBe(true)
+    expect(gridButton.getAttribute("aria-pressed")).toBe("true")
+    queryButton("2mm").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await act(async () => {
+      await flush(4)
+    })
+
+    const snapContextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    })
+    queryButton("吸附").dispatchEvent(snapContextMenuEvent)
+    await act(async () => {
+      await flush(4)
+    })
+    expect(snapContextMenuEvent.defaultPrevented).toBe(true)
+    queryButton("1/2 格").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await act(async () => {
+      await flush(4)
+    })
+
+    await act(async () => {
+      queryButton("文本").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+    await act(async () => {
+      queryButton("撤销").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+    const afterUndo = await loadWorkingCopy({
+      kind: "user-template",
+      templateId: saved.template.id,
+    })
+    expect(afterUndo?.draft.editor.gridSize).toBe(2)
+    expect(afterUndo?.draft.editor.snapStep).toBe(0.5)
+
+    await act(async () => {
+      gridButton.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(4)
+    })
+
+    queryButton("吸附").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }))
+    await act(async () => {
+      await flush(4)
+    })
+    queryButton("1/4 格").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await act(async () => {
       await flush(4)
     })
 
@@ -3396,7 +3496,9 @@ describe("web workbench app", () => {
       templateId: saved.template.id,
     })
     expect(workingCopy?.draft.editor.gridEnabled).toBe(false)
+    expect(workingCopy?.draft.editor.gridSize).toBe(2)
     expect(workingCopy?.draft.editor.snapEnabled).toBe(false)
+    expect(workingCopy?.draft.editor.snapStep).toBe(0.25)
   })
 
   it("normalizes transformed element geometry without changing freeform dimensions", () => {

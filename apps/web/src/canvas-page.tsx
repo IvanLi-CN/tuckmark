@@ -12,7 +12,6 @@ import {
   EyeOff,
   FileClock,
   Focus,
-  Grid2x2,
   History,
   Lock,
   LockOpen,
@@ -21,7 +20,6 @@ import {
   RotateCcw,
   RotateCw,
   Save,
-  ScanSearch,
   StretchHorizontal,
   StretchVertical,
   TextAlignJustify,
@@ -104,7 +102,9 @@ import {
   translateCanvasSnapBounds,
 } from "./canvas-snap.js"
 import { DimensionPicker } from "./components/canvas/dimension-picker.js"
+import { GridSizeMenu } from "./components/canvas/grid-size-menu.js"
 import { InspectorNumberField } from "./components/canvas/inspector-number-field.js"
+import { SnapStepMenu } from "./components/canvas/snap-step-menu.js"
 import { TextFontFamilySelect } from "./components/canvas/text-font-family-select.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
@@ -144,6 +144,7 @@ import {
   type CanvasDimension,
   getCanvasDimensionCapabilityMessage,
 } from "./lib/canvas-dimensions.js"
+import type { CanvasGridSize, CanvasSnapStep } from "./lib/canvas-grid.js"
 import {
   type CanvasSelectionBox,
   normalizeSelectionBox,
@@ -208,6 +209,12 @@ type StageViewportSize = {
   height: number
 }
 
+type CanvasGridLine = {
+  axis: "x" | "y"
+  major: boolean
+  offset: number
+}
+
 type TemplateNameDialogState = {
   mode: "save" | "save-as"
   suggestedName: string
@@ -224,7 +231,9 @@ type CanvasPageState = {
   activePanel: "attributes" | "output"
   focus: "left-center" | "center-right"
   gridEnabled: boolean
+  gridSize: CanvasGridSize
   snapEnabled: boolean
+  snapStep: CanvasSnapStep
   spacePressed: boolean
   viewport: StageViewport
   selectionBox: CanvasSelectionBox
@@ -239,7 +248,6 @@ type CanvasPageState = {
   storageMode: "persisted" | "reset-pending"
 }
 
-const GRID_SIZE = 1
 const STAGE_VIEWPORT_WIDTH = 760
 const STAGE_VIEWPORT_HEIGHT = 520
 const EMPTY_SELECTION_BOX: CanvasSelectionBox = { x1: 0, y1: 0, x2: 0, y2: 0, visible: false }
@@ -705,7 +713,9 @@ function normalizeClipboardElements(
     elements: structuredClone(elements),
     editor: {
       gridEnabled: state.gridEnabled,
+      gridSize: state.gridSize,
       snapEnabled: state.snapEnabled,
+      snapStep: state.snapStep,
     },
   }).elements
 }
@@ -902,7 +912,9 @@ function applyDraftPreviewUpdate(
 ): CanvasPageState {
   const nextDraft = normalizeDraftDocument(updater(cloneDraft(state.draft)))
   nextDraft.editor.gridEnabled = state.gridEnabled
+  nextDraft.editor.gridSize = state.gridSize
   nextDraft.editor.snapEnabled = state.snapEnabled
+  nextDraft.editor.snapStep = state.snapStep
   return {
     ...state,
     draft: nextDraft,
@@ -957,7 +969,9 @@ export function confirmPendingPastePlacement(state: CanvasPageState): CanvasPage
 
   const nextDraft = normalizeDraftDocument(cloneDraft(state.draft))
   nextDraft.editor.gridEnabled = state.gridEnabled
+  nextDraft.editor.gridSize = state.gridSize
   nextDraft.editor.snapEnabled = state.snapEnabled
+  nextDraft.editor.snapStep = state.snapStep
   const next = pushHistory(state, nextDraft)
 
   return {
@@ -1098,7 +1112,9 @@ export function startClipboardPastePlacement(
       elements: [...baseState.liveDraft.elements, ...positionedPreviewElements],
     })
     nextDraft.editor.gridEnabled = baseState.gridEnabled
+    nextDraft.editor.gridSize = baseState.gridSize
     nextDraft.editor.snapEnabled = baseState.snapEnabled
+    nextDraft.editor.snapStep = baseState.snapStep
 
     return {
       ...baseState,
@@ -1137,7 +1153,9 @@ export function startClipboardPastePlacement(
     elements: [...baseState.liveDraft.elements, nextTextElement],
   })
   nextDraft.editor.gridEnabled = baseState.gridEnabled
+  nextDraft.editor.gridSize = baseState.gridSize
   nextDraft.editor.snapEnabled = baseState.snapEnabled
+  nextDraft.editor.snapStep = baseState.snapStep
 
   return {
     ...baseState,
@@ -1326,7 +1344,9 @@ export function createCanvasStateFromDraft(
     activePanel: options?.activePanel ?? "attributes",
     focus: options?.focus ?? "left-center",
     gridEnabled: draft.editor.gridEnabled,
+    gridSize: draft.editor.gridSize,
     snapEnabled: draft.editor.snapEnabled,
+    snapStep: draft.editor.snapStep,
     spacePressed: false,
     viewport: options?.viewport ?? createViewport(draft.width, draft.height),
     selectionBox: options?.selectionBox ?? EMPTY_SELECTION_BOX,
@@ -1501,6 +1521,7 @@ function applyDraftUpdate(
 ): CanvasPageState {
   const nextDraft = normalizeDraftDocument(updater(cloneDraft(state.liveDraft)))
   nextDraft.editor.gridEnabled = state.gridEnabled
+  nextDraft.editor.gridSize = state.gridSize
   nextDraft.editor.snapEnabled = state.snapEnabled
   const next = pushHistory(state, nextDraft)
   return {
@@ -1517,7 +1538,9 @@ function updateEditorAssistState(
   return {
     ...state,
     gridEnabled: nextEditor.gridEnabled,
+    gridSize: nextEditor.gridSize,
     snapEnabled: nextEditor.snapEnabled,
+    snapStep: nextEditor.snapStep,
     liveDraft: {
       ...state.liveDraft,
       editor: nextEditor,
@@ -1527,6 +1550,62 @@ function updateEditorAssistState(
       editor: nextEditor,
     },
     storageMode: "persisted",
+  }
+}
+
+function restoreHistoryDraft(
+  state: CanvasPageState,
+  draft: CanvasDraftDocument
+): CanvasDraftDocument {
+  return {
+    ...draft,
+    editor: {
+      ...draft.editor,
+      gridEnabled: state.gridEnabled,
+      gridSize: state.gridSize,
+      snapEnabled: state.snapEnabled,
+      snapStep: state.snapStep,
+    },
+  }
+}
+
+export function openCanvasVersion(
+  state: CanvasPageState,
+  version: UserTemplateVersionSnapshot
+): CanvasPageState {
+  const draft = normalizeDraftDocument(version.document)
+  return {
+    ...state,
+    draft: cloneDraft(draft),
+    readOnlyVersion: {
+      ...version,
+      document: draft,
+    },
+    gridEnabled: draft.editor.gridEnabled,
+    gridSize: draft.editor.gridSize,
+    snapEnabled: draft.editor.snapEnabled,
+    snapStep: draft.editor.snapStep,
+    selectedIds: [],
+    editingId: null,
+    versionsOpen: true,
+    focus: "center-right",
+    outputStatus: `正在查看 ${version.label}。`,
+  }
+}
+
+export function returnToCurrentCanvasDraft(state: CanvasPageState): CanvasPageState {
+  const draft = normalizeDraftDocument(state.liveDraft)
+  return {
+    ...state,
+    draft: cloneDraft(draft),
+    readOnlyVersion: null,
+    gridEnabled: draft.editor.gridEnabled,
+    gridSize: draft.editor.gridSize,
+    snapEnabled: draft.editor.snapEnabled,
+    snapStep: draft.editor.snapStep,
+    selectedIds: [],
+    editingId: null,
+    outputStatus: "已返回当前草稿。",
   }
 }
 
@@ -1622,7 +1701,8 @@ function createCanvasSnapContext(
     movingIds,
     displayScale: viewport.scale * CANVAS_DOTS_PER_MILLIMETER,
     enabled,
-    gridSize: GRID_SIZE,
+    gridSize: draft.editor.gridSize,
+    snapStep: draft.editor.snapStep,
   }
 }
 
@@ -1994,6 +2074,7 @@ function getCanvasCapabilityWarning(draft: CanvasDraftDocument, controller: Work
 
 function getVisibleGridBounds(
   viewport: StageViewport,
+  gridSize: CanvasGridSize,
   viewportWidth = STAGE_VIEWPORT_WIDTH,
   viewportHeight = STAGE_VIEWPORT_HEIGHT
 ) {
@@ -2008,11 +2089,15 @@ function getVisibleGridBounds(
     top,
     right,
     bottom,
-    startX: Math.floor(left / GRID_SIZE) * GRID_SIZE,
-    endX: Math.ceil(right / GRID_SIZE) * GRID_SIZE,
-    startY: Math.floor(top / GRID_SIZE) * GRID_SIZE,
-    endY: Math.ceil(bottom / GRID_SIZE) * GRID_SIZE,
+    startX: Math.floor(left / gridSize) * gridSize,
+    endX: Math.ceil(right / gridSize) * gridSize,
+    startY: Math.floor(top / gridSize) * gridSize,
+    endY: Math.ceil(bottom / gridSize) * gridSize,
   }
+}
+
+function isMajorGridCoordinate(coordinate: number): boolean {
+  return Math.abs(coordinate / 10 - Math.round(coordinate / 10)) < 0.0001
 }
 
 function resetDraft(state: CanvasPageState): CanvasPageState {
@@ -2162,7 +2247,7 @@ function undoDraft(state: CanvasPageState): CanvasPageState {
   if (!previousDraft) {
     return state
   }
-  const nextDraft = cloneDraft(previousDraft)
+  const nextDraft = restoreHistoryDraft(state, cloneDraft(previousDraft))
   return {
     ...state,
     liveDraft: nextDraft,
@@ -2181,7 +2266,7 @@ function redoDraft(state: CanvasPageState): CanvasPageState {
   if (!nextHistoryDraft) {
     return state
   }
-  const nextDraft = cloneDraft(nextHistoryDraft)
+  const nextDraft = restoreHistoryDraft(state, cloneDraft(nextHistoryDraft))
   return {
     ...state,
     liveDraft: nextDraft,
@@ -3057,11 +3142,11 @@ function CanvasToolbar({
             </div>
             <div className="tm-canvas-toolbar__group">
               <span className="tm-canvas-toolbar__label">辅助</span>
-              <Button
-                size="sm"
-                variant={state.gridEnabled ? "default" : "outline"}
+              <GridSizeMenu
                 disabled={interactionLocked}
-                onClick={() =>
+                gridEnabled={state.gridEnabled}
+                value={state.gridSize}
+                onToggle={() =>
                   onChange((current) => {
                     const nextEditor = {
                       ...current.liveDraft.editor,
@@ -3070,28 +3155,36 @@ function CanvasToolbar({
                     return updateEditorAssistState(current, nextEditor)
                   })
                 }
-              >
-                <Grid2x2 className="size-4" />
-                网格
-              </Button>
-              <Button
-                size="sm"
-                variant={state.snapEnabled ? "default" : "outline"}
-                aria-pressed={state.snapEnabled}
+                onChange={(gridSize) =>
+                  onChange((current) =>
+                    updateEditorAssistState(current, {
+                      ...current.liveDraft.editor,
+                      gridSize,
+                    })
+                  )
+                }
+              />
+              <SnapStepMenu
                 disabled={interactionLocked}
-                onClick={() =>
-                  onChange((current) => {
-                    const nextEditor = {
+                snapEnabled={state.snapEnabled}
+                value={state.snapStep}
+                onToggle={() =>
+                  onChange((current) =>
+                    updateEditorAssistState(current, {
                       ...current.liveDraft.editor,
                       snapEnabled: !current.snapEnabled,
-                    }
-                    return updateEditorAssistState(current, nextEditor)
-                  })
+                    })
+                  )
                 }
-              >
-                <ScanSearch className="size-4" />
-                吸附
-              </Button>
+                onChange={(snapStep) =>
+                  onChange((current) =>
+                    updateEditorAssistState(current, {
+                      ...current.liveDraft.editor,
+                      snapStep,
+                    })
+                  )
+                }
+              />
             </div>
           </>
         ) : null}
@@ -5005,9 +5098,40 @@ function CanvasStageView({
     [measuredStageHostSize]
   )
   const gridBounds = React.useMemo(
-    () => getVisibleGridBounds(state.viewport, stageViewportSize.width, stageViewportSize.height),
-    [state.viewport, stageViewportSize.height, stageViewportSize.width]
+    () =>
+      getVisibleGridBounds(
+        state.viewport,
+        state.gridSize,
+        stageViewportSize.width,
+        stageViewportSize.height
+      ),
+    [stageViewportSize.height, stageViewportSize.width, state.gridSize, state.viewport]
   )
+  const gridLines = React.useMemo<CanvasGridLine[]>(() => {
+    const displayScale = state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER
+    const xCount = Math.round((gridBounds.endX - gridBounds.startX) / state.gridSize)
+    const yCount = Math.round((gridBounds.endY - gridBounds.startY) / state.gridSize)
+    const lines: CanvasGridLine[] = []
+
+    for (let index = 0; index <= xCount; index += 1) {
+      const coordinate = gridBounds.startX + index * state.gridSize
+      lines.push({
+        axis: "x",
+        major: isMajorGridCoordinate(coordinate),
+        offset: (coordinate - gridBounds.startX) * displayScale,
+      })
+    }
+    for (let index = 0; index <= yCount; index += 1) {
+      const coordinate = gridBounds.startY + index * state.gridSize
+      lines.push({
+        axis: "y",
+        major: isMajorGridCoordinate(coordinate),
+        offset: (coordinate - gridBounds.startY) * displayScale,
+      })
+    }
+
+    return lines
+  }, [gridBounds, state.gridSize, state.viewport.scale])
   const paperStyle = React.useMemo(
     () => ({
       width: state.draft.width * CANVAS_DOTS_PER_MILLIMETER,
@@ -5342,12 +5466,14 @@ function CanvasStageView({
           editor: {
             ...preview.draft.editor,
             gridEnabled: state.gridEnabled,
+            gridSize: state.gridSize,
             snapEnabled: state.snapEnabled,
+            snapStep: state.snapStep,
           },
         },
       }
     },
-    [state.gridEnabled, state.snapEnabled, state.viewport]
+    [state.gridEnabled, state.gridSize, state.snapEnabled, state.snapStep, state.viewport]
   )
 
   return (
@@ -5366,8 +5492,14 @@ function CanvasStageView({
         <div ref={setStageHostElement} className="tm-stage-surface">
           <div className="tm-stage-paper tm-stage-paper--base" style={paperStyle} />
           {state.gridEnabled ? (
-            <div
+            <svg
               className="tm-stage-grid"
+              aria-hidden="true"
+              viewBox={`0 0 ${
+                (gridBounds.endX - gridBounds.startX) *
+                state.viewport.scale *
+                CANVAS_DOTS_PER_MILLIMETER
+              } ${(gridBounds.endY - gridBounds.startY) * state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER}`}
               style={{
                 left:
                   state.viewport.x +
@@ -5383,9 +5515,19 @@ function CanvasStageView({
                   (gridBounds.endY - gridBounds.startY) *
                   state.viewport.scale *
                   CANVAS_DOTS_PER_MILLIMETER,
-                backgroundSize: `${GRID_SIZE * state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER}px ${GRID_SIZE * state.viewport.scale * CANVAS_DOTS_PER_MILLIMETER}px`,
               }}
-            />
+            >
+              {gridLines.map((line) => (
+                <line
+                  key={`${line.axis}-${line.offset}`}
+                  className={cn("tm-stage-grid__line", line.major && "tm-stage-grid__line--major")}
+                  x1={line.axis === "x" ? line.offset : 0}
+                  y1={line.axis === "y" ? line.offset : 0}
+                  x2={line.axis === "x" ? line.offset : "100%"}
+                  y2={line.axis === "y" ? line.offset : "100%"}
+                />
+              ))}
+            </svg>
           ) : null}
         </div>
         <Stage
@@ -6355,7 +6497,9 @@ export function CanvasWorkspace({
               elements: [],
               editor: {
                 gridEnabled: true,
+                gridSize: 1,
                 snapEnabled: true,
+                snapStep: 1,
               },
             },
             {
@@ -6534,14 +6678,7 @@ export function CanvasWorkspace({
       if (interactionLocked) {
         if (event.key === "Escape") {
           event.preventDefault()
-          setState((current) => ({
-            ...current,
-            draft: current.liveDraft,
-            readOnlyVersion: null,
-            selectedIds: [],
-            editingId: null,
-            outputStatus: "已返回当前草稿。",
-          }))
+          setState((current) => returnToCurrentCanvasDraft(current))
         }
         return
       }
@@ -6685,27 +6822,11 @@ export function CanvasWorkspace({
   }, [])
 
   const openVersion = React.useCallback((version: UserTemplateVersionSnapshot) => {
-    setState((current) => ({
-      ...current,
-      draft: cloneDraft(version.document),
-      readOnlyVersion: version,
-      selectedIds: [],
-      editingId: null,
-      versionsOpen: true,
-      focus: "center-right",
-      outputStatus: `正在查看 ${version.label}。`,
-    }))
+    setState((current) => openCanvasVersion(current, version))
   }, [])
 
   const returnToCurrentDraft = React.useCallback(() => {
-    setState((current) => ({
-      ...current,
-      draft: current.liveDraft,
-      readOnlyVersion: null,
-      selectedIds: [],
-      editingId: null,
-      outputStatus: "已返回当前草稿。",
-    }))
+    setState((current) => returnToCurrentCanvasDraft(current))
   }, [])
 
   const handleRestoreVersion = React.useCallback(async () => {

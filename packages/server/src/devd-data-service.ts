@@ -343,7 +343,18 @@ const canvasDraftDocumentSchema = z
       z.object({ key: dataIdentifierSchema, label: dataIdentifierSchema }).passthrough()
     ),
     elements: z.array(canvasDraftElementSchema),
-    editor: z.object({ gridEnabled: z.boolean(), snapEnabled: z.boolean() }),
+    editor: z.object({
+      gridEnabled: z.boolean(),
+      gridSize: z.preprocess(
+        (value) => (value === 1 || value === 2 || value === 5 ? value : 1),
+        z.union([z.literal(1), z.literal(2), z.literal(5)])
+      ),
+      snapEnabled: z.boolean(),
+      snapStep: z.preprocess(
+        (value) => (value === 0.25 || value === 0.5 || value === 1 ? value : 1),
+        z.union([z.literal(0.25), z.literal(0.5), z.literal(1)])
+      ),
+    }),
   })
   .passthrough()
 
