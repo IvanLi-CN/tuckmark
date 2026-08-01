@@ -235,9 +235,13 @@ const canvasDraftFieldSchema = z.object({
 })
 
 const canvasGridSizeSchema = z.preprocess(
-  (value) =>
-    value === 1 || value === 2 || value === 2.5 || value === 5 || value === 10 ? value : 1,
-  z.union([z.literal(1), z.literal(2), z.literal(2.5), z.literal(5), z.literal(10)])
+  (value) => (value === 1 || value === 2 || value === 5 ? value : 1),
+  z.union([z.literal(1), z.literal(2), z.literal(5)])
+)
+
+const canvasSnapStepSchema = z.preprocess(
+  (value) => (value === 0.25 || value === 0.5 || value === 1 ? value : 1),
+  z.union([z.literal(0.25), z.literal(0.5), z.literal(1)])
 )
 
 const canvasDraftDocumentSchema = z
@@ -260,6 +264,7 @@ const canvasDraftDocumentSchema = z
       gridEnabled: z.boolean().default(true),
       gridSize: canvasGridSizeSchema,
       snapEnabled: z.boolean().default(true),
+      snapStep: canvasSnapStepSchema,
     }),
   })
   .passthrough()
@@ -635,6 +640,7 @@ function createDraftFromUserTemplatePackage(
       gridEnabled: true,
       gridSize: 1,
       snapEnabled: true,
+      snapStep: 1,
     },
   })
 }
