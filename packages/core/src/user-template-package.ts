@@ -42,6 +42,14 @@ export const userTemplatePackageSchema = z.object({
   sampleInput: z.record(z.string(), z.string()).default({}),
   renderOptions: renderOptionsSchema.partial().default({}),
   tags: z.array(z.string().min(1)).default([]),
+  recommendedUses: z
+    .array(
+      z.object({
+        scope: z.string().min(1),
+        weight: z.number().int().min(1).max(100),
+      })
+    )
+    .optional(),
 })
 export type UserTemplatePackage = z.infer<typeof userTemplatePackageSchema>
 

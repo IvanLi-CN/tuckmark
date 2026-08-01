@@ -23,9 +23,22 @@ import {
   type TemplateUsageRecord,
   TuckmarkService,
 } from "@tuckmark/core"
+import {
+  agentImportItemSchema,
+  agentImportProposalSchema,
+  agentImportTemplateSchema,
+} from "@tuckmark/inventory"
 import cors from "cors"
 import express from "express"
 import { z } from "zod"
+
+import { AgentImportService } from "./agent-import-service.js"
+import {
+  DevdDataConflictError,
+  DevdDataNotFoundError,
+  DevdDataService,
+  DevdDataUnavailableError,
+} from "./devd-data-service.js"
 
 export interface ServerService {
   listTemplates(): Promise<Awaited<ReturnType<TuckmarkService["listTemplates"]>>>
@@ -152,18 +165,306 @@ const canvasDraftRecordRequestSchema = syncRecordSchema.refine(
   "Expected canvas_draft record"
 )
 
+const createAgentImportSessionSchema = z.object({
+  sessionId: z.string().min(24).max(200),
+  secret: z.string().min(32).max(1000),
+  proposal: agentImportProposalSchema,
+})
+
+const updateAgentImportItemSchema = z.object({
+  expectedRevision: z.number().int().min(0),
+  item: agentImportItemSchema,
+})
+
+const requestAgentImportTemplateSchema = z
+  .object({
+    expectedRevision: z.number().int().min(0),
+    template: agentImportTemplateSchema,
+  })
+  .strict()
+
+const fulfillAgentImportTemplateSchema = z.object({
+  expectedRevision: z.number().int().min(0),
+  input: z.record(z.string(), z.string()),
+})
+
 function sendError(res: express.Response, error: unknown): void {
   const message = error instanceof Error ? error.message : "Unknown error"
   res.status(400).json({ status: "error", error: message })
 }
 
-export function createApp(service: ServerService = new TuckmarkService()): express.Express {
+export type CreateAppOptions = {
+  agentImportService?: AgentImportService | null
+  clientAddress?: (request: express.Request) => string | undefined
+  devdDataService?: DevdDataService | null
+}
+
+function requireDevdDataService(service: DevdDataService | null): DevdDataService {
+  if (!service) {
+    throw new DevdDataUnavailableError(
+      "DEVD data access requires TUCKMARK_DATA_DIR in server-http mode."
+    )
+  }
+  return service
+}
+
+function sendDataError(res: express.Response, error: unknown): void {
+  if (error instanceof DevdDataConflictError) {
+    res.status(409).json({
+      status: "error",
+      code: error.code,
+      expectedRevision: error.expectedRevision,
+      actualRevision: error.actualRevision,
+      error: error.message,
+    })
+    return
+  }
+  if (error instanceof DevdDataNotFoundError) {
+    res.status(404).json({ status: "error", code: error.code, error: error.message })
+    return
+  }
+  if (error instanceof DevdDataUnavailableError) {
+    res.status(503).json({ status: "error", code: error.code, error: error.message })
+    return
+  }
+  if (error instanceof z.ZodError) {
+    res.status(400).json({ status: "error", code: "validation_error", error: error.message })
+    return
+  }
+  sendError(res, error)
+}
+
+const runtimeDataCommandSchema = z.enum([
+  "save-template",
+  "rename-template",
+  "archive-template",
+  "restore-template",
+  "purge-template",
+  "save-autosave",
+  "replace-working-copy",
+  "clear-working-copy",
+  "clear-template-autosaves",
+  "save-settings",
+  "replace-snapshot",
+])
+
+const inventoryDataCommandSchema = z.enum([
+  "save-material",
+  "archive-material",
+  "restore-material",
+  "delete-material",
+  "apply-adjustment",
+])
+
+const dataMutationSchema = z.object({
+  expectedRevision: z.number().int().min(0),
+  args: z.record(z.string(), z.unknown()).default({}),
+})
+
+const archiveImportSchema = z.object({
+  expectedRevision: z.number().int().min(0),
+  archiveHash: z.string().regex(/^[a-f0-9]{64}$/),
+  mode: z.enum(["merge", "replace"]),
+  archive: z.unknown(),
+})
+
+function requireAgentImportService(service: AgentImportService | null): AgentImportService {
+  if (!service) {
+    throw new Error(
+      "Agent import requires a server-managed data directory. Set TUCKMARK_DATA_DIR and use server-http."
+    )
+  }
+  return service
+}
+
+function requireAgentImportKey(req: express.Request): string {
+  const key = req.header("x-tuckmark-agent-import-key")?.trim()
+  if (!key) {
+    throw new Error("Missing agent import session key.")
+  }
+  return key
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[/u, "").replace(/\]$/u, "")
+  return normalized === "127.0.0.1" || normalized === "::1" || normalized === "localhost"
+}
+
+function isLoopbackClientAddress(address: string | undefined): boolean {
+  if (!address) return false
+  const normalized = address.toLowerCase().replace(/^::ffff:/u, "")
+  return normalized === "::1" || /^127(?:\.\d{1,3}){3}$/u.test(normalized)
+}
+
+export function createApp(
+  service: ServerService = new TuckmarkService(),
+  options: CreateAppOptions = {}
+): express.Express {
   const app = express()
+  const devdDataService = options.devdDataService ?? DevdDataService.fromEnvironment()
+  const agentImportService =
+    options.agentImportService ?? AgentImportService.fromEnvironment(devdDataService ?? undefined)
+  const clientAddress = options.clientAddress ?? ((request) => request.socket.remoteAddress)
   app.use(cors())
   app.use(express.json({ limit: "10mb" }))
 
+  const requireLocalAppOrigin: express.RequestHandler = (req, res, next) => {
+    if (!isLoopbackClientAddress(clientAddress(req))) {
+      res.status(403).json({ status: "error", error: "DEVD only accepts loopback requests." })
+      return
+    }
+    if (!isLoopbackHostname(req.hostname)) {
+      res.status(403).json({ status: "error", error: "DEVD only accepts loopback requests." })
+      return
+    }
+    const origin = req.header("origin")
+    if (!origin) return next()
+    try {
+      const originUrl = new URL(origin)
+      if (originUrl.host === req.header("host") || isLoopbackHostname(originUrl.hostname)) {
+        return next()
+      }
+    } catch {
+      // Invalid origins are rejected below.
+    }
+    res.status(403).json({ status: "error", error: "Cross-origin DEVD access is forbidden." })
+  }
+  app.use("/api/data", requireLocalAppOrigin)
+  app.use("/api/agent-import", requireLocalAppOrigin)
+
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", name: "tuckmark" })
+  })
+
+  app.get("/api/data/status", async (_req, res) => {
+    try {
+      res.json(await requireDevdDataService(devdDataService).status())
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.get("/api/data/runtime/snapshot", async (_req, res) => {
+    try {
+      res.json(await requireDevdDataService(devdDataService).readRuntimeSnapshot())
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.post("/api/data/runtime/:command", async (req, res) => {
+    try {
+      const command = runtimeDataCommandSchema.parse(req.params.command)
+      const payload = dataMutationSchema.parse(req.body)
+      res.json(
+        await requireDevdDataService(devdDataService).mutateRuntime({
+          command,
+          expectedRevision: payload.expectedRevision,
+          args: payload.args,
+        })
+      )
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.get("/api/data/inventory/materials", async (req, res) => {
+    try {
+      const service = requireDevdDataService(devdDataService)
+      const query = typeof req.query.query === "string" ? req.query.query : ""
+      const includeArchived = req.query.includeArchived === "true"
+      res.json(await service.readMaterials(query, includeArchived))
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.get("/api/data/inventory/adjustments", async (req, res) => {
+    try {
+      const service = requireDevdDataService(devdDataService)
+      const materialId = typeof req.query.materialId === "string" ? req.query.materialId : undefined
+      res.json(await service.readAdjustments(materialId))
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.post("/api/data/inventory/:command", async (req, res) => {
+    try {
+      const command = inventoryDataCommandSchema.parse(req.params.command)
+      const payload = dataMutationSchema.parse(req.body)
+      res.json(
+        await requireDevdDataService(devdDataService).mutateInventory({
+          command,
+          expectedRevision: payload.expectedRevision,
+          args: payload.args,
+        })
+      )
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.get("/api/data/events", async (req, res) => {
+    try {
+      const service = requireDevdDataService(devdDataService)
+      res.status(200)
+      res.set({
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        "content-type": "text/event-stream",
+      })
+      res.flushHeaders()
+      res.write("retry: 3000\n\n")
+      const unsubscribe = service.subscribe((event) => {
+        res.write(`id: ${event.revision}\n`)
+        res.write("event: data-revision\n")
+        res.write(`data: ${JSON.stringify(event)}\n\n`)
+      })
+      const heartbeat = setInterval(() => res.write(": keepalive\n\n"), 15_000)
+      req.on("close", () => {
+        clearInterval(heartbeat)
+        unsubscribe()
+      })
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.get("/api/data/archive", async (_req, res) => {
+    try {
+      res.json(await requireDevdDataService(devdDataService).readArchive())
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.post("/api/data/archive/inspect", async (req, res) => {
+    try {
+      res.json({ data: await requireDevdDataService(devdDataService).inspectArchive(req.body) })
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.post("/api/data/archive/import", async (req, res) => {
+    try {
+      const payload = archiveImportSchema.parse(req.body)
+      res.json(await requireDevdDataService(devdDataService).importArchive(payload))
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.post("/api/data/backups", async (req, res) => {
+    try {
+      const expectedRevision = z
+        .object({ expectedRevision: z.number().int().min(0) })
+        .parse(req.body).expectedRevision
+      res.json(await requireDevdDataService(devdDataService).createBackup(expectedRevision))
+    } catch (error) {
+      sendDataError(res, error)
+    }
   })
 
   app.get("/api/templates", async (_req, res) => {
@@ -374,6 +675,139 @@ export function createApp(service: ServerService = new TuckmarkService()): expre
     }
   })
 
+  app.get("/api/agent-import/catalog", async (_req, res) => {
+    try {
+      res.json(await requireAgentImportService(agentImportService).catalog())
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.get("/api/agent-import/inventory", async (req, res) => {
+    try {
+      const query = typeof req.query.query === "string" ? req.query.query : undefined
+      res.json({
+        materials: await requireAgentImportService(agentImportService).listInventory(query),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post("/api/agent-import/sessions", (req, res) => {
+    try {
+      const payload = createAgentImportSessionSchema.parse(req.body)
+      res.status(201).json({
+        session: requireAgentImportService(agentImportService).createSession(payload),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.get("/api/agent-import/sessions/:sessionId", (req, res) => {
+    try {
+      res.json({
+        session: requireAgentImportService(agentImportService).getSession(
+          req.params.sessionId,
+          requireAgentImportKey(req)
+        ),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.get("/api/agent-import/sessions/:sessionId/events", (req, res) => {
+    try {
+      res.json({
+        events: requireAgentImportService(agentImportService).listEvents(
+          req.params.sessionId,
+          requireAgentImportKey(req)
+        ),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.get("/api/agent-import/sessions/:sessionId/restock-targets", async (req, res) => {
+    try {
+      res.json({
+        targets: await requireAgentImportService(agentImportService).resolveRestockTargets(
+          req.params.sessionId,
+          requireAgentImportKey(req)
+        ),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.put("/api/agent-import/sessions/:sessionId/items/:itemId", (req, res) => {
+    try {
+      const payload = updateAgentImportItemSchema.parse(req.body)
+      res.json({
+        session: requireAgentImportService(agentImportService).updateItem({
+          sessionId: req.params.sessionId,
+          secret: requireAgentImportKey(req),
+          itemId: req.params.itemId,
+          ...payload,
+        }),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post(
+    "/api/agent-import/sessions/:sessionId/items/:itemId/template-input",
+    async (req, res) => {
+      try {
+        const payload = requestAgentImportTemplateSchema.parse(req.body)
+        res.json({
+          session: await requireAgentImportService(agentImportService).requestTemplateInput({
+            sessionId: req.params.sessionId,
+            secret: requireAgentImportKey(req),
+            itemId: req.params.itemId,
+            ...payload,
+          }),
+        })
+      } catch (error) {
+        sendError(res, error)
+      }
+    }
+  )
+
+  app.post("/api/agent-import/sessions/:sessionId/events/:eventId/fulfill", (req, res) => {
+    try {
+      const payload = fulfillAgentImportTemplateSchema.parse(req.body)
+      res.json({
+        session: requireAgentImportService(agentImportService).fulfillTemplateInput({
+          sessionId: req.params.sessionId,
+          secret: requireAgentImportKey(req),
+          eventId: req.params.eventId,
+          ...payload,
+        }),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
+  app.post("/api/agent-import/sessions/:sessionId/confirm", async (req, res) => {
+    try {
+      res.json({
+        session: await requireAgentImportService(agentImportService).confirm(
+          req.params.sessionId,
+          requireAgentImportKey(req)
+        ),
+      })
+    } catch (error) {
+      sendError(res, error)
+    }
+  })
+
   const staticWebRoot = process.env.TUCKMARK_WEB_DIST
     ? path.resolve(process.env.TUCKMARK_WEB_DIST)
     : path.resolve(process.cwd(), "../../apps/web/dist")
@@ -397,12 +831,13 @@ export function createApp(service: ServerService = new TuckmarkService()): expre
 
 export function startServer(
   service: ServerService = new TuckmarkService(),
-  port = Number(process.env.PORT ?? 5210)
+  port = Number(process.env.PORT ?? 5210),
+  host = process.env.TUCKMARK_SERVER_HOST?.trim() || "127.0.0.1"
 ) {
   assertServerSidePrintRuntimeReady()
   const app = createApp(service)
-  return app.listen(port, () => {
-    console.log(`tuckmark server listening on http://localhost:${port}`)
+  return app.listen(port, host, () => {
+    console.log(`tuckmark server listening on http://${host}:${port}`)
   })
 }
 

@@ -11,6 +11,7 @@ import {
   type UserTemplatePackage,
 } from "@tuckmark/core"
 import {
+  agentImportTransactionSchema,
   applyInventoryAdjustment,
   buildInventoryTemplateInput,
   ensureInventoryMaterialActive,
@@ -34,6 +35,7 @@ const TEMPLATES_ROOT = "templates"
 const INVENTORY_MATERIALS_ROOT = path.join("inventory", "materials")
 const INVENTORY_ADJUSTMENTS_ROOT = path.join("inventory", "adjustments")
 const INVENTORY_TRANSACTIONS_ROOT = path.join("inventory", "transactions")
+const AGENT_IMPORT_TRANSACTIONS_ROOT = path.join("inventory", "agent-import-transactions")
 const DATA_DIRECTORY_MANIFEST_PATH = "manifest.json"
 const DATA_DIRECTORY_MANIFEST_SCHEMA = "tuckmark.data-dir-manifest.v1"
 
@@ -266,6 +268,14 @@ const userTemplateRecordSchema = z.object({
   archivedAt: z.string().nullable().optional(),
   currentVersionId: z.string().min(1),
   fieldOrder: z.array(z.string()),
+  recommendedUses: z
+    .array(
+      z.object({
+        scope: z.string().min(1),
+        weight: z.number().int().min(1).max(100),
+      })
+    )
+    .default([]),
 })
 
 const userTemplateVersionSchema = z.object({
@@ -440,6 +450,7 @@ function createDraftFromUserTemplatePackage(
     })),
     elements: templatePackage.elements,
     tags: templatePackage.tags,
+    recommendedUses: templatePackage.recommendedUses ?? [],
   }
   const fields: CanvasDraftField[] = template.fields.map((field) => ({
     key: field.key,
@@ -883,6 +894,10 @@ function resolveInventoryTransactionsRoot(dataDir: string): string {
   return path.join(dataDir, INVENTORY_TRANSACTIONS_ROOT)
 }
 
+function resolveAgentImportTransactionsRoot(dataDir: string): string {
+  return path.join(dataDir, AGENT_IMPORT_TRANSACTIONS_ROOT)
+}
+
 async function readInventoryEntries<T>(
   rootPath: string,
   parser: (value: unknown) => T
@@ -954,7 +969,37 @@ async function ensureDataDirectoryManifest(dataDir: string): Promise<void> {
   }
 }
 
+function resolveAgentImportWritePath(dataDir: string, relativePath: string): string {
+  const resolvedDataDir = path.resolve(dataDir)
+  const resolved = path.resolve(resolvedDataDir, relativePath)
+  const permittedRoot = relativePath.split("/")[0]
+  if (
+    (permittedRoot !== "inventory" && permittedRoot !== "templates") ||
+    !resolved.startsWith(`${resolvedDataDir}${path.sep}`)
+  ) {
+    throw new Error("Invalid agent import transaction path.")
+  }
+  return resolved
+}
+
+async function recoverAgentImportTransactions(dataDir: string): Promise<void> {
+  const transactionPaths = await listJsonFiles(resolveAgentImportTransactionsRoot(dataDir))
+  for (const transactionPath of transactionPaths) {
+    const transaction = agentImportTransactionSchema.parse(
+      JSON.parse(await readFile(transactionPath, "utf8"))
+    )
+    for (const write of transaction.writes) {
+      await writeJsonFile(resolveAgentImportWritePath(dataDir, write.relativePath), write.value)
+    }
+    await rm(transactionPath, { force: true })
+  }
+  if (transactionPaths.length > 0) {
+    await writeDataDirectoryManifest(dataDir)
+  }
+}
+
 async function recoverInventoryAdjustmentTransactions(dataDir: string): Promise<void> {
+  await recoverAgentImportTransactions(dataDir)
   const transactions = await readInventoryEntries(
     resolveInventoryTransactionsRoot(dataDir),
     inventoryAdjustmentTransactionSchema.parse
@@ -1121,6 +1166,7 @@ export async function importSharedUserTemplatePackage(args: {
     archivedAt: null,
     currentVersionId: version.id,
     fieldOrder: draft.fields.map((field) => field.key),
+    recommendedUses: args.templatePackage.recommendedUses ?? [],
   })
   const workingCopy: CanvasWorkingCopyIndexEntry = canvasWorkingCopyIndexEntrySchema.parse({
     sourceKey: buildSourceKey(templateId),
@@ -1298,6 +1344,7 @@ export type InventoryMaterialSaveArgs = {
   matrixCode?: string
   packagingRemark?: string
   labelBindings?: InventoryMaterial["labelBindings"]
+  datasheets?: InventoryMaterial["datasheets"]
 }
 
 export async function listInventoryMaterialsFromDirectory(args: {
@@ -1371,6 +1418,7 @@ export async function saveInventoryMaterialToDirectory(args: {
     updatedAt: now,
     archivedAt: existing?.archivedAt ?? null,
     labelBindings: args.material.labelBindings ?? existing?.labelBindings ?? [],
+    datasheets: args.material.datasheets ?? existing?.datasheets ?? [],
   })
   ensureMaterialUniqueness(materials, material)
   await writeJsonFile(

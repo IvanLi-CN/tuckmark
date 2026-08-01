@@ -227,6 +227,7 @@ export type UserTemplateRecord = {
   archivedAt?: string | null
   currentVersionId: string
   fieldOrder: string[]
+  recommendedUses?: Array<{ scope: string; weight: number }>
 }
 
 export type CanvasWorkingCopyIndexEntry = {
@@ -262,6 +263,7 @@ export type CanvasDraftDocument = {
   width: number
   height: number
   renderOptions?: Partial<DocumentRenderOptions>
+  recommendedUses?: Array<{ scope: string; weight: number }>
   fields: CanvasDraftField[]
   elements: CanvasDraftElement[]
   editor: {

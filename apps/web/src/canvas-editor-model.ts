@@ -900,6 +900,7 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
     },
     width: canvasDotsToMillimeters(template.width),
     height: canvasDotsToMillimeters(template.height),
+    recommendedUses: template.recommendedUses,
     fields: template.fields.map((field) => ({
       key: field.key,
       label: field.label,
@@ -934,6 +935,7 @@ export function createDraftFromUserTemplatePackage(
     })),
     elements: templatePackage.elements,
     tags: templatePackage.tags,
+    recommendedUses: templatePackage.recommendedUses ?? [],
   }
 
   const draft = normalizeDraftDocument({
@@ -941,6 +943,7 @@ export function createDraftFromUserTemplatePackage(
     id: `agent-template-${templatePackage.id}`,
     presetId: templatePackage.id,
     renderOptions: templatePackage.renderOptions,
+    recommendedUses: templatePackage.recommendedUses ?? [],
     source: {
       kind: "scratch",
       presetId: templatePackage.id,

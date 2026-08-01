@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   createCanvasDraftRecord,
   createDeletedCanvasDraftRecord,
@@ -65,6 +65,80 @@ describe("web-state-sync", () => {
   beforeEach(() => {
     storage.clear()
     vi.useRealTimers()
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it("does not read or write browser sync state in server-http mode", () => {
+    vi.stubEnv("TUCKMARK_WEB_SURFACE", "server-http")
+    window.localStorage.setItem("tuckmark.sync-state.v1", '{"browserOnly":true}')
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+
+    expect(loadLocalSyncState()).toEqual(emptySyncState())
+    expect(recordCanvasDraftLocally("shipping-wide", draft)).toMatchObject({
+      canvasDraftRecords: [expect.anything()],
+    })
+    expect(window.localStorage.getItem("tuckmark.sync-state.v1")).toBe('{"browserOnly":true}')
+    expect(applySyncStateToBrowser(emptySyncState(), ["shipping-wide"])).toEqual({
+      templates: [],
+      prints: [],
+    })
+  })
+
+  it("retains the browser-local recent activity registry in server-http mode", () => {
+    vi.stubEnv("TUCKMARK_WEB_SURFACE", "server-http")
+    window.localStorage.setItem("tuckmark.sync-state.v1", '{"browserOnly":true}')
+    window.localStorage.setItem(
+      "tuckmark.recent-activity.v1",
+      JSON.stringify({
+        templates: [
+          {
+            id: "existing-template",
+            name: "Existing template",
+            description: "Existing activity",
+            usedAt: "2026-07-30T09:00:00.000Z",
+          },
+        ],
+        prints: [],
+      })
+    )
+    const record = createTemplateUsageRecord({
+      id: "new-template",
+      name: "New template",
+      description: "New activity",
+      usedAt: "2026-07-30T10:00:00.000Z",
+    })
+
+    const recent = applySyncStateToBrowser(
+      {
+        ...emptySyncState(),
+        updatedAt: record.updatedAt,
+        templateUsageRecords: [record],
+      },
+      ["shipping-wide"]
+    )
+
+    expect(recent.templates.map((entry) => entry.id)).toEqual(["new-template", "existing-template"])
+    expect(readJson("tuckmark.sync-state.v1")).toEqual({ browserOnly: true })
+    expect(readJson("tuckmark.recent-activity.v1")).toEqual({
+      templates: [
+        {
+          id: "new-template",
+          name: "New template",
+          description: "New activity",
+          usedAt: "2026-07-30T10:00:00.000Z",
+        },
+        {
+          id: "existing-template",
+          name: "Existing template",
+          description: "Existing activity",
+          usedAt: "2026-07-30T09:00:00.000Z",
+        },
+      ],
+      prints: [],
+    })
   })
 
   it("migrates legacy recent activity and draft storage into sync state", () => {

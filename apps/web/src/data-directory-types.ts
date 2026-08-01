@@ -72,6 +72,9 @@ export type DataDirectoryHealth =
   | "error"
 
 export type DataDirectoryStatus = {
+  owner?: "browser" | "devd"
+  revision?: number
+  connectionState?: "connected" | "reconnecting"
   supported: boolean
   configured: boolean
   directoryName: string | null

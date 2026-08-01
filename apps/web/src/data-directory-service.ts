@@ -23,9 +23,9 @@ import type {
   DataDirectoryManifestV1,
   DataDirectoryPermissionState,
   DataDirectoryStatus,
-  RuntimeExportArchiveV1,
   RuntimeSnapshotSummary,
 } from "./data-directory-types.js"
+import { devdDataClient, isServerHttpDataSurface } from "./devd-data-client.js"
 import {
   readBrowserLocalInventorySnapshot,
   writeBrowserLocalInventorySnapshot,
@@ -52,6 +52,7 @@ const PROTECTION_BACKUPS_DIR = `${BACKUPS_DIR}/protection`
 const SETTINGS_DIR = "settings"
 const TEMPLATES_DIR = "templates"
 const ARCHIVE_SCHEMA = "tuckmark.runtime-export-archive.v1"
+export const TUCKMARK_DATA_ARCHIVE_SCHEMA = "tuckmark.data-archive.v1"
 const MANIFEST_SCHEMA = "tuckmark.data-dir-manifest.v1"
 const PROTECTION_BACKUP_LIMIT = 20
 const STATUS_STORAGE_KEY = "tuckmark.data-directory-status.v1"
@@ -64,6 +65,13 @@ type PersistedStatus = {
 type ManagedDirectoryState = {
   snapshot: RuntimeStoreSnapshot
   inventorySnapshot: InventoryDirectorySnapshot
+}
+
+export type TuckmarkDataArchive = {
+  schema: typeof TUCKMARK_DATA_ARCHIVE_SCHEMA
+  exportedAt: string
+  runtime: RuntimeStoreSnapshot
+  inventory: InventoryDirectorySnapshot
 }
 
 export type DataArchiveInspection = {
@@ -271,6 +279,41 @@ function normalizeSnapshot(snapshot: RuntimeStoreSnapshot): RuntimeStoreSnapshot
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function createDataArchive(
+  state: ManagedDirectoryState,
+  exportedAt = new Date().toISOString()
+): TuckmarkDataArchive {
+  return {
+    schema: TUCKMARK_DATA_ARCHIVE_SCHEMA,
+    exportedAt,
+    runtime: normalizeSnapshot(state.snapshot),
+    inventory: normalizeInventorySnapshot(state.inventorySnapshot),
+  }
+}
+
+function parseDataArchive(value: unknown): TuckmarkDataArchive {
+  if (
+    !isRecord(value) ||
+    value.schema !== TUCKMARK_DATA_ARCHIVE_SCHEMA ||
+    typeof value.exportedAt !== "string" ||
+    !isRecord(value.runtime) ||
+    !isRecord(value.inventory)
+  ) {
+    throw new Error("ZIP 数据格式不受支持。")
+  }
+  return createDataArchive(
+    {
+      snapshot: value.runtime as RuntimeStoreSnapshot,
+      inventorySnapshot: value.inventory as InventoryDirectorySnapshot,
+    },
+    value.exportedAt
+  )
+}
+
 function buildSnapshotTree(
   snapshot: RuntimeStoreSnapshot,
   inventorySnapshot: InventoryDirectorySnapshot,
@@ -457,6 +500,24 @@ function parseDirectoryStateFromFiles(files: Map<string, string>): ManagedDirect
   return {
     snapshot: parseSnapshotFromFiles(files),
     inventorySnapshot: parseInventorySnapshotFromFiles(files),
+  }
+}
+
+function assertArchiveCompleteness(files: Map<string, string>, state: ManagedDirectoryState): void {
+  const manifestRaw = files.get(MANIFEST_PATH)
+  if (!manifestRaw || !files.has(APP_SETTINGS_PATH)) {
+    throw new Error("ZIP 数据不完整。")
+  }
+  const counts = parseManifest(manifestRaw).counts
+  const actual = toRuntimeSummary(state.snapshot, state.inventorySnapshot)
+  if (
+    counts.templates !== actual.templates ||
+    counts.versions !== actual.versions ||
+    counts.workingCopies !== actual.workingCopies ||
+    counts.materials !== actual.materials ||
+    counts.adjustments !== actual.adjustments
+  ) {
+    throw new Error("ZIP 数据清单与内容不一致。")
   }
 }
 
@@ -761,23 +822,27 @@ async function writeArchiveFile(
   }
 }
 
-function createArchiveBytes(state: ManagedDirectoryState): Uint8Array {
-  const { files } = buildSnapshotTree(state.snapshot, state.inventorySnapshot, "backup-archive")
-  const zipEntries: Record<string, Uint8Array> = {}
+export function createDataArchiveBytes(archive: TuckmarkDataArchive): Uint8Array {
+  const { files } = buildSnapshotTree(archive.runtime, archive.inventory, "backup-archive")
+  const entries: Record<string, Uint8Array> = {}
   for (const [path, value] of files) {
-    zipEntries[path] = strToU8(value)
+    entries[path] = strToU8(value)
   }
-  zipEntries["archive.json"] = strToU8(
+  entries["archive.json"] = strToU8(
     JSON.stringify(
       {
         schema: ARCHIVE_SCHEMA,
-        exportedAt: new Date().toISOString(),
-      } satisfies Pick<RuntimeExportArchiveV1, "schema" | "exportedAt">,
+        exportedAt: archive.exportedAt,
+      },
       null,
       2
     )
   )
-  return zipSync(zipEntries, { level: 6 })
+  return zipSync(entries, { level: 6 })
+}
+
+function createArchiveBytes(state: ManagedDirectoryState): Uint8Array {
+  return createDataArchiveBytes(createDataArchive(state))
 }
 
 async function readBackupEntryBytes(
@@ -789,13 +854,20 @@ async function readBackupEntryBytes(
   return new Uint8Array(await file.arrayBuffer())
 }
 
-function parseArchiveBytes(bytes: Uint8Array): ManagedDirectoryState {
+function parseArchiveBytes(bytes: Uint8Array): TuckmarkDataArchive {
   const entries = unzipSync(bytes)
   const archiveMeta = entries["archive.json"]
+  let exportedAt = new Date().toISOString()
   if (archiveMeta) {
-    const parsed = JSON.parse(strFromU8(archiveMeta)) as Partial<RuntimeExportArchiveV1>
-    if (parsed.schema !== ARCHIVE_SCHEMA) {
+    const parsed = JSON.parse(strFromU8(archiveMeta)) as unknown
+    if (isRecord(parsed) && parsed.schema === TUCKMARK_DATA_ARCHIVE_SCHEMA) {
+      return parseDataArchive(parsed)
+    }
+    if (!isRecord(parsed) || parsed.schema !== ARCHIVE_SCHEMA) {
       throw new Error("ZIP 数据格式不受支持。")
+    }
+    if (typeof parsed.exportedAt === "string") {
+      exportedAt = parsed.exportedAt
     }
   }
   const files = new Map<string, string>()
@@ -805,7 +877,13 @@ function parseArchiveBytes(bytes: Uint8Array): ManagedDirectoryState {
     }
     files.set(path, strFromU8(value))
   }
-  return parseDirectoryStateFromFiles(files)
+  const state = parseDirectoryStateFromFiles(files)
+  assertArchiveCompleteness(files, state)
+  return createDataArchive(state, exportedAt)
+}
+
+export async function readDataArchiveFile(file: File): Promise<TuckmarkDataArchive> {
+  return parseArchiveBytes(new Uint8Array(await file.arrayBuffer()))
 }
 
 async function trimProtectionBackups(handle: FileSystemDirectoryHandle): Promise<void> {
@@ -857,6 +935,9 @@ export async function writeRuntimeSnapshotToDirectoryHandle(
 }
 
 export function supportsDataDirectoryFeatures(): boolean {
+  if (isServerHttpDataSurface()) {
+    return false
+  }
   return supportsDirectoryHandles()
 }
 
@@ -941,6 +1022,9 @@ export async function detachDataDirectory(): Promise<void> {
 export async function restoreRuntimeFromConfiguredDirectoryIfNeeded(): Promise<
   "restored" | "skipped"
 > {
+  if (isServerHttpDataSurface()) {
+    return "skipped"
+  }
   const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     return "skipped"
@@ -1058,9 +1142,9 @@ export async function inspectConfiguredBackup(
   const archive = parseArchiveBytes(bytes)
   return {
     label: entry.name,
-    snapshot: archive.snapshot,
-    inventorySnapshot: archive.inventorySnapshot,
-    summary: toRuntimeSummary(archive.snapshot, archive.inventorySnapshot),
+    snapshot: archive.runtime,
+    inventorySnapshot: archive.inventory,
+    summary: toRuntimeSummary(archive.runtime, archive.inventory),
   }
 }
 
@@ -1092,13 +1176,12 @@ export async function restoreConfiguredBackup(args: {
 }
 
 export async function inspectImportArchiveFile(file: File): Promise<DataArchiveInspection> {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  const archive = parseArchiveBytes(bytes)
+  const archive = await readDataArchiveFile(file)
   return {
     label: file.name,
-    snapshot: archive.snapshot,
-    inventorySnapshot: archive.inventorySnapshot,
-    summary: toRuntimeSummary(archive.snapshot, archive.inventorySnapshot),
+    snapshot: archive.runtime,
+    inventorySnapshot: archive.inventory,
+    summary: toRuntimeSummary(archive.runtime, archive.inventory),
   }
 }
 
@@ -1174,6 +1257,73 @@ function resolveHealth(args: {
 export async function getDataDirectoryStatus(
   leaseState?: CrossTabLeaseState
 ): Promise<DataDirectoryStatus> {
+  if (isServerHttpDataSurface()) {
+    const now = new Date().toISOString()
+    let status: Awaited<ReturnType<typeof devdDataClient.status>>
+    try {
+      status = await devdDataClient.status()
+    } catch (error) {
+      return {
+        owner: "devd",
+        revision: undefined,
+        connectionState: "reconnecting",
+        supported: true,
+        configured: false,
+        directoryName: null,
+        permissionState: "granted",
+        health: "error",
+        manifest: null,
+        lastSyncAt: null,
+        lastError: error instanceof Error ? error.message : String(error),
+        backups: [],
+        leaseRole: "unsupported",
+        leaseExpiresAt: null,
+        runtimeSummary: {
+          exportedAt: now,
+          snapshotUpdatedAt: null,
+          templates: 0,
+          versions: 0,
+          workingCopies: 0,
+          materials: 0,
+          adjustments: 0,
+        },
+      }
+    }
+    return {
+      owner: "devd",
+      revision: status.revision,
+      connectionState: "connected",
+      supported: true,
+      configured: status.configured,
+      directoryName: status.directoryName,
+      permissionState: "granted",
+      health: status.health,
+      manifest: {
+        schema: "tuckmark.data-dir-manifest.v1",
+        generatedAt: now,
+        snapshotUpdatedAt: now,
+        source: "runtime-sync",
+        files: {
+          settings: "settings/app-settings.json",
+          templatesDir: "templates",
+          draftsDir: "drafts",
+          inventoryDir: "inventory",
+          backupsDir: "backups",
+        },
+        counts: status.counts,
+      },
+      lastSyncAt: now,
+      lastError: null,
+      backups: [],
+      leaseRole: "writer",
+      leaseExpiresAt: null,
+      runtimeSummary: {
+        exportedAt: now,
+        snapshotUpdatedAt: now,
+        ...status.counts,
+      },
+    }
+  }
   const runtimeSnapshot = await exportRuntimeSnapshot()
   const runtimeSummary = toRuntimeSummary(runtimeSnapshot)
   const supported = supportsDataDirectoryFeatures()
@@ -1251,6 +1401,9 @@ export async function getDataDirectoryStatus(
 }
 
 export async function tryBackgroundMirrorSync(coordinator: CrossTabCoordinator): Promise<void> {
+  if (isServerHttpDataSurface()) {
+    return
+  }
   if (!(await hasConfiguredDataDirectory())) {
     return
   }

@@ -88,6 +88,7 @@ class FakeServerService implements ServerService {
         width: 384,
         height: 224,
         tags: ["preset"],
+        recommendedUses: [],
         fields: [{ key: "recipient", label: "Recipient", required: true, multiline: false }],
         elements: [],
       },
@@ -471,6 +472,11 @@ describe("server", () => {
       expect(() => {
         server = startServer(new FakeServerService(createArtifact(os.tmpdir(), "artifact-ok")), 0)
       }).not.toThrow()
+      await new Promise<void>((resolve, reject) => {
+        if (server?.listening) return resolve()
+        server?.once("error", reject)
+        server?.once("listening", resolve)
+      })
     } finally {
       await new Promise<void>(
         (resolve, reject) =>

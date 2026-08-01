@@ -3,6 +3,7 @@ import * as React from "react"
 import { cn } from "../../lib/utils.js"
 import { Input } from "../ui/input.js"
 import { Label } from "../ui/label.js"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip.js"
 
 type InspectorNumberFieldProps = {
   actions?: React.ReactNode
@@ -116,21 +117,29 @@ function InspectorNumberField({
 
   return (
     <div className={cn("tm-inspector-inline-field", className)}>
-      <Label
-        htmlFor={id}
-        className={cn(
-          "tm-inspector-inline-label tm-inspector-number-label",
-          disabled && "tm-inspector-number-label--disabled"
-        )}
-        data-dragging={dragging ? "true" : undefined}
-        onPointerCancel={handlePointerEnd}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerEnd}
-        title={disabled ? undefined : "左右拖拽调整数值"}
-      >
-        {label}
-      </Label>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Label
+                htmlFor={id}
+                className={cn(
+                  "tm-inspector-inline-label tm-inspector-number-label",
+                  disabled && "tm-inspector-number-label--disabled"
+                )}
+                data-dragging={dragging ? "true" : undefined}
+                onPointerCancel={handlePointerEnd}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerEnd}
+              >
+                {label}
+              </Label>
+            </span>
+          </TooltipTrigger>
+          {disabled ? null : <TooltipContent>左右拖拽调整数值</TooltipContent>}
+        </Tooltip>
+      </TooltipProvider>
       <Input
         id={id}
         type="number"

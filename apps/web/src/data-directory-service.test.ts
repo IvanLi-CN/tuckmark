@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { InventoryDirectorySnapshot } from "@tuckmark/inventory"
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { RuntimeStoreSnapshot } from "./runtime-store-contract.js"
@@ -23,6 +25,7 @@ import {
   attachDataDirectory,
   exportRuntimeArchive,
   importRuntimeArchive,
+  inspectImportArchiveFile,
   restoreRuntimeFromConfiguredDirectoryIfNeeded,
   syncConfiguredDataDirectory,
 } from "./data-directory-service.js"
@@ -475,17 +478,94 @@ describe("browser-local inventory archives", () => {
     expect(readBrowserLocalInventorySnapshot()).toMatchObject(localInventorySnapshot)
   })
 
-  it("includes browser-local inventory in an exported archive", async () => {
+  it("exports a complete legacy directory ZIP that v0.9.2 can import", async () => {
     handleStoreMocks.loadStoredDataDirectoryHandle.mockResolvedValue(null)
-    runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(
-      createSnapshot({
-        templateIds: [],
-        versionCount: 0,
-        workingCopyCount: 0,
-        updatedAt: "2026-07-17T07:00:00.000Z",
-      })
+    const snapshot = createSnapshot({
+      templateIds: ["template-a"],
+      versionCount: 1,
+      workingCopyCount: 1,
+      updatedAt: "2026-07-17T07:00:00.000Z",
+    })
+    const userWorkingCopy = snapshot.workingCopies[0]
+    if (!userWorkingCopy) {
+      throw new Error("Missing user-template working copy")
+    }
+    snapshot.workingCopies.push(
+      {
+        ...userWorkingCopy,
+        sourceKey: "scratch:shipping",
+        source: { kind: "scratch", presetId: "shipping" },
+        draft: {
+          ...userWorkingCopy.draft,
+          id: "scratch-shipping",
+          presetId: "shipping",
+          source: { kind: "scratch", presetId: "shipping" },
+        },
+      },
+      {
+        ...userWorkingCopy,
+        sourceKey: "preset-template:cable-tag",
+        source: { kind: "preset-template", presetId: "cable-tag" },
+        draft: {
+          ...userWorkingCopy.draft,
+          id: "preset-cable-tag",
+          presetId: "cable-tag",
+          source: { kind: "preset-template", presetId: "cable-tag" },
+        },
+      }
     )
-    writeBrowserLocalInventorySnapshot(localInventorySnapshot)
+    const inventorySnapshot: InventoryDirectorySnapshot = {
+      materials: [
+        {
+          id: "material-local",
+          fullName: "TPS62933DRLR",
+          baseName: "TPS62933",
+          variantName: "DRLR",
+          packageName: "SOT-583",
+          description: "同步降压 28V",
+          matrixCode: "TPS62933DRLR-SOT583",
+          packagingRemark: "编带",
+          currentQuantity: 12,
+          createdAt: "2026-07-17T07:00:00.000Z",
+          updatedAt: "2026-07-17T07:00:00.000Z",
+          archivedAt: null,
+          labelBindings: [
+            {
+              id: "binding-local",
+              templateSource: "user-template",
+              templateId: "template-a",
+              templateName: "Template A",
+              printQuantity: 3,
+              fieldOverrides: { value: "12" },
+              createdAt: "2026-07-17T07:00:00.000Z",
+              updatedAt: "2026-07-17T07:00:00.000Z",
+            },
+          ],
+          datasheets: [
+            {
+              title: "Manufacturer datasheet",
+              url: "https://example.test/tps62933.pdf",
+              source: "manufacturer",
+            },
+          ],
+        },
+      ],
+      adjustments: [
+        {
+          id: "adjustment-local",
+          materialId: "material-local",
+          kind: "in",
+          quantityDelta: 12,
+          targetQuantity: null,
+          quantityAfter: 12,
+          note: "initial stock",
+          actor: "web",
+          createdAt: "2026-07-17T07:00:00.000Z",
+        },
+      ],
+    }
+    runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(snapshot)
+    writeBrowserLocalInventorySnapshot(inventorySnapshot)
     const createObjectUrl = vi.fn<(blob: Blob) => string>(() => "blob:tuckmark-test")
     const revokeObjectUrl = vi.fn()
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl })
@@ -499,9 +579,158 @@ describe("browser-local inventory archives", () => {
     if (!blob) {
       throw new Error("Missing exported archive blob")
     }
-    expect(await blob.text()).toContain("inventory/materials/material-local.json")
+    const entries = unzipSync(new Uint8Array(await blob.arrayBuffer()))
+    expect(Object.keys(entries).sort()).toEqual([
+      "archive.json",
+      "drafts/preset-template/cable-tag.json",
+      "drafts/scratch/shipping.json",
+      "inventory/adjustments/adjustment-local.json",
+      "inventory/materials/material-local.json",
+      "manifest.json",
+      "settings/app-settings.json",
+      "templates/template-a/template.json",
+      "templates/template-a/versions/version-template-a-1.json",
+      "templates/template-a/working-copy.json",
+    ])
+    const archiveMetadata = JSON.parse(strFromU8(entries["archive.json"] ?? new Uint8Array()))
+    expect(archiveMetadata).toMatchObject({
+      schema: "tuckmark.runtime-export-archive.v1",
+      exportedAt: expect.any(String),
+    })
+
+    const inspection = await inspectImportArchiveFile(
+      new File([blob], "tuckmark-export.zip", { type: "application/zip" })
+    )
+    expect(inspection.snapshot.settings).toEqual(snapshot.settings)
+    expect(inspection.snapshot.templates).toEqual(snapshot.templates)
+    expect(inspection.snapshot.versions).toEqual(snapshot.versions)
+    expect(inspection.snapshot.workingCopies).toHaveLength(snapshot.workingCopies.length)
+    expect(inspection.snapshot.workingCopies).toEqual(
+      expect.arrayContaining(snapshot.workingCopies)
+    )
+    expect(inspection.inventorySnapshot).toEqual(inventorySnapshot)
     expect(click).toHaveBeenCalledTimes(1)
     expect(revokeObjectUrl).toHaveBeenCalledWith("blob:tuckmark-test")
+  })
+
+  it("keeps legacy directory ZIP exports importable", async () => {
+    const snapshot = createSnapshot({
+      templateIds: [],
+      versionCount: 0,
+      workingCopyCount: 0,
+      updatedAt: "2026-07-17T07:00:00.000Z",
+    })
+    const legacyArchive = zipSync({
+      "archive.json": strToU8(
+        JSON.stringify({
+          schema: "tuckmark.runtime-export-archive.v1",
+          exportedAt: snapshot.exportedAt,
+        })
+      ),
+      "manifest.json": strToU8(
+        JSON.stringify({
+          schema: "tuckmark.data-dir-manifest.v1",
+          generatedAt: snapshot.exportedAt,
+          snapshotUpdatedAt: snapshot.snapshotUpdatedAt,
+          source: "backup-archive",
+          files: {
+            settings: "settings/app-settings.json",
+            templatesDir: "templates",
+            draftsDir: "drafts",
+            inventoryDir: "inventory",
+            backupsDir: "backups",
+          },
+          counts: {
+            templates: 0,
+            versions: 0,
+            workingCopies: 0,
+            materials: 0,
+            adjustments: 0,
+          },
+        })
+      ),
+      "settings/app-settings.json": strToU8(JSON.stringify(snapshot.settings)),
+    })
+
+    const inspection = await inspectImportArchiveFile(
+      new File([legacyArchive], "legacy-export.zip", { type: "application/zip" })
+    )
+    expect(inspection.snapshot.schema).toBe("tuckmark.runtime-export.v1")
+    expect(inspection.inventorySnapshot).toEqual({ materials: [], adjustments: [] })
+  })
+
+  it("rejects a directory ZIP when its manifest reports records that are missing", async () => {
+    const snapshot = createSnapshot({
+      templateIds: [],
+      versionCount: 0,
+      workingCopyCount: 0,
+      updatedAt: "2026-07-17T07:00:00.000Z",
+    })
+    const incompleteArchive = zipSync({
+      "archive.json": strToU8(
+        JSON.stringify({
+          schema: "tuckmark.runtime-export-archive.v1",
+          exportedAt: snapshot.exportedAt,
+        })
+      ),
+      "manifest.json": strToU8(
+        JSON.stringify({
+          schema: "tuckmark.data-dir-manifest.v1",
+          generatedAt: snapshot.exportedAt,
+          snapshotUpdatedAt: snapshot.snapshotUpdatedAt,
+          source: "backup-archive",
+          files: {
+            settings: "settings/app-settings.json",
+            templatesDir: "templates",
+            draftsDir: "drafts",
+            inventoryDir: "inventory",
+            backupsDir: "backups",
+          },
+          counts: {
+            templates: 1,
+            versions: 0,
+            workingCopies: 0,
+            materials: 0,
+            adjustments: 0,
+          },
+        })
+      ),
+      "settings/app-settings.json": strToU8(JSON.stringify(snapshot.settings)),
+    })
+
+    await expect(
+      inspectImportArchiveFile(
+        new File([incompleteArchive], "incomplete-export.zip", { type: "application/zip" })
+      )
+    ).rejects.toThrow("ZIP 数据清单与内容不一致。")
+  })
+
+  it("keeps previously exported single-snapshot ZIP files importable", async () => {
+    const snapshot = createSnapshot({
+      templateIds: [],
+      versionCount: 0,
+      workingCopyCount: 0,
+      updatedAt: "2026-07-17T07:00:00.000Z",
+    })
+    const singleSnapshotArchive = zipSync({
+      "archive.json": strToU8(
+        JSON.stringify({
+          schema: "tuckmark.data-archive.v1",
+          exportedAt: snapshot.exportedAt,
+          runtime: snapshot,
+          inventory: localInventorySnapshot,
+        })
+      ),
+    })
+
+    const inspection = await inspectImportArchiveFile(
+      new File([singleSnapshotArchive], "single-snapshot-export.zip", {
+        type: "application/zip",
+      })
+    )
+
+    expect(inspection.snapshot).toEqual(snapshot)
+    expect(inspection.inventorySnapshot).toEqual(localInventorySnapshot)
   })
 })
 

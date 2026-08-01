@@ -6,6 +6,7 @@ import {
   readRuntimeSnapshotFromDirectoryHandle,
   writeRuntimeSnapshotToDirectoryHandle,
 } from "./data-directory-service.js"
+import { HttpRuntimeStore, isServerHttpDataSurface } from "./devd-data-client.js"
 import { normalizeCanvasDraftDocumentUnits } from "./lib/canvas-units.js"
 import {
   createDefaultRuntimeAppSettings,
@@ -340,6 +341,7 @@ class MemoryUserTemplateStore implements RuntimeStore {
       archivedAt: existing?.archivedAt ?? null,
       currentVersionId: version.id,
       fieldOrder: document.fields.map((field) => field.key),
+      recommendedUses: document.recommendedUses ?? existing?.recommendedUses ?? [],
     }
 
     this.templates.set(templateId, template)
@@ -995,6 +997,7 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
       archivedAt: current?.template.archivedAt ?? null,
       currentVersionId: version.id,
       fieldOrder: document.fields.map((field) => field.key),
+      recommendedUses: document.recommendedUses ?? current?.template.recommendedUses ?? [],
     }
     const workingCopy: CanvasWorkingCopyIndexEntry = {
       sourceKey: createSourceKey({ kind: "user-template", templateId }),
@@ -1491,6 +1494,9 @@ async function resolveConfiguredDirectoryStore(): Promise<RuntimeStore | null> {
 async function resolveStore() {
   if (!storePromise) {
     storePromise = (async () => {
+      if (isServerHttpDataSurface()) {
+        return new HttpRuntimeStore()
+      }
       const directoryStore = await resolveConfiguredDirectoryStore()
       if (directoryStore) {
         return directoryStore

@@ -1,9 +1,20 @@
 // @vitest-environment jsdom
 
+import { strFromU8, unzipSync } from "fflate"
 import { act } from "react"
 import ReactDOM from "react-dom/client"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import type { DataDirectoryStatus } from "./data-directory-types.js"
+
+const devdDataClientMocks = vi.hoisted(() => ({
+  exportArchive: vi.fn(),
+}))
+
+vi.mock("./devd-data-client.js", () => ({
+  devdDataClient: devdDataClientMocks,
+  isServerHttpDataSurface: () => false,
+}))
+
 import { SystemDataStorageCard } from "./system-data-storage-card.js"
 
 let mountedRoot: ReturnType<typeof ReactDOM.createRoot> | null = null
@@ -86,14 +97,38 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof SystemDataSto
   )
 }
 
+function getActionToolbar(label: string): HTMLElement {
+  const toolbar = document.querySelector<HTMLElement>(`[role="toolbar"][aria-label="${label}"]`)
+  if (!toolbar) {
+    throw new Error(`Missing ${label}`)
+  }
+  return toolbar
+}
+
+function expectStandardActionButtons(toolbar: HTMLElement, names: string[]): void {
+  const buttons = Array.from(toolbar.querySelectorAll("button"))
+  expect(buttons.map((button) => button.textContent?.trim())).toEqual(names)
+  expect(buttons.every((button) => button.classList.contains("tm-action-button__control"))).toBe(
+    true
+  )
+}
+
 describe("SystemDataStorageCard", () => {
   it("renders the unconfigured state with data management actions", async () => {
     await renderCard()
 
     expect(document.body.textContent).toContain("未配置")
     expect(document.body.textContent).toContain("统一数据目录，承载模板与库存 JSON 数据树")
-    expect(document.body.textContent).toContain("导出数据")
-    expect(document.body.textContent).toContain("导入数据")
+    expect(document.body.textContent).toContain("导出 ZIP 数据")
+    expect(document.body.textContent).toContain("导入 ZIP 数据")
+    expectStandardActionButtons(getActionToolbar("浏览器数据维护操作"), [
+      "授权目录",
+      "重新请求权限",
+      "立即同步",
+      "立即备份",
+      "导出 ZIP 数据",
+      "导入 ZIP 数据",
+    ])
   })
 
   it("shows a follower warning when another tab owns the write lease", async () => {
@@ -110,6 +145,133 @@ describe("SystemDataStorageCard", () => {
 
     expect(document.body.textContent).toContain("当前标签不是写入者")
     expect(document.body.textContent).toContain("接管写入")
+  })
+
+  it("renders DEVD ownership without browser directory controls", async () => {
+    await renderCard({
+      status: {
+        ...baseStatus,
+        owner: "devd",
+        configured: true,
+        directoryName: "tuckmark-fixture",
+        permissionState: "granted",
+        health: "healthy",
+        revision: 17,
+        connectionState: "connected",
+        leaseRole: "unsupported",
+      },
+    })
+
+    expect(document.body.textContent).toContain("DEVD 数据存储")
+    expect(document.body.textContent).toContain("tuckmark-fixture")
+    expect(document.body.textContent).toContain("17")
+    expect(document.body.textContent).toContain("已连接")
+    expect(document.body.textContent).not.toContain("授权目录")
+    expect(document.body.textContent).not.toContain("重新请求权限")
+    expect(document.body.textContent).not.toContain("接管写入")
+    expect(document.body.textContent).not.toContain("立即同步")
+    expectStandardActionButtons(getActionToolbar("DEVD 数据维护操作"), [
+      "立即备份",
+      "导出 ZIP 数据",
+      "导入 ZIP 数据",
+    ])
+  })
+
+  it("uses the shared ZIP archive contract for DEVD imports", async () => {
+    await renderCard({
+      status: {
+        ...baseStatus,
+        owner: "devd",
+        configured: true,
+        directoryName: "tuckmark-fixture",
+        permissionState: "granted",
+        health: "healthy",
+        revision: 17,
+        connectionState: "connected",
+        leaseRole: "unsupported",
+      },
+    })
+
+    const importInput = document.querySelector('input[type="file"]')
+    expect(importInput?.getAttribute("accept")).toBe(".zip,application/zip")
+    expect(document.body.textContent).toContain("导出 ZIP 数据")
+    expect(document.body.textContent).toContain("导入 ZIP 数据")
+  })
+
+  it("downloads DEVD archives as the v0.9.2-compatible ZIP tree", async () => {
+    const archive = {
+      exportedAt: "2026-08-01T00:00:00.000Z",
+      runtime: {
+        schema: "tuckmark.runtime-export.v1" as const,
+        exportedAt: "2026-08-01T00:00:00.000Z",
+        snapshotUpdatedAt: null,
+        settings: {
+          version: 2 as const,
+          updatedAt: "2026-08-01T00:00:00.000Z",
+          documentDefaults: { paperType: "gap" as const, threshold: 128 },
+          printerModelPresets: {},
+          printerDeviceCalibrations: {},
+          permissionNudgeSeen: true,
+          showTextBoundingBoxes: false,
+        },
+        templates: [],
+        versions: [],
+        workingCopies: [],
+      },
+      inventory: { materials: [], adjustments: [] },
+    }
+    devdDataClientMocks.exportArchive.mockResolvedValue(archive)
+    const createObjectUrl = vi.fn((_: Blob) => "blob:tuckmark-test")
+    const revokeObjectUrl = vi.fn()
+    Object.defineProperties(URL, {
+      createObjectURL: { configurable: true, value: createObjectUrl },
+      revokeObjectURL: { configurable: true, value: revokeObjectUrl },
+    })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined)
+
+    await renderCard({
+      status: {
+        ...baseStatus,
+        owner: "devd",
+        configured: true,
+        directoryName: "tuckmark-fixture",
+        permissionState: "granted",
+        health: "healthy",
+        revision: 17,
+        connectionState: "connected",
+        leaseRole: "unsupported",
+      },
+    })
+
+    const exportButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("导出 ZIP 数据")
+    )
+    if (!exportButton) {
+      throw new Error("Missing DEVD ZIP export button")
+    }
+    await act(async () => {
+      exportButton.click()
+      await flush(4)
+    })
+
+    expect(devdDataClientMocks.exportArchive).toHaveBeenCalledTimes(1)
+    const exportedBlob = createObjectUrl.mock.calls[0]?.[0]
+    if (!exportedBlob) {
+      throw new Error("Missing DEVD ZIP export blob")
+    }
+    expect(exportedBlob.type).toBe("application/zip")
+    const entries = unzipSync(new Uint8Array(await exportedBlob.arrayBuffer()))
+    expect(Object.keys(entries).sort()).toEqual([
+      "archive.json",
+      "manifest.json",
+      "settings/app-settings.json",
+    ])
+    expect(JSON.parse(strFromU8(entries["archive.json"] ?? new Uint8Array()))).toMatchObject({
+      schema: "tuckmark.runtime-export-archive.v1",
+      exportedAt: archive.exportedAt,
+    })
+    expect(click).toHaveBeenCalledTimes(1)
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:tuckmark-test")
   })
 
   it("renders the import confirmation summary dialog", async () => {

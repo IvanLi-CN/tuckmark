@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { Copy, Eye, Plus, Trash2, Upload } from "lucide-react"
+import { expect, userEvent, within } from "storybook/test"
 
 import { ActionButton } from "./action-button.js"
 
@@ -53,4 +54,31 @@ export const Gallery: Story = {
       </section>
     </div>
   ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const button = canvas.getByRole("button", { name: "导入模板" })
+    await userEvent.hover(button)
+    await expect(within(document.body).getByRole("tooltip")).toHaveTextContent("导入模板")
+  },
+}
+
+export const TouchLongPress: Story = {
+  args: {
+    name: "复制标签",
+    icon: Copy,
+    mode: "icon",
+  },
+  render: (args) => (
+    <div className="inline-flex min-h-64 min-w-64 items-start bg-[#211811] p-20">
+      <ActionButton {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const button = canvas.getByRole("button", { name: "复制标签" })
+    await userEvent.pointer([{ target: button, keys: "[TouchA>]" }])
+    await new Promise((resolve) => window.setTimeout(resolve, 520))
+    await expect(within(document.body).getByRole("tooltip")).toHaveTextContent("复制标签")
+    await userEvent.pointer([{ target: button, keys: "[/TouchA]" }])
+  },
 }

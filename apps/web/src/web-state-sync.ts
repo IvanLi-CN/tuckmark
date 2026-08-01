@@ -19,6 +19,7 @@ import {
   loadStoredDraftDocument,
   persistDraftDocumentToStorage,
 } from "./canvas-editor-model.js"
+import { isServerHttpDataSurface } from "./devd-data-client.js"
 import {
   emptyRecentActivityState,
   loadRecentActivity,
@@ -128,6 +129,33 @@ function dedupeLatest<T extends { recordId: string; updatedAt: string }>(records
     })
 }
 
+function mergeRecentActivity(state: SyncState, baseline: RecentActivityState): RecentActivityState {
+  const templates = new Map(baseline.templates.map((entry) => [entry.id, entry]))
+  for (const record of dedupeLatest(state.templateUsageRecords)) {
+    if (record.deleted) {
+      templates.delete(record.payload.id)
+    } else {
+      templates.set(record.payload.id, record.payload)
+    }
+  }
+  const prints = new Map(baseline.prints.map((entry) => [entry.id, entry]))
+  for (const record of dedupeLatest(state.recentPrintRecords)) {
+    if (record.deleted) {
+      prints.delete(record.payload.id)
+    } else {
+      prints.set(record.payload.id, record.payload)
+    }
+  }
+  return {
+    templates: [...templates.values()]
+      .sort((left, right) => right.usedAt.localeCompare(left.usedAt))
+      .slice(0, MAX_ITEMS),
+    prints: [...prints.values()]
+      .sort((left, right) => right.printedAt.localeCompare(left.printedAt))
+      .slice(0, MAX_ITEMS),
+  }
+}
+
 function buildLegacySyncSnapshot(stored: SyncState): SyncState {
   const recentActivity = canUseStorage() ? loadRecentActivity() : emptyRecentActivityState()
 
@@ -183,7 +211,7 @@ function buildLegacySyncSnapshot(stored: SyncState): SyncState {
 }
 
 export function loadLocalSyncState(): SyncState {
-  if (!canUseStorage()) {
+  if (isServerHttpDataSurface() || !canUseStorage()) {
     return emptySyncState()
   }
 
@@ -203,7 +231,7 @@ export function loadLocalSyncState(): SyncState {
 }
 
 export function persistLocalSyncState(state: SyncState): SyncState {
-  if (!canUseStorage()) {
+  if (isServerHttpDataSurface() || !canUseStorage()) {
     return state
   }
   window.localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(state))
@@ -313,18 +341,17 @@ export function applySyncStateToBrowser(
   state: SyncState,
   presetIds: string[]
 ): RecentActivityState {
-  persistLocalSyncState(state)
+  const serverHttp = isServerHttpDataSurface()
+  if (!serverHttp) {
+    persistLocalSyncState(state)
+  }
+  const recentActivity = persistRecentActivity(
+    mergeRecentActivity(state, serverHttp ? loadRecentActivity() : emptyRecentActivityState())
+  )
 
-  const recentActivity = persistRecentActivity({
-    templates: dedupeLatest(state.templateUsageRecords)
-      .filter((record) => !record.deleted)
-      .map((record) => record.payload)
-      .slice(0, MAX_ITEMS),
-    prints: dedupeLatest(state.recentPrintRecords)
-      .filter((record) => !record.deleted)
-      .map((record) => record.payload)
-      .slice(0, MAX_ITEMS),
-  })
+  if (serverHttp) {
+    return recentActivity
+  }
 
   const draftsByPreset = new Map(
     dedupeLatest(state.canvasDraftRecords)

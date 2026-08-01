@@ -117,6 +117,8 @@ routing as a deployment workaround.
 The PWA contract belongs to `browser-static` only. It does not make
 `server-http` usable without its server process.
 
+The `server-http` data layer is revisioned and DEVD-owned. Web adapters invalidate affected domains from minimal SSE events and refetch authoritative state; they do not mirror writes into browser storage or expose directory-permission controls.
+
 ## Responsive Contract
 
 The formal desktop support band is `1024-1920w × 720-1280h`.

@@ -235,6 +235,12 @@ export const templateElementSchema = z.discriminatedUnion("kind", [
 ])
 export type TemplateElement = z.infer<typeof templateElementSchema>
 
+export const templateRecommendedUseSchema = z.object({
+  scope: z.string().min(1),
+  weight: z.number().int().min(1).max(100),
+})
+export type TemplateRecommendedUse = z.infer<typeof templateRecommendedUseSchema>
+
 export const templateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -244,6 +250,7 @@ export const templateSchema = z.object({
   fields: z.array(templateFieldSchema),
   elements: z.array(templateElementSchema),
   tags: z.array(z.string()).default([]),
+  recommendedUses: z.array(templateRecommendedUseSchema).optional(),
 })
 export type TemplateDefinition = z.infer<typeof templateSchema>
 
