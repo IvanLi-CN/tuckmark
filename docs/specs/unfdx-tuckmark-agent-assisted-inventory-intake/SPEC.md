@@ -80,6 +80,11 @@ Mock fixture system page after DEVD became the `server-http` data owner. `source
 PR: include
 ![DEVD system storage status](./assets/devd-system-mock.png)
 
+Mock-only DEVD data-storage fragment confirming that both server-http archive actions use the same ZIP file contract. `source_type=storybook_canvas`; `target_program=mock-only`; `capture_scope=element`; `requested_viewport=1280x900`; `viewport_strategy=storybook-viewport`; `margin_policy=require_margin`; `evidence_surface=component`; `sensitive_exclusion=real orders, data directories, session keys, and unrelated applications`; `submission_gate=approved`; `story_id_or_title=Tuckmark/System/Data Storage Card/Devd Healthy`; `state=healthy`; `evidence_note=ZIP import and export controls are shown with mock data only`.
+
+PR: include
+![DEVD ZIP archive controls](./assets/devd-system-zip-archive.png)
+
 Mock-only icon action after the 520 ms touch long-press interaction. `source_type=storybook_canvas`; `target_program=mock-only`; `capture_scope=element`; `sensitive_exclusion=N/A`; `submission_gate=approved`.
 
 PR: include
