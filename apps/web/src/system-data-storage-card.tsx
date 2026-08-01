@@ -1,14 +1,17 @@
 import {
   AlertCircle,
-  ArrowDownToLine,
-  ArrowUpToLine,
+  Archive,
   CheckCircle2,
+  Download,
   FolderOpen,
   RefreshCcw,
+  RotateCcw,
   ShieldCheck,
+  Upload,
 } from "lucide-react"
 import React from "react"
 
+import { ActionButton } from "./components/ui/action-button.js"
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert.js"
 import { Badge } from "./components/ui/badge.js"
 import { Button } from "./components/ui/button.js"
@@ -232,9 +235,17 @@ function DevdDataStorageCard({ status }: { status: DataDirectoryStatus }) {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : null}
-          <div className="flex flex-wrap gap-2">
-            <Button
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="toolbar"
+            aria-label="DEVD 数据维护操作"
+          >
+            <ActionButton
               type="button"
+              name="立即备份"
+              icon={Archive}
+              mode="icon-text"
+              size="sm"
               variant="outline"
               disabled={Boolean(busy)}
               onClick={() =>
@@ -242,28 +253,27 @@ function DevdDataStorageCard({ status }: { status: DataDirectoryStatus }) {
                   await devdDataClient.createBackup()
                 })
               }
-            >
-              <ArrowDownToLine className="size-4" />
-              <span>立即备份</span>
-            </Button>
-            <Button
+            />
+            <ActionButton
               type="button"
+              name="导出 ZIP 数据"
+              icon={Download}
+              mode="icon-text"
+              size="sm"
               variant="outline"
               disabled={Boolean(busy)}
               onClick={() => void exportArchive()}
-            >
-              <ArrowUpToLine className="size-4" />
-              <span>导出 ZIP 数据</span>
-            </Button>
-            <Button
+            />
+            <ActionButton
               type="button"
+              name="导入 ZIP 数据"
+              icon={Upload}
+              mode="icon-text"
+              size="sm"
               variant="outline"
               disabled={Boolean(busy)}
               onClick={() => inputRef.current?.click()}
-            >
-              <ArrowDownToLine className="size-4" />
-              <span>导入 ZIP 数据</span>
-            </Button>
+            />
             <input
               ref={inputRef}
               hidden
@@ -562,53 +572,70 @@ export function SystemDataStorageCard({
             ) : null}
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="toolbar"
+            aria-label="浏览器数据维护操作"
+          >
+            <ActionButton
               type="button"
+              name={status.configured ? "更换目录" : "授权目录"}
+              icon={FolderOpen}
+              mode="icon-text"
+              size="sm"
               variant="outline"
               onClick={onChooseDirectory}
               disabled={!status.supported}
-            >
-              <FolderOpen className="size-4" />
-              <span>{status.configured ? "更换目录" : "授权目录"}</span>
-            </Button>
-            <Button
+            />
+            <ActionButton
               type="button"
+              name="重新请求权限"
+              icon={ShieldCheck}
+              mode="icon-text"
+              size="sm"
               variant="outline"
               onClick={onRequestPermission}
               disabled={!status.configured || !status.supported}
-            >
-              <ShieldCheck className="size-4" />
-              <span>重新请求权限</span>
-            </Button>
-            <Button
+            />
+            <ActionButton
               type="button"
+              name="立即同步"
+              icon={RefreshCcw}
+              mode="icon-text"
+              size="sm"
               variant="outline"
               onClick={onSyncNow}
               disabled={!status.configured || !status.supported || status.leaseRole === "follower"}
-            >
-              <RefreshCcw
-                className={busy === "sync-data-directory" ? "size-4 animate-spin" : "size-4"}
-              />
-              <span>立即同步</span>
-            </Button>
-            <Button
+              className={busy === "sync-data-directory" ? "[&_svg]:animate-spin" : undefined}
+            />
+            <ActionButton
               type="button"
+              name="立即备份"
+              icon={Archive}
+              mode="icon-text"
+              size="sm"
               variant="outline"
               onClick={onCreateBackup}
               disabled={!status.configured || !status.supported || status.leaseRole === "follower"}
-            >
-              <ArrowDownToLine className="size-4" />
-              <span>立即备份</span>
-            </Button>
-            <Button type="button" variant="outline" onClick={onExportArchive}>
-              <ArrowUpToLine className="size-4" />
-              <span>导出 ZIP 数据</span>
-            </Button>
-            <Button type="button" variant="outline" onClick={() => importInputRef.current?.click()}>
-              <ArrowDownToLine className="size-4" />
-              <span>导入 ZIP 数据</span>
-            </Button>
+            />
+            <ActionButton
+              type="button"
+              name="导出 ZIP 数据"
+              icon={Download}
+              mode="icon-text"
+              size="sm"
+              variant="outline"
+              onClick={onExportArchive}
+            />
+            <ActionButton
+              type="button"
+              name="导入 ZIP 数据"
+              icon={Upload}
+              mode="icon-text"
+              size="sm"
+              variant="outline"
+              onClick={() => importInputRef.current?.click()}
+            />
             <input
               ref={importInputRef}
               hidden
@@ -645,15 +672,16 @@ export function SystemDataStorageCard({
                         {formatTimestamp(entry.modifiedAt)} · {formatBytes(entry.size)}
                       </div>
                     </div>
-                    <Button
+                    <ActionButton
                       type="button"
-                      variant="outline"
+                      name="恢复备份"
+                      icon={RotateCcw}
+                      mode="icon-text"
                       size="sm"
+                      variant="outline"
                       onClick={() => onInspectRestoreBackup(entry)}
                       disabled={status.leaseRole === "follower"}
-                    >
-                      恢复
-                    </Button>
+                    />
                   </div>
                 ))}
               </div>

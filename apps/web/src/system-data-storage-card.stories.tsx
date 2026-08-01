@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { expect, within } from "storybook/test"
 import { SystemDataStorageCard } from "./system-data-storage-card.js"
 import {
   createBackupListDataDirectoryStatus,
@@ -20,7 +21,7 @@ const meta = {
   },
   decorators: [
     (Story) => (
-      <div style={{ minHeight: "100vh", padding: 24, background: "#d9e2e9" }}>
+      <div style={{ minHeight: "100vh", padding: 40, background: "#d9e2e9" }}>
         <Story />
       </div>
     ),
@@ -116,18 +117,21 @@ export const DevdHealthy: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const text = canvasElement.textContent ?? ""
-    if (
-      !text.includes("DEVD 数据存储") ||
-      !text.includes("全局 revision") ||
-      !text.includes("导出 ZIP 数据") ||
-      !text.includes("导入 ZIP 数据")
-    ) {
-      throw new Error("DEVD status content is missing.")
-    }
-    if (text.includes("授权目录") || text.includes("接管写入")) {
-      throw new Error("Browser directory controls leaked into the DEVD surface.")
-    }
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText("DEVD 数据存储")).toBeVisible()
+    await expect(canvas.getByText("全局 revision")).toBeVisible()
+    const toolbar = canvas.getByRole("toolbar", { name: "DEVD 数据维护操作" })
+    await expect(within(toolbar).getByRole("button", { name: "立即备份" })).toHaveClass(
+      "tm-action-button__control"
+    )
+    await expect(within(toolbar).getByRole("button", { name: "导出 ZIP 数据" })).toHaveClass(
+      "tm-action-button__control"
+    )
+    await expect(within(toolbar).getByRole("button", { name: "导入 ZIP 数据" })).toHaveClass(
+      "tm-action-button__control"
+    )
+    await expect(canvas.queryByText("授权目录")).not.toBeInTheDocument()
+    await expect(canvas.queryByText("接管写入")).not.toBeInTheDocument()
   },
 }
 

@@ -97,6 +97,22 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof SystemDataSto
   )
 }
 
+function getActionToolbar(label: string): HTMLElement {
+  const toolbar = document.querySelector<HTMLElement>(`[role="toolbar"][aria-label="${label}"]`)
+  if (!toolbar) {
+    throw new Error(`Missing ${label}`)
+  }
+  return toolbar
+}
+
+function expectStandardActionButtons(toolbar: HTMLElement, names: string[]): void {
+  const buttons = Array.from(toolbar.querySelectorAll("button"))
+  expect(buttons.map((button) => button.textContent?.trim())).toEqual(names)
+  expect(buttons.every((button) => button.classList.contains("tm-action-button__control"))).toBe(
+    true
+  )
+}
+
 describe("SystemDataStorageCard", () => {
   it("renders the unconfigured state with data management actions", async () => {
     await renderCard()
@@ -105,6 +121,14 @@ describe("SystemDataStorageCard", () => {
     expect(document.body.textContent).toContain("统一数据目录，承载模板与库存 JSON 数据树")
     expect(document.body.textContent).toContain("导出 ZIP 数据")
     expect(document.body.textContent).toContain("导入 ZIP 数据")
+    expectStandardActionButtons(getActionToolbar("浏览器数据维护操作"), [
+      "授权目录",
+      "重新请求权限",
+      "立即同步",
+      "立即备份",
+      "导出 ZIP 数据",
+      "导入 ZIP 数据",
+    ])
   })
 
   it("shows a follower warning when another tab owns the write lease", async () => {
@@ -146,6 +170,11 @@ describe("SystemDataStorageCard", () => {
     expect(document.body.textContent).not.toContain("重新请求权限")
     expect(document.body.textContent).not.toContain("接管写入")
     expect(document.body.textContent).not.toContain("立即同步")
+    expectStandardActionButtons(getActionToolbar("DEVD 数据维护操作"), [
+      "立即备份",
+      "导出 ZIP 数据",
+      "导入 ZIP 数据",
+    ])
   })
 
   it("uses the shared ZIP archive contract for DEVD imports", async () => {
