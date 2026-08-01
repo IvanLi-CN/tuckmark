@@ -16,6 +16,7 @@ import {
 } from "../../../packages/core/src/web.js"
 
 import type { BrowserPrintSource } from "./browser-print-payload.js"
+import { DEFAULT_CANVAS_GRID_SIZE, normalizeCanvasGridSize } from "./lib/canvas-grid.js"
 import {
   CANVAS_DOTS_PER_MILLIMETER,
   canvasDotsToMillimeters,
@@ -358,6 +359,12 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     templateId: unitDocument.templateId,
     baseVersionId: unitDocument.baseVersionId,
     lastSavedAt: unitDocument.lastSavedAt,
+    editor: {
+      ...unitDocument.editor,
+      gridSize: normalizeCanvasGridSize(
+        (unitDocument.editor as Partial<CanvasDraftDocument["editor"]> | undefined)?.gridSize
+      ),
+    },
     fields: synced.fields,
     elements: synced.elements,
   }
@@ -649,6 +656,7 @@ export function createDraftFromPreset(preset: CanvasDocumentPreset): CanvasDraft
     elements: buildPresetElements(preset.id),
     editor: {
       gridEnabled: true,
+      gridSize: DEFAULT_CANVAS_GRID_SIZE,
       snapEnabled: true,
     },
   })
@@ -911,6 +919,7 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
     elements,
     editor: {
       gridEnabled: true,
+      gridSize: DEFAULT_CANVAS_GRID_SIZE,
       snapEnabled: true,
     },
   })

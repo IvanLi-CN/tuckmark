@@ -359,7 +359,10 @@ output.
 - The editor state is versioned as a Web draft document with:
   - document metadata
   - per-layer metadata (`name`, `visible`, `locked`)
-  - editor metadata (`gridEnabled`, `snapEnabled`)
+  - editor metadata (`gridEnabled`, `gridSize`, `snapEnabled`, `snapStep`)
+  - `gridSize` is one of `1`, `2`, or `5` millimeters and `snapStep` is one of
+    `1/4`, `1/2`, or `1` grid. New documents and legacy drafts that omit or
+    contain invalid values use `1mm` and `1 grid` respectively.
 - Scratch and preset-template working copies use the active runtime store:
   browser-static keeps its browser-owned persistence, while server-http uses
   DEVD. No Web surface uses `TuckmarkService` same-device sync for drafts.
@@ -386,6 +389,9 @@ output.
   - horizontal wheel / tilt-wheel stage pan
   - `Space + drag` stage pan
   - `fit to view`
+  - the `网格` toolbar button toggles visibility on ordinary click; right
+    click and a `500ms` touch or pen long press open an anchored custom menu
+    with `1mm`, `2mm`, `2.5mm`, `5mm`, and `10mm`
   - transformer-based resize / rotation with real-time active-edge snapping
   - system clipboard `Copy` / `Paste` for selected elements through keyboard
     clipboard events when focus is not inside editable form controls
@@ -407,11 +413,11 @@ output.
     not paste or otherwise mutate the draft
 - `snapEnabled` governs one shared pointer magnetic-snap policy across ordinary
   and multi-selection dragging, pending clipboard placement, line endpoints,
-  and Transformer resize handles. Ordinary and multi-selection dragging keep
-  using the `1mm` grid, the four canvas edges, and the visible outer bounds of
-  other elements; moving and pending elements are excluded, while visible
-  locked elements remain valid references. Rotated elements use their visible
-  axis-aligned outer bounds.
+  and Transformer resize handles. Ordinary and multi-selection dragging use
+  the selected `gridSize` grid, the four canvas edges, and the visible outer
+  bounds of other elements; moving and pending elements are excluded, while
+  visible locked elements remain valid references. Rotated elements use their
+  visible axis-aligned outer bounds.
 - Direct handles resolve snapping from explicit active sources instead of
   implicit box defaults:
   - line endpoints use their active point on both axes
@@ -439,6 +445,12 @@ output.
   flag. No keyboard modifier temporarily overrides snapping; keyboard arrows
   remain exact `1mm` moves, or `10mm` with Shift, outside the pointer-magnetic
   policy.
+- The grid-size menu remains available while grid visibility is disabled.
+  Selecting a size immediately updates the visible editor grid and the shared
+  snap spacing, persists with the active draft/working copy/version, closes
+  the menu, and does not create an undo/redo snapshot. A long press that ends
+  before `500ms`, or moves more than `8px`, is cancelled; a successful long
+  press suppresses its follow-up click and never toggles grid visibility.
 - Text elements support double-click inline editing on the stage.
 - Text inspector controls expose:
   - numeric font size
@@ -752,6 +764,10 @@ output.
 - Canvas workspace supports marquee selection, Shift multi-select, stage pan,
   vertical wheel zoom, horizontal wheel pan, and fit-to-view without
   horizontal shell breakage.
+- Canvas grid sizing exposes exactly five options (`1mm`, `2mm`, `2.5mm`,
+  `5mm`, `10mm`) with a visible current selection, blocks the native browser
+  context menu, and keeps the menu within the toolbar anchor in light, dark,
+  and narrow editor viewports.
 - Marquee selection chrome is editor-only stage-space affordance: its border
   remains `1 logical px dashed` at any zoom level while selection bounds and
   hit semantics continue to use canvas-space geometry.
@@ -1315,3 +1331,9 @@ output.
 
   PR: include
   ![Canvas Data Matrix invalid](./assets/canvas-datamatrix-invalid-1280x800.png)
+
+- `1280×800` canvas workspace Storybook state with the anchored grid-size
+  context menu open, showing all five millimeter options and the selected
+  `1mm` state without changing grid visibility.
+
+  ![Canvas grid-size context menu](./assets/canvas-grid-size-menu-1280x800.png)

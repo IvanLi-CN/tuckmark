@@ -4,6 +4,8 @@ import type {
   TextVerticalAlign,
 } from "../../../packages/core/src/web.js"
 
+import type { CanvasGridSize } from "./lib/canvas-grid.js"
+
 export type PaperType = "continuous" | "gap"
 
 export type PrintStrengthLevel = -2 | -1 | 0 | 1 | 2
@@ -268,6 +270,7 @@ export type CanvasDraftDocument = {
   elements: CanvasDraftElement[]
   editor: {
     gridEnabled: boolean
+    gridSize: CanvasGridSize
     snapEnabled: boolean
   }
 }

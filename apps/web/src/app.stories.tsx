@@ -765,6 +765,32 @@ export const CanvasWorkspace: Story = {
   },
 }
 
+export const CanvasWorkspaceGridSizeMenu: Story = {
+  args: {
+    context: runtimeContext,
+    initialEntries: ["/canvas"],
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story: "右键网格按钮打开五档毫米尺寸菜单，尺寸选择同步画布网格和网格吸附。",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    fireEvent.contextMenu(await canvas.findByRole("button", { name: "网格" }))
+    await expect(within(document.body).getByText("网格尺寸")).toBeVisible()
+    await expect(within(document.body).getByRole("button", { name: "2.5mm" })).toBeVisible()
+  },
+}
+
 export const CanvasWorkspaceDark: Story = {
   args: {
     context: runtimeContext,

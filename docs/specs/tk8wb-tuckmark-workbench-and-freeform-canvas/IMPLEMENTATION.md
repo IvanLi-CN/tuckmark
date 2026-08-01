@@ -126,6 +126,9 @@
   - a route-local narrow desktop mode at `960-1279px`
   - a toolbar dedicated to zoom, fit-to-view, grid, snap, undo/redo, and
     reset
+  - a controlled `GridSizeMenu` on the grid button with `1mm`, `2mm`, `2.5mm`,
+    `5mm`, and `10mm` options; ordinary click toggles visibility while right
+    click and touch/pen long press open the anchored menu
   - lower-noise panel framing and a cooler stage surface so the editable label
     stays visually dominant
   - dark-theme shell surfaces that keep the white paper base neutral while
@@ -197,6 +200,12 @@
   the persistent `snapEnabled` editor flag. It serves ordinary and multi-select
   dragging, pending clipboard placement, line endpoint adjustment, and
   Transformer resize; keyboard nudges remain exact fixed-distance moves.
+- The persistent editor draft now carries a `CanvasGridSize` value. The
+  background grid, visible-grid bounds, and every snap context read the same
+  value, while missing or invalid legacy values normalize to `1mm`.
+- Grid-size changes update the active draft/working copy without entering the
+  draft history stack, and are preserved through scratch storage, user-template
+  working copies, saved versions, and sync-compatible draft records.
 - Ordinary drag previews still compare grid lines, canvas edges, and visible
   static element bounds independently on each axis. Direct handles now declare
   their active `min|center|max` sources explicitly, so inactive axes never
@@ -562,6 +571,8 @@
   - default canvas selectable contract
   - text-selected canvas selectable contract
   - DimensionPicker state gallery and filtering interaction
+  - GridSizeMenu gallery and right-click interaction, including all five
+    options and selected-state feedback
   - full canvas workspace header dimension autocomplete state
   - `/system` data storage card states for unsupported, unconfigured,
     configured healthy, directory-attach choice, backup list, import confirm,

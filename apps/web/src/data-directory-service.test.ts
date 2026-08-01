@@ -113,6 +113,7 @@ function createSnapshot(args: {
         lastSavedAt: args.updatedAt ?? "2026-07-17T07:00:00.000Z",
         editor: {
           gridEnabled: true,
+          gridSize: 1 as const,
           snapEnabled: true,
         },
       },
@@ -141,6 +142,7 @@ function createSnapshot(args: {
         lastSavedAt: args.updatedAt ?? "2026-07-17T07:00:00.000Z",
         editor: {
           gridEnabled: true,
+          gridSize: 1 as const,
           snapEnabled: true,
         },
       },
