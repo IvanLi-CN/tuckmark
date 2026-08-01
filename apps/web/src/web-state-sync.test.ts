@@ -87,6 +87,60 @@ describe("web-state-sync", () => {
     })
   })
 
+  it("retains the browser-local recent activity registry in server-http mode", () => {
+    vi.stubEnv("TUCKMARK_WEB_SURFACE", "server-http")
+    window.localStorage.setItem("tuckmark.sync-state.v1", '{"browserOnly":true}')
+    window.localStorage.setItem(
+      "tuckmark.recent-activity.v1",
+      JSON.stringify({
+        templates: [
+          {
+            id: "existing-template",
+            name: "Existing template",
+            description: "Existing activity",
+            usedAt: "2026-07-30T09:00:00.000Z",
+          },
+        ],
+        prints: [],
+      })
+    )
+    const record = createTemplateUsageRecord({
+      id: "new-template",
+      name: "New template",
+      description: "New activity",
+      usedAt: "2026-07-30T10:00:00.000Z",
+    })
+
+    const recent = applySyncStateToBrowser(
+      {
+        ...emptySyncState(),
+        updatedAt: record.updatedAt,
+        templateUsageRecords: [record],
+      },
+      ["shipping-wide"]
+    )
+
+    expect(recent.templates.map((entry) => entry.id)).toEqual(["new-template", "existing-template"])
+    expect(readJson("tuckmark.sync-state.v1")).toEqual({ browserOnly: true })
+    expect(readJson("tuckmark.recent-activity.v1")).toEqual({
+      templates: [
+        {
+          id: "new-template",
+          name: "New template",
+          description: "New activity",
+          usedAt: "2026-07-30T10:00:00.000Z",
+        },
+        {
+          id: "existing-template",
+          name: "Existing template",
+          description: "Existing activity",
+          usedAt: "2026-07-30T09:00:00.000Z",
+        },
+      ],
+      prints: [],
+    })
+  })
+
   it("migrates legacy recent activity and draft storage into sync state", () => {
     const preset = getPresetById("shipping-wide")
     const draft = createDraftFromPreset(preset)

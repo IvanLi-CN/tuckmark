@@ -2758,7 +2758,7 @@ describe("web workbench app", () => {
     )
   })
 
-  it("does not hydrate legacy browser sync activity on server-http startup", async () => {
+  it("does not hydrate legacy browser sync state on server-http startup", async () => {
     queueFetchJsonResponsesByRequest({
       "GET /api/templates": { templates: fallbackTemplates },
       "GET /api/printers": {
@@ -2782,6 +2782,45 @@ describe("web workbench app", () => {
 
     expect(document.body.textContent).not.toContain("Shipping Label")
     expect(document.body.textContent).toContain("最近打印还没有打印记录。")
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/api/sync"))).toBe(false)
+  })
+
+  it("restores browser-local recent activity metadata on server-http startup", async () => {
+    queueFetchJsonResponsesByRequest({
+      "GET /api/templates": { templates: fallbackTemplates },
+      "GET /api/printers": {
+        printers: [
+          {
+            id: "printer-1",
+            name: "Mock P2",
+            capabilities: {
+              printWidthDots: 384,
+              supportedPaperTypes: ["continuous", "gap"],
+            },
+          },
+        ],
+      },
+    })
+    window.localStorage.setItem(
+      "tuckmark.recent-activity.v1",
+      JSON.stringify({
+        templates: [
+          {
+            id: "browser-local-recent-template",
+            name: "Browser-local recent template",
+            description: "Presentation metadata",
+            usedAt: "2026-07-30T10:00:00.000Z",
+          },
+        ],
+        prints: [],
+      })
+    )
+
+    await renderApp(serverRuntimeContext)
+    await waitForServerRuntimeReady()
+    await flush(6)
+
+    expect(document.body.textContent).toContain("Browser-local recent template")
     expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/api/sync"))).toBe(false)
   })
 

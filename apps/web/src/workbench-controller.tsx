@@ -51,11 +51,7 @@ import {
   recordRecentCanvasDimension,
 } from "./lib/canvas-dimensions.js"
 import { canvasDotsToMillimeters, canvasMillimetersToDots } from "./lib/canvas-units.js"
-import {
-  emptyRecentActivityState,
-  loadRecentActivity,
-  type RecentActivityState,
-} from "./lib/recent-activity.js"
+import { loadRecentActivity, type RecentActivityState } from "./lib/recent-activity.js"
 import {
   clampModelPresetToCapability,
   defaultDocumentRenderOptions,
@@ -437,7 +433,7 @@ export function useWorkbenchController({
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState<string | null>(null)
   const [recentActivity, setRecentActivity] = React.useState<RecentActivityState>(() =>
-    context.surface === "browser-static" ? loadRecentActivity() : emptyRecentActivityState()
+    loadRecentActivity()
   )
   const [canvasDimensions, setCanvasDimensions] = React.useState(() => loadRecentCanvasDimensions())
   const userTemplates = userTemplatesQuery.data ?? []
