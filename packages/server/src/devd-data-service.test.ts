@@ -371,6 +371,82 @@ describe("DevdDataService", () => {
     )
   })
 
+  it("creates a complete manual backup of every durable data domain", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const timestamp = "2026-08-01T00:00:00.000Z"
+    const saved = await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: 0,
+      args: { name: "Backup mock label", document: mockDocument("Backup mock label") },
+    })
+    const templateId = saved.data.template.id as string
+    await service.mutateRuntime({
+      command: "replace-working-copy",
+      expectedRevision: 1,
+      args: {
+        source: { kind: "scratch", presetId: "backup-scratch" },
+        document: mockDocument("Backup scratch"),
+      },
+    })
+    await service.mutateInventory({
+      command: "save-material",
+      expectedRevision: 2,
+      args: {
+        id: "backup-material",
+        fullName: "Backup mock material",
+        baseName: "Backup",
+        variantName: "Mock",
+        packageName: "SOT-583",
+        matrixCode: "BACKUP-MOCK-001",
+        description: "Complete backup fixture",
+        packagingRemark: "reel",
+        labelBindings: [
+          {
+            id: "backup-binding",
+            templateSource: "user-template",
+            templateId,
+            templateName: "Backup mock label",
+            printQuantity: 2,
+            fieldOverrides: { value: "backup" },
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        ],
+        datasheets: [
+          {
+            title: "Mock datasheet",
+            url: "https://example.test/backup.pdf",
+            source: "manufacturer",
+          },
+        ],
+      },
+    })
+    await service.mutateInventory({
+      command: "apply-adjustment",
+      expectedRevision: 3,
+      args: {
+        materialId: "backup-material",
+        input: { kind: "in", quantity: 12, note: "backup fixture", actor: "test" },
+      },
+    })
+    const expected = await service.exportArchive()
+
+    const backup = await service.createBackup(4)
+    const persisted = JSON.parse(
+      await readFile(path.join(root, "backups", "manual", backup.data.name), "utf8")
+    )
+
+    expect(backup.revision).toBe(5)
+    expect(persisted).toMatchObject({ schema: "tuckmark.devd-data-archive.v1" })
+    expect(persisted.runtime.settings).toEqual(expected.runtime.settings)
+    expect(persisted.runtime.templates).toEqual(expected.runtime.templates)
+    expect(persisted.runtime.versions).toEqual(expected.runtime.versions)
+    expect(persisted.runtime.workingCopies).toEqual(expected.runtime.workingCopies)
+    expect(persisted.inventory).toEqual(expected.inventory)
+  })
+
   it("rejects conflicting archive merges and protects replace imports", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
     cleanupPaths.push(root)

@@ -503,6 +503,24 @@ function parseDirectoryStateFromFiles(files: Map<string, string>): ManagedDirect
   }
 }
 
+function assertArchiveCompleteness(files: Map<string, string>, state: ManagedDirectoryState): void {
+  const manifestRaw = files.get(MANIFEST_PATH)
+  if (!manifestRaw || !files.has(APP_SETTINGS_PATH)) {
+    throw new Error("ZIP 数据不完整。")
+  }
+  const counts = parseManifest(manifestRaw).counts
+  const actual = toRuntimeSummary(state.snapshot, state.inventorySnapshot)
+  if (
+    counts.templates !== actual.templates ||
+    counts.versions !== actual.versions ||
+    counts.workingCopies !== actual.workingCopies ||
+    counts.materials !== actual.materials ||
+    counts.adjustments !== actual.adjustments
+  ) {
+    throw new Error("ZIP 数据清单与内容不一致。")
+  }
+}
+
 export async function readTextFileFromDirectoryHandle(
   handle: FileSystemFileHandle
 ): Promise<string> {
@@ -805,12 +823,22 @@ async function writeArchiveFile(
 }
 
 export function createDataArchiveBytes(archive: TuckmarkDataArchive): Uint8Array {
-  return zipSync(
-    {
-      "archive.json": strToU8(JSON.stringify(archive, null, 2)),
-    },
-    { level: 6 }
+  const { files } = buildSnapshotTree(archive.runtime, archive.inventory, "backup-archive")
+  const entries: Record<string, Uint8Array> = {}
+  for (const [path, value] of files) {
+    entries[path] = strToU8(value)
+  }
+  entries["archive.json"] = strToU8(
+    JSON.stringify(
+      {
+        schema: ARCHIVE_SCHEMA,
+        exportedAt: archive.exportedAt,
+      },
+      null,
+      2
+    )
   )
+  return zipSync(entries, { level: 6 })
 }
 
 function createArchiveBytes(state: ManagedDirectoryState): Uint8Array {
@@ -849,7 +877,9 @@ function parseArchiveBytes(bytes: Uint8Array): TuckmarkDataArchive {
     }
     files.set(path, strFromU8(value))
   }
-  return createDataArchive(parseDirectoryStateFromFiles(files), exportedAt)
+  const state = parseDirectoryStateFromFiles(files)
+  assertArchiveCompleteness(files, state)
+  return createDataArchive(state, exportedAt)
 }
 
 export async function readDataArchiveFile(file: File): Promise<TuckmarkDataArchive> {

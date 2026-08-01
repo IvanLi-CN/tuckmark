@@ -198,7 +198,7 @@ describe("SystemDataStorageCard", () => {
     expect(document.body.textContent).toContain("导入 ZIP 数据")
   })
 
-  it("downloads DEVD archives as the shared ZIP envelope", async () => {
+  it("downloads DEVD archives as the v0.9.2-compatible ZIP tree", async () => {
     const archive = {
       exportedAt: "2026-08-01T00:00:00.000Z",
       runtime: {
@@ -261,12 +261,14 @@ describe("SystemDataStorageCard", () => {
     }
     expect(exportedBlob.type).toBe("application/zip")
     const entries = unzipSync(new Uint8Array(await exportedBlob.arrayBuffer()))
-    expect(Object.keys(entries)).toEqual(["archive.json"])
+    expect(Object.keys(entries).sort()).toEqual([
+      "archive.json",
+      "manifest.json",
+      "settings/app-settings.json",
+    ])
     expect(JSON.parse(strFromU8(entries["archive.json"] ?? new Uint8Array()))).toMatchObject({
-      schema: "tuckmark.data-archive.v1",
+      schema: "tuckmark.runtime-export-archive.v1",
       exportedAt: archive.exportedAt,
-      runtime: archive.runtime,
-      inventory: archive.inventory,
     })
     expect(click).toHaveBeenCalledTimes(1)
     expect(revokeObjectUrl).toHaveBeenCalledWith("blob:tuckmark-test")

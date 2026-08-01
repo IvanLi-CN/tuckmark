@@ -10,7 +10,7 @@ The main Web runtime and Agent Import share one DEVD transaction and revision au
 
 ## Unified ZIP Archive
 
-User-facing import and export use one ZIP envelope across browser-static and server-http. The archive contains the runtime snapshot and inventory aggregate needed for either surface, while existing directory ZIP archives remain valid import inputs.
+User-facing import and export use one ZIP envelope across browser-static and server-http. The canonical write format remains the established directory tree so deployed browser-static releases can read new exports. Its manifest makes settings, templates, versions, working copies, materials, and adjustments independently visible and count-verifiable; the single-snapshot envelope remains readable so already exported files are not stranded.
 
 ## DEVD Ownership Boundary
 
