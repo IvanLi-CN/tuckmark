@@ -1350,10 +1350,12 @@ output.
   `capture_scope=element`) with the anchored grid-size menu open. It shows only
   `1mm`, `2mm`, and `5mm`, with `2mm` selected and grid visibility unchanged.
 
+  PR: include
   ![Canvas grid-size context menu](./assets/canvas-grid-and-snap-menu-grid-options.png)
 
 - Storybook canvas capture (`source_type=storybook_canvas`, `target_program=mock-only`,
   `capture_scope=element`) with the anchored snap-step menu open. It shows only
   `1/4 格`, `1/2 格`, and `1 格`, with `1/2 格` selected.
 
+  PR: include
   ![Canvas snap-step context menu](./assets/canvas-grid-and-snap-menu-snap-options.png)
