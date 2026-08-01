@@ -132,6 +132,11 @@ while the workbench was being productized:
     `server-http`
   - browser-local user templates and their version history remain intentionally
     outside that sync contract
+- The DEVD data-ownership transition superseded that same-device contract:
+  - server-http working copies, templates, settings, and inventory moved to
+    DEVD resource commands and revisioned persistence
+  - recent templates and prints stayed browser-local presentation metadata
+    without legacy `/api/sync` calls or DEVD archive/backup ownership
 - A later configured-directory recovery fix tightened reload behavior for
   browser-local user templates:
   - workbench startup now compares the configured directory manifest against

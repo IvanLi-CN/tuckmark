@@ -287,18 +287,18 @@
   - runtime mutation events used by data-directory sync and cross-tab status
     refresh
   - runtime-only pending clipboard placement bookkeeping kept outside
-    persisted drafts, sync state, saved versions, and autosaves
+    persisted drafts, saved versions, and autosaves
   - one-time migration of legacy browser-local user-template data, saved
     versions, autosaves, working copies, and compatible local settings into the
     unified runtime store
   - configured-directory startup restore that compares the current runtime
     snapshot against `manifest.json` and reloads the shared snapshot before
     page refresh when the directory copy is newer or strictly more complete
-  - preset-scoped browser storage persistence for scratch drafts still feeding
-    same-device sync, while scratch and preset-template working copies are also
-    included in the data-directory backup / export tree
-  - same-device sync state records shared with `TuckmarkService` for scratch
-    drafts, recent templates, and recent prints
+  - scratch and preset-template working copies flow through the active runtime
+    store and are included in the data-directory backup / export tree when
+    DEVD owns the server-http runtime
+  - browser-local recent-activity storage for recent templates and recent
+    prints; it is presentation metadata and is not a DEVD record
   - legacy `IndexedDB` / `localStorage` persistence retained as the compatibility
     backend, with memory fallback in incomplete test/browser environments
   - in-memory undo/redo history capped to `50`
@@ -432,12 +432,10 @@
 - A high-cost agent practice script can call `codex exec` to generate multiple
   electronics organizer label packages, validate and preview them, and write a
   static HTML self-evaluation report. It does not support physical printing.
-- Same-device sync intentionally stops at:
-  - recent templates
-  - recent prints
-  - scratch canvas drafts
-- User templates, saved versions, autosaves, user-template working
-  copies, and inventory records remain outside the sync contract.
+- Legacy same-device `/api/sync` transport no longer participates in Web
+  runtime persistence. User templates, saved versions, autosaves, working
+  copies, settings, and inventory records use the active runtime store; DEVD
+  owns them on server-http.
 - Shared schema coverage now includes `rotation` on `text`, `rect`, `barcode`,
   `qr`, and `datamatrix`, while `line` remains endpoint-based.
 - Text elements now use a fixed container text box model across Web drafts,

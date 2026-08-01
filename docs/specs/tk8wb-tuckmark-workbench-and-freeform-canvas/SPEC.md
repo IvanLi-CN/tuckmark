@@ -360,9 +360,9 @@ output.
   - document metadata
   - per-layer metadata (`name`, `visible`, `locked`)
   - editor metadata (`gridEnabled`, `snapEnabled`)
-- Scratch-draft persistence uses preset-scoped browser storage keys and also
-  participates in same-device sync with `TuckmarkService` when the
-  `server-http` surface is live.
+- Scratch and preset-template working copies use the active runtime store:
+  browser-static keeps its browser-owned persistence, while server-http uses
+  DEVD. No Web surface uses `TuckmarkService` same-device sync for drafts.
 - Browser-local user templates use an IndexedDB-backed registry with a memory
   fallback in nonconforming environments.
 - Refresh restores the latest working copy for the active document source.
@@ -490,12 +490,13 @@ output.
 
 ### Recent activity and persistence contract
 
-- Recent templates and recent prints are persisted in a shared same-device sync
-  state that merges browser-local storage with `TuckmarkService`.
-- The browser snapshot remains the first-write surface and is reconciled with
-  the service snapshot during startup and after key mutations.
-- No remote history service or `/api/history` endpoint is introduced.
-- Scratch canvas drafts participate in the same same-device sync state. No
+- Recent templates and recent prints are browser-local presentation metadata in
+  both Web surfaces. They survive reload through the browser registry but never
+  supply a fallback for DEVD-owned records.
+- The Web App does not call legacy `/api/sync` or introduce a remote history
+  service or `/api/history` endpoint.
+- Scratch canvas drafts use the active runtime store: server-http restores them
+  from DEVD working copies, while browser-static keeps browser-owned drafts. No
   cross-device account sync or remote document service is introduced.
 - A configured data directory stores the cross-surface copy of user templates,
   their saved versions, working copies, archive state, and inventory records;
@@ -507,7 +508,7 @@ output.
 - Durable runtime storage contract:
   - supported Chromium desktop / installed-PWA surfaces use a worker-backed
     `SQLite Wasm` runtime with the `opfs-sahpool` VFS for runtime-local drafts,
-    recent activity, migration inputs, and cached data-directory snapshots
+    migration inputs, and cached data-directory snapshots
   - unsupported or incomplete environments fall back to the existing
     browser-local compatibility path built on `IndexedDB`, `localStorage`, and
     in-memory test fallbacks
@@ -669,7 +670,7 @@ output.
     width/height as a single selectable suggestion
   - recent dimension history is browser-local only, global across canvas
     sources, ordered by successful explicit save / save-as / print use, and
-    stays outside same-device sync state
+    stays outside DEVD persistence and legacy sync
   - editor and preview do not block on printer width capability; direct print
     checks the selected target `printWidthDots` and rejects canvas/template
     sources whose canvas width exceeds that target, with user-facing messages in
@@ -812,9 +813,10 @@ output.
 - Runtime export/import and data-directory reload keep archived template
   state, saved versions, autosaves, and working copies intact.
 - Invalid barcode, QR, or Data Matrix payloads surface as user-visible errors.
-- `server-http` startup restores recent activity from the merged sync snapshot.
-- Scratch canvas drafts can be restored from the merged same-device sync
-  snapshot after reload.
+- `server-http` startup restores recent activity from the browser-local
+  presentation registry without calling `/api/sync`.
+- Scratch canvas drafts restore from the active runtime store after reload,
+  including DEVD working copies on server-http.
 - Supported Chromium desktop / installed-PWA surfaces migrate existing
   browser-local template data into the unified runtime store once, then keep
   user templates, saved versions, working copies, scratch drafts,
