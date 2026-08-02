@@ -24,7 +24,7 @@ Use the released `tuckmark` CLI. Tuckmark itself does not parse order files, inv
    tuckmark agent-import inventory --devd-url "$DEVD_URL" --query "<model or keyword>"
    ```
 
-   Catalog results include only system and shared-directory templates. `recommendedUses` gives a scope and weight; rank the top three only for **new** materials. An empty list means the template remains usable but is not a default recommendation.
+   Catalog results include only system and shared-directory templates. `recommendedUses` lists suggested usage scopes; for **new** materials, use the material evidence to select and order up to three suitable templates. An empty list means the template remains usable but is not a default recommendation.
 
 3. Interpret the order outside Tuckmark. Decide material identity yourself; do not run name matching that silently converts a new item into a restock. Use `kind: "restock"` only with the exact `targetMaterialId` returned by inventory. Include that material's `updatedAt` as `targetMaterialUpdatedAt`.
 4. Add `needsAttention` when identity, quantity, suffix, or datasheet evidence is uncertain. It is non-blocking: do not force the user to certify the match.

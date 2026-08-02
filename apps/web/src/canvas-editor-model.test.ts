@@ -911,12 +911,21 @@ describe("canvas-editor-model monochrome contract", () => {
       sampleInput: {},
       renderOptions: {},
       tags: [],
-      recommendedUses: [{ scope: "electronics", weight: 90 }],
+      recommendedUses: ["electronics"],
     })
 
     expect(draft).toMatchObject({
-      recommendedUses: [{ scope: "electronics", weight: 90 }],
+      recommendedUses: ["electronics"],
     })
+  })
+
+  it("normalizes legacy weighted recommended uses in browser drafts", () => {
+    const normalized = normalizeDraftDocument({
+      ...createDraftFromSystemTemplate(getSystemTemplateById("cable-tag")),
+      recommendedUses: [{ scope: "electronics", weight: 90 }] as unknown as string[],
+    })
+
+    expect(normalized.recommendedUses).toEqual(["electronics"])
   })
 
   it("assigns a fallback width to widthless system template text elements when imported", () => {

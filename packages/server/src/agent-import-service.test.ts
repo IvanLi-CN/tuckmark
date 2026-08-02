@@ -51,7 +51,7 @@ function proposal(overrides: Partial<AgentImportProposal> = {}): AgentImportProp
           id: "cable-tag",
           name: "Cable Tag",
           fields: [{ key: "name", label: "Name", required: true, multiline: false }],
-          recommendedUses: [{ scope: "electronics", weight: 90 }],
+          recommendedUses: ["electronics"],
         },
         templateAlternatives: [],
         templateInput: { name: "Mock regulator" },
@@ -198,10 +198,7 @@ describe("AgentImportService", () => {
     const catalog = await service.catalog()
     expect(
       catalog.templates.find((template) => template.id === "cable-tag")?.recommendedUses
-    ).toContainEqual({
-      scope: "electronics",
-      weight: 90,
-    })
+    ).toContain("electronics")
 
     const session = service.createSession({
       sessionId: "agent-import-session-0123456789",

@@ -33,7 +33,7 @@ The Agent derives label print quantity from storage packages or independently la
 
 ### Template Catalog
 
-Catalog records expose `recommendedUses[]`, each with a human-readable scope and integer weight. New material recommendations are Agent-authored and ordered by the Agent. A template with an empty scope list remains usable but is not a default recommendation. DEVD catalog responses contain system templates and templates in the shared data directory only. In `server-http`, browser-local templates are not read as a fallback and are not migrated automatically.
+Catalog records expose `recommendedUses[]` as human-readable suggested usage scopes. New material recommendations are Agent-authored and ordered from the material evidence, without a template weight or score. A template with an empty scope list remains usable but is not a default recommendation. DEVD catalog responses contain system templates and templates in the shared data directory only. In `server-http`, browser-local templates are not read as a fallback and are not migrated automatically.
 
 ### Session Authorization and Lifetime
 

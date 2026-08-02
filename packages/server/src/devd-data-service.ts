@@ -107,7 +107,7 @@ type TemplateRecord = {
   archivedAt?: string | null
   currentVersionId: string
   fieldOrder: string[]
-  recommendedUses?: Array<{ scope: string; weight: number }>
+  recommendedUses?: string[]
 }
 
 type VersionRecord = {
@@ -168,6 +168,10 @@ export type DevdDataArchive = {
   }
 }
 
+const recommendedUseSchema = z
+  .union([z.string().trim().min(1), z.object({ scope: z.string().trim().min(1) })])
+  .transform((value) => (typeof value === "string" ? value : value.scope))
+
 const templateRecordSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -179,9 +183,7 @@ const templateRecordSchema = z.object({
   archivedAt: z.string().nullable().optional(),
   currentVersionId: z.string().min(1),
   fieldOrder: z.array(z.string()),
-  recommendedUses: z
-    .array(z.object({ scope: z.string().min(1), weight: z.number().int().min(1).max(100) }))
-    .optional(),
+  recommendedUses: z.array(recommendedUseSchema).optional(),
 })
 
 const dataIdentifierSchema = z.string().trim().min(1)
@@ -336,9 +338,7 @@ const canvasDraftDocumentSchema = z
     width: z.number().finite().positive(),
     height: z.number().finite().positive(),
     renderOptions: z.record(z.string(), z.unknown()).optional(),
-    recommendedUses: z
-      .array(z.object({ scope: dataIdentifierSchema, weight: z.number().int().min(1).max(100) }))
-      .optional(),
+    recommendedUses: z.array(recommendedUseSchema).optional(),
     fields: z.array(
       z.object({ key: dataIdentifierSchema, label: dataIdentifierSchema }).passthrough()
     ),

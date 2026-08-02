@@ -4,6 +4,10 @@
 
 The capability is intentionally orchestrated by the user's Agent. This separates private order interpretation and optional browser research from Tuckmark's deterministic storage and confirmation surfaces.
 
+## Scope-Only Template Applicability
+
+Suggested usage ranges describe where a template is suitable; they do not encode a cross-template score. Agents choose and order up to three new-material candidates from material evidence, while restocks keep their existing binding.
+
 ## Unified DEVD Data Plane
 
 The main Web runtime and Agent Import share one DEVD transaction and revision authority. This removes split ownership between browser RuntimeStore and server inventory files, while keeping the static browser-only product deliberately independent.

@@ -7,7 +7,7 @@ export const shippingLabelTemplate: TemplateDefinition = {
   width: 384,
   height: 224,
   tags: ["shipping", "preset"],
-  recommendedUses: [{ scope: "shipping", weight: 100 }],
+  recommendedUses: ["shipping"],
   fields: [
     { key: "recipient", label: "Recipient", required: true, multiline: false },
     { key: "address", label: "Address", required: true, multiline: true },
@@ -113,10 +113,7 @@ export const cableLabelTemplate: TemplateDefinition = {
   width: 384,
   height: 160,
   tags: ["ops", "preset"],
-  recommendedUses: [
-    { scope: "electronics", weight: 90 },
-    { scope: "cable", weight: 100 },
-  ],
+  recommendedUses: ["electronics", "cable"],
   fields: [
     { key: "name", label: "Name", required: true, multiline: false },
     { key: "port", label: "Port", required: false, multiline: false },

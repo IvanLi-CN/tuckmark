@@ -364,6 +364,7 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     templateId: unitDocument.templateId,
     baseVersionId: unitDocument.baseVersionId,
     lastSavedAt: unitDocument.lastSavedAt,
+    recommendedUses: normalizeRecommendedUses(unitDocument.recommendedUses),
     editor: {
       ...unitDocument.editor,
       gridSize: normalizeCanvasGridSize(
@@ -376,6 +377,17 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     fields: synced.fields,
     elements: synced.elements,
   }
+}
+
+function normalizeRecommendedUses(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  return value.flatMap((entry) => {
+    if (typeof entry === "string" && entry.trim()) return [entry.trim()]
+    if (entry && typeof entry === "object" && "scope" in entry && typeof entry.scope === "string") {
+      return entry.scope.trim() ? [entry.scope.trim()] : []
+    }
+    return []
+  })
 }
 
 export function createCanvasElement(

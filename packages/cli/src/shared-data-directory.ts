@@ -282,10 +282,9 @@ const userTemplateRecordSchema = z.object({
   fieldOrder: z.array(z.string()),
   recommendedUses: z
     .array(
-      z.object({
-        scope: z.string().min(1),
-        weight: z.number().int().min(1).max(100),
-      })
+      z
+        .union([z.string().trim().min(1), z.object({ scope: z.string().trim().min(1) })])
+        .transform((value) => (typeof value === "string" ? value : value.scope))
     )
     .default([]),
 })

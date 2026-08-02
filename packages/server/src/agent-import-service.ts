@@ -12,6 +12,7 @@ import {
   agentImportEventSchema,
   agentImportItemSchema,
   agentImportProposalSchema,
+  agentImportRecommendedUseSchema,
   agentImportSessionSchema,
   agentImportTemplateSchema,
   applyInventoryAdjustment,
@@ -31,14 +32,7 @@ const sharedTemplateRecordSchema = z.object({
   name: z.string().min(1),
   archivedAt: z.string().nullable().optional(),
   currentVersionId: z.string().min(1),
-  recommendedUses: z
-    .array(
-      z.object({
-        scope: z.string().min(1),
-        weight: z.number().int().min(1).max(100),
-      })
-    )
-    .default([]),
+  recommendedUses: z.array(agentImportRecommendedUseSchema).default([]),
 })
 
 const sharedTemplateVersionSchema = z.object({

@@ -198,6 +198,12 @@ export const templateElementSchema = z.discriminatedUnion("kind", [
     qrElementSchema,
     dataMatrixElementSchema,
 ]);
+export const templateRecommendedUseSchema = z
+    .union([
+    z.string().trim().min(1),
+    z.object({ scope: z.string().trim().min(1) }),
+])
+    .transform((value) => typeof value === "string" ? value : value.scope);
 export const templateSchema = z.object({
     id: z.string().min(1),
     name: z.string().min(1),
@@ -207,6 +213,7 @@ export const templateSchema = z.object({
     fields: z.array(templateFieldSchema),
     elements: z.array(templateElementSchema),
     tags: z.array(z.string()).default([]),
+    recommendedUses: z.array(templateRecommendedUseSchema).optional(),
 });
 export const directCanvasSchema = z.object({
     id: z.string().default("canvas"),

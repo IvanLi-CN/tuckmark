@@ -235,10 +235,13 @@ export const templateElementSchema = z.discriminatedUnion("kind", [
 ])
 export type TemplateElement = z.infer<typeof templateElementSchema>
 
-export const templateRecommendedUseSchema = z.object({
-  scope: z.string().min(1),
-  weight: z.number().int().min(1).max(100),
-})
+export const templateRecommendedUseSchema = z
+  .union([
+    z.string().trim().min(1),
+    // Read packages created before applicability was simplified to strings.
+    z.object({ scope: z.string().trim().min(1) }),
+  ])
+  .transform((value) => (typeof value === "string" ? value : value.scope))
 export type TemplateRecommendedUse = z.infer<typeof templateRecommendedUseSchema>
 
 export const templateSchema = z.object({
