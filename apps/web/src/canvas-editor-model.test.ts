@@ -26,7 +26,7 @@ import {
   toggleElementBinding,
 } from "./canvas-editor-model.js"
 import { CANVAS_DOTS_PER_MILLIMETER } from "./lib/canvas-units.js"
-import type { CanvasDraftElement } from "./types.js"
+import type { CanvasDraftDocument, CanvasDraftElement } from "./types.js"
 
 type CompiledCanvasElement = ReturnType<typeof compileDraftToCanvasDefinition>["elements"][number]
 type AnyCanvasElement = CanvasDraftElement | CompiledCanvasElement
@@ -899,7 +899,7 @@ describe("canvas-editor-model monochrome contract", () => {
     )
   })
 
-  it("retains package recommended uses in the imported draft", () => {
+  it("retains the package suggested use in the imported draft", () => {
     const draft = createDraftFromUserTemplatePackage({
       schema: "tuckmark.user-template-package.v1",
       id: "recommended-package",
@@ -911,21 +911,21 @@ describe("canvas-editor-model monochrome contract", () => {
       sampleInput: {},
       renderOptions: {},
       tags: [],
-      recommendedUses: ["electronics"],
+      recommendedUse: "electronics",
     })
 
     expect(draft).toMatchObject({
-      recommendedUses: ["electronics"],
+      recommendedUse: "electronics",
     })
   })
 
-  it("normalizes legacy weighted recommended uses in browser drafts", () => {
+  it("normalizes legacy suggested-use arrays in browser drafts", () => {
     const normalized = normalizeDraftDocument({
       ...createDraftFromSystemTemplate(getSystemTemplateById("cable-tag")),
-      recommendedUses: [{ scope: "electronics", weight: 90 }] as unknown as string[],
-    })
+      recommendedUses: [{ scope: "electronics", weight: 90 }],
+    } as unknown as CanvasDraftDocument)
 
-    expect(normalized.recommendedUses).toEqual(["electronics"])
+    expect(normalized.recommendedUse).toBe("electronics")
   })
 
   it("assigns a fallback width to widthless system template text elements when imported", () => {

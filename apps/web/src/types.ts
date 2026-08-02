@@ -44,6 +44,7 @@ export type Template = {
   id: string
   name: string
   description: string
+  recommendedUse?: string
   width?: number
   height?: number
   fields: TemplateField[]
@@ -229,7 +230,7 @@ export type UserTemplateRecord = {
   archivedAt?: string | null
   currentVersionId: string
   fieldOrder: string[]
-  recommendedUses?: string[]
+  recommendedUse?: string
 }
 
 export type CanvasWorkingCopyIndexEntry = {
@@ -265,7 +266,7 @@ export type CanvasDraftDocument = {
   width: number
   height: number
   renderOptions?: Partial<DocumentRenderOptions>
-  recommendedUses?: string[]
+  recommendedUse?: string
   fields: CanvasDraftField[]
   elements: CanvasDraftElement[]
   editor: {

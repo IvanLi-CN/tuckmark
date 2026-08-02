@@ -175,6 +175,19 @@ async function seedUserTemplateFixtures() {
   })
 }
 
+async function seedSuggestedUseTemplateFixture() {
+  await resetUserTemplateStoreForTest()
+  const draft = {
+    ...createDraftFromPreset(getPresetById("ops-tag")),
+    name: "建议范围示例模板",
+    recommendedUse: "电子元器件 / 集成电路",
+  }
+  return saveUserTemplate({
+    name: draft.name,
+    document: draft,
+  })
+}
+
 async function seedArchivedUserTemplateFixtures() {
   await seedUserTemplateFixtures()
   const archived = await saveUserTemplate({
@@ -2051,6 +2064,48 @@ export const CanvasWorkspaceUserTemplateVersions: Story = {
   },
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+}
+
+export const CanvasWorkspaceTemplateSuggestedUse: Story = {
+  loaders: [
+    async () => {
+      const saved = await seedSuggestedUseTemplateFixture()
+      return { templateId: saved.template.id }
+    },
+  ],
+  render: (_args, context) => {
+    const templateId = context.loaded?.templateId as string | null
+    return (
+      <WorkbenchAppStory
+        context={runtimeContext}
+        initialEntries={[
+          templateId ? `/canvas?source=user-template&templateId=${templateId}` : "/canvas",
+        ]}
+      />
+    )
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "The suggested-use string is editable in the Canvas template settings and never appears in the batch-entry table.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const input = await canvas.findByRole("textbox", { name: "建议使用范围" })
+    await expect(input).toHaveValue("电子元器件 / 集成电路")
+    await userEvent.clear(input)
+    await userEvent.type(input, "仅适用于需要型号与封装信息的物料")
+    await expect(input).toHaveValue("仅适用于需要型号与封装信息的物料")
   },
 }
 

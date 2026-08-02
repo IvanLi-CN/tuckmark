@@ -33,7 +33,7 @@ The Agent derives label print quantity from storage packages or independently la
 
 ### Template Catalog
 
-Catalog records expose `recommendedUses[]` as human-readable suggested usage scopes. New material recommendations are Agent-authored and ordered from the material evidence, without a template weight or score. A template with an empty scope list remains usable but is not a default recommendation. DEVD catalog responses contain system templates and templates in the shared data directory only. In `server-http`, browser-local templates are not read as a fallback and are not migrated automatically.
+Catalog records expose an optional `recommendedUse` human-readable suggested-usage string. It describes where a template is suitable; it is neither a collection nor a score. New material recommendations are Agent-authored and ordered from the material evidence, without a template weight or score. A template without this suggestion remains usable but is not a default recommendation. The Canvas workspace edits this one template-metadata string; the batch-entry table remains limited to variable data. Existing persisted `recommendedUses[]` values are accepted only when reading older local data and are combined in source order into `recommendedUse`; all new writes and API responses use the singular field. DEVD catalog responses contain system templates and templates in the shared data directory only. In `server-http`, browser-local templates are not read as a fallback and are not migrated automatically.
 
 ### Session Authorization and Lifetime
 
@@ -93,3 +93,5 @@ Mock-only icon action after the 520 ms touch long-press interaction. `source_typ
 
 PR: include
 ![Action button touch long press tooltip](./assets/action-button-touch-long-press.png)
+
+Mock-only DEVD Canvas template-settings field, confirming that one suggested-use sentence is edited as one single-line value and stays outside the batch-entry table. `source_type=mock_ui`; `target_program=mock-only`; `capture_scope=browser-viewport`; `sensitive_exclusion=real templates, data directories, session keys, and unrelated applications`; `submission_gate=approved`; `state=configured`.

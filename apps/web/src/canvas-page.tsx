@@ -3273,6 +3273,7 @@ function CanvasLayerRail({
       : state.routeSource.kind === "user-template"
         ? "已连接本地用户模板，保存会新增一个已保存版本。"
         : null
+  const recommendedUse = state.liveDraft.recommendedUse ?? ""
 
   return (
     <div className="tm-left-rail">
@@ -3308,6 +3309,29 @@ function CanvasLayerRail({
             ))}
           </div>
         </div>
+      </CanvasSection>
+      <CanvasSection title="模板设置" description="保存时写入模板元数据。">
+        <label htmlFor="canvas-template-recommended-use" className="grid gap-1.5">
+          <span className="text-[11px] font-medium text-foreground">建议使用范围</span>
+          <Input
+            id="canvas-template-recommended-use"
+            aria-label="建议使用范围"
+            disabled={readOnly}
+            placeholder="填写模板适用场景"
+            value={recommendedUse}
+            className="h-8 text-xs"
+            onChange={(event) => {
+              const recommendedUse = event.currentTarget.value
+              onChange((current) =>
+                applyDraftUpdate(current, (draft) => ({
+                  ...draft,
+                  recommendedUse,
+                }))
+              )
+            }}
+          />
+        </label>
+        <p className="tm-note tm-note--left-rail">供 Agent 选择模板时参考。</p>
       </CanvasSection>
     </div>
   )

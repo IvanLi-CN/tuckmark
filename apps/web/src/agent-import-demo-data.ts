@@ -16,7 +16,7 @@ const cableTemplate: AgentImportTemplate = {
     { key: "port", label: "规格", required: false, multiline: false },
     { key: "location", label: "库位", required: false, multiline: false },
   ],
-  recommendedUses: ["electronics", "cable"],
+  recommendedUse: "electronics and cable labeling",
 }
 
 const shippingTemplate: AgentImportTemplate = {
@@ -28,7 +28,7 @@ const shippingTemplate: AgentImportTemplate = {
     { key: "address", label: "规格", required: true, multiline: true },
     { key: "orderId", label: "物料码", required: true, multiline: false },
   ],
-  recommendedUses: ["shipping"],
+  recommendedUse: "shipping",
 }
 
 const demoRestockTargets: Record<string, InventoryMaterial> = {

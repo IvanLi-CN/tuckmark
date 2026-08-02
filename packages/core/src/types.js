@@ -204,6 +204,18 @@ export const templateRecommendedUseSchema = z
     z.object({ scope: z.string().trim().min(1) }),
 ])
     .transform((value) => typeof value === "string" ? value : value.scope);
+export function normalizeTemplateRecommendedUse(value) {
+    if (typeof value === "string") {
+        return value.trim() || undefined;
+    }
+    if (Array.isArray(value)) {
+        const legacyUses = value
+            .flatMap((entry) => templateRecommendedUseSchema.safeParse(entry).data ?? [])
+            .filter(Boolean);
+        return legacyUses.join("；") || undefined;
+    }
+    return templateRecommendedUseSchema.safeParse(value).data;
+}
 export const templateSchema = z.object({
     id: z.string().min(1),
     name: z.string().min(1),
@@ -213,7 +225,7 @@ export const templateSchema = z.object({
     fields: z.array(templateFieldSchema),
     elements: z.array(templateElementSchema),
     tags: z.array(z.string()).default([]),
-    recommendedUses: z.array(templateRecommendedUseSchema).optional(),
+    recommendedUse: templateRecommendedUseSchema.optional(),
 });
 export const directCanvasSchema = z.object({
     id: z.string().default("canvas"),

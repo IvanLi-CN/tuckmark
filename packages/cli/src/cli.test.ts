@@ -131,7 +131,7 @@ describe("cli smoke", () => {
               id: "cable-tag",
               name: "Cable Tag",
               fields: [],
-              recommendedUses: ["electronics"],
+              recommendedUse: "electronics",
             },
             templateAlternatives: [],
             templateInput: {},
@@ -177,7 +177,7 @@ describe("cli smoke", () => {
                 id: "cable-tag",
                 name: "Cable Tag",
                 fields: [],
-                recommendedUses: ["electronics"],
+                recommendedUse: "electronics",
               },
             ],
           })
@@ -199,7 +199,7 @@ describe("cli smoke", () => {
                       id: "cable-tag",
                       name: "Cable Tag",
                       fields: [{ key: "name", label: "Name", required: true, multiline: false }],
-                      recommendedUses: ["electronics"],
+                      recommendedUse: "electronics",
                     },
                     createdAt: "2026-07-30T11:00:00.000Z",
                     status: "open",
@@ -270,8 +270,8 @@ describe("cli smoke", () => {
 
       const catalog = JSON.parse(
         (await runCli(["agent-import", "catalog", "--devd-url", baseUrl])).stdout
-      ) as { templates: Array<{ recommendedUses: string[] }> }
-      expect(catalog.templates[0]?.recommendedUses[0]).toBe("electronics")
+      ) as { templates: Array<{ recommendedUse?: string }> }
+      expect(catalog.templates[0]?.recommendedUse).toBe("electronics")
 
       const waiting = JSON.parse(
         (

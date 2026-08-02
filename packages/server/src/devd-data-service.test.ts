@@ -232,7 +232,7 @@ describe("DevdDataService", () => {
     })
 
     expect((await service.runtimeSnapshot()).templates[0]).toMatchObject({
-      recommendedUses: ["electronics"],
+      recommendedUse: "electronics",
     })
   })
 

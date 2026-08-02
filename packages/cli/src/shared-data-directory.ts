@@ -244,6 +244,24 @@ const canvasSnapStepSchema = z.preprocess(
   z.union([z.literal(0.25), z.literal(0.5), z.literal(1)])
 )
 
+const recommendedUseSchema = z
+  .union([z.string().trim().min(1), z.object({ scope: z.string().trim().min(1) })])
+  .transform((value) => (typeof value === "string" ? value : value.scope))
+const legacyRecommendedUsesSchema = z.array(recommendedUseSchema)
+
+function normalizeRecommendedUse(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined
+  if (Array.isArray(value)) {
+    return (
+      value
+        .flatMap((entry) => recommendedUseSchema.safeParse(entry).data ?? [])
+        .filter(Boolean)
+        .join("；") || undefined
+    )
+  }
+  return recommendedUseSchema.safeParse(value).data
+}
+
 const canvasDraftDocumentSchema = z
   .object({
     version: z.literal(1),
@@ -258,6 +276,8 @@ const canvasDraftDocumentSchema = z
     width: z.number().positive(),
     height: z.number().positive(),
     renderOptions: renderOptionsSchema.partial().optional(),
+    recommendedUse: recommendedUseSchema.optional(),
+    recommendedUses: legacyRecommendedUsesSchema.optional(),
     fields: z.array(canvasDraftFieldSchema),
     elements: z.array(canvasDraftElementSchema),
     editor: z.object({
@@ -268,26 +288,30 @@ const canvasDraftDocumentSchema = z
     }),
   })
   .passthrough()
+  .transform(({ recommendedUses, ...document }) => ({
+    ...document,
+    recommendedUse: document.recommendedUse ?? normalizeRecommendedUse(recommendedUses),
+  }))
 
-const userTemplateRecordSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string(),
-  width: z.number().positive(),
-  height: z.number().positive(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  archivedAt: z.string().nullable().optional(),
-  currentVersionId: z.string().min(1),
-  fieldOrder: z.array(z.string()),
-  recommendedUses: z
-    .array(
-      z
-        .union([z.string().trim().min(1), z.object({ scope: z.string().trim().min(1) })])
-        .transform((value) => (typeof value === "string" ? value : value.scope))
-    )
-    .default([]),
-})
+const userTemplateRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string(),
+    width: z.number().positive(),
+    height: z.number().positive(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    archivedAt: z.string().nullable().optional(),
+    currentVersionId: z.string().min(1),
+    fieldOrder: z.array(z.string()),
+    recommendedUse: recommendedUseSchema.optional(),
+    recommendedUses: legacyRecommendedUsesSchema.optional(),
+  })
+  .transform(({ recommendedUses, ...record }) => ({
+    ...record,
+    recommendedUse: record.recommendedUse ?? normalizeRecommendedUse(recommendedUses),
+  }))
 
 const userTemplateVersionSchema = z.object({
   id: z.string().min(1),
@@ -461,7 +485,7 @@ function createDraftFromUserTemplatePackage(
     })),
     elements: templatePackage.elements,
     tags: templatePackage.tags,
-    recommendedUses: templatePackage.recommendedUses ?? [],
+    recommendedUse: templatePackage.recommendedUse,
   }
   const fields: CanvasDraftField[] = template.fields.map((field) => ({
     key: field.key,
@@ -633,6 +657,7 @@ function createDraftFromUserTemplatePackage(
     width: dotsToMillimeters(templatePackage.canvas.width),
     height: dotsToMillimeters(templatePackage.canvas.height),
     renderOptions: templatePackage.renderOptions,
+    recommendedUse: templatePackage.recommendedUse,
     fields: synced.fields,
     elements: synced.elements,
     editor: {
@@ -1179,7 +1204,7 @@ export async function importSharedUserTemplatePackage(args: {
     archivedAt: null,
     currentVersionId: version.id,
     fieldOrder: draft.fields.map((field) => field.key),
-    recommendedUses: args.templatePackage.recommendedUses ?? [],
+    recommendedUse: args.templatePackage.recommendedUse,
   })
   const workingCopy: CanvasWorkingCopyIndexEntry = canvasWorkingCopyIndexEntrySchema.parse({
     sourceKey: buildSourceKey(templateId),

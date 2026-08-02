@@ -107,7 +107,7 @@ type TemplateRecord = {
   archivedAt?: string | null
   currentVersionId: string
   fieldOrder: string[]
-  recommendedUses?: string[]
+  recommendedUse?: string
 }
 
 type VersionRecord = {
@@ -172,19 +172,40 @@ const recommendedUseSchema = z
   .union([z.string().trim().min(1), z.object({ scope: z.string().trim().min(1) })])
   .transform((value) => (typeof value === "string" ? value : value.scope))
 
-const templateRecordSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string(),
-  width: z.number().positive(),
-  height: z.number().positive(),
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
-  archivedAt: z.string().nullable().optional(),
-  currentVersionId: z.string().min(1),
-  fieldOrder: z.array(z.string()),
-  recommendedUses: z.array(recommendedUseSchema).optional(),
-})
+const legacyRecommendedUsesSchema = z.array(recommendedUseSchema)
+
+function normalizeRecommendedUse(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined
+  if (Array.isArray(value)) {
+    return (
+      value
+        .flatMap((entry) => recommendedUseSchema.safeParse(entry).data ?? [])
+        .filter(Boolean)
+        .join("；") || undefined
+    )
+  }
+  return recommendedUseSchema.safeParse(value).data
+}
+
+const templateRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string(),
+    width: z.number().positive(),
+    height: z.number().positive(),
+    createdAt: z.string().min(1),
+    updatedAt: z.string().min(1),
+    archivedAt: z.string().nullable().optional(),
+    currentVersionId: z.string().min(1),
+    fieldOrder: z.array(z.string()),
+    recommendedUse: recommendedUseSchema.optional(),
+    recommendedUses: legacyRecommendedUsesSchema.optional(),
+  })
+  .transform(({ recommendedUses, ...record }) => ({
+    ...record,
+    recommendedUse: record.recommendedUse ?? normalizeRecommendedUse(recommendedUses),
+  }))
 
 const dataIdentifierSchema = z.string().trim().min(1)
 const canvasDraftSourceSchema = z.discriminatedUnion("kind", [
@@ -338,7 +359,8 @@ const canvasDraftDocumentSchema = z
     width: z.number().finite().positive(),
     height: z.number().finite().positive(),
     renderOptions: z.record(z.string(), z.unknown()).optional(),
-    recommendedUses: z.array(recommendedUseSchema).optional(),
+    recommendedUse: recommendedUseSchema.optional(),
+    recommendedUses: legacyRecommendedUsesSchema.optional(),
     fields: z.array(
       z.object({ key: dataIdentifierSchema, label: dataIdentifierSchema }).passthrough()
     ),
@@ -357,6 +379,10 @@ const canvasDraftDocumentSchema = z
     }),
   })
   .passthrough()
+  .transform(({ recommendedUses, ...document }) => ({
+    ...document,
+    recommendedUse: document.recommendedUse ?? normalizeRecommendedUse(recommendedUses),
+  }))
 
 const versionRecordSchema = z.object({
   id: z.string().min(1),
@@ -1204,7 +1230,7 @@ export class DevdDataService {
         archivedAt: existing?.archivedAt ?? null,
         currentVersionId: versionId,
         fieldOrder: (document.fields ?? []).map((field: any) => field.key),
-        recommendedUses: document.recommendedUses ?? existing?.recommendedUses ?? [],
+        recommendedUse: document.recommendedUse ?? existing?.recommendedUse,
       }
       if (existing) Object.assign(existing, template)
       else templates.push(template)

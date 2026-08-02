@@ -77,7 +77,7 @@ describe("UserTemplatePackage", () => {
       recommendedUses: [{ scope: "electronics", weight: 90 }],
     })
 
-    expect(parsed.recommendedUses).toEqual(["electronics"])
+    expect(parsed.recommendedUse).toBe("electronics")
   })
 
   it("lets field input override bindable element literal defaults", () => {

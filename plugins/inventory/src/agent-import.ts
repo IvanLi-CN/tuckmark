@@ -17,7 +17,7 @@ export const agentImportTemplateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   fields: z.array(agentImportTemplateFieldSchema).default([]),
-  recommendedUses: z.array(agentImportRecommendedUseSchema).default([]),
+  recommendedUse: agentImportRecommendedUseSchema.optional(),
 })
 export type AgentImportTemplate = z.infer<typeof agentImportTemplateSchema>
 
