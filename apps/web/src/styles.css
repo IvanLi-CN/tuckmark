@@ -695,18 +695,6 @@
   font-size: 12px;
 }
 
-.tm-agent-import__device-details {
-  grid-column: 2;
-  min-height: 64px;
-  align-self: start;
-  overflow: auto;
-  margin-top: 18px;
-  border: 1px solid color-mix(in oklab, var(--border) 80%, var(--background));
-  border-radius: 6px;
-  background: color-mix(in oklab, var(--muted) 24%, var(--background));
-  padding: 7px 8px;
-}
-
 .tm-agent-import__select {
   height: 40px;
   padding: 0 10px;
@@ -837,11 +825,6 @@
 
   .tm-agent-import__field-grid--details {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .tm-agent-import__device-details {
-    grid-column: 1;
-    margin-top: 0;
   }
 
   .tm-agent-import__detail-section--template .tm-agent-import__label-preview,

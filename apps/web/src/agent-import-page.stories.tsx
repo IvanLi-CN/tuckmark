@@ -53,7 +53,9 @@ export const ReadyToConfirm: Story = {
     await userEvent.unhover(canvas.getByRole("button", { name: "预览标签" }))
     await userEvent.click(canvas.getByRole("button", { name: "预览标签" }))
     await expect(canvas.getByRole("img", { name: "Cable Tag预览" })).toBeVisible()
-    await expect(canvas.getByText("输入范围：4.5V 至 28V")).toBeVisible()
+    await expect(canvas.getByRole("textbox", { name: "设备详细信息" })).toHaveValue(
+      "- 输入范围：4.5V 至 28V\n- 输出：3.3V\n- 封装：SOT-583",
+    )
     await expect(canvas.getByRole("button", { name: "收起标签预览" })).toBeVisible()
   },
 }

@@ -34,7 +34,6 @@ import {
   TooltipTrigger,
 } from "./components/ui/tooltip.js"
 import { cn } from "./lib/utils.js"
-import { MarkdownContent } from "./markdown-content.js"
 
 type ItemDraft = AgentImportItemDraft
 
@@ -946,10 +945,6 @@ function NewItemTableRow({
                       onChange={(event) => updateMaterial("deviceDetails", event.target.value)}
                     />
                   </Field>
-                  <MarkdownContent
-                    value={item.material.deviceDetails}
-                    className="tm-agent-import__device-details"
-                  />
                 </div>
               </section>
               <section
