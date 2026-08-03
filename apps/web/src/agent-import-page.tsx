@@ -914,7 +914,10 @@ function NewItemTableRow({
         <tr className="tm-agent-import__detail-row">
           <td colSpan={11}>
             <div className="tm-agent-import__details">
-              <section className="tm-agent-import__detail-section" aria-label="物料补充字段">
+              <section
+                className="tm-agent-import__detail-section tm-agent-import__detail-section--material"
+                aria-label="物料补充字段"
+              >
                 <h3>物料补充</h3>
                 <div className="tm-agent-import__field-grid tm-agent-import__field-grid--details">
                   <Field label="矩阵码">
@@ -926,7 +929,7 @@ function NewItemTableRow({
                       onChange={(event) => updateMaterial("matrixCode", event.target.value)}
                     />
                   </Field>
-                  <Field label="概要说明" className="tm-agent-import__field--full">
+                  <Field label="概要说明">
                     <textarea
                       className="tm-agent-import__textarea tm-agent-import__textarea--compact"
                       value={item.material.description}
@@ -934,7 +937,7 @@ function NewItemTableRow({
                       onChange={(event) => updateMaterial("description", event.target.value)}
                     />
                   </Field>
-                  <Field label="设备详细信息" className="tm-agent-import__field--full">
+                  <Field label="设备详细信息">
                     <textarea
                       className="tm-agent-import__textarea tm-agent-import__textarea--compact"
                       value={item.material.deviceDetails}

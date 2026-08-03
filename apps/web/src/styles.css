@@ -630,9 +630,9 @@
 }
 
 .tm-agent-import__details {
-  grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1fr) minmax(300px, 1.1fr);
+  grid-template-columns: minmax(320px, 0.95fr) minmax(520px, 1.5fr);
   align-items: start;
-  gap: 18px;
+  gap: 16px;
 }
 
 .tm-agent-import__detail-section {
@@ -648,7 +648,8 @@
 }
 
 .tm-agent-import__detail-section--template {
-  grid-template-columns: minmax(0, 1fr) minmax(168px, 0.7fr);
+  grid-template-columns: minmax(280px, 1.1fr) minmax(240px, 0.9fr);
+  gap: 10px 16px;
 }
 
 .tm-agent-import__detail-section--template h3 {
@@ -695,8 +696,15 @@
 }
 
 .tm-agent-import__device-details {
-  grid-column: 1 / -1;
-  padding-top: 2px;
+  grid-column: 2;
+  min-height: 64px;
+  align-self: start;
+  overflow: auto;
+  margin-top: 18px;
+  border: 1px solid color-mix(in oklab, var(--border) 80%, var(--background));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--muted) 24%, var(--background));
+  padding: 7px 8px;
 }
 
 .tm-agent-import__select {
@@ -813,11 +821,16 @@
   }
 
   .tm-agent-import__details {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .tm-agent-import__detail-section--template {
-    grid-column: 1 / -1;
+  .tm-agent-import__field-grid--details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tm-agent-import__device-details {
+    grid-column: 1;
+    margin-top: 0;
   }
 }
 

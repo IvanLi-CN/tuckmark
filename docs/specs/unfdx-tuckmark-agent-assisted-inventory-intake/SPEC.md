@@ -81,6 +81,11 @@ Mock-only Storybook confirmation preview after adding the Markdown `deviceDetail
 PR: include
 ![Markdown device details and label workspace](./assets/agent-import-markdown-details.png)
 
+Mock-only Storybook confirmation preview after tightening the expanded detail panel. The empty third detail column is removed; material overview and Markdown device details share a compact two-column layout, while the template preview and editable fields keep their own two-column workspace. `source_type=storybook_canvas`; `target_program=mock-only`; `capture_scope=browser-viewport`; `requested_viewport=1440x900`; `viewport_strategy=browser-resize-fallback`; `margin_policy=trim_only`; `evidence_surface=page`; `sensitive_exclusion=real orders, data directories, session keys, real templates, and unrelated applications`; `submission_gate=pending-owner-approval`; `story_id_or_title=Tuckmark/Agent Import/Confirmation Page/Ready To Confirm`; `state=label preview expanded`; `evidence_note=verifies compact two-column detail layout without a blank third grid column or an unnecessarily tall stacked text area.`
+
+PR: include
+![Compact agent import detail layout](./assets/agent-import-detail-layout.png)
+
 Mock fixture system page after DEVD became the `server-http` data owner. `source_type=mock_ui`; `target_program=mock-only`; `capture_scope=browser-viewport`; `sensitive_exclusion=real orders, data directories, session keys, and unrelated applications`; `submission_gate=approved`.
 
 PR: include
