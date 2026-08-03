@@ -35,14 +35,8 @@ function proposal(overrides: Partial<AgentImportProposal> = {}): AgentImportProp
           baseName: "MR-100",
           packageName: "SOT-23",
           description: "Mock component for import testing",
+          deviceDetails: "- Mock input range\n- Mock package evidence",
           packagingRemark: "reel",
-          datasheets: [
-            {
-              title: "Manufacturer datasheet",
-              url: "https://manufacturer.example/mock-regulator.pdf",
-              source: "manufacturer",
-            },
-          ],
         },
         sourceNote: "mock order row A",
         needsAttention: "Model suffix was inferred from the mock title.",
@@ -68,8 +62,8 @@ function proposal(overrides: Partial<AgentImportProposal> = {}): AgentImportProp
         material: {
           fullName: "Existing mock resistor",
           description: "",
+          deviceDetails: "",
           packagingRemark: "",
-          datasheets: [],
         },
         sourceNote: "mock order row B",
         templateAlternatives: [],
@@ -235,11 +229,7 @@ describe("AgentImportService", () => {
           fieldOverrides: { name: "Mock regulator" },
         },
       ],
-      datasheets: [
-        {
-          url: "https://manufacturer.example/mock-regulator.pdf",
-        },
-      ],
+      deviceDetails: "- Mock input range\n- Mock package evidence",
     })
 
     const manifest = JSON.parse(await readFile(path.join(dataDir, "manifest.json"), "utf8")) as {

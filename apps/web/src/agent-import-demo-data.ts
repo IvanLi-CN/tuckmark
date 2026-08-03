@@ -7,6 +7,8 @@ import type {
 
 import type { AgentImportClient } from "./agent-import-client.js"
 
+const demoPreview = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120"><rect width="240" height="120" rx="8" fill="white"/><rect x="10" y="10" width="220" height="100" rx="6" fill="none" stroke="#111" stroke-width="2"/><text x="20" y="44" font-family="sans-serif" font-size="20" font-weight="700">TPS62933DRLR</text><text x="20" y="78" font-family="sans-serif" font-size="14">SOT-583</text><text x="158" y="78" font-family="sans-serif" font-size="14">A-03-12</text></svg>`
+
 const cableTemplate: AgentImportTemplate = {
   source: "system",
   id: "cable-tag",
@@ -39,13 +41,13 @@ const demoRestockTargets: Record<string, InventoryMaterial> = {
     variantName: "10K 1%",
     packageName: "0603",
     description: "既有物料；保留它原有的标签绑定。",
+    deviceDetails: "",
     packagingRemark: "整盘",
     currentQuantity: 2_400,
     createdAt: "2030-07-28T08:00:00.000Z",
     updatedAt: "2030-07-29T08:00:00.000Z",
     archivedAt: null,
     labelBindings: [],
-    datasheets: [],
   },
 }
 
@@ -66,15 +68,9 @@ export function createAgentImportDemoSession(
       variantName: "DRLR",
       packageName: "SOT-583",
       description: "同步降压转换器，Mock 提案仅用于演示确认页。",
+      deviceDetails: "- 输入范围：4.5V 至 28V\n- 输出：3.3V\n- 封装：SOT-583",
       matrixCode: "P2-A104",
       packagingRemark: "编带一盘 3000pcs",
-      datasheets: [
-        {
-          title: "Manufacturer datasheet",
-          url: "https://manufacturer.example/tps62933.pdf",
-          source: "manufacturer",
-        },
-      ],
     },
     quantity: 120,
     labelPrintQuantity: 2,
@@ -100,8 +96,8 @@ export function createAgentImportDemoSession(
       variantName: "10K 1%",
       packageName: "0603",
       description: "既有物料；保留它原有的标签绑定。",
+      deviceDetails: "",
       packagingRemark: "整盘",
-      datasheets: [],
     },
     targetMaterialId: "inventory-material-demo-resistor",
     targetMaterialUpdatedAt: "2030-07-29T08:00:00.000Z",
@@ -132,6 +128,9 @@ export function createAgentImportDemoClient(
 ): AgentImportClient {
   let session = cloneSession(seed)
   return {
+    async renderTemplatePreview() {
+      return demoPreview
+    },
     async getSession() {
       return cloneSession(session)
     },

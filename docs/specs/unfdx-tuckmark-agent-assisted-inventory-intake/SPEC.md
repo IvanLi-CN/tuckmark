@@ -10,12 +10,11 @@ External agents can interpret private order exports and product pages, while Tuc
 - Let a DEVD `server-http` instance own the configured local data directory, short-lived import sessions, field-completion events, and confirmed inventory writes.
 - Make CLI commands exchange proposal, catalog, inventory, and event data with DEVD.
 - Provide a confirmation route with two editable tables: **new items** and **restock existing inventory**.
-- Publish released and source-tree Agent Skills that describe order interpretation, identity decisions, datasheet links, and CLI interaction.
+- Publish released and source-tree Agent Skills that describe order interpretation, identity decisions, and CLI interaction.
 
 ## Non-goals
 
 - Tuckmark does not parse Taobao exports, host an LLM, crawl product pages, or store original order content.
-- Datasheet PDFs are not uploaded or mirrored. A material stores a manufacturer or authorized-distributor URL, or a reason that no trustworthy URL was found.
 - `browser-static` does not support managed agent import sessions.
 
 ## Contracts
@@ -24,12 +23,14 @@ External agents can interpret private order exports and product pages, while Tuc
 
 `tuckmark.agent-import.v1` contains Agent-selected items. Each item is either:
 
-- `new`: a proposed material, a positive inbound quantity, a positive label print quantity, one selected label template, Agent-ranked alternatives, initial field values, optional datasheets, and an optional non-blocking `needsAttention` message.
+- `new`: a proposed material, a positive inbound quantity, a positive label print quantity, one selected label template, Agent-ranked alternatives, initial field values, and an optional non-blocking `needsAttention` message.
 - `restock`: an Agent-selected stable `targetMaterialId`, a positive inbound quantity, and an optional non-blocking `needsAttention` message. It retains its existing material and label binding rather than receiving a recommendation.
 
 The Agent decides material identity. It may set `needsAttention` when it is uncertain; neither the CLI nor confirmation page forces a separate identity confirmation.
 
 The Agent derives label print quantity from storage packages or independently labeled units rather than copying the inventory quantity. The confirmation table exposes it as an independently editable value and DEVD persists it on the created label binding. Older proposals without the field remain compatible and default to one.
+
+Each proposed material uses `description` as a concise overview and `deviceDetails` as one Markdown-capable string for factual device details. It is not a nested attribute structure and Tuckmark does not infer additional fields from it. The confirmation and inventory workspaces edit the source string and render it without raw HTML; confirmed new-material writes retain the same string. Older material records and proposals read with an empty `deviceDetails` value.
 
 ### Template Catalog
 
@@ -61,23 +62,24 @@ Recent templates and prints remain browser-local presentation metadata in both W
 
 Archive imports are explicitly selected as `merge` or `replace`. Archive validation rejects duplicate records and broken references: a template must name one of its versions, versions and user-template working copies must target a contained template, user-template inventory bindings must target a contained template, and adjustments must target a contained material. Merge accepts only complete, purely new template and inventory aggregates and preserves current settings; any identifier, material name, matrix code, version, working-copy, or adjustment conflict rejects the entire transaction. Replace creates a protection backup and atomically replaces the managed data set. Both modes revalidate the inspected content hash and expected revision at commit time.
 
-User-facing export writes the established `tuckmark.runtime-export-archive.v1` ZIP file tree in both Web surfaces. `archive.json` contains only export metadata; `manifest.json` records exact counts; settings, templates, versions, all working-copy kinds, material records including bindings and datasheets, and adjustments each have their own JSON entry. Import rejects a missing settings entry or a mismatch between manifest counts and extracted records, so a truncated archive cannot silently restore as incomplete data. Previously generated `tuckmark.data-archive.v1` single-snapshot ZIP files remain a read-compatible input. Backups include all durable user data, including archived records; they intentionally exclude DEVD locks, recoverable transaction journals, ownership metadata, and expiring Agent Import sessions or credentials.
+User-facing export writes the established `tuckmark.runtime-export-archive.v1` ZIP file tree in both Web surfaces. `archive.json` contains only export metadata; `manifest.json` records exact counts; settings, templates, versions, all working-copy kinds, material records including bindings and device-detail Markdown, and adjustments each have their own JSON entry. Import rejects a missing settings entry or a mismatch between manifest counts and extracted records, so a truncated archive cannot silently restore as incomplete data. Previously generated `tuckmark.data-archive.v1` single-snapshot ZIP files remain a read-compatible input. Backups include all durable user data, including archived records; they intentionally exclude DEVD locks, recoverable transaction journals, ownership metadata, and expiring Agent Import sessions or credentials.
 
 ## Acceptance Criteria
 
 - CLI catalog and inventory commands read DEVD data; `--devd-url` wins over `TUCKMARK_DEVD_URL` and either omission fails.
 - The create command opens an authorized confirmation URL unless `--no-open` is supplied. Its Web origin is independently selectable with `--web-url` / `TUCKMARK_WEB_URL`; local development derives the paired Web port from the configured server and Web ports when no origin is supplied.
-- The page presents separate editable tables for new-material and restock records. Table cells display their value by default and enter an editor only after the user clicks that cell; `Enter` or blur returns to display mode, while `Escape` restores the value present before editing began. New-material supplementary fields, label preview, and template fields expand in a detail row. It supports non-blocking attention/datasheet warnings and selection. Restock controls edit only the persisted intake values (selection, quantity, and source note); target material details stay visible and read-only because confirmation writes only its inbound adjustment.
-- Template switches produce an Agent event, wait state, and fresh field preview after fulfillment.
+- The page presents separate editable tables for new-material and restock records. Table cells display their value by default and enter an editor only after the user clicks that cell; `Enter` or blur returns to display mode, while `Escape` restores the value present before editing began. New-material supplementary fields, label preview, and template fields expand in a detail row. It supports non-blocking attention and selection. Restock controls edit only the persisted intake values (selection, quantity, and source note); target material details stay visible and read-only because confirmation writes only its inbound adjustment.
+- The material overview remains a concise `description`; device detail is an independently editable Markdown string and is rendered safely in the inventory and confirmation workspaces. The white label itself is visually distinct from its non-white preview work area.
+- Template switches produce an Agent event, wait state, and fresh field preview after fulfillment. Label previews render the authoritative template: system templates use their built-in definition, while shared user templates use the current DEVD working copy with the saved version as fallback. The confirmation page must not substitute a template name or concatenated field values for the rendered label.
 - Tests use mocked order-derived proposals only. No real order file, session secret, product body, or screenshot is committed.
 - `/system` reports the DEVD directory basename, health, revision, SSE state, and exact managed counts without directory authorization or cross-tab lease controls.
 
 ## Visual Evidence
 
-Mock-only Storybook confirmation route, covering both **new items** and **restock existing inventory**. The restock row resolves its read-only material identity from DEVD rather than the Agent proposal; display-first table cells still enter editing on click, and the page retains its non-blocking identity and missing-datasheet warnings. `source_type=storybook_canvas`; `target_program=mock-only`; `capture_scope=browser-viewport`; `sensitive_exclusion=real orders, data directories, session keys, and unrelated applications`; `submission_gate=approved`.
+Mock-only Storybook confirmation preview after adding the Markdown `deviceDetails` material string. The form keeps a concise `description` as the overview, renders Markdown below its raw textarea, has no datasheet column or metadata field, and places the white physical label inside a dark preview workspace so its boundary is visible. `source_type=storybook_canvas`; `target_program=mock-only`; `capture_scope=element`; `requested_viewport=none`; `viewport_strategy=storybook-viewport`; `margin_policy=trim_only`; `evidence_surface=page`; `sensitive_exclusion=real orders, data directories, session keys, real templates, and unrelated applications`; `submission_gate=pending-owner-approval`; `story_id_or_title=Tuckmark/Agent Import/Confirmation Page/Ready To Confirm`; `state=label preview expanded`; `evidence_note=verifies Markdown source and rendered result beside the dark label-preview workspace`.
 
 PR: include
-![Agent-assisted inventory intake confirmation page](./assets/agent-import-ui-demo.png)
+![Markdown device details and label workspace](./assets/agent-import-markdown-details.png)
 
 Mock fixture system page after DEVD became the `server-http` data owner. `source_type=mock_ui`; `target_program=mock-only`; `capture_scope=browser-viewport`; `sensitive_exclusion=real orders, data directories, session keys, and unrelated applications`; `submission_gate=approved`.
 

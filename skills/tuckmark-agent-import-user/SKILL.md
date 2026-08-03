@@ -12,7 +12,6 @@ Use the released `tuckmark` CLI. Tuckmark itself does not parse order files, inv
 - Keep the original order export and product-page body local. Do not commit, upload, attach, log, or put either in a proposal.
 - Use only a concise source note that the user approves. Never include account data, addresses, order numbers, or the session secret.
 - Open a product page only in the user's already-authorized browser context. Stop for login, CAPTCHA, 2FA, payment, or any other identity challenge.
-- Prefer manufacturer or authorized-distributor datasheet URLs. Do not download, mirror, or upload PDFs.
 
 ## Workflow
 
@@ -27,8 +26,8 @@ Use the released `tuckmark` CLI. Tuckmark itself does not parse order files, inv
    Catalog results include only system and shared-directory templates. `recommendedUse` is an optional human-readable suggested use; for **new** materials, use the material evidence to select and order up to three suitable templates. An absent suggestion means the template remains usable but is not a default recommendation.
 
 3. Interpret the order outside Tuckmark. Decide material identity yourself; do not run name matching that silently converts a new item into a restock. Use `kind: "restock"` only with the exact `targetMaterialId` returned by inventory. Include that material's `updatedAt` as `targetMaterialUpdatedAt`.
-4. Add `needsAttention` when identity, quantity, suffix, or datasheet evidence is uncertain. It is non-blocking: do not force the user to certify the match.
-5. Build a local, temporary `tuckmark.agent-import.v1` proposal. New items must have one default `template`, up to two ordered alternatives, positive inventory quantity, positive `labelPrintQuantity`, material fields, and optional datasheets. Derive label quantity from storage packages or independently labeled units; never copy the inventory quantity blindly. Restocks must keep `template` absent.
+4. Add `needsAttention` when identity, quantity, suffix, packaging, or other factual evidence is uncertain. It is non-blocking: do not force the user to certify the match.
+5. Build a local, temporary `tuckmark.agent-import.v1` proposal. New items must have one default `template`, up to two ordered alternatives, positive inventory quantity, positive `labelPrintQuantity`, and material fields. `description` is the concise overview; `deviceDetails` is one Markdown string for factual device details. Do not turn that detail into a key-value object or manufacture attributes from incomplete evidence. Derive label quantity from storage packages or independently labeled units; never copy the inventory quantity blindly. Restocks must keep `template` absent.
 
    ```json
    {
@@ -42,13 +41,9 @@ Use the released `tuckmark` CLI. Tuckmark itself does not parse order files, inv
        "labelPrintQuantity": 1,
        "material": {
          "fullName": "Example IC",
-         "description": "",
-         "packagingRemark": "reel",
-         "datasheets": [{
-           "title": "Manufacturer datasheet",
-           "url": "https://manufacturer.example/datasheet.pdf",
-           "source": "manufacturer"
-         }]
+          "description": "Single-line overview",
+          "deviceDetails": "- Verified feature\n- Package evidence",
+         "packagingRemark": "reel"
        },
        "sourceNote": "purchase receipt",
        "template": { "source": "system", "id": "cable-tag", "name": "Cable Tag", "fields": [] },

@@ -20,7 +20,6 @@ import {
   type InventoryMaterial,
   inventoryAdjustmentInputSchema,
   inventoryAdjustmentSchema,
-  inventoryDatasheetSchema,
   inventoryMaterialSchema,
   inventoryTemplateBindingSchema,
   materialMatchesQuery,
@@ -470,10 +469,10 @@ const inventoryMutationArgsSchemas = {
     variantName: z.string().optional(),
     packageName: z.string().optional(),
     description: z.string().optional(),
+    deviceDetails: z.string().optional(),
     matrixCode: z.string().optional(),
     packagingRemark: z.string().optional(),
     labelBindings: z.array(inventoryTemplateBindingSchema).optional(),
-    datasheets: z.array(inventoryDatasheetSchema).optional(),
   }),
   "archive-material": materialReferenceArgsSchema,
   "restore-material": materialReferenceArgsSchema,
@@ -1364,12 +1363,14 @@ export class DevdDataService {
     if (command === "save-material") {
       if (existing) ensureInventoryMaterialActive(existing, "编辑")
       const material = inventoryMaterialSchema.parse({
+        ...existing,
         id: args.id ?? `inventory-material-${randomUUID()}`,
         fullName: String(args.fullName).trim(),
         baseName: args.baseName?.trim() || undefined,
         variantName: args.variantName?.trim() || undefined,
         packageName: args.packageName?.trim() || undefined,
         description: args.description?.trim() ?? "",
+        deviceDetails: args.deviceDetails?.trim() ?? existing?.deviceDetails ?? "",
         matrixCode: args.matrixCode?.trim() || undefined,
         packagingRemark: args.packagingRemark?.trim() ?? "",
         currentQuantity: existing?.currentQuantity ?? 0,
@@ -1377,7 +1378,6 @@ export class DevdDataService {
         updatedAt: now,
         archivedAt: existing?.archivedAt ?? null,
         labelBindings: args.labelBindings ?? existing?.labelBindings ?? [],
-        datasheets: args.datasheets ?? existing?.datasheets ?? [],
       })
       this.ensureMaterialUnique(materials, material)
       const index = materials.findIndex((item) => item.id === material.id)

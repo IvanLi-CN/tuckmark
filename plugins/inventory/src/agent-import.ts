@@ -21,33 +21,15 @@ export const agentImportTemplateSchema = z.object({
 })
 export type AgentImportTemplate = z.infer<typeof agentImportTemplateSchema>
 
-export const agentImportDatasheetSchema = z
-  .object({
-    title: z.string().min(1).default("Datasheet"),
-    url: z
-      .string()
-      .url()
-      .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
-        message: "Datasheet URLs must use HTTP or HTTPS.",
-      })
-      .optional(),
-    source: z.enum(["manufacturer", "authorized-distributor"]).optional(),
-    missingReason: z.string().min(1).optional(),
-  })
-  .refine((value) => Boolean(value.url || value.missingReason), {
-    message: "A datasheet needs a URL or a missing reason.",
-  })
-export type AgentImportDatasheet = z.infer<typeof agentImportDatasheetSchema>
-
 export const agentImportMaterialSchema = z.object({
   fullName: z.string().min(1),
   baseName: z.string().optional(),
   variantName: z.string().optional(),
   packageName: z.string().optional(),
   description: z.string().default(""),
+  deviceDetails: z.string().default(""),
   matrixCode: z.string().optional(),
   packagingRemark: z.string().default(""),
-  datasheets: z.array(agentImportDatasheetSchema).default([]),
 })
 export type AgentImportMaterial = z.infer<typeof agentImportMaterialSchema>
 

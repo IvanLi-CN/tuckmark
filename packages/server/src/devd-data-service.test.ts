@@ -360,6 +360,28 @@ describe("DevdDataService", () => {
     expect((await stat(untouchedPath)).mtimeMs).toBe(before.mtimeMs)
   })
 
+  it("retains Markdown device details through a DEVD inventory save", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+
+    const saved = await service.mutateInventory({
+      command: "save-material",
+      expectedRevision: 0,
+      args: {
+        id: "markdown-material",
+        fullName: "Markdown mock material",
+        description: "Mock overview",
+        deviceDetails: "## Mock detail\n\n- Verified field",
+      },
+    })
+
+    expect(saved.data).toMatchObject({
+      description: "Mock overview",
+      deviceDetails: "## Mock detail\n\n- Verified field",
+    })
+  })
+
   it("rejects purging a template referenced by an inventory label", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
     cleanupPaths.push(root)
@@ -445,13 +467,6 @@ describe("DevdDataService", () => {
             fieldOverrides: { value: "backup" },
             createdAt: timestamp,
             updatedAt: timestamp,
-          },
-        ],
-        datasheets: [
-          {
-            title: "Mock datasheet",
-            url: "https://example.test/backup.pdf",
-            source: "manufacturer",
           },
         ],
       },
@@ -670,6 +685,7 @@ describe("DevdDataService", () => {
       id: "duplicate-material-a",
       fullName: "Duplicate material",
       description: "",
+      deviceDetails: "",
       matrixCode: "DUPLICATE-MATRIX",
       packagingRemark: "",
       currentQuantity: 0,

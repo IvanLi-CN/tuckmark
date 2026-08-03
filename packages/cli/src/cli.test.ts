@@ -117,13 +117,6 @@ describe("cli smoke", () => {
               fullName: "Mock capacitor",
               description: "mock data only",
               packagingRemark: "reel",
-              datasheets: [
-                {
-                  title: "Mock datasheet",
-                  url: "https://manufacturer.example/mock-capacitor.pdf",
-                  source: "manufacturer",
-                },
-              ],
             },
             sourceNote: "mock order row",
             template: {
@@ -520,6 +513,8 @@ describe("cli smoke", () => {
           "SOT-583",
           "--description",
           "同步降压 28V",
+          "--device-details",
+          "- 输入范围：4.5V 至 28V\n- 输出：3.3V",
           "--matrix-code",
           "P2-Y404125469",
           "--packaging-remark",
@@ -554,9 +549,15 @@ describe("cli smoke", () => {
         ])
       ).stdout
     ) as {
-      material: { id: string; currentQuantity: number; labelBindings: Array<{ id: string }> }
+      material: {
+        id: string
+        currentQuantity: number
+        deviceDetails: string
+        labelBindings: Array<{ id: string }>
+      }
     }
     expect(created.material.currentQuantity).toBe(0)
+    expect(created.material.deviceDetails).toBe("- 输入范围：4.5V 至 28V\n- 输出：3.3V")
     expect(created.material.labelBindings[0]?.id).toBe("binding-user-template")
 
     const adjusted = JSON.parse(

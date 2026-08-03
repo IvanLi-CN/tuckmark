@@ -114,20 +114,14 @@ describe("inventory-data-store", () => {
     expect(adjustments[0]?.note).toBe("补货")
   })
 
-  it("preserves imported datasheets when a material is later edited", async () => {
+  it("preserves device details when a material is later edited", async () => {
     dataDirectoryServiceMocks.loadConfiguredDataDirectoryHandle.mockResolvedValue(null)
     const created = await saveInventoryMaterial({
       fullName: "Mock imported regulator",
       description: "initial description",
+      deviceDetails: "- Input range\n- Package evidence",
       packagingRemark: "reel",
       labelBindings: [],
-      datasheets: [
-        {
-          title: "Manufacturer datasheet",
-          url: "https://manufacturer.example/mock-regulator.pdf",
-          source: "manufacturer",
-        },
-      ],
     })
 
     const edited = await saveInventoryMaterial({
@@ -138,7 +132,7 @@ describe("inventory-data-store", () => {
       labelBindings: created.labelBindings,
     })
 
-    expect(edited.datasheets).toEqual(created.datasheets)
+    expect(edited.deviceDetails).toBe(created.deviceDetails)
   })
 
   it("propagates directory read failures instead of treating them as an empty inventory", async () => {

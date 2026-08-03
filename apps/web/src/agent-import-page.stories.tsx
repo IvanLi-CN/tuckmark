@@ -35,7 +35,11 @@ export const ReadyToConfirm: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole("table", { name: "新增物品" })).toBeVisible()
     await expect(canvas.getByRole("table", { name: "增加库存" })).toBeVisible()
-    await expect(canvas.getAllByLabelText("导入此物料")[0]).toBeChecked()
+    const [firstImportCheckbox] = canvas.getAllByRole("checkbox", { name: "导入此物料" })
+    if (!firstImportCheckbox) {
+      throw new Error("Expected the new-item import checkbox in the Storybook fixture.")
+    }
+    await expect(firstImportCheckbox).toBeChecked()
     await expect(canvas.getAllByRole("button", { name: "保存当前编辑" })).toHaveLength(2)
     await expect(canvas.queryByRole("button", { name: "展开物料详情" })).not.toBeInTheDocument()
     await userEvent.click(canvas.getByRole("button", { name: "编辑物料全名" }))
@@ -49,7 +53,42 @@ export const ReadyToConfirm: Story = {
     await userEvent.unhover(canvas.getByRole("button", { name: "预览标签" }))
     await userEvent.click(canvas.getByRole("button", { name: "预览标签" }))
     await expect(canvas.getByRole("img", { name: "Cable Tag预览" })).toBeVisible()
+    await expect(canvas.getByText("输入范围：4.5V 至 28V")).toBeVisible()
     await expect(canvas.getByRole("button", { name: "收起标签预览" })).toBeVisible()
+  },
+}
+
+const userTemplateSeed = createAgentImportDemoSession()
+const userTemplateSession = {
+  ...userTemplateSeed,
+  proposal: {
+    ...userTemplateSeed.proposal,
+    items: userTemplateSeed.proposal.items.map((item) =>
+      item.kind === "new" && item.template
+        ? {
+            ...item,
+            template: {
+              ...item.template,
+              source: "user-template" as const,
+              id: "demo-chip-template",
+              name: "芯片",
+            },
+          }
+        : item
+    ),
+  },
+}
+
+export const UserTemplatePreview: Story = {
+  args: {
+    initialSession: userTemplateSession,
+    client: createAgentImportDemoClient(userTemplateSession),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: "预览标签" }))
+    await expect(canvas.getByRole("img", { name: "芯片预览" })).toBeVisible()
+    await expect(canvas.queryByText("TPS62933DRLR · SOT-583 · A-03-12")).not.toBeInTheDocument()
   },
 }
 

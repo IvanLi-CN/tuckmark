@@ -1379,10 +1379,10 @@ export type InventoryMaterialSaveArgs = {
   variantName?: string
   packageName?: string
   description?: string
+  deviceDetails?: string
   matrixCode?: string
   packagingRemark?: string
   labelBindings?: InventoryMaterial["labelBindings"]
-  datasheets?: InventoryMaterial["datasheets"]
 }
 
 export async function listInventoryMaterialsFromDirectory(args: {
@@ -1443,12 +1443,14 @@ export async function saveInventoryMaterialToDirectory(args: {
   }
   const now = new Date().toISOString()
   const material = inventoryMaterialSchema.parse({
+    ...existing,
     id: args.material.id ?? createId("inventory-material"),
     fullName: args.material.fullName.trim(),
     baseName: sanitizeOptionalText(args.material.baseName),
     variantName: sanitizeOptionalText(args.material.variantName),
     packageName: sanitizeOptionalText(args.material.packageName),
     description: args.material.description?.trim() ?? "",
+    deviceDetails: args.material.deviceDetails?.trim() ?? existing?.deviceDetails ?? "",
     matrixCode: sanitizeOptionalText(args.material.matrixCode),
     packagingRemark: args.material.packagingRemark?.trim() ?? "",
     currentQuantity: existing?.currentQuantity ?? 0,
@@ -1456,7 +1458,6 @@ export async function saveInventoryMaterialToDirectory(args: {
     updatedAt: now,
     archivedAt: existing?.archivedAt ?? null,
     labelBindings: args.material.labelBindings ?? existing?.labelBindings ?? [],
-    datasheets: args.material.datasheets ?? existing?.datasheets ?? [],
   })
   ensureMaterialUniqueness(materials, material)
   await writeJsonFile(
