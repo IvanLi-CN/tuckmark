@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { expect, fireEvent, userEvent, within } from "storybook/test"
+import { expect, fireEvent, userEvent, waitFor, within } from "storybook/test"
 
 import type { ApiClient } from "./api-client.js"
 import { DemoApiClient } from "./api-client.js"
@@ -2087,7 +2087,7 @@ export const CanvasWorkspaceTemplateSuggestedUse: Story = {
   },
   parameters: {
     viewport: {
-      defaultViewport: "canvas-wide-editor",
+      defaultViewport: "canvas-desktop-editor",
     },
     docs: {
       description: {
@@ -2097,15 +2097,29 @@ export const CanvasWorkspaceTemplateSuggestedUse: Story = {
     },
   },
   globals: {
-    viewport: { value: "canvas-wide-editor", isRotated: false },
+    viewport: { value: "canvas-desktop-editor", isRotated: false },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const input = await canvas.findByRole("textbox", { name: "建议使用范围" })
-    await expect(input).toHaveValue("电子元器件 / 集成电路")
+    await expect(input.tagName).toBe("TEXTAREA")
+    await expect(input).toHaveAttribute("rows", "4")
+    await expect(window.getComputedStyle(input).paddingLeft).toBe("8px")
+    await expect(window.getComputedStyle(input).paddingTop).toBe("6px")
+    await waitFor(() => expect(input).toHaveValue("电子元器件 / 集成电路"))
     await userEvent.clear(input)
-    await userEvent.type(input, "仅适用于需要型号与封装信息的物料")
-    await expect(input).toHaveValue("仅适用于需要型号与封装信息的物料")
+    await userEvent.type(input, "适用于需要展示型号、封装和关键规格的集成电路及电子元器件标签。")
+    await expect(input).toHaveValue(
+      "适用于需要展示型号、封装和关键规格的集成电路及电子元器件标签。"
+    )
+    const inspectorBody = canvasElement.querySelector<HTMLElement>(
+      ".tm-pane--canvas-inspector .tm-pane__body"
+    )
+    if (!inspectorBody) {
+      throw new Error("Canvas inspector body is missing")
+    }
+    await expect(window.getComputedStyle(inspectorBody).paddingRight).toBe("12px")
+    await expect(window.getComputedStyle(inspectorBody).paddingBottom).toBe("12px")
   },
 }
 

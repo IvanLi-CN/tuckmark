@@ -2690,10 +2690,11 @@
   .tm-main--canvas .tm-pane-grid {
     min-height: 0;
     height: 100%;
-    overflow: hidden;
+    overflow: clip;
   }
 
   .tm-main--canvas .tm-pane__body {
+    overflow-y: auto;
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
@@ -2767,7 +2768,8 @@
       grid-template-columns: minmax(172px, 0.38fr) minmax(0, 1.9fr) minmax(312px, 0.94fr);
     }
 
-    .tm-pane-grid--triple .tm-pane--left {
+    .tm-pane-grid--triple .tm-pane--left,
+    .tm-pane-grid--triple .tm-pane--right {
       align-self: start;
       height: auto;
     }
@@ -2786,7 +2788,7 @@
     }
 
     .tm-pane-grid--template.tm-pane-grid--triple .tm-pane--left {
-      align-self: stretch;
+      align-self: start;
       height: auto;
     }
   }
@@ -2822,7 +2824,7 @@
   }
 
   .tm-pane--canvas-inspector .tm-pane__body {
-    @apply flex flex-col items-stretch gap-1.5 px-2 py-2;
+    @apply flex flex-col items-stretch gap-1.5 px-3 pb-3 pt-2;
   }
 
   .tm-pane__header {
@@ -2933,7 +2935,8 @@
 
   .tm-pane--left .tm-pane__body {
     @apply gap-2 px-2 py-2;
-    overflow: visible;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .tm-pane--left .tm-pane__headline h2 {

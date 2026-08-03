@@ -40,6 +40,13 @@ const preview: Preview = {
             height: "800px",
           },
         },
+        "canvas-desktop-editor": {
+          name: "Canvas Editor Desktop 1440",
+          styles: {
+            width: "1440px",
+            height: "900px",
+          },
+        },
         "canvas-narrow-editor": {
           name: "Canvas Editor 1100",
           styles: {

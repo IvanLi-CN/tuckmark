@@ -925,7 +925,7 @@ describe("canvas-editor-model monochrome contract", () => {
       recommendedUses: [{ scope: "electronics", weight: 90 }],
     } as unknown as CanvasDraftDocument)
 
-    expect(normalized.recommendedUse).toBe("electronics")
+    expect(normalized.recommendedUse).toBe("electronics and cable labeling")
   })
 
   it("assigns a fallback width to widthless system template text elements when imported", () => {
