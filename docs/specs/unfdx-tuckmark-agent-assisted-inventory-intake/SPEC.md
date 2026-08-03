@@ -86,6 +86,11 @@ Mock-only Storybook confirmation preview after tightening the expanded detail pa
 PR: include
 ![Compact agent import detail layout](./assets/agent-import-detail-layout.png)
 
+Mock-only Storybook confirmation preview with the physical label preview anchored at the far right of the template detail area. Template fields stay in the middle column so the editable values and the rendered label have a clear left-to-right separation. `source_type=storybook_canvas`; `target_program=mock-only`; `capture_scope=browser-viewport`; `requested_viewport=1440x900`; `viewport_strategy=browser-resize-fallback`; `margin_policy=trim_only`; `evidence_surface=page`; `sensitive_exclusion=real orders, data directories, session keys, real templates, and unrelated applications`; `submission_gate=pending-owner-approval`; `story_id_or_title=Tuckmark/Agent Import/Confirmation Page/Ready To Confirm`; `state=label preview expanded`; `evidence_note=verifies the preview is the rightmost visual element in the detail panel while 1023px stays paired and narrow layouts stack.`
+
+PR: include
+![Right-aligned label preview](./assets/agent-import-preview-right.png)
+
 Mock fixture system page after DEVD became the `server-http` data owner. `source_type=mock_ui`; `target_program=mock-only`; `capture_scope=browser-viewport`; `sensitive_exclusion=real orders, data directories, session keys, and unrelated applications`; `submission_gate=approved`.
 
 PR: include
