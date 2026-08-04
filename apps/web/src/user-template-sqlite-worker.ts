@@ -200,7 +200,7 @@ function resolveRecommendedUse(
   document: CanvasDraftDocument,
   existing: UserTemplateRecord | null | undefined
 ): string | undefined {
-  if (Object.prototype.hasOwnProperty.call(document, "recommendedUse")) {
+  if (Object.getOwnPropertyDescriptor(document, "recommendedUse") !== undefined) {
     return document.recommendedUse?.trim() || undefined
   }
   return existing?.recommendedUse
