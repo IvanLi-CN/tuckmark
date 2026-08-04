@@ -358,7 +358,8 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     source
   )
   const hasRecommendedUse =
-    Object.hasOwn(unitDocument, "recommendedUse") || Object.hasOwn(unitDocument, "recommendedUses")
+    Object.prototype.hasOwnProperty.call(unitDocument, "recommendedUse") ||
+    Object.prototype.hasOwnProperty.call(unitDocument, "recommendedUses")
   const recommendedUse = normalizeRecommendedUse(
     unitDocument.recommendedUse ?? (unitDocument as { recommendedUses?: unknown }).recommendedUses
   )
