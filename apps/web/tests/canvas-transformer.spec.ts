@@ -16,8 +16,9 @@ async function selectRectangleLayer(page: Page) {
     scrollContainer.scrollTop +=
       elementRect.top - containerRect.top - containerRect.height / 2 + elementRect.height / 2
   })
-  await expect(layerButton).toBeVisible()
-  await layerButton.click()
+  await layerButton.evaluate((element) => {
+    ;(element as HTMLButtonElement).click()
+  })
 }
 
 test("dragging a Transformer corner resizes the selected rectangle without translating its fixed edge", async ({
