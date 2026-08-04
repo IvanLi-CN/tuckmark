@@ -245,7 +245,7 @@ const canvasSnapStepSchema = z.preprocess(
 )
 
 const recommendedUseSchema = z
-  .union([z.string().trim().min(1), z.object({ scope: z.string().trim().min(1) })])
+  .union([z.string().trim(), z.object({ scope: z.string().trim().min(1) })])
   .transform((value) => (typeof value === "string" ? value : value.scope))
 const legacyRecommendedUsesSchema = z.array(recommendedUseSchema)
 
@@ -290,7 +290,8 @@ const canvasDraftDocumentSchema = z
   .passthrough()
   .transform(({ recommendedUses, ...document }) => ({
     ...document,
-    recommendedUse: document.recommendedUse ?? normalizeRecommendedUse(recommendedUses),
+    recommendedUse:
+      normalizeRecommendedUse(document.recommendedUse) ?? normalizeRecommendedUse(recommendedUses),
   }))
 
 const userTemplateRecordSchema = z
@@ -310,7 +311,8 @@ const userTemplateRecordSchema = z
   })
   .transform(({ recommendedUses, ...record }) => ({
     ...record,
-    recommendedUse: record.recommendedUse ?? normalizeRecommendedUse(recommendedUses),
+    recommendedUse:
+      normalizeRecommendedUse(record.recommendedUse) ?? normalizeRecommendedUse(recommendedUses),
   }))
 
 const userTemplateVersionSchema = z.object({

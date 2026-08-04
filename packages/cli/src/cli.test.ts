@@ -439,16 +439,29 @@ describe("cli smoke", () => {
       name: "Component Bin SOT-23",
     })
 
+    const workingCopyPath = path.join(
+      dataDir,
+      "templates",
+      "component-bin-sot23",
+      "working-copy.json"
+    )
+    const workingCopy = JSON.parse(await readFile(workingCopyPath, "utf8")) as {
+      draft: { recommendedUse?: string }
+    }
+    workingCopy.draft.recommendedUse = ""
+    await writeFile(workingCopyPath, `${JSON.stringify(workingCopy)}\n`)
+
     const showResult = JSON.parse(
       (await runCli(["template", "show", "--id", "component-bin-sot23", "--data-dir", dataDir]))
         .stdout
     ) as {
       source: string
-      template: { id: string }
+      template: { id: string; recommendedUse?: string }
       savedVersions: Array<{ version: number }>
     }
     expect(showResult.source).toBe("user-template")
     expect(showResult.template.id).toBe("component-bin-sot23")
+    expect(showResult.template.recommendedUse).toBeUndefined()
     expect(showResult.savedVersions[0]?.version).toBe(1)
 
     const manifest = JSON.parse(await readFile(path.join(dataDir, "manifest.json"), "utf8")) as {
