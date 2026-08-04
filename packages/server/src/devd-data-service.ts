@@ -1223,6 +1223,10 @@ export class DevdDataService {
           versions.splice(index, 1)
       }
       this.pruneTemplateVersions(versions, templateId, "saved", MAX_SAVED_TEMPLATE_VERSIONS)
+      const hasRecommendedUse = Object.hasOwn(document, "recommendedUse")
+      const recommendedUse = hasRecommendedUse
+        ? normalizeRecommendedUse(document.recommendedUse)
+        : existing?.recommendedUse
       const template: TemplateRecord = {
         id: templateId,
         name: args.name,
@@ -1234,12 +1238,16 @@ export class DevdDataService {
         archivedAt: existing?.archivedAt ?? null,
         currentVersionId: versionId,
         fieldOrder: (document.fields ?? []).map((field: any) => field.key),
-        recommendedUse: Object.hasOwn(document, "recommendedUse")
-          ? normalizeRecommendedUse(document.recommendedUse)
-          : existing?.recommendedUse,
+        ...(recommendedUse ? { recommendedUse } : {}),
       }
-      if (existing) Object.assign(existing, template)
-      else templates.push(template)
+      if (existing) {
+        if (hasRecommendedUse && !recommendedUse) {
+          delete existing.recommendedUse
+        }
+        Object.assign(existing, template)
+      } else {
+        templates.push(template)
+      }
       const workingCopy: WorkingCopyRecord = {
         sourceKey: `user:${templateId}`,
         source: { kind: "user-template", templateId },
