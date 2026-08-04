@@ -357,6 +357,11 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     normalizedFields,
     source
   )
+  const hasRecommendedUse =
+    Object.hasOwn(unitDocument, "recommendedUse") || Object.hasOwn(unitDocument, "recommendedUses")
+  const recommendedUse = normalizeRecommendedUse(
+    unitDocument.recommendedUse ?? (unitDocument as { recommendedUses?: unknown }).recommendedUses
+  )
   return {
     ...unitDocument,
     unit: "mm",
@@ -364,9 +369,7 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     templateId: unitDocument.templateId,
     baseVersionId: unitDocument.baseVersionId,
     lastSavedAt: unitDocument.lastSavedAt,
-    recommendedUse: normalizeRecommendedUse(
-      unitDocument.recommendedUse ?? (unitDocument as { recommendedUses?: unknown }).recommendedUses
-    ),
+    ...(hasRecommendedUse ? { recommendedUse } : {}),
     editor: {
       ...unitDocument.editor,
       gridSize: normalizeCanvasGridSize(
@@ -382,7 +385,7 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
 }
 
 function normalizeRecommendedUse(value: unknown): string | undefined {
-  if (typeof value === "string") return value.trim() || undefined
+  if (typeof value === "string") return value.trim()
   if (Array.isArray(value)) {
     const legacyUses = value.flatMap((entry) => {
       if (typeof entry === "string" && entry.trim()) return [entry.trim()]
