@@ -240,7 +240,7 @@ test("template large mode keeps two columns in the standard three-pane width", a
   expect(gridMetrics.firstTwo[0]?.width).toBeGreaterThan(120)
 })
 
-test("template page keeps all three panes equal height on desktop", async ({ page }) => {
+test("template page keeps side panes content-driven on desktop", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto("/templates?demo=true")
 
@@ -266,8 +266,9 @@ test("template page keeps all three panes equal height on desktop", async ({ pag
   expect(new Set(tops).size).toBe(1)
 
   const heights = paneMetrics?.map((pane) => pane.height) ?? []
-  expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(1)
-  expect(heights[0]).toBeGreaterThan(650)
+  expect(heights[1]).toBeGreaterThan(heights[0])
+  expect(heights[1]).toBeGreaterThan(heights[2])
+  expect(new Set(heights).size).toBeGreaterThan(1)
 })
 
 test("template list exposes add-template actions that open the canvas workspace", async ({

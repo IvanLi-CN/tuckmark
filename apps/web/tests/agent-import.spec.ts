@@ -45,7 +45,9 @@ test.describe("agent-assisted inventory intake", () => {
     page,
   }) => {
     await page.getByRole("button", { name: "预览标签" }).click()
-    await expect(page.locator(".tm-agent-import__device-details ul")).toHaveCount(1)
+    await expect(page.getByLabel("设备详细信息", { exact: true }).first()).toHaveValue(
+      "- 输入范围：4.5V 至 28V\n- 输出：3.3V\n- 封装：SOT-583"
+    )
     await expect(page.locator(".tm-agent-import__label-preview")).not.toHaveCSS(
       "background-color",
       "rgb(255, 255, 255)"
@@ -66,9 +68,8 @@ test.describe("agent-assisted inventory intake", () => {
     await page.getByLabel("入库数量", { exact: true }).first().press("Enter")
     await page.getByRole("button", { name: "确认导入选中项" }).click()
 
-    await expect(page.getByText("已写入库存目录")).toBeVisible()
-    await expect(page.getByRole("button", { name: "编辑入库数量" }).first()).toHaveText("121")
-    await expect(page.getByRole("button", { name: "已完成导入" })).toBeDisabled()
+    await expect(page).toHaveURL(/\/inventory(?:\?|$)/u)
+    await expect(page.getByText("物料列表", { exact: true })).toBeVisible()
   })
 
   test("edits only the clicked intake cell", async ({ page }) => {
