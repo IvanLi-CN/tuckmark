@@ -168,7 +168,7 @@ export type DevdDataArchive = {
 }
 
 const recommendedUseSchema = z
-  .union([z.string().trim().min(1), z.object({ scope: z.string().trim().min(1) })])
+  .union([z.string().trim(), z.object({ scope: z.string().trim().min(1) })])
   .transform((value) => (typeof value === "string" ? value : value.scope))
 
 const legacyRecommendedUsesSchema = z.array(recommendedUseSchema)
@@ -378,10 +378,15 @@ const canvasDraftDocumentSchema = z
     }),
   })
   .passthrough()
-  .transform(({ recommendedUses, ...document }) => ({
-    ...document,
-    recommendedUse: document.recommendedUse ?? normalizeRecommendedUse(recommendedUses),
-  }))
+  .transform(({ recommendedUses, ...document }) => {
+    if (Object.hasOwn(document, "recommendedUse")) {
+      return document
+    }
+    const legacyRecommendedUse = normalizeRecommendedUse(recommendedUses)
+    return legacyRecommendedUse === undefined
+      ? document
+      : { ...document, recommendedUse: legacyRecommendedUse }
+  })
 
 const versionRecordSchema = z.object({
   id: z.string().min(1),
@@ -1229,7 +1234,9 @@ export class DevdDataService {
         archivedAt: existing?.archivedAt ?? null,
         currentVersionId: versionId,
         fieldOrder: (document.fields ?? []).map((field: any) => field.key),
-        recommendedUse: document.recommendedUse ?? existing?.recommendedUse,
+        recommendedUse: Object.hasOwn(document, "recommendedUse")
+          ? normalizeRecommendedUse(document.recommendedUse)
+          : existing?.recommendedUse,
       }
       if (existing) Object.assign(existing, template)
       else templates.push(template)

@@ -31,4 +31,24 @@ describe("resolveAppRoutePathname", () => {
 
     expect(app.type).toBe(AgentImportPage)
   })
+
+  it("passes an explicit runtime base path to the Agent Import page", () => {
+    window.history.replaceState({}, "", "/runtime/agent-import/mock-session")
+
+    const app = App({
+      context: {
+        apiBasePath: "/runtime-api",
+        basePath: "/runtime",
+        mode: "runtime",
+        surface: "server-http",
+        capabilities: {
+          browserDirectPrintPath: "available",
+          serviceApiPrintPath: "available",
+        },
+      },
+    })
+
+    expect(app.type).toBe(AgentImportPage)
+    expect(app.props.basePath).toBe("/runtime")
+  })
 })

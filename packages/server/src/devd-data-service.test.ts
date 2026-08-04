@@ -236,6 +236,39 @@ describe("DevdDataService", () => {
     })
   })
 
+  it("allows an explicit empty suggested-use value to clear existing metadata", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+
+    const created = await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: 0,
+      args: {
+        name: "Clearable mock template",
+        document: {
+          ...mockDocument("Clearable mock template"),
+          recommendedUse: "electronics",
+        },
+      },
+    })
+
+    await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: created.revision,
+      args: {
+        templateId: created.data.template.id,
+        name: "Clearable mock template",
+        document: {
+          ...mockDocument("Clearable mock template"),
+          recommendedUse: "",
+        },
+      },
+    })
+
+    expect((await service.runtimeSnapshot()).templates[0]?.recommendedUse).toBeUndefined()
+  })
+
   it("retains bounded saved and autosaved versions at the established cadence", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-07-01T00:00:00.000Z"))

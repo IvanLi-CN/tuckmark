@@ -43,6 +43,7 @@ type AgentImportPageProps = {
   secret?: string
   client?: AgentImportClient
   initialSession?: AgentImportSession
+  basePath?: string
   onConfirmed?: (session: AgentImportSession) => void
 }
 
@@ -87,6 +88,7 @@ export function AgentImportPage({
   secret = secretFromLocation(),
   client = defaultAgentImportClient,
   initialSession,
+  basePath = resolveBasePath(import.meta.env as Record<string, string | undefined>),
   onConfirmed,
 }: AgentImportPageProps) {
   const [session, setSession] = React.useState<AgentImportSession | null>(initialSession ?? null)
@@ -295,7 +297,6 @@ export function AgentImportPage({
       if (onConfirmed) {
         onConfirmed(completedSession)
       } else if (typeof window !== "undefined") {
-        const basePath = resolveBasePath(import.meta.env as Record<string, string | undefined>)
         const inventoryPath = `${basePath === "/" ? "" : basePath}/inventory`
         window.location.replace(inventoryPath)
       }
@@ -305,7 +306,7 @@ export function AgentImportPage({
     } finally {
       setConfirming(false)
     }
-  }, [applySession, client, drafts, onConfirmed, secret, sessionId])
+  }, [applySession, basePath, client, drafts, onConfirmed, secret, sessionId])
 
   if (loading) {
     return <AgentImportLoading />
