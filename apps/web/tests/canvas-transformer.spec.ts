@@ -1,7 +1,24 @@
-import { expect, test } from "@playwright/test"
+import { expect, type Page, test } from "@playwright/test"
 
 function numberValue(value: string): number {
   return Number.parseFloat(value)
+}
+
+async function selectRectangleLayer(page: Page) {
+  const layerButton = page.getByRole("button", { name: "图层 1 矩形" })
+  await layerButton.evaluate((element) => {
+    const scrollContainer = element.closest<HTMLElement>(".tm-pane__body")
+    if (!scrollContainer) {
+      throw new Error("Canvas inspector scroll container is missing")
+    }
+    const elementRect = element.getBoundingClientRect()
+    const containerRect = scrollContainer.getBoundingClientRect()
+    scrollContainer.scrollTop +=
+      elementRect.top - containerRect.top - containerRect.height / 2 + elementRect.height / 2
+  })
+  await layerButton.evaluate((element) => {
+    ;(element as HTMLButtonElement).click()
+  })
 }
 
 test("dragging a Transformer corner resizes the selected rectangle without translating its fixed edge", async ({
@@ -10,7 +27,7 @@ test("dragging a Transformer corner resizes the selected rectangle without trans
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto("/canvas?demo=true")
 
-  await page.getByRole("button", { name: "图层 1 矩形" }).click()
+  await selectRectangleLayer(page)
 
   const xInput = page.getByRole("spinbutton", { name: "X" })
   const yInput = page.getByRole("spinbutton", { name: "Y" })
@@ -75,7 +92,7 @@ test("dragging a Transformer corner still resizes after pointer-centered canvas 
   )
   await page.mouse.wheel(0, -120)
 
-  await page.getByRole("button", { name: "图层 1 矩形" }).click()
+  await selectRectangleLayer(page)
   const xInput = page.getByRole("spinbutton", { name: "X" })
   const yInput = page.getByRole("spinbutton", { name: "Y" })
   const widthInput = page.getByRole("spinbutton", { name: "宽" })
@@ -123,7 +140,7 @@ test("dragging a Transformer corner still resizes after pointer-centered canvas 
 test("dragging a Transformer side handle changes only its active dimension", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto("/canvas?demo=true")
-  await page.getByRole("button", { name: "图层 1 矩形" }).click()
+  await selectRectangleLayer(page)
 
   const xInput = page.getByRole("spinbutton", { name: "X" })
   const yInput = page.getByRole("spinbutton", { name: "Y" })

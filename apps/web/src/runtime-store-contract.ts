@@ -51,7 +51,7 @@ export type RuntimeStoreSnapshot = {
     archivedAt?: string | null
     currentVersionId: string
     fieldOrder: string[]
-    recommendedUses?: Array<{ scope: string; weight: number }>
+    recommendedUse?: string
   }>
   versions: UserTemplateVersionSnapshot[]
   workingCopies: CanvasWorkingCopyIndexEntry[]

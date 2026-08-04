@@ -244,6 +244,24 @@ const canvasSnapStepSchema = z.preprocess(
   z.union([z.literal(0.25), z.literal(0.5), z.literal(1)])
 )
 
+const recommendedUseSchema = z
+  .union([z.string().trim(), z.object({ scope: z.string().trim().min(1) })])
+  .transform((value) => (typeof value === "string" ? value : value.scope))
+const legacyRecommendedUsesSchema = z.array(recommendedUseSchema)
+
+function normalizeRecommendedUse(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined
+  if (Array.isArray(value)) {
+    return (
+      value
+        .flatMap((entry) => recommendedUseSchema.safeParse(entry).data ?? [])
+        .filter(Boolean)
+        .join("；") || undefined
+    )
+  }
+  return recommendedUseSchema.safeParse(value).data
+}
+
 const canvasDraftDocumentSchema = z
   .object({
     version: z.literal(1),
@@ -258,6 +276,8 @@ const canvasDraftDocumentSchema = z
     width: z.number().positive(),
     height: z.number().positive(),
     renderOptions: renderOptionsSchema.partial().optional(),
+    recommendedUse: recommendedUseSchema.optional(),
+    recommendedUses: legacyRecommendedUsesSchema.optional(),
     fields: z.array(canvasDraftFieldSchema),
     elements: z.array(canvasDraftElementSchema),
     editor: z.object({
@@ -268,27 +288,39 @@ const canvasDraftDocumentSchema = z
     }),
   })
   .passthrough()
+  .transform(({ recommendedUses, ...document }) => {
+    if (Object.getOwnPropertyDescriptor(document, "recommendedUse") !== undefined) {
+      return {
+        ...document,
+        recommendedUse: normalizeRecommendedUse(document.recommendedUse),
+      }
+    }
+    const legacyRecommendedUse = normalizeRecommendedUse(recommendedUses)
+    return legacyRecommendedUse === undefined
+      ? document
+      : { ...document, recommendedUse: legacyRecommendedUse }
+  })
 
-const userTemplateRecordSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string(),
-  width: z.number().positive(),
-  height: z.number().positive(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  archivedAt: z.string().nullable().optional(),
-  currentVersionId: z.string().min(1),
-  fieldOrder: z.array(z.string()),
-  recommendedUses: z
-    .array(
-      z.object({
-        scope: z.string().min(1),
-        weight: z.number().int().min(1).max(100),
-      })
-    )
-    .default([]),
-})
+const userTemplateRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string(),
+    width: z.number().positive(),
+    height: z.number().positive(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    archivedAt: z.string().nullable().optional(),
+    currentVersionId: z.string().min(1),
+    fieldOrder: z.array(z.string()),
+    recommendedUse: recommendedUseSchema.optional(),
+    recommendedUses: legacyRecommendedUsesSchema.optional(),
+  })
+  .transform(({ recommendedUses, ...record }) => ({
+    ...record,
+    recommendedUse:
+      normalizeRecommendedUse(record.recommendedUse) ?? normalizeRecommendedUse(recommendedUses),
+  }))
 
 const userTemplateVersionSchema = z.object({
   id: z.string().min(1),
@@ -462,7 +494,7 @@ function createDraftFromUserTemplatePackage(
     })),
     elements: templatePackage.elements,
     tags: templatePackage.tags,
-    recommendedUses: templatePackage.recommendedUses ?? [],
+    recommendedUse: templatePackage.recommendedUse,
   }
   const fields: CanvasDraftField[] = template.fields.map((field) => ({
     key: field.key,
@@ -634,6 +666,7 @@ function createDraftFromUserTemplatePackage(
     width: dotsToMillimeters(templatePackage.canvas.width),
     height: dotsToMillimeters(templatePackage.canvas.height),
     renderOptions: templatePackage.renderOptions,
+    recommendedUse: templatePackage.recommendedUse,
     fields: synced.fields,
     elements: synced.elements,
     editor: {
@@ -1180,7 +1213,7 @@ export async function importSharedUserTemplatePackage(args: {
     archivedAt: null,
     currentVersionId: version.id,
     fieldOrder: draft.fields.map((field) => field.key),
-    recommendedUses: args.templatePackage.recommendedUses ?? [],
+    recommendedUse: args.templatePackage.recommendedUse,
   })
   const workingCopy: CanvasWorkingCopyIndexEntry = canvasWorkingCopyIndexEntrySchema.parse({
     sourceKey: buildSourceKey(templateId),
@@ -1355,10 +1388,10 @@ export type InventoryMaterialSaveArgs = {
   variantName?: string
   packageName?: string
   description?: string
+  deviceDetails?: string
   matrixCode?: string
   packagingRemark?: string
   labelBindings?: InventoryMaterial["labelBindings"]
-  datasheets?: InventoryMaterial["datasheets"]
 }
 
 export async function listInventoryMaterialsFromDirectory(args: {
@@ -1419,12 +1452,14 @@ export async function saveInventoryMaterialToDirectory(args: {
   }
   const now = new Date().toISOString()
   const material = inventoryMaterialSchema.parse({
+    ...existing,
     id: args.material.id ?? createId("inventory-material"),
     fullName: args.material.fullName.trim(),
     baseName: sanitizeOptionalText(args.material.baseName),
     variantName: sanitizeOptionalText(args.material.variantName),
     packageName: sanitizeOptionalText(args.material.packageName),
     description: args.material.description?.trim() ?? "",
+    deviceDetails: args.material.deviceDetails?.trim() ?? existing?.deviceDetails ?? "",
     matrixCode: sanitizeOptionalText(args.material.matrixCode),
     packagingRemark: args.material.packagingRemark?.trim() ?? "",
     currentQuantity: existing?.currentQuantity ?? 0,
@@ -1432,7 +1467,6 @@ export async function saveInventoryMaterialToDirectory(args: {
     updatedAt: now,
     archivedAt: existing?.archivedAt ?? null,
     labelBindings: args.material.labelBindings ?? existing?.labelBindings ?? [],
-    datasheets: args.material.datasheets ?? existing?.datasheets ?? [],
   })
   ensureMaterialUniqueness(materials, material)
   await writeJsonFile(

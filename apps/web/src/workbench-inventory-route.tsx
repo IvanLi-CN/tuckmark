@@ -41,6 +41,7 @@ import {
   saveInventoryMaterial,
 } from "./inventory-data-store.js"
 import { cn } from "./lib/utils.js"
+import { MarkdownContent } from "./markdown-content.js"
 import type { Template, UserTemplateSummary } from "./types.js"
 import { loadWorkingCopy, readUserTemplateHistory } from "./user-template-store.js"
 import {
@@ -77,6 +78,7 @@ type MaterialDraft = {
   variantName: string
   packageName: string
   description: string
+  deviceDetails: string
   matrixCode: string
   packagingRemark: string
 }
@@ -105,6 +107,7 @@ function createEmptyMaterialDraft(): MaterialDraft {
     variantName: "",
     packageName: "",
     description: "",
+    deviceDetails: "",
     matrixCode: "",
     packagingRemark: "",
   }
@@ -118,6 +121,7 @@ function materialToDraft(material: InventoryMaterial): MaterialDraft {
     variantName: material.variantName ?? "",
     packageName: material.packageName ?? "",
     description: material.description,
+    deviceDetails: material.deviceDetails,
     matrixCode: material.matrixCode ?? "",
     packagingRemark: material.packagingRemark,
   }
@@ -921,7 +925,7 @@ export default function WorkbenchInventoryRoute({
                       </div>
                     </div>
                     <div className="grid gap-2">
-                      <Label htmlFor="inventory-description">简要描述</Label>
+                      <Label htmlFor="inventory-description">概要说明</Label>
                       <Textarea
                         id="inventory-description"
                         value={materialDraft.description}
@@ -934,6 +938,23 @@ export default function WorkbenchInventoryRoute({
                         }
                         rows={3}
                       />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="inventory-device-details">设备详细信息</Label>
+                      <Textarea
+                        id="inventory-device-details"
+                        value={materialDraft.deviceDetails}
+                        disabled={selectedMaterialArchived}
+                        placeholder="支持 Markdown"
+                        onChange={(event) =>
+                          setMaterialDraft((current) => ({
+                            ...current,
+                            deviceDetails: event.target.value,
+                          }))
+                        }
+                        rows={6}
+                      />
+                      <MarkdownContent value={materialDraft.deviceDetails} />
                     </div>
                     {selectedMaterialArchived ? (
                       <Alert>

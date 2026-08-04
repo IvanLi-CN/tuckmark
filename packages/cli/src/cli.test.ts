@@ -10,7 +10,10 @@ import { promisify } from "node:util"
 import { afterEach, beforeAll, describe, expect, it } from "vitest"
 
 import { deriveAgentImportWebUrl } from "./agent-import-url.js"
-import { resolveInventoryPrintSource } from "./shared-data-directory.js"
+import {
+  readSharedUserTemplateDetail,
+  resolveInventoryPrintSource,
+} from "./shared-data-directory.js"
 
 const execFileAsync = promisify(execFile)
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
@@ -117,13 +120,6 @@ describe("cli smoke", () => {
               fullName: "Mock capacitor",
               description: "mock data only",
               packagingRemark: "reel",
-              datasheets: [
-                {
-                  title: "Mock datasheet",
-                  url: "https://manufacturer.example/mock-capacitor.pdf",
-                  source: "manufacturer",
-                },
-              ],
             },
             sourceNote: "mock order row",
             template: {
@@ -131,7 +127,7 @@ describe("cli smoke", () => {
               id: "cable-tag",
               name: "Cable Tag",
               fields: [],
-              recommendedUses: [{ scope: "electronics", weight: 90 }],
+              recommendedUse: "electronics",
             },
             templateAlternatives: [],
             templateInput: {},
@@ -177,7 +173,7 @@ describe("cli smoke", () => {
                 id: "cable-tag",
                 name: "Cable Tag",
                 fields: [],
-                recommendedUses: [{ scope: "electronics", weight: 90 }],
+                recommendedUse: "electronics",
               },
             ],
           })
@@ -199,7 +195,7 @@ describe("cli smoke", () => {
                       id: "cable-tag",
                       name: "Cable Tag",
                       fields: [{ key: "name", label: "Name", required: true, multiline: false }],
-                      recommendedUses: [{ scope: "electronics", weight: 90 }],
+                      recommendedUse: "electronics",
                     },
                     createdAt: "2026-07-30T11:00:00.000Z",
                     status: "open",
@@ -270,8 +266,8 @@ describe("cli smoke", () => {
 
       const catalog = JSON.parse(
         (await runCli(["agent-import", "catalog", "--devd-url", baseUrl])).stdout
-      ) as { templates: Array<{ recommendedUses: Array<{ scope: string }> }> }
-      expect(catalog.templates[0]?.recommendedUses[0]?.scope).toBe("electronics")
+      ) as { templates: Array<{ recommendedUse?: string }> }
+      expect(catalog.templates[0]?.recommendedUse).toBe("electronics")
 
       const waiting = JSON.parse(
         (
@@ -446,16 +442,40 @@ describe("cli smoke", () => {
       name: "Component Bin SOT-23",
     })
 
+    const workingCopyPath = path.join(
+      dataDir,
+      "templates",
+      "component-bin-sot23",
+      "working-copy.json"
+    )
+    const workingCopy = JSON.parse(await readFile(workingCopyPath, "utf8")) as {
+      draft: { recommendedUse?: string }
+    }
+    const unchangedDetail = await readSharedUserTemplateDetail(dataDir, "component-bin-sot23")
+    expect(
+      Object.getOwnPropertyDescriptor(unchangedDetail?.workingCopy?.draft ?? {}, "recommendedUse")
+    ).toBeUndefined()
+
+    workingCopy.draft.recommendedUse = ""
+    await writeFile(workingCopyPath, `${JSON.stringify(workingCopy)}\n`)
+
+    const clearedDetail = await readSharedUserTemplateDetail(dataDir, "component-bin-sot23")
+    expect(
+      Object.getOwnPropertyDescriptor(clearedDetail?.workingCopy?.draft ?? {}, "recommendedUse")
+    ).toBeDefined()
+    expect(clearedDetail?.workingCopy?.draft.recommendedUse).toBeUndefined()
+
     const showResult = JSON.parse(
       (await runCli(["template", "show", "--id", "component-bin-sot23", "--data-dir", dataDir]))
         .stdout
     ) as {
       source: string
-      template: { id: string }
+      template: { id: string; recommendedUse?: string }
       savedVersions: Array<{ version: number }>
     }
     expect(showResult.source).toBe("user-template")
     expect(showResult.template.id).toBe("component-bin-sot23")
+    expect(showResult.template.recommendedUse).toBeUndefined()
     expect(showResult.savedVersions[0]?.version).toBe(1)
 
     const manifest = JSON.parse(await readFile(path.join(dataDir, "manifest.json"), "utf8")) as {
@@ -520,6 +540,8 @@ describe("cli smoke", () => {
           "SOT-583",
           "--description",
           "同步降压 28V",
+          "--device-details",
+          "- 输入范围：4.5V 至 28V\n- 输出：3.3V",
           "--matrix-code",
           "P2-Y404125469",
           "--packaging-remark",
@@ -554,9 +576,15 @@ describe("cli smoke", () => {
         ])
       ).stdout
     ) as {
-      material: { id: string; currentQuantity: number; labelBindings: Array<{ id: string }> }
+      material: {
+        id: string
+        currentQuantity: number
+        deviceDetails: string
+        labelBindings: Array<{ id: string }>
+      }
     }
     expect(created.material.currentQuantity).toBe(0)
+    expect(created.material.deviceDetails).toBe("- 输入范围：4.5V 至 28V\n- 输出：3.3V")
     expect(created.material.labelBindings[0]?.id).toBe("binding-user-template")
 
     const adjusted = JSON.parse(

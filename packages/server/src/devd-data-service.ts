@@ -20,7 +20,6 @@ import {
   type InventoryMaterial,
   inventoryAdjustmentInputSchema,
   inventoryAdjustmentSchema,
-  inventoryDatasheetSchema,
   inventoryMaterialSchema,
   inventoryTemplateBindingSchema,
   materialMatchesQuery,
@@ -107,7 +106,7 @@ type TemplateRecord = {
   archivedAt?: string | null
   currentVersionId: string
   fieldOrder: string[]
-  recommendedUses?: Array<{ scope: string; weight: number }>
+  recommendedUse?: string
 }
 
 type VersionRecord = {
@@ -168,21 +167,44 @@ export type DevdDataArchive = {
   }
 }
 
-const templateRecordSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string(),
-  width: z.number().positive(),
-  height: z.number().positive(),
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
-  archivedAt: z.string().nullable().optional(),
-  currentVersionId: z.string().min(1),
-  fieldOrder: z.array(z.string()),
-  recommendedUses: z
-    .array(z.object({ scope: z.string().min(1), weight: z.number().int().min(1).max(100) }))
-    .optional(),
-})
+const recommendedUseSchema = z
+  .union([z.string().trim(), z.object({ scope: z.string().trim().min(1) })])
+  .transform((value) => (typeof value === "string" ? value : value.scope))
+
+const legacyRecommendedUsesSchema = z.array(recommendedUseSchema)
+
+function normalizeRecommendedUse(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined
+  if (Array.isArray(value)) {
+    return (
+      value
+        .flatMap((entry) => recommendedUseSchema.safeParse(entry).data ?? [])
+        .filter(Boolean)
+        .join("；") || undefined
+    )
+  }
+  return recommendedUseSchema.safeParse(value).data
+}
+
+const templateRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string(),
+    width: z.number().positive(),
+    height: z.number().positive(),
+    createdAt: z.string().min(1),
+    updatedAt: z.string().min(1),
+    archivedAt: z.string().nullable().optional(),
+    currentVersionId: z.string().min(1),
+    fieldOrder: z.array(z.string()),
+    recommendedUse: recommendedUseSchema.optional(),
+    recommendedUses: legacyRecommendedUsesSchema.optional(),
+  })
+  .transform(({ recommendedUses, ...record }) => ({
+    ...record,
+    recommendedUse: record.recommendedUse ?? normalizeRecommendedUse(recommendedUses),
+  }))
 
 const dataIdentifierSchema = z.string().trim().min(1)
 const canvasDraftSourceSchema = z.discriminatedUnion("kind", [
@@ -336,9 +358,8 @@ const canvasDraftDocumentSchema = z
     width: z.number().finite().positive(),
     height: z.number().finite().positive(),
     renderOptions: z.record(z.string(), z.unknown()).optional(),
-    recommendedUses: z
-      .array(z.object({ scope: dataIdentifierSchema, weight: z.number().int().min(1).max(100) }))
-      .optional(),
+    recommendedUse: recommendedUseSchema.optional(),
+    recommendedUses: legacyRecommendedUsesSchema.optional(),
     fields: z.array(
       z.object({ key: dataIdentifierSchema, label: dataIdentifierSchema }).passthrough()
     ),
@@ -357,6 +378,15 @@ const canvasDraftDocumentSchema = z
     }),
   })
   .passthrough()
+  .transform(({ recommendedUses, ...document }) => {
+    if (Object.hasOwn(document, "recommendedUse")) {
+      return document
+    }
+    const legacyRecommendedUse = normalizeRecommendedUse(recommendedUses)
+    return legacyRecommendedUse === undefined
+      ? document
+      : { ...document, recommendedUse: legacyRecommendedUse }
+  })
 
 const versionRecordSchema = z.object({
   id: z.string().min(1),
@@ -444,10 +474,10 @@ const inventoryMutationArgsSchemas = {
     variantName: z.string().optional(),
     packageName: z.string().optional(),
     description: z.string().optional(),
+    deviceDetails: z.string().optional(),
     matrixCode: z.string().optional(),
     packagingRemark: z.string().optional(),
     labelBindings: z.array(inventoryTemplateBindingSchema).optional(),
-    datasheets: z.array(inventoryDatasheetSchema).optional(),
   }),
   "archive-material": materialReferenceArgsSchema,
   "restore-material": materialReferenceArgsSchema,
@@ -1193,6 +1223,10 @@ export class DevdDataService {
           versions.splice(index, 1)
       }
       this.pruneTemplateVersions(versions, templateId, "saved", MAX_SAVED_TEMPLATE_VERSIONS)
+      const hasRecommendedUse = Object.hasOwn(document, "recommendedUse")
+      const recommendedUse = hasRecommendedUse
+        ? normalizeRecommendedUse(document.recommendedUse)
+        : existing?.recommendedUse
       const template: TemplateRecord = {
         id: templateId,
         name: args.name,
@@ -1204,10 +1238,16 @@ export class DevdDataService {
         archivedAt: existing?.archivedAt ?? null,
         currentVersionId: versionId,
         fieldOrder: (document.fields ?? []).map((field: any) => field.key),
-        recommendedUses: document.recommendedUses ?? existing?.recommendedUses ?? [],
+        ...(recommendedUse ? { recommendedUse } : {}),
       }
-      if (existing) Object.assign(existing, template)
-      else templates.push(template)
+      if (existing) {
+        if (hasRecommendedUse && !recommendedUse) {
+          delete existing.recommendedUse
+        }
+        Object.assign(existing, template)
+      } else {
+        templates.push(template)
+      }
       const workingCopy: WorkingCopyRecord = {
         sourceKey: `user:${templateId}`,
         source: { kind: "user-template", templateId },
@@ -1338,12 +1378,14 @@ export class DevdDataService {
     if (command === "save-material") {
       if (existing) ensureInventoryMaterialActive(existing, "编辑")
       const material = inventoryMaterialSchema.parse({
+        ...existing,
         id: args.id ?? `inventory-material-${randomUUID()}`,
         fullName: String(args.fullName).trim(),
         baseName: args.baseName?.trim() || undefined,
         variantName: args.variantName?.trim() || undefined,
         packageName: args.packageName?.trim() || undefined,
         description: args.description?.trim() ?? "",
+        deviceDetails: args.deviceDetails?.trim() ?? existing?.deviceDetails ?? "",
         matrixCode: args.matrixCode?.trim() || undefined,
         packagingRemark: args.packagingRemark?.trim() ?? "",
         currentQuantity: existing?.currentQuantity ?? 0,
@@ -1351,7 +1393,6 @@ export class DevdDataService {
         updatedAt: now,
         archivedAt: existing?.archivedAt ?? null,
         labelBindings: args.labelBindings ?? existing?.labelBindings ?? [],
-        datasheets: args.datasheets ?? existing?.datasheets ?? [],
       })
       this.ensureMaterialUnique(materials, material)
       const index = materials.findIndex((item) => item.id === material.id)

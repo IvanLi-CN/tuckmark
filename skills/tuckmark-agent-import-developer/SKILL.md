@@ -26,7 +26,7 @@ Do not substitute `tuckmark` while validating source changes. Start DEVD from th
 
 ## Workflow
 
-1. Follow the privacy, identity, datasheet, and browser boundaries in `tuckmark-agent-import-user`. Never add a real order export to a fixture, test, screenshot, or commit.
+1. Follow the privacy, identity, and browser boundaries in `tuckmark-agent-import-user`. Never add a real order export to a fixture, test, screenshot, or commit.
 2. Query the DEVD-owned catalog and inventory with the source CLI:
 
    ```bash
@@ -34,7 +34,7 @@ Do not substitute `tuckmark` while validating source changes. Start DEVD from th
      agent-import catalog --devd-url "$DEVD_URL"
    ```
 
-3. Use a mock `tuckmark.agent-import.v1` proposal for automated validation. Let the Agent decide `new` versus `restock`; use exact inventory IDs for restocks and set non-blocking `needsAttention` when evidence is incomplete.
+3. Use a mock `tuckmark.agent-import.v1` proposal for automated validation. Let the Agent decide `new` versus `restock`; use exact inventory IDs for restocks and set non-blocking `needsAttention` when evidence is incomplete. In each new-material payload, use `description` for the concise overview and one `deviceDetails` Markdown string for factual technical detail. Do not replace it with an Agent-invented structured object.
 4. Create and drive a session with the same source command prefix:
 
    ```bash

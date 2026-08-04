@@ -17,40 +17,26 @@ export const inventoryTemplateBindingSchema = z.object({
 })
 export type InventoryTemplateBinding = z.infer<typeof inventoryTemplateBindingSchema>
 
-export const inventoryDatasheetSchema = z
+// Old material files can contain fields that Tuckmark no longer models. Preserve them on
+// read/write so removing an obsolete field from the UI never deletes user data implicitly.
+export const inventoryMaterialSchema = z
   .object({
-    title: z.string().min(1).default("Datasheet"),
-    url: z
-      .string()
-      .url()
-      .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
-        message: "Datasheet URLs must use HTTP or HTTPS.",
-      })
-      .optional(),
-    source: z.enum(["manufacturer", "authorized-distributor"]).optional(),
-    missingReason: z.string().min(1).optional(),
+    id: z.string().min(1),
+    fullName: z.string().min(1),
+    baseName: z.string().optional(),
+    variantName: z.string().optional(),
+    packageName: z.string().optional(),
+    description: z.string().default(""),
+    deviceDetails: z.string().default(""),
+    matrixCode: z.string().optional(),
+    packagingRemark: z.string().default(""),
+    currentQuantity: z.number().int().min(0).default(0),
+    createdAt: z.string().min(1),
+    updatedAt: z.string().min(1),
+    archivedAt: z.string().nullable().optional(),
+    labelBindings: z.array(inventoryTemplateBindingSchema).default([]),
   })
-  .refine((value) => Boolean(value.url || value.missingReason), {
-    message: "A datasheet needs a URL or a missing reason.",
-  })
-export type InventoryDatasheet = z.infer<typeof inventoryDatasheetSchema>
-
-export const inventoryMaterialSchema = z.object({
-  id: z.string().min(1),
-  fullName: z.string().min(1),
-  baseName: z.string().optional(),
-  variantName: z.string().optional(),
-  packageName: z.string().optional(),
-  description: z.string().default(""),
-  matrixCode: z.string().optional(),
-  packagingRemark: z.string().default(""),
-  currentQuantity: z.number().int().min(0).default(0),
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
-  archivedAt: z.string().nullable().optional(),
-  labelBindings: z.array(inventoryTemplateBindingSchema).default([]),
-  datasheets: z.array(inventoryDatasheetSchema).optional(),
-})
+  .passthrough()
 export type InventoryMaterial = z.infer<typeof inventoryMaterialSchema>
 
 export const inventoryAdjustmentKindSchema = z.enum(["in", "out", "correction"])
@@ -150,6 +136,7 @@ export function materialMatchesQuery(material: InventoryMaterial, query: string)
     material.variantName ?? "",
     material.packageName ?? "",
     material.description,
+    material.deviceDetails,
     material.matrixCode ?? "",
     material.packagingRemark,
   ]
@@ -169,6 +156,7 @@ export function buildInventoryMaterialFieldMap(
     package: material.packageName ?? "",
     description: material.description,
     remark: material.description,
+    deviceDetails: material.deviceDetails,
     matrixCode: material.matrixCode ?? "",
     packagingRemark: material.packagingRemark,
     quantity: String(material.currentQuantity),

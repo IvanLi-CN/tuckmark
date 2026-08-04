@@ -22,7 +22,7 @@ test("inventory detail creates a material, binds a template, and renders a print
   await page.getByLabel("封装").fill("SOT-583")
   await page.getByLabel("矩阵码").fill(matrixCode)
   await page.getByLabel("包装备注").fill("编带一盘 3000pcs")
-  await page.getByLabel("简要描述").fill("同步降压 28V")
+  await page.getByLabel("概要说明").fill("同步降压 28V")
 
   await page.getByRole("button", { name: "创建物料" }).click()
   await expect(page.getByText(fullName)).toBeVisible()

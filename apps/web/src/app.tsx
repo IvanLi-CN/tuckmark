@@ -52,10 +52,11 @@ export function App(props: AppProps = {}) {
           sessionId="demo-agent-import-session"
           initialSession={createAgentImportDemoSession()}
           client={createAgentImportDemoClient()}
+          basePath={basePath}
         />
       )
     }
-    return <AgentImportPage />
+    return <AgentImportPage basePath={basePath} />
   }
   return (
     <React.Suspense fallback={<AppLaunchSplash />}>

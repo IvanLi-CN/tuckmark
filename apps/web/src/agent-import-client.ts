@@ -5,6 +5,12 @@ import type {
   AgentImportTemplate,
   InventoryMaterial,
 } from "@tuckmark/inventory"
+import { buildSvg, getTemplateById } from "../../../packages/core/src/web.js"
+
+import { compileDraftToFilledCanvasDefinition } from "./canvas-editor-model.js"
+import { HttpRuntimeStore } from "./devd-data-client.js"
+
+type TemplateRuntimeStore = Pick<HttpRuntimeStore, "readTemplate">
 
 type SessionResponse = { session: AgentImportSession }
 
@@ -18,6 +24,10 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
 }
 
 export interface AgentImportClient {
+  renderTemplatePreview(
+    template: AgentImportTemplate,
+    input: Record<string, string>
+  ): Promise<string | null>
   getSession(sessionId: string, secret: string): Promise<AgentImportSession>
   getRestockTargets(
     sessionId: string,
@@ -42,7 +52,28 @@ export interface AgentImportClient {
 }
 
 export class HttpAgentImportClient implements AgentImportClient {
-  constructor(private readonly apiBasePath = "/api") {}
+  constructor(
+    private readonly apiBasePath = "/api",
+    private readonly runtimeStore: TemplateRuntimeStore = new HttpRuntimeStore()
+  ) {}
+
+  async renderTemplatePreview(
+    template: AgentImportTemplate,
+    input: Record<string, string>
+  ): Promise<string | null> {
+    try {
+      if (template.source === "system") {
+        const definition = getTemplateById(template.id)
+        return buildSvg(definition.width, definition.height, definition.elements, input)
+      }
+      const savedTemplate = await this.runtimeStore.readTemplate(template.id)
+      if (!savedTemplate?.document) return null
+      const definition = compileDraftToFilledCanvasDefinition(savedTemplate.document, input)
+      return buildSvg(definition.width, definition.height, definition.elements, {})
+    } catch {
+      return null
+    }
+  }
 
   async getSession(sessionId: string, secret: string): Promise<AgentImportSession> {
     const response = await requestJson<SessionResponse>(

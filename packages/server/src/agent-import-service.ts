@@ -12,6 +12,7 @@ import {
   agentImportEventSchema,
   agentImportItemSchema,
   agentImportProposalSchema,
+  agentImportRecommendedUseSchema,
   agentImportSessionSchema,
   agentImportTemplateSchema,
   applyInventoryAdjustment,
@@ -26,20 +27,23 @@ import { DevdDataService } from "./devd-data-service.js"
 
 const SESSION_TTL_MS = 30 * 60 * 1000
 const SECRET_BYTES = 32
-const sharedTemplateRecordSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  archivedAt: z.string().nullable().optional(),
-  currentVersionId: z.string().min(1),
-  recommendedUses: z
-    .array(
-      z.object({
-        scope: z.string().min(1),
-        weight: z.number().int().min(1).max(100),
-      })
-    )
-    .default([]),
-})
+const sharedTemplateRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    archivedAt: z.string().nullable().optional(),
+    currentVersionId: z.string().min(1),
+    recommendedUse: agentImportRecommendedUseSchema.optional(),
+    // Read old shared records without exposing the retired collection field.
+    recommendedUses: z.array(agentImportRecommendedUseSchema).optional(),
+  })
+  .transform(({ recommendedUses, ...record }) => {
+    const legacyRecommendedUse = recommendedUses?.filter(Boolean).join("；") || undefined
+    return {
+      ...record,
+      recommendedUse: record.recommendedUse ?? legacyRecommendedUse,
+    }
+  })
 
 const sharedTemplateVersionSchema = z.object({
   document: z.object({
@@ -441,7 +445,7 @@ export class AgentImportService {
         id: template.id,
         name: template.name,
         fields: template.fields,
-        recommendedUses: template.recommendedUses ?? [],
+        recommendedUse: template.recommendedUse,
       })
     )
     const templateIds = await listDirectories(path.join(this.dataDir, "templates"))
@@ -472,7 +476,7 @@ export class AgentImportService {
                 ...field,
                 required: false,
               })),
-              recommendedUses: record.recommendedUses,
+              recommendedUse: record.recommendedUse,
             })
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code === "ENOENT") {

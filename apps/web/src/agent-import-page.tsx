@@ -15,7 +15,6 @@ import {
   Warehouse,
 } from "lucide-react"
 import React from "react"
-import { buildSvg, getTemplateById } from "../../../packages/core/src/web.js"
 
 import { type AgentImportClient, HttpAgentImportClient } from "./agent-import-client.js"
 import {
@@ -35,6 +34,7 @@ import {
   TooltipTrigger,
 } from "./components/ui/tooltip.js"
 import { cn } from "./lib/utils.js"
+import { resolveBasePath } from "./runtime.js"
 
 type ItemDraft = AgentImportItemDraft
 
@@ -43,6 +43,8 @@ type AgentImportPageProps = {
   secret?: string
   client?: AgentImportClient
   initialSession?: AgentImportSession
+  basePath?: string
+  onConfirmed?: (session: AgentImportSession) => void
 }
 
 const defaultAgentImportClient = new HttpAgentImportClient()
@@ -57,21 +59,6 @@ function resolveItemTemplates(item: AgentImportItem): AgentImportTemplate[] {
     (template, index) =>
       values.findIndex((candidate) => templateKey(candidate) === templateKey(template)) === index
   )
-}
-
-function renderSystemTemplatePreview(
-  template: AgentImportTemplate,
-  input: Record<string, string>
-): string | null {
-  if (template.source !== "system") {
-    return null
-  }
-  try {
-    const definition = getTemplateById(template.id)
-    return buildSvg(definition.width, definition.height, definition.elements, input)
-  } catch {
-    return null
-  }
 }
 
 function sessionIdFromLocation(): string | undefined {
@@ -101,6 +88,8 @@ export function AgentImportPage({
   secret = secretFromLocation(),
   client = defaultAgentImportClient,
   initialSession,
+  basePath = resolveBasePath(import.meta.env as Record<string, string | undefined>),
+  onConfirmed,
 }: AgentImportPageProps) {
   const [session, setSession] = React.useState<AgentImportSession | null>(initialSession ?? null)
   const [drafts, setDrafts] = React.useState<Record<string, ItemDraft>>(() =>
@@ -303,14 +292,21 @@ export function AgentImportPage({
           })
         )
       }
-      applySession(await client.confirm(sessionId, secret ?? ""))
+      const completedSession = await client.confirm(sessionId, secret ?? "")
+      applySession(completedSession)
+      if (onConfirmed) {
+        onConfirmed(completedSession)
+      } else if (typeof window !== "undefined") {
+        const inventoryPath = `${basePath === "/" ? "" : basePath}/inventory`
+        window.location.replace(inventoryPath)
+      }
       setError(null)
     } catch (confirmError) {
       setError(confirmError instanceof Error ? confirmError.message : "确认导入失败。")
     } finally {
       setConfirming(false)
     }
-  }, [applySession, client, drafts, secret, sessionId])
+  }, [applySession, basePath, client, drafts, onConfirmed, secret, sessionId])
 
   if (loading) {
     return <AgentImportLoading />
@@ -378,6 +374,7 @@ export function AgentImportPage({
           return draft ? (
             <AgentImportTableRow
               key={item.id}
+              client={client}
               draft={draft}
               disabled={isCompleted}
               expanded={expandedItemIds.has(item.id)}
@@ -404,6 +401,7 @@ export function AgentImportPage({
           return draft ? (
             <AgentImportTableRow
               key={item.id}
+              client={client}
               draft={draft}
               disabled={isCompleted}
               restockTarget={restockTargets[item.id]}
@@ -514,9 +512,6 @@ function ImportSection({
                     <th className="tm-agent-import__column--source" scope="col">
                       来源
                     </th>
-                    <th className="tm-agent-import__column--datasheet" scope="col">
-                      数据手册
-                    </th>
                     <th className="tm-agent-import__column--template" scope="col">
                       标签模板
                     </th>
@@ -562,6 +557,7 @@ function ImportSection({
 }
 
 type AgentImportTableRowProps = {
+  client: AgentImportClient
   draft: ItemDraft
   disabled: boolean
   restockTarget?: InventoryMaterial
@@ -747,6 +743,7 @@ function InlineEditableSelectCell({
 }
 
 function NewItemTableRow({
+  client,
   draft,
   disabled,
   expanded,
@@ -759,10 +756,30 @@ function NewItemTableRow({
   const item = draft.item
   const templateOptions = resolveItemTemplates(item)
   const waitingForAgent = Boolean(item.pendingTemplateEventId)
-  const preview = item.template
-    ? renderSystemTemplatePreview(item.template, item.templateInput)
-    : null
-  const firstDatasheet = item.material.datasheets[0]
+  const [preview, setPreview] = React.useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = React.useState(false)
+  React.useEffect(() => {
+    let active = true
+    if (!expanded || !item.template || waitingForAgent) {
+      setPreview(null)
+      setPreviewLoading(false)
+      return () => {
+        active = false
+      }
+    }
+    setPreviewLoading(true)
+    void client
+      .renderTemplatePreview(item.template, item.templateInput)
+      .then((nextPreview) => {
+        if (active) setPreview(nextPreview)
+      })
+      .finally(() => {
+        if (active) setPreviewLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [client, expanded, item.template, item.templateInput, waitingForAgent])
   const updateMaterial = (key: keyof AgentImportItem["material"], value: string) => {
     onChange((current) => ({ ...current, material: { ...current.material, [key]: value } }))
   }
@@ -853,9 +870,6 @@ function NewItemTableRow({
           />
         </td>
         <td>
-          <DatasheetSummary datasheet={firstDatasheet} />
-        </td>
-        <td>
           <div className="tm-agent-import__template-cell">
             <InlineEditableSelectCell
               label="标签模板"
@@ -909,9 +923,12 @@ function NewItemTableRow({
       </tr>
       {expanded ? (
         <tr className="tm-agent-import__detail-row">
-          <td colSpan={12}>
+          <td colSpan={11}>
             <div className="tm-agent-import__details">
-              <section className="tm-agent-import__detail-section" aria-label="物料补充字段">
+              <section
+                className="tm-agent-import__detail-section tm-agent-import__detail-section--material"
+                aria-label="物料补充字段"
+              >
                 <h3>物料补充</h3>
                 <div className="tm-agent-import__field-grid tm-agent-import__field-grid--details">
                   <Field label="矩阵码">
@@ -923,7 +940,7 @@ function NewItemTableRow({
                       onChange={(event) => updateMaterial("matrixCode", event.target.value)}
                     />
                   </Field>
-                  <Field label="描述" className="tm-agent-import__field--full">
+                  <Field label="概要说明">
                     <textarea
                       className="tm-agent-import__textarea tm-agent-import__textarea--compact"
                       value={item.material.description}
@@ -931,81 +948,16 @@ function NewItemTableRow({
                       onChange={(event) => updateMaterial("description", event.target.value)}
                     />
                   </Field>
+                  <Field label="设备详细信息">
+                    <textarea
+                      className="tm-agent-import__textarea tm-agent-import__textarea--compact"
+                      value={item.material.deviceDetails}
+                      disabled={disabled}
+                      placeholder="支持 Markdown"
+                      onChange={(event) => updateMaterial("deviceDetails", event.target.value)}
+                    />
+                  </Field>
                 </div>
-              </section>
-              <section className="tm-agent-import__detail-section" aria-label="数据手册编辑">
-                <h3>数据手册</h3>
-                {firstDatasheet ? (
-                  <div className="tm-agent-import__field-grid tm-agent-import__field-grid--details">
-                    <Field label="标题">
-                      <Input
-                        density="compact"
-                        size="lg"
-                        value={firstDatasheet.title}
-                        disabled={disabled}
-                        onChange={(event) =>
-                          onChange((current) => ({
-                            ...current,
-                            material: {
-                              ...current.material,
-                              datasheets: current.material.datasheets.map((entry, index) =>
-                                index === 0 ? { ...entry, title: event.target.value } : entry
-                              ),
-                            },
-                          }))
-                        }
-                      />
-                    </Field>
-                    <Field label="链接">
-                      <Input
-                        density="compact"
-                        size="lg"
-                        value={firstDatasheet.url ?? ""}
-                        disabled={disabled}
-                        placeholder="制造商或授权分销商链接"
-                        onChange={(event) =>
-                          onChange((current) => ({
-                            ...current,
-                            material: {
-                              ...current.material,
-                              datasheets: current.material.datasheets.map((entry, index) =>
-                                index === 0
-                                  ? { ...entry, url: event.target.value || undefined }
-                                  : entry
-                              ),
-                            },
-                          }))
-                        }
-                      />
-                    </Field>
-                    <Field label="缺失原因" className="tm-agent-import__field--full">
-                      <Input
-                        density="compact"
-                        size="lg"
-                        value={firstDatasheet.missingReason ?? ""}
-                        disabled={disabled}
-                        onChange={(event) =>
-                          onChange((current) => ({
-                            ...current,
-                            material: {
-                              ...current.material,
-                              datasheets: current.material.datasheets.map((entry, index) =>
-                                index === 0
-                                  ? {
-                                      ...entry,
-                                      missingReason: event.target.value || undefined,
-                                    }
-                                  : entry
-                              ),
-                            },
-                          }))
-                        }
-                      />
-                    </Field>
-                  </div>
-                ) : (
-                  <MissingDatasheetNotice />
-                )}
               </section>
               <section
                 className="tm-agent-import__detail-section tm-agent-import__detail-section--template"
@@ -1019,14 +971,15 @@ function NewItemTableRow({
                       alt={`${item.template?.name ?? "标签"}预览`}
                     />
                   ) : (
-                    <>
-                      <strong>{item.template?.name ?? "未选择模板"}</strong>
-                      <span>
-                        {item.template?.fields
-                          .map((field) => item.templateInput[field.key] || field.label)
-                          .join(" · ") || "等待模板字段"}
-                      </span>
-                    </>
+                    <span>
+                      {waitingForAgent
+                        ? "等待 Agent 补全模板字段"
+                        : previewLoading
+                          ? "正在生成标签预览"
+                          : item.template
+                            ? "无法生成标签预览"
+                            : "未选择模板"}
+                    </span>
                   )}
                 </div>
                 <div className="tm-agent-import__field-grid tm-agent-import__field-grid--template">
@@ -1122,14 +1075,13 @@ function RestockItemTableRow({
         />
       </td>
       <td>
-        {targetUnavailable || item.needsAttention || material?.datasheets?.length ? (
+        {targetUnavailable || item.needsAttention ? (
           <AttentionCell
             message={
               targetUnavailable ? "DEVD 中尚未找到可用于确认的目标物料。" : item.needsAttention
             }
           />
         ) : null}
-        {!targetUnavailable && !material?.datasheets?.length ? <MissingDatasheetNotice /> : null}
       </td>
       <td className="tm-agent-import__table-cell--action">
         <SaveItemAction saving={saving} disabled={disabled || targetUnavailable} onSave={onSave} />
@@ -1146,38 +1098,6 @@ function AttentionCell({ message }: { message?: string }) {
     </p>
   ) : (
     <span className="tm-agent-import__no-attention">无额外提示</span>
-  )
-}
-
-function MissingDatasheetNotice() {
-  return (
-    <p className="tm-agent-import__attention-copy">
-      <AlertTriangle className="size-4 text-amber-700" />
-      <span>未提供数据手册：建议补充制造商或授权分销商链接。</span>
-    </p>
-  )
-}
-
-function DatasheetSummary({
-  datasheet,
-}: {
-  datasheet: AgentImportItem["material"]["datasheets"][number] | undefined
-}) {
-  if (!datasheet) {
-    return <MissingDatasheetNotice />
-  }
-  if (!datasheet.url) {
-    return <span className="tm-agent-import__cell-copy">{datasheet.title}</span>
-  }
-  return (
-    <a
-      className="tm-agent-import__datasheet-link"
-      href={datasheet.url}
-      target="_blank"
-      rel="noreferrer"
-    >
-      {datasheet.title}
-    </a>
   )
 }
 

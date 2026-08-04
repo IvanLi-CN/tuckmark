@@ -35,14 +35,8 @@ function proposal(overrides: Partial<AgentImportProposal> = {}): AgentImportProp
           baseName: "MR-100",
           packageName: "SOT-23",
           description: "Mock component for import testing",
+          deviceDetails: "- Mock input range\n- Mock package evidence",
           packagingRemark: "reel",
-          datasheets: [
-            {
-              title: "Manufacturer datasheet",
-              url: "https://manufacturer.example/mock-regulator.pdf",
-              source: "manufacturer",
-            },
-          ],
         },
         sourceNote: "mock order row A",
         needsAttention: "Model suffix was inferred from the mock title.",
@@ -51,7 +45,7 @@ function proposal(overrides: Partial<AgentImportProposal> = {}): AgentImportProp
           id: "cable-tag",
           name: "Cable Tag",
           fields: [{ key: "name", label: "Name", required: true, multiline: false }],
-          recommendedUses: [{ scope: "electronics", weight: 90 }],
+          recommendedUse: "electronics",
         },
         templateAlternatives: [],
         templateInput: { name: "Mock regulator" },
@@ -68,8 +62,8 @@ function proposal(overrides: Partial<AgentImportProposal> = {}): AgentImportProp
         material: {
           fullName: "Existing mock resistor",
           description: "",
+          deviceDetails: "",
           packagingRemark: "",
-          datasheets: [],
         },
         sourceNote: "mock order row B",
         templateAlternatives: [],
@@ -159,7 +153,7 @@ describe("AgentImportService", () => {
               archivedAt: null,
               currentVersionId: "recovered-version",
               fieldOrder: [],
-              recommendedUses: [],
+              recommendedUses: [{ scope: "mock electronics" }],
             },
           },
           {
@@ -187,6 +181,7 @@ describe("AgentImportService", () => {
         source: "user-template",
         id: "recovered-template",
         name: "Recovered mock template",
+        recommendedUse: "mock electronics",
       })
     )
   })
@@ -196,12 +191,9 @@ describe("AgentImportService", () => {
     const service = new AgentImportService(dataDir)
 
     const catalog = await service.catalog()
-    expect(
-      catalog.templates.find((template) => template.id === "cable-tag")?.recommendedUses
-    ).toContainEqual({
-      scope: "electronics",
-      weight: 90,
-    })
+    expect(catalog.templates.find((template) => template.id === "cable-tag")?.recommendedUse).toBe(
+      "electronics and cable labeling"
+    )
 
     const session = service.createSession({
       sessionId: "agent-import-session-0123456789",
@@ -237,11 +229,7 @@ describe("AgentImportService", () => {
           fieldOverrides: { name: "Mock regulator" },
         },
       ],
-      datasheets: [
-        {
-          url: "https://manufacturer.example/mock-regulator.pdf",
-        },
-      ],
+      deviceDetails: "- Mock input range\n- Mock package evidence",
     })
 
     const manifest = JSON.parse(await readFile(path.join(dataDir, "manifest.json"), "utf8")) as {
@@ -482,7 +470,6 @@ describe("AgentImportService", () => {
           id: "browser-local-template",
           name: "Browser-local Mock Template",
           fields: [{ key: "name", label: "Name", required: true, multiline: false }],
-          recommendedUses: [],
         },
       })
     ).rejects.toThrow("Label template user-template:browser-local-template was not found.")
@@ -511,7 +498,6 @@ describe("AgentImportService", () => {
         id: "shipping-compact",
         name: "Stale client template",
         fields: [{ key: "wrong", label: "Wrong field", required: true, multiline: false }],
-        recommendedUses: [],
       },
     })
 
@@ -546,7 +532,6 @@ describe("AgentImportService", () => {
         id: "shipping-compact",
         name: "Compact Shipping Label",
         fields: [{ key: "recipient", label: "Recipient", required: true, multiline: false }],
-        recommendedUses: [],
       },
     })
     const event = templateChanged.events[0]
@@ -683,7 +668,6 @@ describe("AgentImportService", () => {
         id: "shipping-compact",
         name: "Compact Shipping Label",
         fields: [{ key: "recipient", label: "Recipient", required: true, multiline: false }],
-        recommendedUses: [],
       },
     })
     const event = requested.events[0]
@@ -725,7 +709,6 @@ describe("AgentImportService", () => {
         id: "shipping-compact",
         name: "Compact Shipping Label",
         fields: [{ key: "recipient", label: "Recipient", required: true, multiline: false }],
-        recommendedUses: [],
       },
     })
     const pendingItem = requested.proposal.items.find((item) => item.id === "new-item")
@@ -770,7 +753,6 @@ describe("AgentImportService", () => {
         id: "shipping-compact",
         name: "Compact Shipping Label",
         fields: [{ key: "recipient", label: "Recipient", required: true, multiline: false }],
-        recommendedUses: [],
       },
     })
     const event = changed.events[0]
@@ -810,7 +792,6 @@ describe("AgentImportService", () => {
         id: "cable-tag",
         name: "Cable",
         fields: [],
-        recommendedUses: [],
       },
     })
     await expect(service.confirm(session.id, secret)).rejects.toThrow("still pending")
@@ -832,7 +813,6 @@ describe("AgentImportService", () => {
           id: "missing-template",
           name: "Missing Template",
           fields: [],
-          recommendedUses: [],
         },
       },
     ]

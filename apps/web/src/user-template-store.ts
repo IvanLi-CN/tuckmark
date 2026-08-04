@@ -162,6 +162,16 @@ function buildTemplateSummary(
   }
 }
 
+function resolveRecommendedUse(
+  document: CanvasDraftDocument,
+  existing: UserTemplateRecord | null | undefined
+): string | undefined {
+  if (Object.getOwnPropertyDescriptor(document, "recommendedUse") !== undefined) {
+    return document.recommendedUse?.trim() || undefined
+  }
+  return existing?.recommendedUse
+}
+
 function normalizeVersionSnapshot(
   version: UserTemplateVersionSnapshot
 ): UserTemplateVersionSnapshot {
@@ -341,7 +351,7 @@ class MemoryUserTemplateStore implements RuntimeStore {
       archivedAt: existing?.archivedAt ?? null,
       currentVersionId: version.id,
       fieldOrder: document.fields.map((field) => field.key),
-      recommendedUses: document.recommendedUses ?? existing?.recommendedUses ?? [],
+      recommendedUse: resolveRecommendedUse(document, existing),
     }
 
     this.templates.set(templateId, template)
@@ -997,7 +1007,7 @@ class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
       archivedAt: current?.template.archivedAt ?? null,
       currentVersionId: version.id,
       fieldOrder: document.fields.map((field) => field.key),
-      recommendedUses: document.recommendedUses ?? current?.template.recommendedUses ?? [],
+      recommendedUse: resolveRecommendedUse(document, current?.template),
     }
     const workingCopy: CanvasWorkingCopyIndexEntry = {
       sourceKey: createSourceKey({ kind: "user-template", templateId }),

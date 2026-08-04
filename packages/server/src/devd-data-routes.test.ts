@@ -74,7 +74,6 @@ describe("DEVD data HTTP contract", () => {
             id: "browser-local-template",
             name: "Browser-local Mock Template",
             fields: [],
-            recommendedUses: [],
           },
           localTemplate: {},
         }),

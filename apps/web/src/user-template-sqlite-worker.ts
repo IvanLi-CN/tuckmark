@@ -196,6 +196,16 @@ function buildTemplateSummary(
   }
 }
 
+function resolveRecommendedUse(
+  document: CanvasDraftDocument,
+  existing: UserTemplateRecord | null | undefined
+): string | undefined {
+  if (Object.getOwnPropertyDescriptor(document, "recommendedUse") !== undefined) {
+    return document.recommendedUse?.trim() || undefined
+  }
+  return existing?.recommendedUse
+}
+
 function computeSnapshotUpdatedAt(snapshot: RuntimeStoreSnapshot): string | null {
   const timestamps = [
     snapshot.settings.updatedAt,
@@ -624,6 +634,7 @@ async function saveTemplate(args: RuntimeStoreSaveTemplateArgs) {
       archivedAt: existing?.archivedAt ?? null,
       currentVersionId: version.id,
       fieldOrder: document.fields.map((field) => field.key),
+      recommendedUse: resolveRecommendedUse(document, existing),
     }
     const workingCopy: CanvasWorkingCopyIndexEntry = {
       sourceKey: createSourceKey({ kind: "user-template", templateId }),

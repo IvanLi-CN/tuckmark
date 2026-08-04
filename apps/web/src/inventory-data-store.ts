@@ -40,10 +40,10 @@ export type InventoryMaterialSaveArgs = {
   variantName?: string
   packageName?: string
   description?: string
+  deviceDetails?: string
   matrixCode?: string
   packagingRemark?: string
   labelBindings?: InventoryMaterial["labelBindings"]
-  datasheets?: InventoryMaterial["datasheets"]
 }
 
 type ListInventoryMaterialsOptions = {
@@ -308,12 +308,14 @@ export async function saveInventoryMaterial(
     }
     const now = new Date().toISOString()
     const material = inventoryMaterialSchema.parse({
+      ...existing,
       id: args.id ?? createId("inventory-material"),
       fullName: args.fullName.trim(),
       baseName: sanitizeOptionalText(args.baseName),
       variantName: sanitizeOptionalText(args.variantName),
       packageName: sanitizeOptionalText(args.packageName),
       description: args.description?.trim() ?? "",
+      deviceDetails: args.deviceDetails?.trim() ?? existing?.deviceDetails ?? "",
       matrixCode: sanitizeOptionalText(args.matrixCode),
       packagingRemark: args.packagingRemark?.trim() ?? "",
       currentQuantity: existing?.currentQuantity ?? 0,
@@ -321,7 +323,6 @@ export async function saveInventoryMaterial(
       updatedAt: now,
       archivedAt: existing?.archivedAt ?? null,
       labelBindings: args.labelBindings ?? existing?.labelBindings ?? [],
-      datasheets: args.datasheets ?? existing?.datasheets ?? [],
     })
 
     ensureMaterialUniqueness(materials, material)
@@ -346,12 +347,14 @@ export async function saveInventoryMaterial(
   }
   const now = new Date().toISOString()
   const material = inventoryMaterialSchema.parse({
+    ...existing,
     id: args.id ?? createId("inventory-material"),
     fullName: args.fullName.trim(),
     baseName: sanitizeOptionalText(args.baseName),
     variantName: sanitizeOptionalText(args.variantName),
     packageName: sanitizeOptionalText(args.packageName),
     description: args.description?.trim() ?? "",
+    deviceDetails: args.deviceDetails?.trim() ?? existing?.deviceDetails ?? "",
     matrixCode: sanitizeOptionalText(args.matrixCode),
     packagingRemark: args.packagingRemark?.trim() ?? "",
     currentQuantity: existing?.currentQuantity ?? 0,
@@ -359,7 +362,6 @@ export async function saveInventoryMaterial(
     updatedAt: now,
     archivedAt: existing?.archivedAt ?? null,
     labelBindings: args.labelBindings ?? existing?.labelBindings ?? [],
-    datasheets: args.datasheets ?? existing?.datasheets ?? [],
   })
 
   ensureMaterialUniqueness(materials, material)

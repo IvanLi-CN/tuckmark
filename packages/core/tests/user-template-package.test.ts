@@ -71,6 +71,15 @@ describe("UserTemplatePackage", () => {
     expect(canvas.elements[1]).toMatchObject({ kind: "text", value: "60V 3A" })
   })
 
+  it("normalizes legacy weighted applicability metadata to scopes", () => {
+    const parsed = parseUserTemplatePackage({
+      ...componentPackage,
+      recommendedUses: [{ scope: "electronics", weight: 90 }],
+    })
+
+    expect(parsed.recommendedUse).toBe("electronics")
+  })
+
   it("lets field input override bindable element literal defaults", () => {
     const parsed = parseUserTemplatePackage({
       ...componentPackage,

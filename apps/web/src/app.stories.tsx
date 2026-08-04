@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { expect, fireEvent, userEvent, within } from "storybook/test"
+import { expect, fireEvent, userEvent, waitFor, within } from "storybook/test"
 
 import type { ApiClient } from "./api-client.js"
 import { DemoApiClient } from "./api-client.js"
@@ -172,6 +172,19 @@ async function seedUserTemplateFixtures() {
     source: { kind: "user-template", templateId: saved.template.id },
     document: autosaveDraft,
     sourceVersionId: saved.version.id,
+  })
+}
+
+async function seedSuggestedUseTemplateFixture() {
+  await resetUserTemplateStoreForTest()
+  const draft = {
+    ...createDraftFromPreset(getPresetById("ops-tag")),
+    name: "建议范围示例模板",
+    recommendedUse: "电子元器件 / 集成电路",
+  }
+  return saveUserTemplate({
+    name: draft.name,
+    document: draft,
   })
 }
 
@@ -2051,6 +2064,62 @@ export const CanvasWorkspaceUserTemplateVersions: Story = {
   },
   globals: {
     viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+}
+
+export const CanvasWorkspaceTemplateSuggestedUse: Story = {
+  loaders: [
+    async () => {
+      const saved = await seedSuggestedUseTemplateFixture()
+      return { templateId: saved.template.id }
+    },
+  ],
+  render: (_args, context) => {
+    const templateId = context.loaded?.templateId as string | null
+    return (
+      <WorkbenchAppStory
+        context={runtimeContext}
+        initialEntries={[
+          templateId ? `/canvas?source=user-template&templateId=${templateId}` : "/canvas",
+        ]}
+      />
+    )
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-desktop-editor",
+    },
+    docs: {
+      description: {
+        story:
+          "The suggested-use string is editable in the Canvas template settings and never appears in the batch-entry table.",
+      },
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-desktop-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const input = await canvas.findByRole("textbox", { name: "建议使用范围" })
+    await expect(input.tagName).toBe("TEXTAREA")
+    await expect(input).toHaveAttribute("rows", "4")
+    await expect(window.getComputedStyle(input).paddingLeft).toBe("8px")
+    await expect(window.getComputedStyle(input).paddingTop).toBe("6px")
+    await waitFor(() => expect(input).toHaveValue("电子元器件 / 集成电路"))
+    await userEvent.clear(input)
+    await userEvent.type(input, "适用于需要展示型号、封装和关键规格的集成电路及电子元器件标签。")
+    await expect(input).toHaveValue(
+      "适用于需要展示型号、封装和关键规格的集成电路及电子元器件标签。"
+    )
+    const inspectorBody = canvasElement.querySelector<HTMLElement>(
+      ".tm-pane--canvas-inspector .tm-pane__body"
+    )
+    if (!inspectorBody) {
+      throw new Error("Canvas inspector body is missing")
+    }
+    await expect(window.getComputedStyle(inspectorBody).paddingRight).toBe("12px")
+    await expect(window.getComputedStyle(inspectorBody).paddingBottom).toBe("12px")
   },
 }
 

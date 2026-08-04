@@ -16,6 +16,7 @@ describe("inventory plugin", () => {
     variantName: "DRLR",
     packageName: "SOT-583",
     description: "同步降压 28V",
+    deviceDetails: "- 输入范围：4.5V 至 28V\n- 输出：3.3V",
     matrixCode: "DM-001",
     packagingRemark: "半卷",
     currentQuantity: 12,
@@ -43,24 +44,28 @@ describe("inventory plugin", () => {
       model: "TPS62933DRLR",
       package: "SOT-583",
       remark: "手动覆盖",
+      deviceDetails: "- 输入范围：4.5V 至 28V\n- 输出：3.3V",
       quantity: "12",
       currentQuantity: "12",
     })
   })
 
-  it("only accepts HTTP(S) datasheet links", () => {
-    expect(() =>
-      inventoryMaterialSchema.parse({
-        ...material,
-        datasheets: [{ title: "Unsafe", url: "javascript:alert(1)" }],
-      })
-    ).toThrow("Datasheet URLs must use HTTP or HTTPS.")
-    expect(
-      inventoryMaterialSchema.parse({
-        ...material,
-        datasheets: [{ title: "Safe", url: "https://manufacturer.example/datasheet.pdf" }],
-      }).datasheets
-    ).toEqual([{ title: "Safe", url: "https://manufacturer.example/datasheet.pdf" }])
+  it("reads pre-existing material records with an empty device-details string", () => {
+    const legacy = inventoryMaterialSchema.parse({
+      ...material,
+      deviceDetails: undefined,
+    })
+
+    expect(legacy.deviceDetails).toBe("")
+  })
+
+  it("preserves unknown fields from legacy material records", () => {
+    const legacy = inventoryMaterialSchema.parse({
+      ...material,
+      legacyMetadata: { source: "pre-v1" },
+    })
+
+    expect(legacy).toMatchObject({ legacyMetadata: { source: "pre-v1" } })
   })
 
   it("applies correction adjustments using an absolute target quantity", () => {

@@ -6,7 +6,10 @@ import ReactDOM from "react-dom/client"
 import { afterEach, describe, expect, it } from "vitest"
 
 import type { AgentImportClient } from "./agent-import-client.js"
-import { createAgentImportDemoSession } from "./agent-import-demo-data.js"
+import {
+  createAgentImportDemoClient,
+  createAgentImportDemoSession,
+} from "./agent-import-demo-data.js"
 import { AgentImportPage } from "./agent-import-page.js"
 
 let mountedRoot: ReturnType<typeof ReactDOM.createRoot> | null = null
@@ -42,6 +45,57 @@ afterEach(async () => {
 })
 
 describe("AgentImportPage", () => {
+  it("hands off to the inventory route after a successful confirmation", async () => {
+    const seed = createAgentImportDemoSession()
+    const baseClient = createAgentImportDemoClient(seed)
+    let confirmed: string | null = null
+    const client: AgentImportClient = {
+      ...baseClient,
+      async confirm() {
+        return { ...seed, state: "completed" }
+      },
+    }
+
+    await renderNode(
+      <AgentImportPage
+        sessionId="demo-agent-import-session"
+        initialSession={seed}
+        client={client}
+        onConfirmed={(session) => {
+          confirmed = session.state
+        }}
+      />
+    )
+    await act(async () => {
+      await flush(8)
+    })
+
+    const confirmButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("确认导入选中项")
+    )
+    if (!confirmButton) {
+      throw new Error("Missing confirm import button")
+    }
+    await act(async () => {
+      confirmButton.click()
+      await flush(12)
+    })
+
+    expect(confirmed).toBe("completed")
+  })
+
+  it("does not render datasheet fields or notices", async () => {
+    const seed = createAgentImportDemoSession()
+    const client = createAgentImportDemoClient(seed)
+
+    await renderNode(<AgentImportPage initialSession={seed} client={client} />)
+    await act(async () => {
+      await flush(8)
+    })
+
+    expect(document.body.textContent).not.toContain("数据手册")
+  })
+
   it("renders restock rows from the authoritative DEVD target rather than the proposal", async () => {
     const seed = createAgentImportDemoSession({
       proposal: {
@@ -67,15 +121,18 @@ describe("AgentImportPage", () => {
       baseName: "AUTH-10K",
       packageName: "0603",
       description: "Mock DEVD target",
+      deviceDetails: "",
       packagingRemark: "reel",
       currentQuantity: 42,
       createdAt: "2030-07-28T08:00:00.000Z",
       updatedAt: "2030-07-29T08:00:00.000Z",
       archivedAt: null,
       labelBindings: [],
-      datasheets: [],
     }
     const client: AgentImportClient = {
+      async renderTemplatePreview() {
+        return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1" />'
+      },
       async getSession() {
         return seed
       },

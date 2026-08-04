@@ -357,6 +357,12 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     normalizedFields,
     source
   )
+  const hasRecommendedUse =
+    Object.getOwnPropertyDescriptor(unitDocument, "recommendedUse") !== undefined ||
+    Object.getOwnPropertyDescriptor(unitDocument, "recommendedUses") !== undefined
+  const recommendedUse = normalizeRecommendedUse(
+    unitDocument.recommendedUse ?? (unitDocument as { recommendedUses?: unknown }).recommendedUses
+  )
   return {
     ...unitDocument,
     unit: "mm",
@@ -364,6 +370,7 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     templateId: unitDocument.templateId,
     baseVersionId: unitDocument.baseVersionId,
     lastSavedAt: unitDocument.lastSavedAt,
+    ...(hasRecommendedUse ? { recommendedUse } : {}),
     editor: {
       ...unitDocument.editor,
       gridSize: normalizeCanvasGridSize(
@@ -376,6 +383,29 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     fields: synced.fields,
     elements: synced.elements,
   }
+}
+
+function normalizeRecommendedUse(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim()
+  if (Array.isArray(value)) {
+    const legacyUses = value.flatMap((entry) => {
+      if (typeof entry === "string" && entry.trim()) return [entry.trim()]
+      if (
+        entry &&
+        typeof entry === "object" &&
+        "scope" in entry &&
+        typeof entry.scope === "string"
+      ) {
+        return entry.scope.trim() ? [entry.scope.trim()] : []
+      }
+      return []
+    })
+    return legacyUses.join("；") || undefined
+  }
+  if (value && typeof value === "object" && "scope" in value && typeof value.scope === "string") {
+    return value.scope.trim() || undefined
+  }
+  return undefined
 }
 
 export function createCanvasElement(
@@ -917,7 +947,7 @@ export function createDraftFromSystemTemplate(template: TemplateDefinition): Can
     },
     width: canvasDotsToMillimeters(template.width),
     height: canvasDotsToMillimeters(template.height),
-    recommendedUses: template.recommendedUses,
+    recommendedUse: template.recommendedUse,
     fields: template.fields.map((field) => ({
       key: field.key,
       label: field.label,
@@ -954,7 +984,7 @@ export function createDraftFromUserTemplatePackage(
     })),
     elements: templatePackage.elements,
     tags: templatePackage.tags,
-    recommendedUses: templatePackage.recommendedUses ?? [],
+    recommendedUse: templatePackage.recommendedUse,
   }
 
   const draft = normalizeDraftDocument({
@@ -962,7 +992,7 @@ export function createDraftFromUserTemplatePackage(
     id: `agent-template-${templatePackage.id}`,
     presetId: templatePackage.id,
     renderOptions: templatePackage.renderOptions,
-    recommendedUses: templatePackage.recommendedUses ?? [],
+    recommendedUse: templatePackage.recommendedUse,
     source: {
       kind: "scratch",
       presetId: templatePackage.id,

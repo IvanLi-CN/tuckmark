@@ -8,37 +8,18 @@ export const agentImportTemplateFieldSchema = z.object({
 })
 export type AgentImportTemplateField = z.infer<typeof agentImportTemplateFieldSchema>
 
-export const agentImportRecommendedUseSchema = z.object({
-  scope: z.string().min(1),
-  weight: z.number().int().min(1).max(100),
-})
+export const agentImportRecommendedUseSchema = z
+  .union([z.string().trim().min(1), z.object({ scope: z.string().trim().min(1) })])
+  .transform((value) => (typeof value === "string" ? value : value.scope))
 
 export const agentImportTemplateSchema = z.object({
   source: z.enum(["system", "user-template"]),
   id: z.string().min(1),
   name: z.string().min(1),
   fields: z.array(agentImportTemplateFieldSchema).default([]),
-  recommendedUses: z.array(agentImportRecommendedUseSchema).default([]),
+  recommendedUse: agentImportRecommendedUseSchema.optional(),
 })
 export type AgentImportTemplate = z.infer<typeof agentImportTemplateSchema>
-
-export const agentImportDatasheetSchema = z
-  .object({
-    title: z.string().min(1).default("Datasheet"),
-    url: z
-      .string()
-      .url()
-      .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
-        message: "Datasheet URLs must use HTTP or HTTPS.",
-      })
-      .optional(),
-    source: z.enum(["manufacturer", "authorized-distributor"]).optional(),
-    missingReason: z.string().min(1).optional(),
-  })
-  .refine((value) => Boolean(value.url || value.missingReason), {
-    message: "A datasheet needs a URL or a missing reason.",
-  })
-export type AgentImportDatasheet = z.infer<typeof agentImportDatasheetSchema>
 
 export const agentImportMaterialSchema = z.object({
   fullName: z.string().min(1),
@@ -46,9 +27,9 @@ export const agentImportMaterialSchema = z.object({
   variantName: z.string().optional(),
   packageName: z.string().optional(),
   description: z.string().default(""),
+  deviceDetails: z.string().default(""),
   matrixCode: z.string().optional(),
   packagingRemark: z.string().default(""),
-  datasheets: z.array(agentImportDatasheetSchema).default([]),
 })
 export type AgentImportMaterial = z.infer<typeof agentImportMaterialSchema>
 

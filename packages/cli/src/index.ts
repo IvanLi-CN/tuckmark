@@ -140,8 +140,8 @@ function printHelp(): void {
       "  tuckmark template delete --id <id> [--data-dir <dir>]",
       "  tuckmark inventory list [--query <text>] [--all] [--data-dir <dir>]",
       "  tuckmark inventory show --id <id> [--data-dir <dir>]",
-      "  tuckmark inventory create --full-name <name> [--base-name <name>] [--variant-name <name>] [--package-name <name>] [--description <text>] [--matrix-code <code>] [--packaging-remark <text>] [--bindings <json>] [--data-dir <dir>]",
-      "  tuckmark inventory update --id <id> [--full-name <name>] [--base-name <name>] [--variant-name <name>] [--package-name <name>] [--description <text>] [--matrix-code <code>] [--packaging-remark <text>] [--bindings <json>] [--data-dir <dir>]",
+      "  tuckmark inventory create --full-name <name> [--base-name <name>] [--variant-name <name>] [--package-name <name>] [--description <text>] [--device-details <markdown>] [--matrix-code <code>] [--packaging-remark <text>] [--bindings <json>] [--data-dir <dir>]",
+      "  tuckmark inventory update --id <id> [--full-name <name>] [--base-name <name>] [--variant-name <name>] [--package-name <name>] [--description <text>] [--device-details <markdown>] [--matrix-code <code>] [--packaging-remark <text>] [--bindings <json>] [--data-dir <dir>]",
       "  tuckmark inventory archive --id <id> [--data-dir <dir>]",
       "  tuckmark inventory restore --id <id> [--data-dir <dir>]",
       "  tuckmark agent-import catalog --devd-url <url>",
@@ -963,6 +963,9 @@ async function handleInventoryCommand(args: string[]): Promise<void> {
           ...(parseFlag(rest, "--description")
             ? { description: requireFlag(rest, "--description") }
             : {}),
+          ...(parseFlag(rest, "--device-details")
+            ? { deviceDetails: requireFlag(rest, "--device-details") }
+            : {}),
           ...(parseFlag(rest, "--matrix-code")
             ? { matrixCode: requireFlag(rest, "--matrix-code") }
             : {}),
@@ -998,6 +1001,7 @@ async function handleInventoryCommand(args: string[]): Promise<void> {
             ? { packageName: parseFlag(rest, "--package-name") ?? current.packageName ?? "" }
             : {}),
           description: parseFlag(rest, "--description") ?? current.description,
+          deviceDetails: parseFlag(rest, "--device-details") ?? current.deviceDetails,
           ...(parseFlag(rest, "--matrix-code") || current.matrixCode
             ? { matrixCode: parseFlag(rest, "--matrix-code") ?? current.matrixCode ?? "" }
             : {}),

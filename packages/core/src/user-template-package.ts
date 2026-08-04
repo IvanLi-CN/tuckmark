@@ -9,9 +9,11 @@ import {
 import {
   type DirectCanvasDefinition,
   directCanvasSchema,
+  normalizeTemplateRecommendedUse,
   renderOptionsSchema,
   type TemplateElement,
   templateElementSchema,
+  templateRecommendedUseSchema,
 } from "./types.js"
 
 export const userTemplatePackageFieldSchema = z.object({
@@ -42,21 +44,22 @@ export const userTemplatePackageSchema = z.object({
   sampleInput: z.record(z.string(), z.string()).default({}),
   renderOptions: renderOptionsSchema.partial().default({}),
   tags: z.array(z.string().min(1)).default([]),
-  recommendedUses: z
-    .array(
-      z.object({
-        scope: z.string().min(1),
-        weight: z.number().int().min(1).max(100),
-      })
-    )
-    .optional(),
+  recommendedUse: templateRecommendedUseSchema.optional(),
+  // Read packages exported before the scope model was corrected to one suggestion string.
+  recommendedUses: z.array(templateRecommendedUseSchema).optional(),
 })
 export type UserTemplatePackage = z.infer<typeof userTemplatePackageSchema>
 
 export function parseUserTemplatePackage(input: unknown): UserTemplatePackage {
   const parsed = userTemplatePackageSchema.parse(input)
-  validateUserTemplatePackageSemantics(parsed)
-  return parsed
+  const normalized = {
+    ...parsed,
+    recommendedUse:
+      parsed.recommendedUse ?? normalizeTemplateRecommendedUse(parsed.recommendedUses),
+  }
+  delete (normalized as { recommendedUses?: unknown }).recommendedUses
+  validateUserTemplatePackageSemantics(normalized)
+  return normalized
 }
 
 export function compileUserTemplatePackageToCanvas(

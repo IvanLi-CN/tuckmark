@@ -81,6 +81,38 @@ describe("user-template-store", () => {
     expect(workingCopy?.draft.fields[0]?.defaultValue).toBe("Dock A-17")
   })
 
+  it("persists and clears the suggested usage metadata", async () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    draft.recommendedUse = "用于仓储周转标签"
+    const saved = await saveUserTemplate({
+      name: "Warehouse Label",
+      document: draft,
+    })
+
+    expect((await readUserTemplate(saved.template.id))?.recommendedUse).toBe("用于仓储周转标签")
+
+    const unchangedDraft = structuredClone(saved.workingCopy.draft)
+    delete unchangedDraft.recommendedUse
+    const unchangedSave = await saveUserTemplate({
+      name: "Warehouse Label",
+      templateId: saved.template.id,
+      sourceVersionId: saved.version.id,
+      document: unchangedDraft,
+    })
+    expect(unchangedSave.template.recommendedUse).toBe("用于仓储周转标签")
+
+    const clearedDraft = structuredClone(unchangedSave.workingCopy.draft)
+    clearedDraft.recommendedUse = ""
+    await saveUserTemplate({
+      name: "Warehouse Label",
+      templateId: saved.template.id,
+      sourceVersionId: unchangedSave.version.id,
+      document: clearedDraft,
+    })
+
+    expect((await readUserTemplate(saved.template.id))?.recommendedUse).toBeUndefined()
+  })
+
   it("creates autosaves only for named user templates and respects the autosave interval", async () => {
     const draft = createDraftFromPreset(getPresetById("ops-tag"))
     const saved = await saveUserTemplate({
