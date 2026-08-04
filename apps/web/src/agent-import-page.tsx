@@ -34,6 +34,7 @@ import {
   TooltipTrigger,
 } from "./components/ui/tooltip.js"
 import { cn } from "./lib/utils.js"
+import { resolveBasePath } from "./runtime.js"
 
 type ItemDraft = AgentImportItemDraft
 
@@ -42,6 +43,7 @@ type AgentImportPageProps = {
   secret?: string
   client?: AgentImportClient
   initialSession?: AgentImportSession
+  onConfirmed?: (session: AgentImportSession) => void
 }
 
 const defaultAgentImportClient = new HttpAgentImportClient()
@@ -85,6 +87,7 @@ export function AgentImportPage({
   secret = secretFromLocation(),
   client = defaultAgentImportClient,
   initialSession,
+  onConfirmed,
 }: AgentImportPageProps) {
   const [session, setSession] = React.useState<AgentImportSession | null>(initialSession ?? null)
   const [drafts, setDrafts] = React.useState<Record<string, ItemDraft>>(() =>
@@ -287,14 +290,22 @@ export function AgentImportPage({
           })
         )
       }
-      applySession(await client.confirm(sessionId, secret ?? ""))
+      const completedSession = await client.confirm(sessionId, secret ?? "")
+      applySession(completedSession)
+      if (onConfirmed) {
+        onConfirmed(completedSession)
+      } else if (typeof window !== "undefined") {
+        const basePath = resolveBasePath(import.meta.env as Record<string, string | undefined>)
+        const inventoryPath = `${basePath === "/" ? "" : basePath}/inventory`
+        window.location.replace(inventoryPath)
+      }
       setError(null)
     } catch (confirmError) {
       setError(confirmError instanceof Error ? confirmError.message : "确认导入失败。")
     } finally {
       setConfirming(false)
     }
-  }, [applySession, client, drafts, secret, sessionId])
+  }, [applySession, client, drafts, onConfirmed, secret, sessionId])
 
   if (loading) {
     return <AgentImportLoading />

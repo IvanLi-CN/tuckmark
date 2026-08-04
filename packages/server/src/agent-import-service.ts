@@ -37,10 +37,13 @@ const sharedTemplateRecordSchema = z
     // Read old shared records without exposing the retired collection field.
     recommendedUses: z.array(agentImportRecommendedUseSchema).optional(),
   })
-  .transform(({ recommendedUses, ...record }) => ({
-    ...record,
-    recommendedUse: record.recommendedUse ?? recommendedUses?.join("；"),
-  }))
+  .transform(({ recommendedUses, ...record }) => {
+    const legacyRecommendedUse = recommendedUses?.filter(Boolean).join("；") || undefined
+    return {
+      ...record,
+      recommendedUse: record.recommendedUse ?? legacyRecommendedUse,
+    }
+  })
 
 const sharedTemplateVersionSchema = z.object({
   document: z.object({

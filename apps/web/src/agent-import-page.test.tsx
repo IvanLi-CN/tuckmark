@@ -45,6 +45,45 @@ afterEach(async () => {
 })
 
 describe("AgentImportPage", () => {
+  it("hands off to the inventory route after a successful confirmation", async () => {
+    const seed = createAgentImportDemoSession()
+    const baseClient = createAgentImportDemoClient(seed)
+    let confirmed: string | null = null
+    const client: AgentImportClient = {
+      ...baseClient,
+      async confirm() {
+        return { ...seed, state: "completed" }
+      },
+    }
+
+    await renderNode(
+      <AgentImportPage
+        sessionId="demo-agent-import-session"
+        initialSession={seed}
+        client={client}
+        onConfirmed={(session) => {
+          confirmed = session.state
+        }}
+      />
+    )
+    await act(async () => {
+      await flush(8)
+    })
+
+    const confirmButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("确认导入选中项")
+    )
+    if (!confirmButton) {
+      throw new Error("Missing confirm import button")
+    }
+    await act(async () => {
+      confirmButton.click()
+      await flush(12)
+    })
+
+    expect(confirmed).toBe("completed")
+  })
+
   it("does not render datasheet fields or notices", async () => {
     const seed = createAgentImportDemoSession()
     const client = createAgentImportDemoClient(seed)

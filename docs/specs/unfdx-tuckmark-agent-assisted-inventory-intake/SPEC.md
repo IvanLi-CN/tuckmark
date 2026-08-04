@@ -50,6 +50,8 @@ Template changes use DEVD catalog records and create field-completion events. Br
 
 Confirmation writes are server-owned and recoverable. Selected new items create one material, one label binding, and one inbound adjustment. Selected restocks create only an inbound adjustment for an active existing material. The service serializes commits, accumulates repeated restocks against the latest in-transaction quantity, retains the global matrix-code uniqueness invariant, and refreshes the shared directory manifest. Missing targets, archived targets, conflicts, or concurrent changes abort the transaction without partial visible writes.
 
+After a successful confirmation, the Web page leaves the expiring session route and replaces it with the active Web base path's `/inventory` route so the user can inspect the committed materials and inventory adjustments immediately. Failed confirmations remain on the confirmation page with an error.
+
 ### DEVD Data Ownership
 
 In `server-http`, DEVD is the sole owner of templates, versions, working copies, application settings, inventory, backups, and archive imports. The Web app uses resource command endpoints with a persisted global revision; every mutation supplies `expectedRevision`, and stale writes receive `409 revision_conflict`. SSE events contain only the revision, affected domains, and reason, allowing open Web clients to invalidate and refetch without exposing business data, paths, session keys, or import contents.
