@@ -52,4 +52,11 @@ describe("MarkdownContent", () => {
 
     expect(document.body.textContent).toContain("未填写设备详细信息。")
   })
+
+  it("renders remote images as inert alternative text", async () => {
+    await renderNode(<MarkdownContent value="![跟踪像素](https://tracker.example/pixel)" />)
+
+    expect(document.querySelector("img")).toBeNull()
+    expect(document.body.textContent).toContain("跟踪像素")
+  })
 })

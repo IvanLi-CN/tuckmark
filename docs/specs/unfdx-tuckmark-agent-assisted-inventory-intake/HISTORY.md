@@ -4,6 +4,8 @@
 
 The capability is intentionally orchestrated by the user's Agent. This separates private order interpretation and optional browser research from Tuckmark's deterministic storage and confirmation surfaces.
 
+Device-detail Markdown never loads remote images automatically. Image syntax degrades to its alternative text so externally supplied evidence cannot turn an inventory view into an implicit network request.
+
 ## Template Suggested Use
 
 The template suggested-use string describes where a template is suitable; it does not encode a cross-template score. Agents choose and order up to three new-material candidates from material evidence, while restocks keep their existing binding.

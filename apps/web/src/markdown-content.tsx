@@ -49,6 +49,7 @@ export function MarkdownContent({
               <span>{children}</span>
             )
           },
+          img: ({ alt }) => <span>{alt || "图片"}</span>,
         }}
       >
         {source}

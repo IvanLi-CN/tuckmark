@@ -30,7 +30,7 @@ The Agent decides material identity. It may set `needsAttention` when it is unce
 
 The Agent derives label print quantity from storage packages or independently labeled units rather than copying the inventory quantity. The confirmation table exposes it as an independently editable value and DEVD persists it on the created label binding. Older proposals without the field remain compatible and default to one.
 
-Each proposed material uses `description` as a concise overview and `deviceDetails` as one Markdown-capable string for factual device details. It is not a nested attribute structure and Tuckmark does not infer additional fields from it. The confirmation workspace edits the source string without adding a duplicate inline rendering; inventory read surfaces may render the same string without raw HTML; confirmed new-material writes retain the same string. Older material records and proposals read with an empty `deviceDetails` value.
+Each proposed material uses `description` as a concise overview and `deviceDetails` as one Markdown-capable string for factual device details. It is not a nested attribute structure and Tuckmark does not infer additional fields from it. The confirmation workspace edits the source string without adding a duplicate inline rendering; inventory read surfaces may render the same string without raw HTML or remote image requests; confirmed new-material writes retain the same string. Markdown image syntax renders only inert alternative text. Older material records and proposals read with an empty `deviceDetails` value.
 
 ### Template Catalog
 

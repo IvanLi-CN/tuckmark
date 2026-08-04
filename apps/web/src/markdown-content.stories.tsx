@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { expect, within } from "storybook/test"
 
 import { MarkdownContent } from "./markdown-content.js"
 
@@ -24,5 +25,16 @@ export const TechnicalDetails: Story = {
 export const EmptyDetails: Story = {
   args: {
     value: "",
+  },
+}
+
+export const RemoteImageIsInert: Story = {
+  args: {
+    value: "外部证据：![跟踪像素](https://tracker.example/pixel)",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByRole("img")).not.toBeInTheDocument()
+    await expect(canvas.getByText("跟踪像素")).toBeInTheDocument()
   },
 }
