@@ -288,11 +288,18 @@ const canvasDraftDocumentSchema = z
     }),
   })
   .passthrough()
-  .transform(({ recommendedUses, ...document }) => ({
-    ...document,
-    recommendedUse:
-      normalizeRecommendedUse(document.recommendedUse) ?? normalizeRecommendedUse(recommendedUses),
-  }))
+  .transform(({ recommendedUses, ...document }) => {
+    if (Object.getOwnPropertyDescriptor(document, "recommendedUse") !== undefined) {
+      return {
+        ...document,
+        recommendedUse: normalizeRecommendedUse(document.recommendedUse),
+      }
+    }
+    const legacyRecommendedUse = normalizeRecommendedUse(recommendedUses)
+    return legacyRecommendedUse === undefined
+      ? document
+      : { ...document, recommendedUse: legacyRecommendedUse }
+  })
 
 const userTemplateRecordSchema = z
   .object({

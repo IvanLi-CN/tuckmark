@@ -10,6 +10,8 @@ The template suggested-use string describes where a template is suitable; it doe
 
 The Canvas workspace keeps the selected template's one suggested-use string in its template settings so authors can edit the same Agent-facing catalog context without introducing a second scoring model or polluting batch-entry data.
 
+Suggested-use persistence keeps field presence meaningful: omission means the author did not edit the metadata, while a present empty string means the author intentionally cleared it. This preserves recommendations when older drafts are opened and saved without adding the field.
+
 ## Unified DEVD Data Plane
 
 The main Web runtime and Agent Import share one DEVD transaction and revision authority. This removes split ownership between browser RuntimeStore and server inventory files, while keeping the static browser-only product deliberately independent.

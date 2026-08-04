@@ -10,7 +10,10 @@ import { promisify } from "node:util"
 import { afterEach, beforeAll, describe, expect, it } from "vitest"
 
 import { deriveAgentImportWebUrl } from "./agent-import-url.js"
-import { resolveInventoryPrintSource } from "./shared-data-directory.js"
+import {
+  readSharedUserTemplateDetail,
+  resolveInventoryPrintSource,
+} from "./shared-data-directory.js"
 
 const execFileAsync = promisify(execFile)
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
@@ -448,8 +451,19 @@ describe("cli smoke", () => {
     const workingCopy = JSON.parse(await readFile(workingCopyPath, "utf8")) as {
       draft: { recommendedUse?: string }
     }
+    const unchangedDetail = await readSharedUserTemplateDetail(dataDir, "component-bin-sot23")
+    expect(
+      Object.getOwnPropertyDescriptor(unchangedDetail?.workingCopy?.draft ?? {}, "recommendedUse")
+    ).toBeUndefined()
+
     workingCopy.draft.recommendedUse = ""
     await writeFile(workingCopyPath, `${JSON.stringify(workingCopy)}\n`)
+
+    const clearedDetail = await readSharedUserTemplateDetail(dataDir, "component-bin-sot23")
+    expect(
+      Object.getOwnPropertyDescriptor(clearedDetail?.workingCopy?.draft ?? {}, "recommendedUse")
+    ).toBeDefined()
+    expect(clearedDetail?.workingCopy?.draft.recommendedUse).toBeUndefined()
 
     const showResult = JSON.parse(
       (await runCli(["template", "show", "--id", "component-bin-sot23", "--data-dir", dataDir]))
