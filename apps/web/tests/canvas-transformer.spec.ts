@@ -1,12 +1,23 @@
-import { expect, test } from "@playwright/test"
+import { expect, type Page, test } from "@playwright/test"
 
 function numberValue(value: string): number {
   return Number.parseFloat(value)
 }
 
-async function selectRectangleLayer(page: import("@playwright/test").Page) {
+async function selectRectangleLayer(page: Page) {
   const layerButton = page.getByRole("button", { name: "图层 1 矩形" })
-  await layerButton.click({ force: true })
+  await layerButton.evaluate((element) => {
+    const scrollContainer = element.closest<HTMLElement>(".tm-pane__body")
+    if (!scrollContainer) {
+      throw new Error("Canvas inspector scroll container is missing")
+    }
+    const elementRect = element.getBoundingClientRect()
+    const containerRect = scrollContainer.getBoundingClientRect()
+    scrollContainer.scrollTop +=
+      elementRect.top - containerRect.top - containerRect.height / 2 + elementRect.height / 2
+  })
+  await expect(layerButton).toBeVisible()
+  await layerButton.click()
 }
 
 test("dragging a Transformer corner resizes the selected rectangle without translating its fixed edge", async ({
