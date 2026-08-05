@@ -7,9 +7,9 @@
   },
   "scripts": {
     "prebuild": "bun --cwd=../../packages/core run build && bun --cwd=../../packages/ipc run build && bun --cwd=../../plugins/inventory run build",
-    "pretest": "bun --cwd=../../plugins/inventory run build",
+    "pretest": "bun --cwd=../../packages/ipc run build && bun --cwd=../../plugins/inventory run build",
     "pretypecheck": "bun --cwd=../../packages/core run build && bun --cwd=../../packages/ipc run build && bun --cwd=../../plugins/inventory run build",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "dev": "tsx --tsconfig tsconfig.typecheck.json src/index.ts --help",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.typecheck.json"

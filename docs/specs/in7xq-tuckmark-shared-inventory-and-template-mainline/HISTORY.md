@@ -17,3 +17,7 @@ Runtime-template synchronization was subsequently constrained to preserve the
 inventory subtree. Inventory is now included in local and directory-backed
 runtime archive flows, and explicit manual print quantities are validated and
 executed as actual copies instead of label-field data only.
+- The native CLI boundary moved behind named DEVD IPC. Direct CLI data-directory
+  reads/writes and HTTP URL fallback were removed; inventory print now resolves
+  and renders bindings inside DEVD, and multiple named instances support
+  parallel project development.

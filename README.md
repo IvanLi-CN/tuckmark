@@ -56,15 +56,31 @@ An external Agent can interpret an order, optionally inspect an already-authoriz
 product page, then submit a `tuckmark.agent-import.v1` proposal to a DEVD
 `server-http` instance that owns the shared local directory.
 
-In `server-http`, DEVD exclusively owns templates, drafts, application settings, inventory, backups, and archive operations. The Web app uses `/api/data` revisioned commands and SSE invalidation; browser directory authorization is not used as a fallback. Both Web surfaces write the same `tuckmark.runtime-export-archive.v1` directory-tree ZIP: `archive.json` metadata, `manifest.json`, settings, template records and versions, working copies, materials, and adjustment records. Imports reject missing required files or manifest-count mismatches; previously downloaded `tuckmark.data-archive.v1` single-snapshot ZIP files remain importable. For development and tests, always point `TUCKMARK_DATA_DIR` at a fresh temporary fixture directory.
+In `server-http`, DEVD exclusively owns templates, drafts, application settings, inventory, backups, and archive operations. Web requests use `/api/data` over HTTP; native CLI and Agent Import requests use the named local IPC endpoint. macOS/Linux use a Unix socket and Windows uses a Named Pipe. Every native command requires `--instance <name>` or `TUCKMARK_DEVD_INSTANCE`; the instance name is never inferred from a data directory or URL. Both Web surfaces write the same `tuckmark.runtime-export-archive.v1` directory-tree ZIP: `archive.json` metadata, `manifest.json`, settings, template records and versions, working copies, materials, and adjustment records. Imports reject missing required files or manifest-count mismatches; previously downloaded `tuckmark.data-archive.v1` single-snapshot ZIP files remain importable.
 
-Start DEVD with `TUCKMARK_DATA_DIR` set. Agent commands require `--devd-url`
-or `TUCKMARK_DEVD_URL`:
+Start DEVD with `TUCKMARK_DATA_DIR` and an explicit `TUCKMARK_DEVD_INSTANCE`.
+The data directory is a DEVD-only server setting; the CLI never reads or writes
+it. Legacy `--data-dir`, `--devd-url`, and `TUCKMARK_DEVD_URL` inputs return a
+migration error without an HTTP fallback.
 
-- `tuckmark agent-import catalog --devd-url <url>` lists system and shared-directory templates, including suggested scopes.
-- `tuckmark agent-import inventory --devd-url <url>` lists active inventory for Agent identity decisions.
-- `tuckmark agent-import create --file <proposal.json> --devd-url <url> [--web-url <url>]` opens the user confirmation page; `--no-open` supports headless Agents. `--web-url` selects the Web origin independently from the API origin. In the standard local `5210`/`5173` preview pairing, the CLI derives `5173` when omitted.
-- `tuckmark agent-import wait` and `fulfill` let an Agent handle field contracts after the user changes a new-material template.
+- `tuckmark agent-import catalog --instance <name>` lists system and shared-directory templates, including suggested scopes.
+- `tuckmark agent-import inventory --instance <name>` lists active inventory for Agent identity decisions.
+- `tuckmark agent-import create --file <proposal.json> --instance <name> [--web-url <url>]` opens the user confirmation page; `--no-open` supports headless Agents. `--web-url` selects the Web origin independently from the local IPC endpoint.
+- `tuckmark agent-import wait` and `fulfill` use the instance stored in the credential file (or an explicit `--instance`) to handle field contracts after the user changes a new-material template.
+
+User template lifecycle commands use the same named IPC boundary:
+`template list`, `show`, `import`, `update`, `rename`, `archive`, `restore`,
+and `delete`. Metadata updates patch `name`, `description`, and
+`recommendedUse` without creating a saved version; complete package imports
+create a saved version. System templates are read-only, stale revisions fail
+explicitly, and permanent deletes require the CLI command itself to target a
+user template.
+
+The MCP server does not accept or derive a DEVD address. Deployments inject an
+authoritative template data service for `list`, `get`, package create/update,
+metadata update, rename, archive, restore, and delete tools. The injected
+service owns revision checks and filesystem access; permanent deletion requires
+an explicit confirmation parameter.
 
 The confirmation page keeps **new items** and **inventory restocks** separate. It
 does not force a material-identity confirmation: uncertainty is a non-blocking
@@ -95,6 +111,7 @@ Default URLs:
 
 - Web UI: `http://127.0.0.1:5173/`
 - API health: `http://127.0.0.1:5210/health`
+- Native DEVD instance: `preview` (override with `TUCKMARK_DEVD_INSTANCE`)
 
 ### When to use each command
 
@@ -155,10 +172,10 @@ Override ports or runtime wiring with:
 
 - Tuckmark Web now keeps runtime state behind one storage boundary instead of scattering browser keys across page code.
 - Supported Chromium desktop / installed-PWA surfaces prefer `SQLite Wasm + OPFS` for runtime-local drafts, recent activity, and migration state.
-- A configured data directory is an optional unified data location for user templates and inventory:
-  - Web `/templates`, `/canvas`, `/inventory`, and `/system` can point at the same versioned JSON tree
-  - CLI `config set-data-dir`, `template`, and `inventory` commands target that same directory
-  - installed PWA and CLI can therefore share one dataset without import / export hops
+- A configured data directory is a DEVD-owned unified data location for user templates and inventory:
+  - Web `/templates`, `/canvas`, `/inventory`, and `/system` use the DEVD HTTP resource API
+  - CLI `template`, `inventory`, and Agent Import commands use named IPC instances
+  - installed PWA and CLI share one dataset through DEVD without direct file access
 - `/system` owns data-directory workflows:
   - authorize or switch a user-chosen directory
   - initialize, import, or overwrite the versioned JSON tree in that directory

@@ -8,6 +8,7 @@ import {
   safeTextLabelSchema,
   TuckmarkService,
   type TuckmarkService as TuckmarkServiceType,
+  userTemplatePackageSchema,
 } from "@tuckmark/core"
 import * as z from "zod/v4"
 
@@ -29,6 +30,25 @@ export type McpService = Pick<
   | "getArtifact"
   | "getArtifactPackets"
 >
+
+/** Deployment-owned template data boundary. It deliberately contains no DEVD address or filesystem API. */
+export type McpTemplateDataService = {
+  list(args: { includeArchived: boolean }): Promise<unknown>
+  get(templateId: string): Promise<unknown>
+  createOrUpdatePackage(args: {
+    templatePackage: unknown
+    expectedRevision: number
+  }): Promise<unknown>
+  updateMetadata(args: {
+    templateId: string
+    patch: { name?: string; description?: string; recommendedUse?: string }
+    expectedRevision: number
+  }): Promise<unknown>
+  rename(args: { templateId: string; name: string; expectedRevision: number }): Promise<unknown>
+  archive(args: { templateId: string; expectedRevision: number }): Promise<unknown>
+  restore(args: { templateId: string; expectedRevision: number }): Promise<unknown>
+  delete(args: { templateId: string; expectedRevision: number }): Promise<unknown>
+}
 
 const renderOptionsSchema = z.object({
   printWidthDots: z.number().int().positive().optional(),
@@ -53,9 +73,26 @@ function readTemplateVariable(value: string | string[] | undefined, name: string
   throw new Error(`Missing resource template variable: ${name}`)
 }
 
+function requireTemplateDataService(
+  templateDataService: McpTemplateDataService | undefined
+): McpTemplateDataService {
+  if (!templateDataService) {
+    throw new Error("Template management is unavailable: inject the deployment data service.")
+  }
+  return templateDataService
+}
+
+function templateResult(data: unknown) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
+    structuredContent: (data ?? {}) as Record<string, unknown>,
+  }
+}
+
 export function registerServer(
   server: McpServer,
-  service: McpService = new TuckmarkService()
+  service: McpService = new TuckmarkService(),
+  templateDataService?: McpTemplateDataService
 ): McpServer {
   server.registerTool(
     "list_printers",
@@ -104,6 +141,136 @@ export function registerServer(
         structuredContent: { templates },
       }
     }
+  )
+
+  server.registerTool(
+    "template_list",
+    {
+      title: "List Managed Templates",
+      description: "List user templates from the injected authoritative data service",
+      inputSchema: z.object({ includeArchived: z.boolean().default(false) }),
+    },
+    async ({ includeArchived }) =>
+      templateResult(
+        await requireTemplateDataService(templateDataService).list({ includeArchived })
+      )
+  )
+
+  server.registerTool(
+    "template_get",
+    {
+      title: "Get Managed Template",
+      description: "Get one user template and its current document from the injected data service",
+      inputSchema: z.object({ templateId: z.string().min(1) }),
+    },
+    async ({ templateId }) =>
+      templateResult(await requireTemplateDataService(templateDataService).get(templateId))
+  )
+
+  server.registerTool(
+    "template_create_or_update_package",
+    {
+      title: "Create or Update Template Package",
+      description: "Create or update a complete user template package",
+      inputSchema: z.object({
+        templatePackage: userTemplatePackageSchema,
+        expectedRevision: z.number().int().min(0),
+      }),
+    },
+    async ({ templatePackage, expectedRevision }) =>
+      templateResult(
+        await requireTemplateDataService(templateDataService).createOrUpdatePackage({
+          templatePackage,
+          expectedRevision,
+        })
+      )
+  )
+
+  server.registerTool(
+    "template_update_metadata",
+    {
+      title: "Update Template Metadata",
+      description: "Patch user template metadata without creating a saved version",
+      inputSchema: z.object({
+        templateId: z.string().min(1),
+        expectedRevision: z.number().int().min(0),
+        patch: z
+          .object({
+            name: z.string().trim().min(1).optional(),
+            description: z.string().trim().optional(),
+            recommendedUse: z.string().trim().optional(),
+          })
+          .strict()
+          .refine((value) => Object.keys(value).length > 0, "Metadata patch is empty."),
+      }),
+    },
+    async ({ templateId, expectedRevision, patch }) =>
+      templateResult(
+        await requireTemplateDataService(templateDataService).updateMetadata({
+          templateId,
+          expectedRevision,
+          patch: {
+            ...(patch.name !== undefined ? { name: patch.name } : {}),
+            ...(patch.description !== undefined ? { description: patch.description } : {}),
+            ...(patch.recommendedUse !== undefined ? { recommendedUse: patch.recommendedUse } : {}),
+          },
+        })
+      )
+  )
+
+  for (const [name, title, method] of [
+    ["template_rename", "Rename Managed Template", "rename"],
+    ["template_archive", "Archive Managed Template", "archive"],
+    ["template_restore", "Restore Managed Template", "restore"],
+  ] as const) {
+    server.registerTool(
+      name,
+      {
+        title,
+        description: `${title} through the injected authoritative data service`,
+        inputSchema:
+          method === "rename"
+            ? z.object({
+                templateId: z.string().min(1),
+                name: z.string().trim().min(1),
+                expectedRevision: z.number().int().min(0),
+              })
+            : z.object({
+                templateId: z.string().min(1),
+                expectedRevision: z.number().int().min(0),
+              }),
+      },
+      async (input) => {
+        const data = requireTemplateDataService(templateDataService)
+        const result =
+          method === "rename"
+            ? await data.rename(
+                input as { templateId: string; name: string; expectedRevision: number }
+              )
+            : await data[method](input as { templateId: string; expectedRevision: number })
+        return templateResult(result)
+      }
+    )
+  }
+
+  server.registerTool(
+    "template_delete",
+    {
+      title: "Delete Managed Template",
+      description: "Permanently delete a user template after explicit confirmation",
+      inputSchema: z.object({
+        templateId: z.string().min(1),
+        expectedRevision: z.number().int().min(0),
+        confirmPermanentDelete: z.literal(true),
+      }),
+    },
+    async ({ templateId, expectedRevision }) =>
+      templateResult(
+        await requireTemplateDataService(templateDataService).delete({
+          templateId,
+          expectedRevision,
+        })
+      )
   )
 
   server.registerTool(
@@ -438,8 +605,15 @@ export function registerServer(
   return server
 }
 
-export function createServer(service: McpService = new TuckmarkService()): McpServer {
-  return registerServer(new McpServer({ name: "tuckmark", version: "0.1.0" }), service)
+export function createServer(
+  service: McpService = new TuckmarkService(),
+  templateDataService?: McpTemplateDataService
+): McpServer {
+  return registerServer(
+    new McpServer({ name: "tuckmark", version: "0.1.0" }),
+    service,
+    templateDataService
+  )
 }
 
 async function main(): Promise<void> {

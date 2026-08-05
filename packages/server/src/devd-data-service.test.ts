@@ -269,6 +269,41 @@ describe("DevdDataService", () => {
     expect((await service.runtimeSnapshot()).templates[0]?.recommendedUse).toBeUndefined()
   })
 
+  it("patches user metadata without creating a version and syncs the working copy", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const created = await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: 0,
+      args: {
+        name: "Metadata template",
+        document: { ...mockDocument("Metadata template"), recommendedUse: "electronics" },
+      },
+    })
+    const templateId = created.data.template.id as string
+    const before = await service.runtimeSnapshot()
+    const updated = await service.mutateRuntime({
+      command: "update-template-metadata",
+      expectedRevision: created.revision,
+      args: {
+        templateId,
+        patch: { description: "Updated metadata", recommendedUse: "" },
+      },
+    })
+    expect(updated.revision).toBe(created.revision + 1)
+    const after = await service.runtimeSnapshot()
+    expect(after.versions.filter((version) => version.templateId === templateId)).toHaveLength(
+      before.versions.filter((version) => version.templateId === templateId).length
+    )
+    expect(after.templates[0]).toMatchObject({
+      id: templateId,
+      description: "Updated metadata",
+    })
+    expect(after.templates[0]?.recommendedUse).toBeUndefined()
+    expect(after.workingCopies[0]?.draft.recommendedUse).toBeUndefined()
+  })
+
   it("retains bounded saved and autosaved versions at the established cadence", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-07-01T00:00:00.000Z"))

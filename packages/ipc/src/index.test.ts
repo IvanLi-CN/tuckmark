@@ -21,7 +21,7 @@ describe("DEVD IPC endpoint", () => {
   it("derives a stable per-user endpoint", () => {
     const endpoint = resolveIpcEndpoint("preview")
     expect(endpoint.instance).toBe("preview")
-    expect(endpoint.address).toContain("preview")
+    expect(endpoint.address).toContain("t-")
     expect(["unix", "pipe"]).toContain(endpoint.transport)
   })
 })

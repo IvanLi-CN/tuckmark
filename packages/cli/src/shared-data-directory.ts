@@ -469,7 +469,7 @@ function syncDraftBindings(
   }
 }
 
-function createDraftFromUserTemplatePackage(
+export function createDraftFromUserTemplatePackage(
   templatePackage: UserTemplatePackage,
   options?: {
     templateId?: string

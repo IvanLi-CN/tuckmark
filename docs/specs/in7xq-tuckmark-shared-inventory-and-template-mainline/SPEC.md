@@ -6,11 +6,11 @@
 
 ## Summary
 
-Tuckmark keeps user templates and inventory in browser-local storage by
-default. A configurable data-directory path is optional: when attached, Web,
-CLI, and an installed PWA can access one versioned JSON tree. It does not
-define a separate "shared template" category: user templates remain the same
-"我的模板" across both storage locations.
+Tuckmark keeps browser-static user templates and inventory local to the browser.
+In `server-http`, DEVD owns the configured data directory and is the sole
+business-data authority. Web uses HTTP resource commands; CLI and installed
+native tools use named IPC instances. It does not define a separate "shared
+template" category: user templates remain the same "我的模板" records.
 
 This round also introduces `/inventory` as a top-level workbench route and
 `plugins/inventory` as the shared domain boundary for material records, stock
@@ -60,11 +60,13 @@ built-in.
 - Without an attached directory, Web persists user templates and inventory in
   its browser-local runtime storage. Attaching a directory deliberately moves
   the Web persistence surface to that directory for cross-surface access.
-- CLI resolves the directory in this priority order:
-  - `--data-dir`
-  - saved default directory
-  - explicit error
-- Tuckmark does not introduce a background helper or daemon in this round.
+- CLI does not resolve or open a data directory. It requires `--instance` or
+  `TUCKMARK_DEVD_INSTANCE` and sends data commands through DEVD IPC. Legacy
+  `--data-dir`, `--devd-url`, and `TUCKMARK_DEVD_URL` values return a migration
+  error without fallback.
+- DEVD may expose HTTP and named IPC listeners for the same app. macOS/Linux
+  use Unix sockets and Windows uses Named Pipes; instance names are explicit so
+  multiple development projects can run concurrently.
 
 ### Material and stock contract
 
@@ -108,8 +110,8 @@ built-in.
   - user templates from the active Web store: browser-local by default, or the
     configured directory when attached
 - `/canvas` remains the only WYSIWYG template editor.
-- CLI template lifecycle management covers user templates stored in the
-  configured directory.
+- CLI template lifecycle management covers user templates exposed by the
+  selected DEVD instance.
 - System templates remain read-only in CLI and Web lifecycle operations.
 - The legacy flat `templates` CLI command remains as a read-only compatibility
   alias for system templates.
@@ -123,8 +125,10 @@ built-in.
   not auto-trigger on stock movements.
 - Field filling defaults to same-name matching and allows per-binding override
   mappings.
-- Inventory manual print reuses the existing `browser-direct` and
-  `service-api` artifact seam. No third print path is introduced.
+- Inventory manual print is an IPC command handled by DEVD: it resolves the
+  binding, compiles the authoritative system or user-template document, and
+  controls the printer under the existing server-side print gate. No CLI file
+  or HTTP fallback is introduced.
 
 ### Web contract
 
@@ -149,7 +153,8 @@ built-in.
 ### CLI contract
 
 - `config get-data-dir` prints the effective saved default directory.
-- `config set-data-dir --path <dir>` persists the default directory.
+- `config get-data-dir` and `config set-data-dir` are retained only as migration
+  errors; DEVD startup configuration owns the data directory.
 - `template` commands cover:
   - `list`
   - `show`

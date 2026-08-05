@@ -7,6 +7,7 @@ import {
   assertServerSidePrintRuntimeReady,
   type BatchPreviewRequest,
   type CanvasDraftRecord,
+  compileCanvasDraftToDirectCanvas,
   type DirectCanvasPreviewRequest,
   directCanvasSchema,
   type PreviewRequest,
@@ -28,8 +29,9 @@ import {
   agentImportItemSchema,
   agentImportProposalSchema,
   agentImportTemplateSchema,
+  buildInventoryTemplateInput,
 } from "@tuckmark/inventory"
-import { listenIpc, resolveIpcEndpoint } from "@tuckmark/ipc"
+import { listenIpc, resolveRequiredInstance } from "@tuckmark/ipc"
 import cors from "cors"
 import express from "express"
 import { z } from "zod"
@@ -152,6 +154,18 @@ const printSafeTextLabelSchema = z.object({
   renderOptions: previewOptionsSchema.optional(),
 })
 
+const inventoryPrintBindingSchema = z.object({
+  expectedRevision: z.number().int().min(0),
+  args: z.object({
+    materialId: z.string().min(1),
+    bindingId: z.string().min(1),
+    printerId: z.string().min(1),
+    printerName: z.string().min(1).optional(),
+    quantity: z.number().int().positive().optional(),
+    renderOptions: previewOptionsSchema.optional(),
+  }),
+})
+
 const syncStateRequestSchema = syncStateSchema
 const templateUsageRecordRequestSchema = syncRecordSchema.refine(
   (value) => value.kind === "template_usage",
@@ -237,6 +251,7 @@ function sendDataError(res: express.Response, error: unknown): void {
 
 const runtimeDataCommandSchema = z.enum([
   "save-template",
+  "update-template-metadata",
   "rename-template",
   "archive-template",
   "restore-template",
@@ -310,6 +325,10 @@ export function createApp(
   app.use(express.json({ limit: "10mb" }))
 
   const requireLocalAppOrigin: express.RequestHandler = (req, res, next) => {
+    if (req.header("x-tuckmark-ipc") === "1") {
+      next()
+      return
+    }
     if (!isLoopbackClientAddress(clientAddress(req))) {
       res.status(403).json({ status: "error", error: "DEVD only accepts loopback requests." })
       return
@@ -385,6 +404,67 @@ export function createApp(
       const service = requireDevdDataService(devdDataService)
       const materialId = typeof req.query.materialId === "string" ? req.query.materialId : undefined
       res.json(await service.readAdjustments(materialId))
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.post("/api/data/inventory/print-binding", async (req, res) => {
+    try {
+      const payload = inventoryPrintBindingSchema.parse(req.body)
+      const data = requireDevdDataService(devdDataService)
+      const revision = await data.currentRevision()
+      if (revision !== payload.expectedRevision) {
+        throw new DevdDataConflictError(payload.expectedRevision, revision)
+      }
+      const [materials, runtime] = await Promise.all([
+        data.listMaterials("", true),
+        data.runtimeSnapshot(),
+      ])
+      const material = materials.find((entry) => entry.id === payload.args.materialId)
+      if (!material) throw new DevdDataNotFoundError("Material was not found.")
+      if (material.archivedAt) throw new Error("Cannot print labels for an archived material.")
+      const binding = material.labelBindings.find((entry) => entry.id === payload.args.bindingId)
+      if (!binding) throw new DevdDataNotFoundError("Template binding was not found.")
+      const copies = payload.args.quantity ?? binding.printQuantity
+      const input = {
+        ...buildInventoryTemplateInput(material, binding),
+        currentQuantity: String(material.currentQuantity),
+      }
+      const jobs = []
+      for (let index = 0; index < copies; index += 1) {
+        if (binding.templateSource === "system") {
+          jobs.push(
+            await service.printByTemplate({
+              printerId: payload.args.printerId,
+              ...(payload.args.printerName ? { printerName: payload.args.printerName } : {}),
+              templateId: binding.templateId,
+              input,
+              ...(payload.args.renderOptions ? { renderOptions: payload.args.renderOptions } : {}),
+            })
+          )
+          continue
+        }
+        const working = runtime.workingCopies.find(
+          (entry: any) => entry.sourceKey === `user:${binding.templateId}`
+        )
+        const version = runtime.versions.find(
+          (entry: any) =>
+            entry.id ===
+            runtime.templates.find((item: any) => item.id === binding.templateId)?.currentVersionId
+        )
+        const document = working?.draft ?? version?.document
+        if (!document) throw new DevdDataNotFoundError("User template document was not found.")
+        jobs.push(
+          await service.printCanvas({
+            printerId: payload.args.printerId,
+            ...(payload.args.printerName ? { printerName: payload.args.printerName } : {}),
+            canvas: compileCanvasDraftToDirectCanvas(document, input),
+            ...(payload.args.renderOptions ? { renderOptions: payload.args.renderOptions } : {}),
+          })
+        )
+      }
+      res.json({ revision, data: { material, binding, copies, jobs } })
     } catch (error) {
       sendDataError(res, error)
     }
@@ -836,20 +916,23 @@ export function startServer(
   host = process.env.TUCKMARK_SERVER_HOST?.trim() || "127.0.0.1"
 ) {
   assertServerSidePrintRuntimeReady()
+  const instance = resolveRequiredInstance()
   const app = createApp(service)
   const httpServer = app.listen(port, host, () => {
     console.log(`tuckmark server listening on http://${host}:${port}`)
   })
-  const instance = process.env.TUCKMARK_DEVD_INSTANCE?.trim()
-  if (instance) {
-    const ipcServer = createHttpServer(app)
-    const endpoint = resolveIpcEndpoint(instance)
-    listenIpc(ipcServer, instance)
-    ipcServer.once("listening", () => {
+  const ipcServer = createHttpServer(app)
+  void listenIpc(ipcServer, instance)
+    .then((endpoint) => {
       console.log(`tuckmark DEVD IPC listening on ${endpoint.address}`)
     })
-    ;(httpServer as HttpServer & { ipcServer?: HttpServer }).ipcServer = ipcServer
-  }
+    .catch((error) => {
+      console.error(
+        `tuckmark DEVD IPC failed: ${error instanceof Error ? error.message : String(error)}`
+      )
+      if (ipcServer.listening) ipcServer.close()
+    })
+  ;(httpServer as HttpServer & { ipcServer?: HttpServer }).ipcServer = ipcServer
   return httpServer
 }
 

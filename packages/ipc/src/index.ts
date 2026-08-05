@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
-import { chmodSync, mkdirSync } from "node:fs"
+import { chmodSync, existsSync, lstatSync, mkdirSync, unlinkSync } from "node:fs"
 import { request as httpRequest, type RequestOptions, type Server } from "node:http"
+import { createConnection } from "node:net"
 import os from "node:os"
 import path from "node:path"
 
@@ -43,10 +44,15 @@ export function resolveIpcEndpoint(instance: string): IpcEndpoint {
   }
 
   const runtimeRoot = process.env.XDG_RUNTIME_DIR?.trim() || os.tmpdir()
+  const endpointToken = createHash("sha256")
+    .update(`${userToken()}:${normalized}`)
+    .digest("hex")
+    .slice(0, 12)
   return {
     instance: normalized,
     transport: "unix",
-    address: path.join(runtimeRoot, `tuckmark-${userToken()}`, `${normalized}.sock`),
+    // Keep the complete Unix socket path below macOS/Linux's 108-byte limit.
+    address: path.join(runtimeRoot, `t-${endpointToken}`),
   }
 }
 
@@ -94,6 +100,7 @@ export async function requestIpc<T>(options: IpcRequest): Promise<IpcResponse<T>
             "content-length": Buffer.byteLength(body).toString(),
           }),
       ...options.headers,
+      "x-tuckmark-ipc": "1",
     },
   }
 
@@ -132,13 +139,50 @@ export async function requestIpc<T>(options: IpcRequest): Promise<IpcResponse<T>
   })
 }
 
-export function listenIpc(server: Server, instance: string): IpcEndpoint {
+async function removeStaleUnixSocket(address: string): Promise<void> {
+  if (!existsSync(address)) return
+  if (!lstatSync(address).isSocket()) {
+    throw new IpcConfigurationError(`IPC endpoint is occupied by a non-socket path: ${address}`)
+  }
+  await new Promise<void>((resolve, reject) => {
+    const probe = createConnection({ path: address })
+    probe.once("connect", () => {
+      probe.destroy()
+      reject(new IpcConfigurationError(`IPC endpoint is already in use: ${address}`))
+    })
+    probe.once("error", (error: NodeJS.ErrnoException) => {
+      probe.destroy()
+      if (error.code === "ECONNREFUSED" || error.code === "ENOENT") {
+        unlinkSync(address)
+        resolve()
+        return
+      }
+      reject(error)
+    })
+  })
+}
+
+export async function listenIpc(server: Server, instance: string): Promise<IpcEndpoint> {
   const endpoint = resolveIpcEndpoint(instance)
   if (endpoint.transport === "unix") {
     const directory = path.dirname(endpoint.address)
+    const directoryExisted = existsSync(directory)
     mkdirSync(directory, { recursive: true, mode: 0o700 })
-    chmodSync(directory, 0o700)
+    if (!directoryExisted) chmodSync(directory, 0o700)
+    await removeStaleUnixSocket(endpoint.address)
   }
-  server.listen(endpoint.address)
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => {
+      server.off("listening", onListening)
+      reject(error)
+    }
+    const onListening = () => {
+      server.off("error", onError)
+      resolve()
+    }
+    server.once("error", onError)
+    server.once("listening", onListening)
+    server.listen(endpoint.address)
+  })
   return endpoint
 }
