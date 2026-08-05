@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { listenIpc } from "@tuckmark/ipc"
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
+import { DevdConfigService } from "../../server/src/devd-config.js"
 import { DevdDataService } from "../../server/src/devd-data-service.js"
 import { createApp } from "../../server/src/index.js"
 import { deriveAgentImportWebUrl } from "./agent-import-url.js"
@@ -57,19 +58,30 @@ async function withDevd<T>(
   env: Record<string, string> = {}
 ): Promise<T> {
   const instance = `test-${Math.random().toString(36).slice(2, 10)}`
+  const configDir = `${dataDir}-config`
   const previous = new Map<string, string | undefined>()
   for (const [key, value] of Object.entries(env)) {
     previous.set(key, process.env[key])
     process.env[key] = value
   }
+  const configService = new DevdConfigService({
+    env: { TUCKMARK_DATA_DIR: dataDir },
+    documentsDir: path.join(path.dirname(dataDir), "Documents"),
+    configDir,
+  })
+  configService.resolveStartupDataDirectory()
   const server = createServer(
-    createApp(undefined, { devdDataService: new DevdDataService(dataDir) })
+    createApp(undefined, {
+      devdConfigService: configService,
+      devdDataService: new DevdDataService(dataDir),
+    })
   )
   await listenIpc(server, instance)
   try {
     return await callback(instance)
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
+    await rm(configDir, { recursive: true, force: true })
     for (const [key, value] of previous) {
       if (value === undefined) delete process.env[key]
       else process.env[key] = value
@@ -123,6 +135,29 @@ describe("cli smoke", () => {
 
   it("loads", () => {
     expect(true).toBe(true)
+  })
+
+  it("gets and sets the DEVD data directory through named IPC", async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-config-data-"))
+    const nextDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-config-next-"))
+    tempDirs.push(dataDir, nextDir)
+
+    await withDevd(dataDir, async (instance) => {
+      const current = JSON.parse((await runCliOn(instance, ["config", "get-data-dir"])).stdout) as {
+        activeDataDir: string
+        activeSource: string
+      }
+      expect(current).toMatchObject({ activeDataDir: dataDir, activeSource: "environment" })
+
+      const updated = JSON.parse(
+        (await runCliOn(instance, ["config", "set-data-dir", "--path", nextDir])).stdout
+      ) as { activeDataDir: string; savedDataDir: string; restartRequired: boolean }
+      expect(updated).toMatchObject({
+        activeDataDir: dataDir,
+        savedDataDir: nextDir,
+        restartRequired: true,
+      })
+    })
   })
 
   it("derives the paired Web port for bracketed IPv6 DEVD URLs", () => {

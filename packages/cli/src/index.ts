@@ -138,8 +138,8 @@ function printHelp(): void {
       "  tuckmark inventory delete --id <id> --instance <name>",
       "  tuckmark inventory adjust --id <id> --instance <name> --kind <in|out|correction> [--quantity <n>] [--target-quantity <n>] [--note <text>] [--actor <name>]",
       "  tuckmark inventory print --id <id> --binding <bindingId> --printer <printerId> --instance <name> [--printer-name <name>] [--quantity <n>] [--render-options <json>]",
-      "  tuckmark config get-data-dir",
-      "  tuckmark config set-data-dir --path <dir>",
+      "  tuckmark config get-data-dir --instance <name>",
+      "  tuckmark config set-data-dir --path <dir> --instance <name>",
       "  tuckmark printers",
       "  tuckmark probe --printer <id> [--printer-name <name>]",
       "  tuckmark preview --template <id> --input <json> [--render-options <json>]",
@@ -453,14 +453,19 @@ async function handleTemplatePackage(args: string[]): Promise<void> {
 
 async function handleConfigCommand(args: string[]): Promise<void> {
   const subcommand = args[0] ?? "help"
+  const rest = args.slice(1)
+  const client = createDevdClient(rest)
   switch (subcommand) {
     case "get-data-dir":
-    case "set-data-dir":
-      throw new Error(
-        "Data-directory configuration was removed. Start DEVD with a named instance and use --instance or TUCKMARK_DEVD_INSTANCE."
-      )
+      console.log(JSON.stringify(await client.getDataDirectoryConfig(), null, 2))
+      return
+    case "set-data-dir": {
+      const dataDir = path.resolve(requireFlag(rest, "--path"))
+      console.log(JSON.stringify(await client.setDataDirectory(dataDir), null, 2))
+      return
+    }
     default:
-      throw new Error("config has no mutable data-directory commands.")
+      throw new Error("config requires get-data-dir or set-data-dir.")
   }
 }
 

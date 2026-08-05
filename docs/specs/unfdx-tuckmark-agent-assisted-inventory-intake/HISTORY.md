@@ -38,3 +38,6 @@ Web resource commands run through one client mutation chain, so rapid settings a
   longer read business data directories or use an HTTP URL fallback. Remote MCP
   template management receives an injected authoritative data service instead
   of deciding a DEVD address.
+- Formal DEVD startup resolves and saves its own platform data-directory
+  configuration. Development Agent Import uses an explicit per-worktree test
+  copy instead of requiring direct operation on the formal directory.

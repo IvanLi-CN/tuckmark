@@ -58,10 +58,13 @@ product page, then submit a `tuckmark.agent-import.v1` proposal to a DEVD
 
 In `server-http`, DEVD exclusively owns templates, drafts, application settings, inventory, backups, and archive operations. Web requests use `/api/data` over HTTP; DEVD-owned native CLI and Agent Import requests use the named local IPC endpoint. macOS/Linux use a Unix socket and Windows uses a Named Pipe. Those DEVD-owned commands require `--instance <name>` or `TUCKMARK_DEVD_INSTANCE`; the instance name is never inferred from a data directory or URL. Both Web surfaces write the same `tuckmark.runtime-export-archive.v1` directory-tree ZIP: `archive.json` metadata, `manifest.json`, settings, template records and versions, working copies, materials, and adjustment records. Imports reject missing required files or manifest-count mismatches; previously downloaded `tuckmark.data-archive.v1` single-snapshot ZIP files remain importable.
 
-Start DEVD with `TUCKMARK_DATA_DIR` and an explicit `TUCKMARK_DEVD_INSTANCE`.
-The data directory is a DEVD-only server setting; the CLI never reads or writes
-it. Legacy `--data-dir`, `--devd-url`, and `TUCKMARK_DEVD_URL` inputs return a
-migration error without an HTTP fallback.
+Start DEVD with an explicit `TUCKMARK_DEVD_INSTANCE`. In formal environments,
+DEVD resolves its data directory from `TUCKMARK_DATA_DIR`, its saved `devd.json`
+configuration, or the user's `Documents/Tuckmark` directory, in that order.
+The CLI never reads or writes the directory: `config get-data-dir` and
+`config set-data-dir --path <dir>` use the named IPC instance and DEVD persists
+changes. Legacy `--data-dir`, `--devd-url`, and `TUCKMARK_DEVD_URL` inputs return
+a migration error without an HTTP fallback.
 
 - `tuckmark agent-import catalog --instance <name>` lists system and shared-directory templates, including suggested scopes.
 - `tuckmark agent-import inventory --instance <name>` lists active inventory for Agent identity decisions.
@@ -95,11 +98,11 @@ Use `skills/tuckmark-agent-import-user` outside a source checkout and
 
 ### Recommended startup path
 
-Use `bun run dev:preview` for normal product development.
-
-Unless `TUCKMARK_DATA_DIR` is provided, this command creates a disposable
-temporary DEVD directory and passes it to the server. Set the variable to a
-dedicated development directory only when intentionally preserving mock data.
+Use `bun run dev:preview` for normal product development. It reuses a valid
+worktree-specific prepared data copy when present and otherwise creates an empty
+disposable directory. It never copies formal user data implicitly. Run
+`bun run dev:data:prepare` explicitly when representative local test data is
+needed; see [Development Data](docs/development.md).
 
 This is the default developer entrypoint because it starts:
 
@@ -111,7 +114,7 @@ Default URLs:
 
 - Web UI: `http://127.0.0.1:5173/`
 - API health: `http://127.0.0.1:5210/health`
-- Native DEVD instance: `preview` (override with `TUCKMARK_DEVD_INSTANCE`)
+- Native DEVD instance: `dev-<worktree-hash8>` (override with `TUCKMARK_DEVD_INSTANCE`)
 
 ### When to use each command
 
@@ -119,6 +122,9 @@ Default URLs:
   - use for normal Web app development
   - use when the page needs the runtime `/api`
   - use when you want Vite HMR together with the real local server flow
+- `bun run dev:data:prepare [-- --refresh]`
+  - copy the resolved formal dataset into the isolated development location
+  - skip an existing valid copy unless `--refresh` is passed
 - `bun run dev:web`
   - use only when you intentionally want the standalone Vite dev server
   - this does not start `packages/server`
@@ -139,6 +145,8 @@ Override ports or runtime wiring with:
 - `TUCKMARK_SERVER_PORT`
 - `TUCKMARK_WEB_PORT`
 - `TUCKMARK_API_ORIGIN`
+- `TUCKMARK_DATA_DIR`
+- `TUCKMARK_DEVD_INSTANCE`
 - `TUCKMARK_ENABLE_BROWSER_DIRECT_PRINT`
 - `TUCKMARK_ENABLE_SERVER_SIDE_PRINT`
 
@@ -172,16 +180,18 @@ Override ports or runtime wiring with:
 
 - Tuckmark Web now keeps runtime state behind one storage boundary instead of scattering browser keys across page code.
 - Supported Chromium desktop / installed-PWA surfaces prefer `SQLite Wasm + OPFS` for runtime-local drafts, recent activity, and migration state.
-- A configured data directory is a DEVD-owned unified data location for user templates and inventory:
+- In `server-http`, the active data directory is a DEVD-owned unified data location for user templates and inventory:
   - Web `/templates`, `/canvas`, `/inventory`, and `/system` use the DEVD HTTP resource API
   - CLI `template`, `inventory`, and Agent Import commands use named IPC instances
   - installed PWA and CLI share one dataset through DEVD without direct file access
-- `/system` owns data-directory workflows:
-  - authorize or switch a user-chosen directory
-  - initialize, import, or overwrite the versioned JSON tree in that directory
+- DEVD owns data-directory configuration and maintenance:
+  - formal startup defaults to the user's `Documents/Tuckmark` directory
+  - `devd.json` in the platform configuration directory stores the saved path
+  - CLI configuration commands update that file through named IPC; a path change takes effect after restart and never migrates data automatically
+  - initialize, import, or overwrite the versioned JSON tree through DEVD
   - create fixed-location runtime snapshot backups inside that directory
   - restore from a runtime backup ZIP
   - import or export the same runtime snapshot ZIP archive format
-- User templates and inventory remain available without a configured data directory through browser-local runtime storage.
-- Attaching a data directory is optional. It gives Web inventory, CLI `template` / `inventory` commands, and an installed PWA access to the same versioned JSON tree; CLI commands require this location because they cannot access browser-local data.
-- Unsupported browsers keep local editing and inventory available through the compatibility storage path, while data-directory attach, backup / restore, and runtime import / export stay disabled with an explicit capability boundary.
+- `browser-static` remains independent and keeps user templates and inventory in browser-local runtime storage.
+- Development previews use isolated temporary data and never default to the formal user directory.
+- In `browser-static`, unsupported browsers keep local editing and inventory available through the compatibility storage path, while directory attach, backup / restore, and runtime import / export stay disabled with an explicit capability boundary.

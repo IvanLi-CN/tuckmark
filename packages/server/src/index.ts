@@ -36,6 +36,7 @@ import cors from "cors"
 import express from "express"
 import { z } from "zod"
 import { AgentImportService } from "./agent-import-service.js"
+import { DevdConfigService } from "./devd-config.js"
 import {
   DevdDataConflictError,
   DevdDataNotFoundError,
@@ -212,6 +213,7 @@ function sendError(res: express.Response, error: unknown): void {
 export type CreateAppOptions = {
   agentImportService?: AgentImportService | null
   clientAddress?: (request: express.Request) => string | undefined
+  devdConfigService?: DevdConfigService | null
   devdDataService?: DevdDataService | null
 }
 
@@ -318,6 +320,7 @@ export function createApp(
   options: CreateAppOptions = {}
 ): express.Express {
   const app = express()
+  const devdConfigService = options.devdConfigService ?? null
   const devdDataService = options.devdDataService ?? DevdDataService.fromEnvironment()
   const agentImportService =
     options.agentImportService ?? AgentImportService.fromEnvironment(devdDataService ?? undefined)
@@ -360,6 +363,30 @@ export function createApp(
   app.get("/api/data/status", async (_req, res) => {
     try {
       res.json(await requireDevdDataService(devdDataService).status())
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.get("/api/data/config", (_req, res) => {
+    try {
+      if (!devdConfigService)
+        throw new DevdDataUnavailableError("DEVD configuration is unavailable.")
+      res.json(devdConfigService.status())
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.put("/api/data/config/data-directory", (req, res) => {
+    try {
+      if (!devdConfigService)
+        throw new DevdDataUnavailableError("DEVD configuration is unavailable.")
+      const payload = z
+        .object({ dataDir: z.string().min(1) })
+        .strict()
+        .parse(req.body)
+      res.json(devdConfigService.saveDataDirectory(payload.dataDir))
     } catch (error) {
       sendDataError(res, error)
     }
@@ -915,11 +942,21 @@ export function createApp(
 export function startServer(
   service: ServerService = new TuckmarkService(),
   port = Number(process.env.PORT ?? 5210),
-  host = process.env.TUCKMARK_SERVER_HOST?.trim() || "127.0.0.1"
+  host = process.env.TUCKMARK_SERVER_HOST?.trim() || "127.0.0.1",
+  options: {
+    agentImportService?: AgentImportService
+    devdConfigService?: DevdConfigService
+    devdDataService?: DevdDataService
+  } = {}
 ) {
   assertServerSidePrintRuntimeReady()
   const instance = resolveRequiredInstance()
-  const app = createApp(service)
+  const devdConfigService = options.devdConfigService ?? new DevdConfigService()
+  const activeDataDir = devdConfigService.resolveStartupDataDirectory()
+  const devdDataService = options.devdDataService ?? new DevdDataService(activeDataDir)
+  const agentImportService =
+    options.agentImportService ?? new AgentImportService(activeDataDir, devdDataService)
+  const app = createApp(service, { agentImportService, devdConfigService, devdDataService })
   const httpServer = createHttpServer(app)
   const ipcServer = createHttpServer(app)
   let httpClosing = false

@@ -21,3 +21,9 @@ executed as actual copies instead of label-field data only.
   reads/writes and HTTP URL fallback were removed; inventory print now resolves
   and renders bindings inside DEVD, and multiple named instances support
   parallel project development.
+- Formal DEVD installations gained a platform Documents/Tuckmark default and a
+  DEVD-owned platform configuration file. CLI directory inspection and updates
+  returned as IPC operations rather than local filesystem operations.
+- Development data became an explicit, validated copy into a per-worktree
+  temporary directory. Preview reuses an existing valid copy but never copies
+  formal data implicitly.

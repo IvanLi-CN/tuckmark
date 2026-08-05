@@ -14,6 +14,11 @@
 
 ## Operational Boundary
 
-DEVD must be started in `server-http` mode with `TUCKMARK_DATA_DIR` pointing at the local shared directory. `browser-static` intentionally has no compatible API implementation.
+DEVD in `server-http` mode resolves its formal directory from the environment,
+the DEVD-owned platform configuration, or the system Documents/Tuckmark
+default. `browser-static` intentionally has no compatible API implementation.
 
-Tests and previews must use a newly created temporary `TUCKMARK_DATA_DIR` populated only with mock fixtures.
+Tests use isolated temporary fixtures. Development previews reuse a valid
+worktree-specific copy prepared by `bun run dev:data:prepare`, or use a newly
+created empty temporary directory when no prepared copy exists. They never
+default to the formal user directory.

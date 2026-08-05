@@ -4,59 +4,47 @@ import { spawn } from "node:child_process"
 import { mkdtemp } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { findPreparedDevelopmentData, resolveDevelopmentInstance } from "./dev-data.js"
 
 const serverPort = process.env.TUCKMARK_SERVER_PORT ?? "5210"
 const webPort = process.env.TUCKMARK_WEB_PORT ?? "5173"
 const apiOrigin = process.env.TUCKMARK_API_ORIGIN ?? `http://127.0.0.1:${serverPort}`
-const devdInstance = process.env.TUCKMARK_DEVD_INSTANCE ?? "preview"
+const devdInstance =
+  process.env.TUCKMARK_DEVD_INSTANCE?.trim() || resolveDevelopmentInstance(process.cwd())
 const bunCommand = process.platform === "win32" ? "bun.exe" : "bun"
+const preparedDataDir = await findPreparedDevelopmentData()
 const dataDir =
-  process.env.TUCKMARK_DATA_DIR ?? (await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-preview-")))
+  process.env.TUCKMARK_DATA_DIR?.trim() ||
+  preparedDataDir ||
+  (await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-preview-")))
 
-const children = []
+const children: ReturnType<typeof spawn>[] = []
 
-function startChild(name, args, env) {
+function startChild(name: string, args: string[], env: NodeJS.ProcessEnv) {
   const child = spawn(bunCommand, args, {
     cwd: process.cwd(),
-    env: {
-      ...process.env,
-      ...env,
-    },
+    env: { ...process.env, ...env },
     stdio: "inherit",
   })
 
   child.on("exit", (code, signal) => {
-    if (signal) {
-      console.error(`[${name}] exited via ${signal}`)
-    } else if (code !== 0) {
+    if (signal) console.error(`[${name}] exited via ${signal}`)
+    else if (code !== 0) {
       console.error(`[${name}] exited with code ${code}`)
       shutdown(code ?? 1)
     }
   })
-
   children.push(child)
 }
 
 let shuttingDown = false
 
 function shutdown(exitCode = 0) {
-  if (shuttingDown) {
-    return
-  }
-
+  if (shuttingDown) return
   shuttingDown = true
-  for (const child of children) {
-    if (!child.killed) {
-      child.kill("SIGTERM")
-    }
-  }
-
+  for (const child of children) if (!child.killed) child.kill("SIGTERM")
   setTimeout(() => {
-    for (const child of children) {
-      if (!child.killed) {
-        child.kill("SIGKILL")
-      }
-    }
+    for (const child of children) if (!child.killed) child.kill("SIGKILL")
     process.exit(exitCode)
   }, 1000).unref()
 }
@@ -65,10 +53,10 @@ process.on("SIGINT", () => shutdown(0))
 process.on("SIGTERM", () => shutdown(0))
 
 console.log("Tuckmark preview")
-console.log(`- web:    http://127.0.0.1:${webPort}/`)
-console.log(`- server: http://127.0.0.1:${serverPort}/health`)
-console.log(`- proxy:  ${apiOrigin}`)
-console.log(`- data:   ${dataDir}`)
+console.log(`- web:      http://127.0.0.1:${webPort}/`)
+console.log(`- server:   http://127.0.0.1:${serverPort}/health`)
+console.log(`- proxy:    ${apiOrigin}`)
+console.log(`- data:     ${dataDir}`)
 console.log(`- instance: ${devdInstance}`)
 
 startChild("server", ["run", "--filter", "@tuckmark/server", "dev"], {

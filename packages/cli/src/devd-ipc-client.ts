@@ -8,6 +8,15 @@ export type DevdErrorBody = {
   error?: string
 }
 
+export type DevdDataDirectoryStatus = {
+  activeDataDir: string
+  activeSource: "environment" | "saved" | "default"
+  savedDataDir?: string
+  defaultDataDir: string
+  configPath: string
+  restartRequired: boolean
+}
+
 export class DevdIpcError extends Error {
   constructor(
     readonly status: number,
@@ -48,6 +57,17 @@ export class DevdIpcClient {
     }>("/api/data/status")
     this.revision = result.revision
     return result
+  }
+
+  async getDataDirectoryConfig(): Promise<DevdDataDirectoryStatus> {
+    return await this.request<DevdDataDirectoryStatus>("/api/data/config")
+  }
+
+  async setDataDirectory(dataDir: string): Promise<DevdDataDirectoryStatus> {
+    return await this.request<DevdDataDirectoryStatus>("/api/data/config/data-directory", {
+      method: "PUT",
+      body: { dataDir },
+    })
   }
 
   async snapshot() {

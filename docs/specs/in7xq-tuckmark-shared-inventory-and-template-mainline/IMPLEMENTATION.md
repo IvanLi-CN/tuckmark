@@ -55,12 +55,21 @@
 - `packages/server/src/devd-data-service.ts` remains the sole file-backed
   runtime owner. Its template metadata patch keeps saved-version history
   stable, synchronizes user working copies, and rejects stale revisions.
+- `packages/server/src/devd-config.ts` resolves the formal platform default,
+  reads and atomically writes `tuckmark.devd-config.v1`, applies environment,
+  saved, and default precedence, and validates directory switches. The shared
+  Express app exposes this service to Web HTTP and named IPC clients without
+  giving CLI any filesystem ownership.
 - `packages/ipc` implements per-user Unix socket / Named Pipe endpoint
   resolution, validation, stale Unix socket recovery, and endpoint occupancy
   errors for named development instances.
-- `packages/cli/src/index.ts` now exposes:
-  - `config get-data-dir`
-- named `TUCKMARK_DEVD_INSTANCE` IPC startup
+- `scripts/dev-data.ts` prepares a validated, worktree-specific temporary copy
+  of current business data. `scripts/dev-preview.ts` reuses only a valid
+  prepared copy, otherwise creates an empty disposable directory, and derives
+  its default instance from the absolute worktree path.
+- `packages/cli/src/index.ts` exposes:
+  - DEVD-backed `config get-data-dir` and `config set-data-dir`
+  - named `TUCKMARK_DEVD_INSTANCE` IPC startup
   - `template` lifecycle commands
   - `inventory` command family
   - legacy read-only `templates` compatibility listing
@@ -75,9 +84,8 @@
 
 ## Notes
 
-- Attaching a data directory can initialize its versioned tree from current
-  browser-local data. Without an attached directory, the browser-local store
-  remains the active persistence surface for both user templates and inventory.
+- Formal `server-http` startup always resolves one DEVD-owned directory.
+  `browser-static` keeps its independent browser-local persistence surface.
 - CLI and Web reuse the same JSON tree but do not attempt concurrent file-level
   merges beyond the existing latest-wins directory semantics. Runtime-template
   writes intentionally leave inventory files alone so those writes cannot erase

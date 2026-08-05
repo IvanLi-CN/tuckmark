@@ -22,14 +22,19 @@ Use this command prefix:
 bun tsx --tsconfig "$REPO_ROOT/packages/cli/tsconfig.typecheck.json" "$REPO_ROOT/packages/cli/src/index.ts"
 ```
 
-Do not substitute `tuckmark` while validating source changes. Start DEVD from the same checkout with `TUCKMARK_DATA_DIR` pointing at a disposable mock directory.
+Do not substitute `tuckmark` while validating source changes. Run
+`bun run dev:data:prepare` when representative local data is needed; an existing
+valid worktree copy is reused. Otherwise use the empty isolated directory
+created by `bun run dev:preview`. Never point development DEVD at the formal
+user data directory.
 
 ## Workflow
 
 1. Follow the privacy, identity, and browser boundaries in `tuckmark-agent-import-user`. Never add a real order export to a fixture, test, screenshot, or commit.
-2. Start a named DEVD instance with `TUCKMARK_DATA_DIR` pointing at a
-   disposable mock directory, then query its catalog and inventory with the
-   source CLI. Native commands use IPC; the CLI never reads the directory:
+2. Start the worktree's named DEVD instance through `bun run dev:preview`, then
+   query its catalog and inventory with the source CLI. The default instance is
+   derived from the worktree path and printed at startup. Native commands use
+   IPC; the CLI never reads the directory:
 
    ```bash
    bun tsx --tsconfig "$REPO_ROOT/packages/cli/tsconfig.typecheck.json" "$REPO_ROOT/packages/cli/src/index.ts" \

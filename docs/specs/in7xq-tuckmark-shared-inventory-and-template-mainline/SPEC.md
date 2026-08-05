@@ -7,7 +7,7 @@
 ## Summary
 
 Tuckmark keeps browser-static user templates and inventory local to the browser.
-In `server-http`, DEVD owns the configured data directory and is the sole
+In `server-http`, DEVD owns the resolved active data directory and is the sole
 business-data authority. Web uses HTTP resource commands; CLI and installed
 native tools use named IPC instances. It does not define a separate "shared
 template" category: user templates remain the same "我的模板" records.
@@ -22,8 +22,8 @@ built-in.
 
 ### Data-directory contract
 
-- A configured data directory is an optional cross-surface persistence surface
-  for:
+- In `server-http`, DEVD always resolves and exclusively owns one active data
+  directory for:
   - user templates
   - user-template versions and working copies
   - inventory materials
@@ -55,11 +55,26 @@ built-in.
 - Routine runtime-template synchronization preserves the existing
   `inventory/` subtree. Only an explicit attach initialization, archive import,
   backup restore, or data-directory switch replaces that subtree.
-- Web `/system` owns optional data-directory attach, switch, migration, backup,
-  restore, import, and export flows for the runtime template snapshot.
-- Without an attached directory, Web persists user templates and inventory in
-  its browser-local runtime storage. Attaching a directory deliberately moves
-  the Web persistence surface to that directory for cross-surface access.
+- Formal DEVD data-directory resolution is, in descending priority:
+  - explicit `TUCKMARK_DATA_DIR`, which applies only to the current process and
+    is never persisted
+  - the path saved in the platform configuration directory's `devd.json`
+  - the user's system Documents directory plus `Tuckmark`
+- The formal default is `~/Documents/Tuckmark` on macOS, the system My
+  Documents directory plus `Tuckmark` on Windows, and the XDG Documents
+  directory plus `Tuckmark` on Linux with `~/Documents/Tuckmark` as fallback.
+- DEVD stores schema `tuckmark.devd-config.v1` in:
+  - macOS: `~/Library/Application Support/Tuckmark/devd.json`
+  - Windows: `%APPDATA%/Tuckmark/devd.json`
+  - Linux: `${XDG_CONFIG_HOME:-~/.config}/tuckmark/devd.json`
+- On first formal startup without an environment override or saved config,
+  DEVD creates the default directory and atomically saves it. The retired CLI
+  config at `~/.config/tuckmark/config.json` is ignored and not migrated.
+- Data-directory changes are DEVD operations. A saved change takes effect after
+  restart, does not move existing data, creates an absent target, and rejects a
+  non-empty target that is not a recognized Tuckmark data directory.
+- `browser-static` retains its browser-local user templates and inventory and
+  does not use the formal DEVD directory contract.
 - CLI does not resolve or open a data directory. It requires `--instance` or
   `TUCKMARK_DEVD_INSTANCE` and sends data commands through DEVD IPC. Legacy
   `--data-dir`, `--devd-url`, and `TUCKMARK_DEVD_URL` values return a migration
@@ -152,9 +167,11 @@ built-in.
 
 ### CLI contract
 
-- `config get-data-dir` prints the effective saved default directory.
-- `config get-data-dir` and `config set-data-dir` are retained only as migration
-  errors; DEVD startup configuration owns the data directory.
+- `config get-data-dir --instance <name>` returns the active, saved, and default
+  paths, resolution source, config path, and restart state through IPC.
+- `config set-data-dir --path <dir> --instance <name>` resolves the input to an
+  absolute path and asks DEVD to validate and persist it through IPC. CLI never
+  opens the path, migrates data, or uses HTTP fallback.
 - `template` commands cover:
   - `list`
   - `show`
@@ -173,26 +190,29 @@ built-in.
   - `delete`
   - `adjust`
   - `print`
-- Template and inventory commands fail with a clear data-directory error
-  when no directory can be resolved.
+- Template, inventory, Agent Import, print, and configuration commands require
+  a named DEVD instance and never access business data files directly.
 - CLI does not provide canvas editing. It only manages template
   lifecycle, preview/print compilation, and inventory operations.
 
 ### Migration and compatibility contract
 
-- Browser-local user-template and inventory data remains the default Web
-  persistence surface when no directory is attached.
-- Attaching a configured directory can initialize from the current
-  browser-local runtime data or import an existing Tuckmark directory.
-- Without a configured directory:
-  - built-in system templates remain usable
-  - Web `/templates` and `/canvas` remain usable through browser-local runtime
-    storage
-  - existing preview / print flows remain usable
-  - Web `/inventory` remains available through browser-local inventory storage
-    and must not show a data-directory setup prompt
-  - CLI `template` / `inventory` commands stay unavailable until a directory
-    is resolved, because the CLI cannot access browser-local storage
+- Browser-local user-template and inventory data remains the persistence
+  surface for `browser-static`; it is not silently migrated into formal DEVD.
+- Legacy `--data-dir`, data-directory CLI config inputs, `--devd-url`, and
+  `TUCKMARK_DEVD_URL` return migration guidance without direct access or HTTP
+  fallback.
+- Development data is isolated from the formal directory. An explicit prepare
+  command resolves the formal source, then copies only `manifest.json`,
+  `settings`, `templates`, `drafts`, and `inventory` into
+  `${TMPDIR}/tuckmark-devd-dev/<repo-path-hash8>/data` using staging,
+  manifest/file-count validation, and atomic replacement. It excludes backups,
+  ownership and transaction control files, live locks, and Agent sessions.
+- A valid prepared copy from the same source is reused unless `--refresh` is
+  requested. Development preview uses that copy when present, otherwise starts
+  with an empty temporary directory; it never copies formal data implicitly.
+- The default development instance is derived from the absolute worktree path,
+  while `TUCKMARK_DEVD_INSTANCE` remains an explicit override.
 - This round does not include:
   - automatic print on stock movement
   - camera scanning or fuzzy matrix-code recognition
@@ -202,14 +222,19 @@ built-in.
 
 ## Acceptance
 
-- With a configured data directory, Web `/templates`, `/canvas`,
+- With the resolved `server-http` data directory, Web `/templates`, `/canvas`,
   `/inventory`, and CLI `template` / `inventory` commands all read and write
   the same template and material records.
+- First formal startup creates and saves `Documents/Tuckmark`; environment,
+  saved-config, and default precedence is deterministic on all platforms.
+- Two worktrees derive different development instances and temporary data
+  locations. Preparing an existing valid copy is a no-op, while `--refresh`
+  validates and atomically replaces it without copying control or backup data.
 - CLI mutations become visible in Web after refresh, and Web mutations become
   visible to CLI without extra conversion steps.
-- Without a configured directory, Web `/templates`, `/canvas`, and
-  `/inventory` remain available through browser-local runtime storage. CLI
-  `template` / `inventory` commands surface an actionable directory error.
+- In `browser-static`, Web `/templates`, `/canvas`, and `/inventory` remain
+  available through browser-local runtime storage without a browser-authorized
+  directory. Native CLI commands remain bound to a named formal DEVD instance.
 - Material CRUD enforces:
   - unique `fullName`
   - globally unique non-empty `matrixCode`
