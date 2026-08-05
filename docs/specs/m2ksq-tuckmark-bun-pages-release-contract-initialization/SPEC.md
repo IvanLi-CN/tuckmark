@@ -233,7 +233,9 @@ mock-only inputs. They verify the 10-second slow-start update suggestion and
 the one-minute terminal state, each with explicit owner-controlled restart
 actions instead of an endless startup rail or automatic recovery. The
 slow-start story binds a mobile viewport and keeps its title as the semantic
-groups "工作台启动 / 时间较长" rather than allowing a character-level wrap.
+groups "工作台启动 / 时间较长" rather than allowing a character-level wrap;
+both the static shell and React shell use a 1.12 title line-height so the two
+semantic lines remain readable across mobile and desktop states.
 
 PR: include
 ![Browser-static launch slow-start notice](./assets/pwa-launch-slow-start-state.png)
