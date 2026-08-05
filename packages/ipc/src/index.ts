@@ -1,11 +1,17 @@
 import { createHash } from "node:crypto"
 import { chmodSync, existsSync, lstatSync, mkdirSync, unlinkSync } from "node:fs"
 import { request as httpRequest, type RequestOptions, type Server } from "node:http"
+import type { Socket } from "node:net"
 import { createConnection } from "node:net"
 import os from "node:os"
 import path from "node:path"
 
 const INSTANCE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/u
+const IPC_SOCKET_MARKER = Symbol.for("tuckmark.ipc.socket")
+
+type MarkedSocket = {
+  [IPC_SOCKET_MARKER]?: boolean
+}
 
 export class IpcConfigurationError extends Error {}
 
@@ -13,6 +19,18 @@ export type IpcEndpoint = {
   instance: string
   transport: "unix" | "pipe"
   address: string
+}
+
+export function isIpcSocket(socket: unknown): boolean {
+  return (
+    typeof socket === "object" &&
+    socket !== null &&
+    Boolean((socket as MarkedSocket)[IPC_SOCKET_MARKER])
+  )
+}
+
+function markIpcSocket(socket: Socket): void {
+  Object.defineProperty(socket, IPC_SOCKET_MARKER, { configurable: true, value: true })
 }
 
 export function validateInstanceName(instance: string): string {
@@ -171,6 +189,7 @@ export async function listenIpc(server: Server, instance: string): Promise<IpcEn
     if (!directoryExisted) chmodSync(directory, 0o700)
     await removeStaleUnixSocket(endpoint.address)
   }
+  server.on("connection", markIpcSocket)
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error) => {
       server.off("listening", onListening)

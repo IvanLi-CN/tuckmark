@@ -31,7 +31,7 @@ import {
   agentImportTemplateSchema,
   buildInventoryTemplateInput,
 } from "@tuckmark/inventory"
-import { listenIpc, resolveRequiredInstance } from "@tuckmark/ipc"
+import { isIpcSocket, listenIpc, resolveRequiredInstance } from "@tuckmark/ipc"
 import cors from "cors"
 import express from "express"
 import { z } from "zod"
@@ -325,7 +325,7 @@ export function createApp(
   app.use(express.json({ limit: "10mb" }))
 
   const requireLocalAppOrigin: express.RequestHandler = (req, res, next) => {
-    if (req.header("x-tuckmark-ipc") === "1") {
+    if (isIpcSocket(req.socket)) {
       next()
       return
     }
@@ -922,17 +922,30 @@ export function startServer(
     console.log(`tuckmark server listening on http://${host}:${port}`)
   })
   const ipcServer = createHttpServer(app)
+  let httpClosing = false
+  const closeHttpServer = httpServer.close.bind(httpServer)
+  httpServer.close = ((callback?: (error?: Error) => void) => {
+    httpClosing = true
+    if (ipcServer.listening) ipcServer.close()
+    return closeHttpServer(callback)
+  }) as typeof httpServer.close
+  ;(httpServer as HttpServer & { ipcServer?: HttpServer }).ipcServer = ipcServer
   void listenIpc(ipcServer, instance)
     .then((endpoint) => {
+      if (httpClosing) {
+        if (ipcServer.listening) ipcServer.close()
+        return
+      }
       console.log(`tuckmark DEVD IPC listening on ${endpoint.address}`)
     })
     .catch((error) => {
+      if (httpClosing) return
       console.error(
         `tuckmark DEVD IPC failed: ${error instanceof Error ? error.message : String(error)}`
       )
       if (ipcServer.listening) ipcServer.close()
+      if (httpServer.listening) httpServer.close()
     })
-  ;(httpServer as HttpServer & { ipcServer?: HttpServer }).ipcServer = ipcServer
   return httpServer
 }
 

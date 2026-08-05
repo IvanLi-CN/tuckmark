@@ -204,7 +204,11 @@ function parseRenderOptions(args: string[]): Partial<RenderOptions> | undefined 
 }
 
 function rejectLegacyDataAccess(args: string[]): void {
-  if (args.includes("--data-dir") || args.includes("--devd-url")) {
+  if (
+    args.includes("--data-dir") ||
+    args.includes("--devd-url") ||
+    process.env.TUCKMARK_DEVD_URL?.trim()
+  ) {
     throw new Error(
       "Direct data-directory and HTTP DEVD access were removed. Use --instance or TUCKMARK_DEVD_INSTANCE."
     )
