@@ -5,9 +5,9 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "prebuild": "bun --cwd=../../plugins/inventory run build",
+    "prebuild": "bun --cwd=../../packages/ipc run build && bun --cwd=../../plugins/inventory run build",
     "pretest": "bun --cwd=../../plugins/inventory run build",
-    "pretypecheck": "bun --cwd=../../plugins/inventory run build",
+    "pretypecheck": "bun --cwd=../../packages/ipc run build && bun --cwd=../../plugins/inventory run build",
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch --tsconfig tsconfig.typecheck.json src/index.ts",
     "test": "vitest run",
@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@tuckmark/core": "workspace:*",
+    "@tuckmark/ipc": "workspace:*",
     "@tuckmark/inventory": "workspace:*",
     "cors": "^2.8.6",
     "express": "^5.2.1",

@@ -1,0 +1,144 @@
+import { createHash } from "node:crypto"
+import { chmodSync, mkdirSync } from "node:fs"
+import { request as httpRequest, type RequestOptions, type Server } from "node:http"
+import os from "node:os"
+import path from "node:path"
+
+const INSTANCE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/u
+
+export class IpcConfigurationError extends Error {}
+
+export type IpcEndpoint = {
+  instance: string
+  transport: "unix" | "pipe"
+  address: string
+}
+
+export function validateInstanceName(instance: string): string {
+  const normalized = instance.trim().toLowerCase()
+  if (!INSTANCE_PATTERN.test(normalized)) {
+    throw new IpcConfigurationError(
+      "DEVD instance must be 1-48 lowercase letters, numbers, or hyphens and cannot end with a hyphen."
+    )
+  }
+  return normalized
+}
+
+function userToken(): string {
+  const identity = process.platform === "win32" ? process.env.USERNAME : process.env.USER
+  return createHash("sha256")
+    .update(`${identity ?? "unknown"}:${process.getuid?.() ?? "windows"}`)
+    .digest("hex")
+    .slice(0, 12)
+}
+
+export function resolveIpcEndpoint(instance: string): IpcEndpoint {
+  const normalized = validateInstanceName(instance)
+  if (process.platform === "win32") {
+    return {
+      instance: normalized,
+      transport: "pipe",
+      address: `\\\\.\\pipe\\tuckmark-${userToken()}-${normalized}`,
+    }
+  }
+
+  const runtimeRoot = process.env.XDG_RUNTIME_DIR?.trim() || os.tmpdir()
+  return {
+    instance: normalized,
+    transport: "unix",
+    address: path.join(runtimeRoot, `tuckmark-${userToken()}`, `${normalized}.sock`),
+  }
+}
+
+export function resolveRequiredInstance(
+  args: { instance?: string; env?: NodeJS.ProcessEnv } = {}
+): string {
+  const value =
+    args.instance ?? args.env?.TUCKMARK_DEVD_INSTANCE ?? process.env.TUCKMARK_DEVD_INSTANCE
+  if (!value?.trim()) {
+    throw new IpcConfigurationError(
+      "DEVD instance is required. Pass --instance or set TUCKMARK_DEVD_INSTANCE."
+    )
+  }
+  return validateInstanceName(value)
+}
+
+export type IpcRequest = {
+  instance: string
+  method?: string
+  path: string
+  body?: unknown
+  headers?: Record<string, string>
+  timeoutMs?: number
+}
+
+export type IpcResponse<T> = {
+  status: number
+  headers: Record<string, string | string[] | undefined>
+  body: T
+}
+
+export async function requestIpc<T>(options: IpcRequest): Promise<IpcResponse<T>> {
+  const endpoint = resolveIpcEndpoint(options.instance)
+  const body = options.body === undefined ? undefined : JSON.stringify(options.body)
+  const requestOptions: RequestOptions = {
+    method: options.method ?? (body === undefined ? "GET" : "POST"),
+    path: options.path,
+    socketPath: endpoint.address,
+    headers: {
+      accept: "application/json",
+      ...(body === undefined
+        ? {}
+        : {
+            "content-type": "application/json",
+            "content-length": Buffer.byteLength(body).toString(),
+          }),
+      ...options.headers,
+    },
+  }
+
+  return await new Promise<IpcResponse<T>>((resolve, reject) => {
+    const request = httpRequest(requestOptions, (response) => {
+      const chunks: Buffer[] = []
+      response.on("data", (chunk: Buffer) => chunks.push(chunk))
+      response.on("end", () => {
+        const text = Buffer.concat(chunks).toString("utf8")
+        let parsed: T
+        try {
+          parsed = (text ? JSON.parse(text) : undefined) as T
+        } catch (error) {
+          reject(
+            new Error(
+              `DEVD IPC returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`
+            )
+          )
+          return
+        }
+        resolve({
+          status: response.statusCode ?? 0,
+          headers: response.headers,
+          body: parsed,
+        })
+      })
+    })
+    request.once("error", (error) => reject(new Error(`DEVD IPC request failed: ${error.message}`)))
+    if (options.timeoutMs !== undefined) {
+      request.setTimeout(options.timeoutMs, () => {
+        request.destroy(new Error(`DEVD IPC request timed out after ${options.timeoutMs}ms.`))
+      })
+    }
+    if (body !== undefined) request.write(body)
+    request.end()
+  })
+}
+
+export function listenIpc(server: Server, instance: string): IpcEndpoint {
+  const endpoint = resolveIpcEndpoint(instance)
+  if (endpoint.transport === "unix") {
+    const directory = path.dirname(endpoint.address)
+    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    chmodSync(directory, 0o700)
+  }
+  server.listen(endpoint.address)
+  return endpoint
+}

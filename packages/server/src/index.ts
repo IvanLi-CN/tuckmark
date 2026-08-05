@@ -1,4 +1,5 @@
 import fs from "node:fs/promises"
+import { createServer as createHttpServer, type Server as HttpServer } from "node:http"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import {
@@ -28,10 +29,10 @@ import {
   agentImportProposalSchema,
   agentImportTemplateSchema,
 } from "@tuckmark/inventory"
+import { listenIpc, resolveIpcEndpoint } from "@tuckmark/ipc"
 import cors from "cors"
 import express from "express"
 import { z } from "zod"
-
 import { AgentImportService } from "./agent-import-service.js"
 import {
   DevdDataConflictError,
@@ -836,9 +837,20 @@ export function startServer(
 ) {
   assertServerSidePrintRuntimeReady()
   const app = createApp(service)
-  return app.listen(port, host, () => {
+  const httpServer = app.listen(port, host, () => {
     console.log(`tuckmark server listening on http://${host}:${port}`)
   })
+  const instance = process.env.TUCKMARK_DEVD_INSTANCE?.trim()
+  if (instance) {
+    const ipcServer = createHttpServer(app)
+    const endpoint = resolveIpcEndpoint(instance)
+    listenIpc(ipcServer, instance)
+    ipcServer.once("listening", () => {
+      console.log(`tuckmark DEVD IPC listening on ${endpoint.address}`)
+    })
+    ;(httpServer as HttpServer & { ipcServer?: HttpServer }).ipcServer = ipcServer
+  }
+  return httpServer
 }
 
 function isMainModule(metaUrl: string): boolean {
