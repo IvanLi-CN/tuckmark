@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, "../..")
 const syncRoot = path.join(repoRoot, "work", "playwright-sync")
 const syncPort = Number(process.env.TUCKMARK_SYNC_E2E_PORT ?? "4210")
+const syncInstance = process.env.TUCKMARK_DEVD_INSTANCE ?? `sync-${syncPort}-${process.pid}`
 const syncBaseURL = `http://127.0.0.1:${syncPort}`
 const browserChannel = process.env.TUCKMARK_E2E_BROWSER_CHANNEL === "chrome" ? "chrome" : undefined
 
@@ -34,7 +35,7 @@ export default defineConfig({
     env: {
       TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "0",
       TUCKMARK_DATA_DIR: syncRoot,
-      TUCKMARK_DEVD_INSTANCE: "sync",
+      TUCKMARK_DEVD_INSTANCE: syncInstance,
       HOME: process.env.HOME ?? "",
       PATH: process.env.PATH ?? "",
       NODE_ENV: "test",

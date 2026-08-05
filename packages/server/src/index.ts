@@ -915,15 +915,17 @@ export function startServer(
   assertServerSidePrintRuntimeReady()
   const instance = resolveRequiredInstance()
   const app = createApp(service)
-  const httpServer = app.listen(port, host, () => {
-    console.log(`tuckmark server listening on http://${host}:${port}`)
-  })
+  const httpServer = createHttpServer(app)
   const ipcServer = createHttpServer(app)
   let httpClosing = false
   const closeHttpServer = httpServer.close.bind(httpServer)
   httpServer.close = ((callback?: (error?: Error) => void) => {
     httpClosing = true
     if (ipcServer.listening) ipcServer.close()
+    if (!httpServer.listening) {
+      callback?.()
+      return httpServer
+    }
     return closeHttpServer(callback)
   }) as typeof httpServer.close
   ;(httpServer as HttpServer & { ipcServer?: HttpServer }).ipcServer = ipcServer
@@ -934,6 +936,10 @@ export function startServer(
         return
       }
       console.log(`tuckmark DEVD IPC listening on ${endpoint.address}`)
+      if (httpClosing) return
+      httpServer.listen(port, host, () => {
+        console.log(`tuckmark server listening on http://${host}:${port}`)
+      })
     })
     .catch((error) => {
       if (httpClosing) return
@@ -941,7 +947,10 @@ export function startServer(
         `tuckmark DEVD IPC failed: ${error instanceof Error ? error.message : String(error)}`
       )
       if (ipcServer.listening) ipcServer.close()
-      if (httpServer.listening) httpServer.close()
+      process.exitCode = 1
+      if (httpServer.listenerCount("error") > 0) {
+        httpServer.emit("error", error)
+      }
     })
   return httpServer
 }

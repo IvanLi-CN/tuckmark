@@ -2,15 +2,15 @@ import type { DirectCanvasDefinition } from "./types.js"
 
 const DotsPerMillimeter = 8
 
-function toDots(value: number): number {
-  return value * DotsPerMillimeter
-}
-
-/** Compile the persisted millimetre draft format into the renderer's dot canvas. */
+/** Compile a persisted canvas draft into the renderer's dot canvas. */
 export function compileCanvasDraftToDirectCanvas(
   document: Record<string, any>,
   input: Record<string, string>
 ): DirectCanvasDefinition {
+  // Drafts without an explicit unit predate the millimetre schema and already
+  // contain renderer dot coordinates.
+  const toDots = (value: number): number =>
+    document.unit === "mm" ? value * DotsPerMillimeter : value
   const fields = new Map<string, string>(
     (document.fields ?? []).map((field: any) => [
       field.key,

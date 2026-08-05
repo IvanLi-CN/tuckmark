@@ -484,7 +484,9 @@ function resolveAgentImportWebUrl(args: string[], fallback?: string): string {
   }
 
   const webPort = process.env.TUCKMARK_WEB_PORT ?? "5173"
-  return `http://127.0.0.1:${webPort}`
+  const webHost = process.env.TUCKMARK_WEB_HOST ?? process.env.TUCKMARK_SERVER_HOST ?? "127.0.0.1"
+  const formattedHost = webHost.includes(":") ? `[${webHost.replace(/^\[|\]$/g, "")}]` : webHost
+  return `http://${formattedHost}:${webPort}`
 }
 
 function defaultAgentImportCredentialPath(sessionId: string): string {
@@ -1004,11 +1006,6 @@ async function handleInventoryCommand(args: string[]): Promise<void> {
       return
     }
     case "print": {
-      if (!service.serverSidePrintEnabled) {
-        throw new Error(
-          "Server-side printer control is disabled. Set TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 to enable it."
-        )
-      }
       const printerId = requireFlag(rest, "--printer")
       const printerName = parseFlag(rest, "--printer-name")
       const renderOptions = parseRenderOptions(rest)
