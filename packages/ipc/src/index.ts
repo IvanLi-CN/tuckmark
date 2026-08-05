@@ -279,7 +279,15 @@ export async function listenIpc(server: Server, instance: string): Promise<IpcEn
       server.once("listening", onListening)
       server.listen(endpoint.address)
     })
+    if (endpoint.transport === "unix") {
+      // The IPC marker bypasses HTTP loopback checks, so the filesystem
+      // endpoint itself must be owner-only even when the process umask is loose.
+      chmodSync(endpoint.address, 0o600)
+    }
   } catch (error) {
+    if (server.listening) {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
     lock?.release()
     throw error
   }

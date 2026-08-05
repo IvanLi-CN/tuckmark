@@ -47,4 +47,22 @@ describe("canvas draft rendering", () => {
     expect(canvas.width).toBe(240)
     expect(canvas.height).toBe(80)
   })
+
+  it("scales millimetre drafts with the target printer DPI", () => {
+    const canvas = compileCanvasDraftToDirectCanvas(
+      {
+        id: "high-density",
+        name: "High density",
+        unit: "mm",
+        width: 30,
+        height: 10,
+        elements: [],
+      },
+      {},
+      { printerDpi: 300 }
+    )
+
+    expect(canvas.width).toBe(354)
+    expect(canvas.height).toBe(118)
+  })
 })

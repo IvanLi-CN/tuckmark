@@ -90,6 +90,7 @@ export interface ServerService {
 }
 
 const previewOptionsSchema = z.object({
+  printerDpi: z.number().int().positive().optional(),
   printWidthDots: z.number().int().positive().optional(),
   threshold: z.number().int().min(0).max(255).optional(),
   xOffsetDots: z.number().int().optional(),
@@ -456,7 +457,11 @@ export function createApp(
           await service.printCanvas({
             printerId: payload.args.printerId,
             ...(payload.args.printerName ? { printerName: payload.args.printerName } : {}),
-            canvas: compileCanvasDraftToDirectCanvas(document, input),
+            canvas: compileCanvasDraftToDirectCanvas(document, input, {
+              ...(payload.args.renderOptions?.printerDpi
+                ? { printerDpi: payload.args.renderOptions.printerDpi }
+                : {}),
+            }),
             ...(payload.args.renderOptions ? { renderOptions: payload.args.renderOptions } : {}),
           })
         )
@@ -918,21 +923,57 @@ export function startServer(
   const httpServer = createHttpServer(app)
   const ipcServer = createHttpServer(app)
   let httpClosing = false
-  const closeHttpServer = httpServer.close.bind(httpServer)
+  let ipcReady = false
+  let ipcStartupError: Error | undefined
+  let httpCloseComplete = false
+  let ipcCloseComplete = false
+  let closeError: Error | undefined
+  let closeCallback: ((error?: Error) => void) | undefined
+  const closeHttpListener = httpServer.close.bind(httpServer)
+  const finishClose = () => {
+    if (httpCloseComplete && ipcCloseComplete && closeCallback) {
+      const callback = closeCallback
+      closeCallback = undefined
+      callback(closeError)
+    }
+  }
+  const closeIpcServer = () => {
+    if (ipcCloseComplete) return
+    if (!ipcServer.listening) {
+      if (ipcReady || ipcStartupError) {
+        ipcCloseComplete = true
+        finishClose()
+      }
+      return
+    }
+    ipcServer.close((error) => {
+      if (error) closeError ??= error
+      ipcCloseComplete = true
+      finishClose()
+    })
+  }
   httpServer.close = ((callback?: (error?: Error) => void) => {
     httpClosing = true
-    if (ipcServer.listening) ipcServer.close()
+    closeCallback = callback
     if (!httpServer.listening) {
-      callback?.()
-      return httpServer
+      httpCloseComplete = true
+    } else {
+      closeHttpListener((error) => {
+        if (error) closeError ??= error
+        httpCloseComplete = true
+        finishClose()
+      })
     }
-    return closeHttpServer(callback)
+    closeIpcServer()
+    finishClose()
+    return httpServer
   }) as typeof httpServer.close
   ;(httpServer as HttpServer & { ipcServer?: HttpServer }).ipcServer = ipcServer
   void listenIpc(ipcServer, instance)
     .then((endpoint) => {
+      ipcReady = true
       if (httpClosing) {
-        if (ipcServer.listening) ipcServer.close()
+        closeIpcServer()
         return
       }
       console.log(`tuckmark DEVD IPC listening on ${endpoint.address}`)
@@ -942,7 +983,12 @@ export function startServer(
       })
     })
     .catch((error) => {
-      if (httpClosing) return
+      ipcStartupError = error instanceof Error ? error : new Error(String(error))
+      if (httpClosing) {
+        ipcCloseComplete = true
+        finishClose()
+        return
+      }
       console.error(
         `tuckmark DEVD IPC failed: ${error instanceof Error ? error.message : String(error)}`
       )

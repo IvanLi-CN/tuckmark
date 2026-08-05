@@ -1,16 +1,18 @@
 import type { DirectCanvasDefinition } from "./types.js"
 
-const DotsPerMillimeter = 8
+const DefaultPrinterDpi = 203
 
 /** Compile a persisted canvas draft into the renderer's dot canvas. */
 export function compileCanvasDraftToDirectCanvas(
   document: Record<string, any>,
-  input: Record<string, string>
+  input: Record<string, string>,
+  options?: { printerDpi?: number }
 ): DirectCanvasDefinition {
   // Drafts without an explicit unit predate the millimetre schema and already
   // contain renderer dot coordinates.
+  const dotsPerMillimeter = (options?.printerDpi ?? DefaultPrinterDpi) / 25.4
   const toDots = (value: number): number =>
-    document.unit === "mm" ? value * DotsPerMillimeter : value
+    document.unit === "mm" ? Math.round(value * dotsPerMillimeter) : value
   const fields = new Map<string, string>(
     (document.fields ?? []).map((field: any) => [
       field.key,

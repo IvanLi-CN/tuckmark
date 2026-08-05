@@ -45,6 +45,7 @@ const safeTextSchema = z.object({
 })
 
 const renderOptionsSchema = z.object({
+  printerDpi: z.number().int().positive().optional(),
   paperType: z.enum(["continuous", "gap"]).optional(),
   threshold: z.number().int().min(0).max(255).optional(),
   xOffsetDots: z.number().int().optional(),
