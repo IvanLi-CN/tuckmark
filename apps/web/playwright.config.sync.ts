@@ -1,14 +1,15 @@
-import path from "node:path"
-import { fileURLToPath } from "node:url"
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { defineConfig } from "@playwright/test"
+import { defineConfig } from "@playwright/test";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const repoRoot = path.resolve(__dirname, "../..")
-const syncRoot = path.join(repoRoot, "work", "playwright-sync")
-const syncPort = Number(process.env.TUCKMARK_SYNC_E2E_PORT ?? "4210")
-const syncBaseURL = `http://127.0.0.1:${syncPort}`
-const browserChannel = process.env.TUCKMARK_E2E_BROWSER_CHANNEL === "chrome" ? "chrome" : undefined
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "../..");
+const syncRoot = path.join(repoRoot, "work", "playwright-sync");
+const syncPort = Number(process.env.TUCKMARK_SYNC_E2E_PORT ?? "4210");
+const syncBaseURL = `http://127.0.0.1:${syncPort}`;
+const browserChannel =
+  process.env.TUCKMARK_E2E_BROWSER_CHANNEL === "chrome" ? "chrome" : undefined;
 
 export default defineConfig({
   testDir: "./tests",
@@ -34,6 +35,7 @@ export default defineConfig({
     env: {
       TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "0",
       TUCKMARK_DATA_DIR: syncRoot,
+      TUCKMARK_DEVD_INSTANCE: "sync",
       HOME: process.env.HOME ?? "",
       PATH: process.env.PATH ?? "",
       NODE_ENV: "test",
@@ -42,4 +44,4 @@ export default defineConfig({
   metadata: {
     syncRoot,
   },
-})
+});
