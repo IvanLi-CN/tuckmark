@@ -945,6 +945,26 @@ export class DevdDataService {
     })
   }
 
+  async readInventoryPrintSnapshot(): Promise<{
+    revision: number
+    data: {
+      materials: InventoryMaterial[]
+      runtime: Awaited<ReturnType<DevdDataService["runtimeSnapshot"]>>
+    }
+  }> {
+    return await this.serialize(async () => {
+      await this.recoverTransactions()
+      const revision = await this.readRevision()
+      return {
+        revision,
+        data: {
+          materials: await this.listMaterials("", true, false),
+          runtime: await this.runtimeSnapshot(false),
+        },
+      }
+    })
+  }
+
   async listMaterials(
     query = "",
     includeArchived = false,
@@ -1299,6 +1319,8 @@ export class DevdDataService {
         }
       }
       if (patch.name !== undefined && working) working.draft.name = template.name
+      if (patch.description !== undefined && working)
+        working.draft.description = template.description
       template.updatedAt = now
       if (working) working.updatedAt = now
       data = summary(template)

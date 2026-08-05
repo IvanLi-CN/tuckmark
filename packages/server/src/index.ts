@@ -413,14 +413,11 @@ export function createApp(
     try {
       const payload = inventoryPrintBindingSchema.parse(req.body)
       const data = requireDevdDataService(devdDataService)
-      const revision = await data.currentRevision()
-      if (revision !== payload.expectedRevision) {
+      const snapshot = await data.readInventoryPrintSnapshot()
+      const { revision } = snapshot
+      if (revision !== payload.expectedRevision)
         throw new DevdDataConflictError(payload.expectedRevision, revision)
-      }
-      const [materials, runtime] = await Promise.all([
-        data.listMaterials("", true),
-        data.runtimeSnapshot(),
-      ])
+      const { materials, runtime } = snapshot.data
       const material = materials.find((entry) => entry.id === payload.args.materialId)
       if (!material) throw new DevdDataNotFoundError("Material was not found.")
       if (material.archivedAt) throw new Error("Cannot print labels for an archived material.")

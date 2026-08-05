@@ -301,6 +301,9 @@ describe("DevdDataService", () => {
       description: "Updated metadata",
     })
     expect(after.templates[0]?.recommendedUse).toBeUndefined()
+    expect(after.workingCopies[0]?.draft).toMatchObject({
+      description: "Updated metadata",
+    })
     expect(after.workingCopies[0]?.draft.recommendedUse).toBeUndefined()
   })
 

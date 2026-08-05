@@ -1,5 +1,15 @@
 import { createHash } from "node:crypto"
-import { chmodSync, existsSync, lstatSync, mkdirSync, unlinkSync } from "node:fs"
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  unlinkSync,
+  writeSync,
+} from "node:fs"
 import { request as httpRequest, type RequestOptions, type Server } from "node:http"
 import type { Socket } from "node:net"
 import { createConnection } from "node:net"
@@ -180,28 +190,99 @@ async function removeStaleUnixSocket(address: string): Promise<void> {
   })
 }
 
+type UnixEndpointLock = {
+  release: () => void
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM"
+  }
+}
+
+function acquireUnixEndpointLock(address: string): UnixEndpointLock {
+  const lockPath = `${address}.lock`
+  // Every DEVD owner claims this lock before probing or binding, so stale
+  // endpoint recovery cannot race another current instance.
+  for (;;) {
+    try {
+      const descriptor = openSync(lockPath, "wx", 0o600)
+      try {
+        writeSync(descriptor, `${process.pid}\n`)
+      } finally {
+        closeSync(descriptor)
+      }
+      let released = false
+      return {
+        release: () => {
+          if (released) return
+          released = true
+          try {
+            unlinkSync(lockPath)
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+          }
+        },
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+      let ownerPid = Number.NaN
+      try {
+        ownerPid = Number.parseInt(readFileSync(lockPath, "utf8"), 10)
+      } catch (readError) {
+        if ((readError as NodeJS.ErrnoException).code === "ENOENT") continue
+        throw readError
+      }
+      if (Number.isInteger(ownerPid) && ownerPid > 0 && isProcessAlive(ownerPid)) {
+        throw new IpcConfigurationError(`IPC endpoint is already in use: ${address}`)
+      }
+      try {
+        unlinkSync(lockPath)
+      } catch (unlinkError) {
+        if ((unlinkError as NodeJS.ErrnoException).code !== "ENOENT") throw unlinkError
+      }
+    }
+  }
+}
+
 export async function listenIpc(server: Server, instance: string): Promise<IpcEndpoint> {
   const endpoint = resolveIpcEndpoint(instance)
+  let lock: UnixEndpointLock | undefined
   if (endpoint.transport === "unix") {
     const directory = path.dirname(endpoint.address)
     const directoryExisted = existsSync(directory)
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     if (!directoryExisted) chmodSync(directory, 0o700)
-    await removeStaleUnixSocket(endpoint.address)
+    lock = acquireUnixEndpointLock(endpoint.address)
+    try {
+      await removeStaleUnixSocket(endpoint.address)
+    } catch (error) {
+      lock.release()
+      throw error
+    }
   }
   server.on("connection", markIpcSocket)
-  await new Promise<void>((resolve, reject) => {
-    const onError = (error: Error) => {
-      server.off("listening", onListening)
-      reject(error)
-    }
-    const onListening = () => {
-      server.off("error", onError)
-      resolve()
-    }
-    server.once("error", onError)
-    server.once("listening", onListening)
-    server.listen(endpoint.address)
-  })
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => {
+        server.off("listening", onListening)
+        reject(error)
+      }
+      const onListening = () => {
+        server.off("error", onError)
+        resolve()
+      }
+      server.once("error", onError)
+      server.once("listening", onListening)
+      server.listen(endpoint.address)
+    })
+  } catch (error) {
+    lock?.release()
+    throw error
+  }
+  if (lock) server.once("close", lock.release)
   return endpoint
 }
