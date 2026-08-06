@@ -1,4 +1,5 @@
 import fs from "node:fs/promises"
+import { createServer as createHttpServer, type Server as HttpServer } from "node:http"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import {
@@ -6,6 +7,7 @@ import {
   assertServerSidePrintRuntimeReady,
   type BatchPreviewRequest,
   type CanvasDraftRecord,
+  compileCanvasDraftToDirectCanvas,
   type DirectCanvasPreviewRequest,
   directCanvasSchema,
   type PreviewRequest,
@@ -27,12 +29,14 @@ import {
   agentImportItemSchema,
   agentImportProposalSchema,
   agentImportTemplateSchema,
+  buildInventoryTemplateInput,
 } from "@tuckmark/inventory"
+import { isIpcSocket, listenIpc, resolveRequiredInstance } from "@tuckmark/ipc"
 import cors from "cors"
 import express from "express"
 import { z } from "zod"
-
 import { AgentImportService } from "./agent-import-service.js"
+import { DevdConfigService } from "./devd-config.js"
 import {
   DevdDataConflictError,
   DevdDataNotFoundError,
@@ -87,6 +91,7 @@ export interface ServerService {
 }
 
 const previewOptionsSchema = z.object({
+  printerDpi: z.number().int().positive().optional(),
   printWidthDots: z.number().int().positive().optional(),
   threshold: z.number().int().min(0).max(255).optional(),
   xOffsetDots: z.number().int().optional(),
@@ -151,6 +156,18 @@ const printSafeTextLabelSchema = z.object({
   renderOptions: previewOptionsSchema.optional(),
 })
 
+const inventoryPrintBindingSchema = z.object({
+  expectedRevision: z.number().int().min(0),
+  args: z.object({
+    materialId: z.string().min(1),
+    bindingId: z.string().min(1),
+    printerId: z.string().min(1),
+    printerName: z.string().min(1).optional(),
+    quantity: z.number().int().positive().optional(),
+    renderOptions: previewOptionsSchema.optional(),
+  }),
+})
+
 const syncStateRequestSchema = syncStateSchema
 const templateUsageRecordRequestSchema = syncRecordSchema.refine(
   (value) => value.kind === "template_usage",
@@ -196,6 +213,7 @@ function sendError(res: express.Response, error: unknown): void {
 export type CreateAppOptions = {
   agentImportService?: AgentImportService | null
   clientAddress?: (request: express.Request) => string | undefined
+  devdConfigService?: DevdConfigService | null
   devdDataService?: DevdDataService | null
 }
 
@@ -236,6 +254,7 @@ function sendDataError(res: express.Response, error: unknown): void {
 
 const runtimeDataCommandSchema = z.enum([
   "save-template",
+  "update-template-metadata",
   "rename-template",
   "archive-template",
   "restore-template",
@@ -301,6 +320,7 @@ export function createApp(
   options: CreateAppOptions = {}
 ): express.Express {
   const app = express()
+  const devdConfigService = options.devdConfigService ?? null
   const devdDataService = options.devdDataService ?? DevdDataService.fromEnvironment()
   const agentImportService =
     options.agentImportService ?? AgentImportService.fromEnvironment(devdDataService ?? undefined)
@@ -309,6 +329,10 @@ export function createApp(
   app.use(express.json({ limit: "10mb" }))
 
   const requireLocalAppOrigin: express.RequestHandler = (req, res, next) => {
+    if (isIpcSocket(req.socket)) {
+      next()
+      return
+    }
     if (!isLoopbackClientAddress(clientAddress(req))) {
       res.status(403).json({ status: "error", error: "DEVD only accepts loopback requests." })
       return
@@ -339,6 +363,30 @@ export function createApp(
   app.get("/api/data/status", async (_req, res) => {
     try {
       res.json(await requireDevdDataService(devdDataService).status())
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.get("/api/data/config", (_req, res) => {
+    try {
+      if (!devdConfigService)
+        throw new DevdDataUnavailableError("DEVD configuration is unavailable.")
+      res.json(devdConfigService.status())
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.put("/api/data/config/data-directory", (req, res) => {
+    try {
+      if (!devdConfigService)
+        throw new DevdDataUnavailableError("DEVD configuration is unavailable.")
+      const payload = z
+        .object({ dataDir: z.string().min(1) })
+        .strict()
+        .parse(req.body)
+      res.json(devdConfigService.saveDataDirectory(payload.dataDir))
     } catch (error) {
       sendDataError(res, error)
     }
@@ -384,6 +432,68 @@ export function createApp(
       const service = requireDevdDataService(devdDataService)
       const materialId = typeof req.query.materialId === "string" ? req.query.materialId : undefined
       res.json(await service.readAdjustments(materialId))
+    } catch (error) {
+      sendDataError(res, error)
+    }
+  })
+
+  app.post("/api/data/inventory/print-binding", async (req, res) => {
+    try {
+      const payload = inventoryPrintBindingSchema.parse(req.body)
+      const data = requireDevdDataService(devdDataService)
+      const snapshot = await data.readInventoryPrintSnapshot()
+      const { revision } = snapshot
+      if (revision !== payload.expectedRevision)
+        throw new DevdDataConflictError(payload.expectedRevision, revision)
+      const { materials, runtime } = snapshot.data
+      const material = materials.find((entry) => entry.id === payload.args.materialId)
+      if (!material) throw new DevdDataNotFoundError("Material was not found.")
+      if (material.archivedAt) throw new Error("Cannot print labels for an archived material.")
+      const binding = material.labelBindings.find((entry) => entry.id === payload.args.bindingId)
+      if (!binding) throw new DevdDataNotFoundError("Template binding was not found.")
+      const copies = payload.args.quantity ?? binding.printQuantity
+      const input = {
+        ...buildInventoryTemplateInput(material, binding),
+        currentQuantity: String(material.currentQuantity),
+      }
+      const jobs = []
+      for (let index = 0; index < copies; index += 1) {
+        if (binding.templateSource === "system") {
+          jobs.push(
+            await service.printByTemplate({
+              printerId: payload.args.printerId,
+              ...(payload.args.printerName ? { printerName: payload.args.printerName } : {}),
+              templateId: binding.templateId,
+              input,
+              ...(payload.args.renderOptions ? { renderOptions: payload.args.renderOptions } : {}),
+            })
+          )
+          continue
+        }
+        const working = runtime.workingCopies.find(
+          (entry: any) => entry.sourceKey === `user:${binding.templateId}`
+        )
+        const version = runtime.versions.find(
+          (entry: any) =>
+            entry.id ===
+            runtime.templates.find((item: any) => item.id === binding.templateId)?.currentVersionId
+        )
+        const document = working?.draft ?? version?.document
+        if (!document) throw new DevdDataNotFoundError("User template document was not found.")
+        jobs.push(
+          await service.printCanvas({
+            printerId: payload.args.printerId,
+            ...(payload.args.printerName ? { printerName: payload.args.printerName } : {}),
+            canvas: compileCanvasDraftToDirectCanvas(document, input, {
+              ...(payload.args.renderOptions?.printerDpi
+                ? { printerDpi: payload.args.renderOptions.printerDpi }
+                : {}),
+            }),
+            ...(payload.args.renderOptions ? { renderOptions: payload.args.renderOptions } : {}),
+          })
+        )
+      }
+      res.json({ revision, data: { material, binding, copies, jobs } })
     } catch (error) {
       sendDataError(res, error)
     }
@@ -832,13 +942,100 @@ export function createApp(
 export function startServer(
   service: ServerService = new TuckmarkService(),
   port = Number(process.env.PORT ?? 5210),
-  host = process.env.TUCKMARK_SERVER_HOST?.trim() || "127.0.0.1"
+  host = process.env.TUCKMARK_SERVER_HOST?.trim() || "127.0.0.1",
+  options: {
+    agentImportService?: AgentImportService
+    devdConfigService?: DevdConfigService
+    devdDataService?: DevdDataService
+  } = {}
 ) {
   assertServerSidePrintRuntimeReady()
-  const app = createApp(service)
-  return app.listen(port, host, () => {
-    console.log(`tuckmark server listening on http://${host}:${port}`)
-  })
+  const instance = resolveRequiredInstance()
+  const devdConfigService = options.devdConfigService ?? new DevdConfigService()
+  const activeDataDir = devdConfigService.resolveStartupDataDirectory()
+  const devdDataService = options.devdDataService ?? new DevdDataService(activeDataDir)
+  const agentImportService =
+    options.agentImportService ?? new AgentImportService(activeDataDir, devdDataService)
+  const app = createApp(service, { agentImportService, devdConfigService, devdDataService })
+  const httpServer = createHttpServer(app)
+  const ipcServer = createHttpServer(app)
+  let httpClosing = false
+  let ipcReady = false
+  let ipcStartupError: Error | undefined
+  let httpCloseComplete = false
+  let ipcCloseComplete = false
+  let closeError: Error | undefined
+  let closeCallback: ((error?: Error) => void) | undefined
+  const closeHttpListener = httpServer.close.bind(httpServer)
+  const finishClose = () => {
+    if (httpCloseComplete && ipcCloseComplete && closeCallback) {
+      const callback = closeCallback
+      closeCallback = undefined
+      callback(closeError)
+    }
+  }
+  const closeIpcServer = () => {
+    if (ipcCloseComplete) return
+    if (!ipcServer.listening) {
+      if (ipcReady || ipcStartupError) {
+        ipcCloseComplete = true
+        finishClose()
+      }
+      return
+    }
+    ipcServer.close((error) => {
+      if (error) closeError ??= error
+      ipcCloseComplete = true
+      finishClose()
+    })
+  }
+  httpServer.close = ((callback?: (error?: Error) => void) => {
+    httpClosing = true
+    closeCallback = callback
+    if (!httpServer.listening) {
+      httpCloseComplete = true
+    } else {
+      closeHttpListener((error) => {
+        if (error) closeError ??= error
+        httpCloseComplete = true
+        finishClose()
+      })
+    }
+    closeIpcServer()
+    finishClose()
+    return httpServer
+  }) as typeof httpServer.close
+  ;(httpServer as HttpServer & { ipcServer?: HttpServer }).ipcServer = ipcServer
+  void listenIpc(ipcServer, instance)
+    .then((endpoint) => {
+      ipcReady = true
+      if (httpClosing) {
+        closeIpcServer()
+        return
+      }
+      console.log(`tuckmark DEVD IPC listening on ${endpoint.address}`)
+      if (httpClosing) return
+      httpServer.listen(port, host, () => {
+        console.log(`tuckmark server listening on http://${host}:${port}`)
+      })
+    })
+    .catch((error) => {
+      ipcStartupError = error instanceof Error ? error : new Error(String(error))
+      if (httpClosing) {
+        ipcCloseComplete = true
+        finishClose()
+        return
+      }
+      console.error(
+        `tuckmark DEVD IPC failed: ${error instanceof Error ? error.message : String(error)}`
+      )
+      if (ipcServer.listening) ipcServer.close()
+      process.exitCode = 1
+      if (httpServer.listenerCount("error") > 0) {
+        httpServer.emit("error", error)
+      }
+    })
+  return httpServer
 }
 
 function isMainModule(metaUrl: string): boolean {

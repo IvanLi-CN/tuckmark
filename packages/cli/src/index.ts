@@ -13,30 +13,13 @@ import {
   TuckmarkService,
 } from "@tuckmark/core"
 import { agentImportProposalSchema } from "@tuckmark/inventory"
+import { resolveRequiredInstance } from "@tuckmark/ipc"
 import { z } from "zod"
 
-import { deriveAgentImportWebUrl } from "./agent-import-url.js"
+import { DevdIpcClient } from "./devd-ipc-client.js"
 import {
-  adjustInventoryMaterialInDirectory,
-  archiveInventoryMaterialInDirectory,
-  archiveSharedUserTemplate,
+  createDraftFromUserTemplatePackage,
   createInventoryAdjustmentInput,
-  deleteInventoryMaterialFromDirectory,
-  deleteSharedUserTemplate,
-  getSavedCliDataDir,
-  importSharedUserTemplatePackage,
-  listInventoryAdjustmentsFromDirectory,
-  listInventoryMaterialsFromDirectory,
-  listSharedUserTemplates,
-  readInventoryMaterialFromDirectory,
-  readSharedUserTemplateDetail,
-  renameSharedUserTemplate,
-  resolveCliDataDir,
-  resolveInventoryPrintSource,
-  restoreInventoryMaterialInDirectory,
-  restoreSharedUserTemplate,
-  saveInventoryMaterialToDirectory,
-  setSavedCliDataDir,
 } from "./shared-data-directory.js"
 
 const service = new TuckmarkService()
@@ -62,6 +45,7 @@ const safeTextSchema = z.object({
 })
 
 const renderOptionsSchema = z.object({
+  printerDpi: z.number().int().positive().optional(),
   paperType: z.enum(["continuous", "gap"]).optional(),
   threshold: z.number().int().min(0).max(255).optional(),
   xOffsetDots: z.number().int().optional(),
@@ -131,30 +115,31 @@ function printHelp(): void {
     [
       "tuckmark commands:",
       "  tuckmark templates",
-      "  tuckmark template list [--data-dir <dir>]",
-      "  tuckmark template show --id <id> [--data-dir <dir>]",
-      "  tuckmark template import --file <path> [--id <id>] [--name <name>] [--description <text>] [--data-dir <dir>]",
-      "  tuckmark template rename --id <id> --name <name> [--data-dir <dir>]",
-      "  tuckmark template archive --id <id> [--data-dir <dir>]",
-      "  tuckmark template restore --id <id> [--data-dir <dir>]",
-      "  tuckmark template delete --id <id> [--data-dir <dir>]",
-      "  tuckmark inventory list [--query <text>] [--all] [--data-dir <dir>]",
-      "  tuckmark inventory show --id <id> [--data-dir <dir>]",
-      "  tuckmark inventory create --full-name <name> [--base-name <name>] [--variant-name <name>] [--package-name <name>] [--description <text>] [--device-details <markdown>] [--matrix-code <code>] [--packaging-remark <text>] [--bindings <json>] [--data-dir <dir>]",
-      "  tuckmark inventory update --id <id> [--full-name <name>] [--base-name <name>] [--variant-name <name>] [--package-name <name>] [--description <text>] [--device-details <markdown>] [--matrix-code <code>] [--packaging-remark <text>] [--bindings <json>] [--data-dir <dir>]",
-      "  tuckmark inventory archive --id <id> [--data-dir <dir>]",
-      "  tuckmark inventory restore --id <id> [--data-dir <dir>]",
-      "  tuckmark agent-import catalog --devd-url <url>",
-      "  tuckmark agent-import inventory --devd-url <url> [--query <text>]",
-      "  tuckmark agent-import create --file <proposal.json> --devd-url <url> [--web-url <url>] [--no-open] [--credential-file <path>]",
+      "  tuckmark template list --instance <name> [--source <all|system|user>] [--all]",
+      "  tuckmark template show --id <id> --instance <name>",
+      "  tuckmark template import --file <path> --instance <name> [--id <id>] [--name <name>] [--description <text>]",
+      "  tuckmark template update --id <id> --instance <name> [--name <name>] [--description <text>] [--recommended-use <text>]",
+      "  tuckmark template rename --id <id> --name <name> --instance <name>",
+      "  tuckmark template archive --id <id> --instance <name>",
+      "  tuckmark template restore --id <id> --instance <name>",
+      "  tuckmark template delete --id <id> --instance <name>",
+      "  tuckmark inventory list --instance <name> [--query <text>] [--all]",
+      "  tuckmark inventory show --id <id> --instance <name>",
+      "  tuckmark inventory create --full-name <name> --instance <name> [--bindings <json>]",
+      "  tuckmark inventory update --id <id> --instance <name> [--bindings <json>]",
+      "  tuckmark inventory archive --id <id> --instance <name>",
+      "  tuckmark inventory restore --id <id> --instance <name>",
+      "  tuckmark agent-import catalog --instance <name>",
+      "  tuckmark agent-import inventory --instance <name> [--query <text>]",
+      "  tuckmark agent-import create --file <proposal.json> --instance <name> [--web-url <url>] [--no-open] [--credential-file <path>]",
       "  tuckmark agent-import open --session <id> [--web-url <url>] [--credential-file <path>]",
-      "  tuckmark agent-import wait --session <id> --devd-url <url> [--timeout-ms <ms>] [--credential-file <path>]",
-      "  tuckmark agent-import fulfill --session <id> --event <id> --revision <n> --input <json> --devd-url <url> [--credential-file <path>]",
-      "  tuckmark inventory delete --id <id> [--data-dir <dir>]",
-      "  tuckmark inventory adjust --id <id> --kind <in|out|correction> [--quantity <n>] [--target-quantity <n>] [--note <text>] [--actor <name>] [--data-dir <dir>]",
-      "  tuckmark inventory print --id <id> --binding <bindingId> --printer <printerId> [--printer-name <name>] [--quantity <n>] [--render-options <json>] [--data-dir <dir>]",
-      "  tuckmark config get-data-dir",
-      "  tuckmark config set-data-dir --path <dir>",
+      "  tuckmark agent-import wait --session <id> --instance <name> [--timeout-ms <ms>] [--credential-file <path>]",
+      "  tuckmark agent-import fulfill --session <id> --event <id> --revision <n> --input <json> --instance <name> [--credential-file <path>]",
+      "  tuckmark inventory delete --id <id> --instance <name>",
+      "  tuckmark inventory adjust --id <id> --instance <name> --kind <in|out|correction> [--quantity <n>] [--target-quantity <n>] [--note <text>] [--actor <name>]",
+      "  tuckmark inventory print --id <id> --binding <bindingId> --printer <printerId> --instance <name> [--printer-name <name>] [--quantity <n>] [--render-options <json>]",
+      "  tuckmark config get-data-dir --instance <name>",
+      "  tuckmark config set-data-dir --path <dir> --instance <name>",
       "  tuckmark printers",
       "  tuckmark probe --printer <id> [--printer-name <name>]",
       "  tuckmark preview --template <id> --input <json> [--render-options <json>]",
@@ -219,28 +204,26 @@ function parseRenderOptions(args: string[]): Partial<RenderOptions> | undefined 
     | undefined
 }
 
-function parseDataDirFlag(args: string[]): string | undefined {
-  return parseFlag(args, "--data-dir")
+function rejectLegacyDataAccess(args: string[]): void {
+  if (
+    args.includes("--data-dir") ||
+    args.includes("--devd-url") ||
+    process.env.TUCKMARK_DEVD_URL?.trim()
+  ) {
+    throw new Error(
+      "Direct data-directory and HTTP DEVD access were removed. Use --instance or TUCKMARK_DEVD_INSTANCE."
+    )
+  }
 }
 
-async function assertDirectoryIsNotDevdOwned(dataDir: string): Promise<void> {
-  const configuredDevdDir = process.env.TUCKMARK_DATA_DIR?.trim()
-  if (configuredDevdDir && path.resolve(configuredDevdDir) === path.resolve(dataDir)) {
-    throw new Error(
-      "This directory is owned by DEVD. Use the server-http data API instead of direct CLI writes."
-    )
-  }
-  for (const filename of ["devd-owner.json", "state.json"]) {
-    try {
-      await readFile(path.join(dataDir, ".tuckmark", filename), "utf8")
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
-      throw error
-    }
-    throw new Error(
-      "This directory is owned by DEVD. Use the server-http data API instead of direct CLI writes."
-    )
-  }
+function resolveDevdInstance(args: string[], fallback?: string): string {
+  rejectLegacyDataAccess(args)
+  const instance = parseFlag(args, "--instance")
+  return resolveRequiredInstance(instance ? { instance } : fallback ? { instance: fallback } : {})
+}
+
+function createDevdClient(args: string[]): DevdIpcClient {
+  return new DevdIpcClient(resolveDevdInstance(args))
 }
 
 async function handlePreview(args: string[]): Promise<void> {
@@ -471,63 +454,32 @@ async function handleTemplatePackage(args: string[]): Promise<void> {
 async function handleConfigCommand(args: string[]): Promise<void> {
   const subcommand = args[0] ?? "help"
   const rest = args.slice(1)
+  const client = createDevdClient(rest)
   switch (subcommand) {
-    case "get-data-dir": {
-      const dataDir = await getSavedCliDataDir()
-      console.log(
-        JSON.stringify(
-          {
-            configured: Boolean(dataDir),
-            dataDir,
-          },
-          null,
-          2
-        )
-      )
+    case "get-data-dir":
+      console.log(JSON.stringify(await client.getDataDirectoryConfig(), null, 2))
       return
-    }
     case "set-data-dir": {
-      const saved = await setSavedCliDataDir(requireFlag(rest, "--path"))
-      console.log(
-        JSON.stringify(
-          {
-            ok: true,
-            dataDir: saved,
-          },
-          null,
-          2
-        )
-      )
+      const dataDir = path.resolve(requireFlag(rest, "--path"))
+      console.log(JSON.stringify(await client.setDataDirectory(dataDir), null, 2))
       return
     }
     default:
-      throw new Error("config supports get-data-dir and set-data-dir.")
+      throw new Error("config requires get-data-dir or set-data-dir.")
   }
 }
 
 const agentImportCredentialSchema = z.object({
   sessionId: z.string().min(1),
   secret: z.string().min(32),
-  devdUrl: z.string().url(),
+  instance: z.string().min(1),
   webUrl: z.string().url().optional(),
   expiresAt: z.string().min(1),
 })
 
 type AgentImportCredential = z.infer<typeof agentImportCredentialSchema>
 
-function resolveDevdUrl(args: string[], fallback?: string): string {
-  const raw = parseFlag(args, "--devd-url") ?? process.env.TUCKMARK_DEVD_URL ?? fallback
-  if (!raw?.trim()) {
-    throw new Error("DEVD URL is required. Pass --devd-url or set TUCKMARK_DEVD_URL.")
-  }
-  const parsed = new URL(raw)
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("DEVD URL must use http or https.")
-  }
-  return parsed.toString().replace(/\/$/, "")
-}
-
-function resolveAgentImportWebUrl(args: string[], devdUrl: string, fallback?: string): string {
+function resolveAgentImportWebUrl(args: string[], fallback?: string): string {
   const raw = parseFlag(args, "--web-url") ?? process.env.TUCKMARK_WEB_URL ?? fallback
   if (raw?.trim()) {
     const parsed = new URL(raw)
@@ -537,9 +489,10 @@ function resolveAgentImportWebUrl(args: string[], devdUrl: string, fallback?: st
     return parsed.toString().replace(/\/$/, "")
   }
 
-  const serverPort = process.env.TUCKMARK_SERVER_PORT ?? "5210"
   const webPort = process.env.TUCKMARK_WEB_PORT ?? "5173"
-  return deriveAgentImportWebUrl({ devdUrl, serverPort, webPort })
+  const webHost = process.env.TUCKMARK_WEB_HOST ?? process.env.TUCKMARK_SERVER_HOST ?? "127.0.0.1"
+  const formattedHost = webHost.includes(":") ? `[${webHost.replace(/^\[|\]$/g, "")}]` : webHost
+  return `http://${formattedHost}:${webPort}`
 }
 
 function defaultAgentImportCredentialPath(sessionId: string): string {
@@ -577,30 +530,6 @@ async function readAgentImportCredential(args: string[]): Promise<AgentImportCre
   return credential
 }
 
-async function requestDevd<T>(args: {
-  devdUrl: string
-  pathname: string
-  method?: "GET" | "POST" | "PUT"
-  secret?: string
-  body?: unknown
-}): Promise<T> {
-  const response = await fetch(`${args.devdUrl}${args.pathname}`, {
-    method: args.method ?? "GET",
-    headers: {
-      ...(args.secret ? { "x-tuckmark-agent-import-key": args.secret } : {}),
-      ...(args.body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    ...(args.body === undefined ? {} : { body: JSON.stringify(args.body) }),
-  })
-  const payload = (await response.json().catch(() => ({}))) as { error?: unknown }
-  if (!response.ok) {
-    throw new Error(
-      typeof payload.error === "string" ? payload.error : `DEVD returned ${response.status}.`
-    )
-  }
-  return payload as T
-}
-
 async function launchConfirmationUrl(url: string): Promise<void> {
   const command =
     process.platform === "darwin"
@@ -628,45 +557,44 @@ function confirmationUrl(webUrl: string, credential: AgentImportCredential): str
 async function handleAgentImportCommand(args: string[]): Promise<void> {
   const subcommand = args[0] ?? "help"
   const rest = args.slice(1)
+  rejectLegacyDataAccess(rest)
 
   switch (subcommand) {
     case "catalog": {
-      const catalog = await requestDevd({
-        devdUrl: resolveDevdUrl(rest),
-        pathname: "/api/agent-import/catalog",
+      const catalog = await createDevdClient(rest).agentImport("/api/agent-import/catalog", {
+        secret: "",
       })
       console.log(JSON.stringify(catalog, null, 2))
       return
     }
     case "inventory": {
       const query = parseFlag(rest, "--query")
-      const inventory = await requestDevd({
-        devdUrl: resolveDevdUrl(rest),
-        pathname: `/api/agent-import/inventory${query ? `?query=${encodeURIComponent(query)}` : ""}`,
-      })
+      const inventory = await createDevdClient(rest).agentImport(
+        `/api/agent-import/inventory${query ? `?query=${encodeURIComponent(query)}` : ""}`,
+        { secret: "" }
+      )
       console.log(JSON.stringify(inventory, null, 2))
       return
     }
     case "create": {
-      const devdUrl = resolveDevdUrl(rest)
-      const webUrl = resolveAgentImportWebUrl(rest, devdUrl)
+      const client = createDevdClient(rest)
+      const webUrl = resolveAgentImportWebUrl(rest)
       const proposal = agentImportProposalSchema.parse(
         JSON.parse(await readFile(path.resolve(requireFlag(rest, "--file")), "utf8"))
       )
       const sessionId = `agent-import-session-${randomUUID()}`
       const secret = randomBytes(32).toString("base64url")
-      const response = await requestDevd<{
+      const response = await client.agentImport<{
         session: { id: string; expiresAt: string }
-      }>({
-        devdUrl,
-        pathname: "/api/agent-import/sessions",
+      }>("/api/agent-import/sessions", {
         method: "POST",
         body: { sessionId, secret, proposal },
+        secret: "",
       })
       const credential = agentImportCredentialSchema.parse({
         sessionId: response.session.id,
         secret,
-        devdUrl,
+        instance: client.instance,
         webUrl,
         expiresAt: response.session.expiresAt,
       })
@@ -695,15 +623,14 @@ async function handleAgentImportCommand(args: string[]): Promise<void> {
     }
     case "open": {
       const credential = await readAgentImportCredential(rest)
-      const devdUrl = resolveDevdUrl(rest, credential.devdUrl)
-      const webUrl = resolveAgentImportWebUrl(rest, devdUrl, credential.webUrl)
+      const webUrl = resolveAgentImportWebUrl(rest, credential.webUrl)
       await launchConfirmationUrl(confirmationUrl(webUrl, credential))
       console.log(JSON.stringify({ sessionId: credential.sessionId, opened: true }, null, 2))
       return
     }
     case "wait": {
       const credential = await readAgentImportCredential(rest)
-      const devdUrl = resolveDevdUrl(rest, credential.devdUrl)
+      const client = new DevdIpcClient(resolveDevdInstance(rest, credential.instance))
       const timeoutMs = parseIntegerFlag(rest, "--timeout-ms") ?? 25_000
       if (timeoutMs < 0) {
         throw new Error("--timeout-ms must be zero or greater.")
@@ -723,11 +650,9 @@ async function handleAgentImportCommand(args: string[]): Promise<void> {
         )
       }
       while (true) {
-        const result = await requestDevd<{
+        const result = await client.agentImport<{
           events: unknown[]
-        }>({
-          devdUrl,
-          pathname: `/api/agent-import/sessions/${encodeURIComponent(credential.sessionId)}/events`,
+        }>(`/api/agent-import/sessions/${encodeURIComponent(credential.sessionId)}/events`, {
           secret: credential.secret,
         })
         if (result.events.length > 0) {
@@ -745,18 +670,19 @@ async function handleAgentImportCommand(args: string[]): Promise<void> {
     }
     case "fulfill": {
       const credential = await readAgentImportCredential(rest)
-      const devdUrl = resolveDevdUrl(rest, credential.devdUrl)
+      const client = new DevdIpcClient(resolveDevdInstance(rest, credential.instance))
       const input = z.record(z.string(), z.string()).parse(JSON.parse(requireFlag(rest, "--input")))
-      const session = await requestDevd({
-        devdUrl,
-        pathname: `/api/agent-import/sessions/${encodeURIComponent(credential.sessionId)}/events/${encodeURIComponent(requireFlag(rest, "--event"))}/fulfill`,
-        method: "POST",
-        secret: credential.secret,
-        body: {
-          expectedRevision: parseIntegerFlag(rest, "--revision"),
-          input,
-        },
-      })
+      const session = await client.agentImport(
+        `/api/agent-import/sessions/${encodeURIComponent(credential.sessionId)}/events/${encodeURIComponent(requireFlag(rest, "--event"))}/fulfill`,
+        {
+          method: "POST",
+          secret: credential.secret,
+          body: {
+            expectedRevision: parseIntegerFlag(rest, "--revision"),
+            input,
+          },
+        }
+      )
       console.log(JSON.stringify(session, null, 2))
       return
     }
@@ -768,25 +694,43 @@ async function handleAgentImportCommand(args: string[]): Promise<void> {
 async function handleTemplateCommand(args: string[]): Promise<void> {
   const subcommand = args[0] ?? "help"
   const rest = args.slice(1)
-  const dataDir = await resolveCliDataDir(parseDataDirFlag(rest))
+  const client = createDevdClient(rest)
 
   switch (subcommand) {
     case "list": {
+      rejectLegacyDataAccess(rest)
       const requestedSource = parseFlag(rest, "--source") ?? "all"
-      const source = requestedSource === "shared" ? "user" : requestedSource
       const includeArchived = hasFlag(rest, "--all")
-      const systemTemplates = source === "user" ? [] : await service.listTemplates()
+      const snapshot = await client.snapshot()
+      const systemTemplates = requestedSource === "user" ? [] : await service.listTemplates()
       const userTemplates =
-        source === "system"
+        requestedSource === "system"
           ? []
-          : await listSharedUserTemplates({
-              dataDir,
-              includeArchived,
-            })
+          : snapshot.templates
+              .filter((template: any) => includeArchived || !template.archivedAt)
+              .map((template: any) => {
+                const working = snapshot.workingCopies.find(
+                  (item: any) => item.sourceKey === `user:${template.id}`
+                )
+                const version = snapshot.versions.find(
+                  (item: any) => item.id === template.currentVersionId
+                )
+                const document = working?.draft ?? version?.document
+                return {
+                  source: "user-template",
+                  id: template.id,
+                  name: template.name,
+                  description: template.description,
+                  archivedAt: template.archivedAt ?? null,
+                  fields: document?.fields?.map((field: any) => field.key) ?? template.fieldOrder,
+                  updatedAt: template.updatedAt,
+                  ...(template.recommendedUse ? { recommendedUse: template.recommendedUse } : {}),
+                }
+              })
       console.log(
         JSON.stringify(
           {
-            dataDir,
+            instance: client.instance,
             templates: [
               ...systemTemplates.map((template) => ({
                 source: "system",
@@ -795,15 +739,7 @@ async function handleTemplateCommand(args: string[]): Promise<void> {
                 description: template.description,
                 fields: template.fields.map((field) => field.key),
               })),
-              ...userTemplates.map((template) => ({
-                source: "user-template",
-                id: template.id,
-                name: template.name,
-                description: template.description,
-                archivedAt: template.archivedAt ?? null,
-                fields: template.fields.map((field) => field.key),
-                updatedAt: template.updatedAt,
-              })),
+              ...userTemplates,
             ],
           },
           null,
@@ -830,29 +766,41 @@ async function handleTemplateCommand(args: string[]): Promise<void> {
         )
         return
       }
-      const detail = await readSharedUserTemplateDetail(dataDir, templateId)
-      if (!detail) {
+      const snapshot = await client.snapshot()
+      const template = snapshot.templates.find((item: any) => item.id === templateId)
+      if (!template) {
         throw new Error(`Template ${templateId} was not found.`)
       }
+      const working = snapshot.workingCopies.find(
+        (item: any) => item.sourceKey === `user:${templateId}`
+      )
+      const versions = snapshot.versions.filter((item: any) => item.templateId === templateId)
+      const document =
+        working?.draft ??
+        versions.find((item: any) => item.id === template.currentVersionId)?.document
       console.log(
         JSON.stringify(
           {
             source: "user-template",
-            template: detail.template,
-            workingCopyUpdatedAt: detail.workingCopy?.updatedAt ?? null,
-            savedVersions: detail.savedVersions.map((version) => ({
-              id: version.id,
-              version: version.version,
-              kind: version.kind,
-              createdAt: version.createdAt,
-              label: version.label,
-            })),
-            autosaves: detail.autosaves.map((version) => ({
-              id: version.id,
-              version: version.version,
-              createdAt: version.createdAt,
-              label: version.label,
-            })),
+            template: { ...template, fields: document?.fields ?? template.fieldOrder, document },
+            workingCopyUpdatedAt: working?.updatedAt ?? null,
+            savedVersions: versions
+              .filter((version: any) => version.kind === "saved")
+              .map((version: any) => ({
+                id: version.id,
+                version: version.version,
+                kind: version.kind,
+                createdAt: version.createdAt,
+                label: version.label,
+              })),
+            autosaves: versions
+              .filter((version: any) => version.kind === "autosave")
+              .map((version: any) => ({
+                id: version.id,
+                version: version.version,
+                createdAt: version.createdAt,
+                label: version.label,
+              })),
           },
           null,
           2
@@ -861,50 +809,74 @@ async function handleTemplateCommand(args: string[]): Promise<void> {
       return
     }
     case "import": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
       const templatePackage = await readTemplatePackageFromArgs(rest)
-      const imported = await importSharedUserTemplatePackage({
-        dataDir,
-        templatePackage,
-        ...(parseFlag(rest, "--id") ? { templateId: requireFlag(rest, "--id") } : {}),
-        ...(parseFlag(rest, "--name") ? { name: requireFlag(rest, "--name") } : {}),
-        ...(parseFlag(rest, "--description")
-          ? { description: requireFlag(rest, "--description") }
-          : {}),
+      const templateId = parseFlag(rest, "--id") ?? templatePackage.id
+      const name = parseFlag(rest, "--name")
+      const description = parseFlag(rest, "--description")
+      const document = createDraftFromUserTemplatePackage(templatePackage, {
+        templateId,
+        ...(name !== undefined ? { name } : {}),
+        ...(description !== undefined ? { description } : {}),
       })
-      console.log(JSON.stringify({ dataDir, imported }, null, 2))
+      const imported = await client.runtimeCommand("save-template", {
+        templateId,
+        name: name ?? templatePackage.name,
+        description: description ?? templatePackage.description,
+        document,
+      })
+      console.log(JSON.stringify({ instance: client.instance, imported }, null, 2))
+      return
+    }
+    case "update": {
+      const templateId = requireFlag(rest, "--id")
+      const patch: Record<string, string> = {}
+      for (const [flag, key] of [
+        ["--name", "name"],
+        ["--description", "description"],
+        ["--recommended-use", "recommendedUse"],
+      ] as const) {
+        const value = parseFlag(rest, flag)
+        if (value !== undefined) patch[key] = value
+      }
+      if (Object.keys(patch).length === 0)
+        throw new Error("template update requires a metadata flag.")
+      const updated = await client.runtimeCommand("update-template-metadata", { templateId, patch })
+      console.log(JSON.stringify({ instance: client.instance, template: updated }, null, 2))
       return
     }
     case "rename": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
-      const renamed = await renameSharedUserTemplate({
-        dataDir,
+      const renamed = await client.runtimeCommand("rename-template", {
         templateId: requireFlag(rest, "--id"),
         name: requireFlag(rest, "--name"),
       })
-      console.log(JSON.stringify({ dataDir, template: renamed }, null, 2))
+      console.log(JSON.stringify({ instance: client.instance, template: renamed }, null, 2))
       return
     }
     case "archive": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
-      const archived = await archiveSharedUserTemplate(dataDir, requireFlag(rest, "--id"))
-      console.log(JSON.stringify({ dataDir, template: archived }, null, 2))
+      const archived = await client.runtimeCommand("archive-template", {
+        templateId: requireFlag(rest, "--id"),
+      })
+      console.log(JSON.stringify({ instance: client.instance, template: archived }, null, 2))
       return
     }
     case "restore": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
-      const restored = await restoreSharedUserTemplate(dataDir, requireFlag(rest, "--id"))
-      console.log(JSON.stringify({ dataDir, template: restored }, null, 2))
+      const restored = await client.runtimeCommand("restore-template", {
+        templateId: requireFlag(rest, "--id"),
+      })
+      console.log(JSON.stringify({ instance: client.instance, template: restored }, null, 2))
       return
     }
     case "delete": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
-      await deleteSharedUserTemplate(dataDir, requireFlag(rest, "--id"))
-      console.log(JSON.stringify({ ok: true, dataDir }, null, 2))
+      const deleted = await client.runtimeCommand("purge-template", {
+        templateId: requireFlag(rest, "--id"),
+      })
+      console.log(JSON.stringify({ ok: true, instance: client.instance, data: deleted }, null, 2))
       return
     }
     default:
-      throw new Error("template supports list, show, import, rename, archive, restore, and delete.")
+      throw new Error(
+        "template supports list, show, import, update, rename, archive, restore, and delete."
+      )
   }
 }
 
@@ -919,125 +891,114 @@ function parseLabelBindings(args: string[]) {
 async function handleInventoryCommand(args: string[]): Promise<void> {
   const subcommand = args[0] ?? "help"
   const rest = args.slice(1)
-  const dataDir = await resolveCliDataDir(parseDataDirFlag(rest))
+  const client = createDevdClient(rest)
 
   switch (subcommand) {
     case "list": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
-      const materials = await listInventoryMaterialsFromDirectory({
-        dataDir,
-        query: parseFlag(rest, "--query") ?? "",
-        includeArchived: hasFlag(rest, "--all"),
-      })
-      console.log(JSON.stringify({ dataDir, materials }, null, 2))
+      const materials = await client.listMaterials(
+        parseFlag(rest, "--query") ?? "",
+        hasFlag(rest, "--all")
+      )
+      console.log(JSON.stringify({ instance: client.instance, materials }, null, 2))
       return
     }
     case "show": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
       const materialId = requireFlag(rest, "--id")
-      const material = await readInventoryMaterialFromDirectory(dataDir, materialId)
+      const material = (await client.listMaterials("", true)).find(
+        (entry: any) => entry.id === materialId
+      )
       if (!material) {
         throw new Error(`Material ${materialId} was not found.`)
       }
-      const adjustments = await listInventoryAdjustmentsFromDirectory({
-        dataDir,
-        materialId,
-      })
-      console.log(JSON.stringify({ dataDir, material, adjustments }, null, 2))
+      const adjustments = await client.listAdjustments(materialId)
+      console.log(JSON.stringify({ instance: client.instance, material, adjustments }, null, 2))
       return
     }
     case "create": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
       const labelBindings = parseLabelBindings(rest)
-      const material = await saveInventoryMaterialToDirectory({
-        dataDir,
-        material: {
-          fullName: requireFlag(rest, "--full-name"),
-          ...(parseFlag(rest, "--base-name") ? { baseName: requireFlag(rest, "--base-name") } : {}),
-          ...(parseFlag(rest, "--variant-name")
-            ? { variantName: requireFlag(rest, "--variant-name") }
-            : {}),
-          ...(parseFlag(rest, "--package-name")
-            ? { packageName: requireFlag(rest, "--package-name") }
-            : {}),
-          ...(parseFlag(rest, "--description")
-            ? { description: requireFlag(rest, "--description") }
-            : {}),
-          ...(parseFlag(rest, "--device-details")
-            ? { deviceDetails: requireFlag(rest, "--device-details") }
-            : {}),
-          ...(parseFlag(rest, "--matrix-code")
-            ? { matrixCode: requireFlag(rest, "--matrix-code") }
-            : {}),
-          ...(parseFlag(rest, "--packaging-remark")
-            ? { packagingRemark: requireFlag(rest, "--packaging-remark") }
-            : {}),
-          ...(labelBindings ? { labelBindings } : {}),
-        },
+      const material = await client.inventoryCommand("save-material", {
+        fullName: requireFlag(rest, "--full-name"),
+        ...(parseFlag(rest, "--base-name") ? { baseName: requireFlag(rest, "--base-name") } : {}),
+        ...(parseFlag(rest, "--variant-name")
+          ? { variantName: requireFlag(rest, "--variant-name") }
+          : {}),
+        ...(parseFlag(rest, "--package-name")
+          ? { packageName: requireFlag(rest, "--package-name") }
+          : {}),
+        ...(parseFlag(rest, "--description")
+          ? { description: requireFlag(rest, "--description") }
+          : {}),
+        ...(parseFlag(rest, "--device-details")
+          ? { deviceDetails: requireFlag(rest, "--device-details") }
+          : {}),
+        ...(parseFlag(rest, "--matrix-code")
+          ? { matrixCode: requireFlag(rest, "--matrix-code") }
+          : {}),
+        ...(parseFlag(rest, "--packaging-remark")
+          ? { packagingRemark: requireFlag(rest, "--packaging-remark") }
+          : {}),
+        ...(labelBindings ? { labelBindings } : {}),
       })
-      console.log(JSON.stringify({ dataDir, material }, null, 2))
+      console.log(JSON.stringify({ instance: client.instance, material }, null, 2))
       return
     }
     case "update": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
       const materialId = requireFlag(rest, "--id")
-      const current = await readInventoryMaterialFromDirectory(dataDir, materialId)
+      const current = (await client.listMaterials("", true)).find(
+        (entry: any) => entry.id === materialId
+      )
       if (!current) {
         throw new Error(`Material ${materialId} was not found.`)
       }
       const labelBindings = parseLabelBindings(rest)
-      const updated = await saveInventoryMaterialToDirectory({
-        dataDir,
-        material: {
-          id: current.id,
-          fullName: parseFlag(rest, "--full-name") ?? current.fullName,
-          ...(parseFlag(rest, "--base-name") || current.baseName
-            ? { baseName: parseFlag(rest, "--base-name") ?? current.baseName ?? "" }
-            : {}),
-          ...(parseFlag(rest, "--variant-name") || current.variantName
-            ? { variantName: parseFlag(rest, "--variant-name") ?? current.variantName ?? "" }
-            : {}),
-          ...(parseFlag(rest, "--package-name") || current.packageName
-            ? { packageName: parseFlag(rest, "--package-name") ?? current.packageName ?? "" }
-            : {}),
-          description: parseFlag(rest, "--description") ?? current.description,
-          deviceDetails: parseFlag(rest, "--device-details") ?? current.deviceDetails,
-          ...(parseFlag(rest, "--matrix-code") || current.matrixCode
-            ? { matrixCode: parseFlag(rest, "--matrix-code") ?? current.matrixCode ?? "" }
-            : {}),
-          packagingRemark: parseFlag(rest, "--packaging-remark") ?? current.packagingRemark,
-          labelBindings: labelBindings ?? current.labelBindings,
-        },
+      const updated = await client.inventoryCommand("save-material", {
+        id: current.id,
+        fullName: parseFlag(rest, "--full-name") ?? current.fullName,
+        ...(parseFlag(rest, "--base-name") || current.baseName
+          ? { baseName: parseFlag(rest, "--base-name") ?? current.baseName ?? "" }
+          : {}),
+        ...(parseFlag(rest, "--variant-name") || current.variantName
+          ? { variantName: parseFlag(rest, "--variant-name") ?? current.variantName ?? "" }
+          : {}),
+        ...(parseFlag(rest, "--package-name") || current.packageName
+          ? { packageName: parseFlag(rest, "--package-name") ?? current.packageName ?? "" }
+          : {}),
+        description: parseFlag(rest, "--description") ?? current.description,
+        deviceDetails: parseFlag(rest, "--device-details") ?? current.deviceDetails,
+        ...(parseFlag(rest, "--matrix-code") || current.matrixCode
+          ? { matrixCode: parseFlag(rest, "--matrix-code") ?? current.matrixCode ?? "" }
+          : {}),
+        packagingRemark: parseFlag(rest, "--packaging-remark") ?? current.packagingRemark,
+        labelBindings: labelBindings ?? current.labelBindings,
       })
-      console.log(JSON.stringify({ dataDir, material: updated }, null, 2))
+      console.log(JSON.stringify({ instance: client.instance, material: updated }, null, 2))
       return
     }
     case "archive": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
-      const material = await archiveInventoryMaterialInDirectory(dataDir, requireFlag(rest, "--id"))
-      console.log(JSON.stringify({ dataDir, material }, null, 2))
+      const material = await client.inventoryCommand("archive-material", {
+        materialId: requireFlag(rest, "--id"),
+      })
+      console.log(JSON.stringify({ instance: client.instance, material }, null, 2))
       return
     }
     case "restore": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
-      const material = await restoreInventoryMaterialInDirectory(dataDir, requireFlag(rest, "--id"))
-      console.log(JSON.stringify({ dataDir, material }, null, 2))
+      const material = await client.inventoryCommand("restore-material", {
+        materialId: requireFlag(rest, "--id"),
+      })
+      console.log(JSON.stringify({ instance: client.instance, material }, null, 2))
       return
     }
     case "delete": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
-      await deleteInventoryMaterialFromDirectory(dataDir, requireFlag(rest, "--id"))
-      console.log(JSON.stringify({ ok: true, dataDir }, null, 2))
+      await client.inventoryCommand("delete-material", { materialId: requireFlag(rest, "--id") })
+      console.log(JSON.stringify({ ok: true, instance: client.instance }, null, 2))
       return
     }
     case "adjust": {
-      await assertDirectoryIsNotDevdOwned(dataDir)
       const kind = z.enum(["in", "out", "correction"]).parse(requireFlag(rest, "--kind"))
       const quantity = parseIntegerFlag(rest, "--quantity")
       const targetQuantity = parseIntegerFlag(rest, "--target-quantity")
       const note = parseFlag(rest, "--note")
-      const result = await adjustInventoryMaterialInDirectory({
-        dataDir,
+      const result = await client.inventoryCommand("apply-adjustment", {
         materialId: requireFlag(rest, "--id"),
         input: createInventoryAdjustmentInput({
           kind,
@@ -1047,67 +1008,23 @@ async function handleInventoryCommand(args: string[]): Promise<void> {
           actor: parseFlag(rest, "--actor") ?? "cli",
         }),
       })
-      console.log(JSON.stringify({ dataDir, ...result }, null, 2))
+      console.log(JSON.stringify({ instance: client.instance, result }, null, 2))
       return
     }
     case "print": {
-      if (!service.serverSidePrintEnabled) {
-        throw new Error(
-          "Server-side printer control is disabled. Set TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 to enable it."
-        )
-      }
       const printerId = requireFlag(rest, "--printer")
       const printerName = parseFlag(rest, "--printer-name")
       const renderOptions = parseRenderOptions(rest)
       const quantity = parseIntegerFlag(rest, "--quantity")
-      const source = await resolveInventoryPrintSource({
-        dataDir,
+      const result = await client.printInventoryBinding({
         materialId: requireFlag(rest, "--id"),
         bindingId: requireFlag(rest, "--binding"),
-        ...(quantity !== undefined ? { quantity } : {}),
-        ...(renderOptions ? { renderOptions } : {}),
+        printerId,
+        printerName,
+        quantity,
+        renderOptions,
       })
-      if (source.kind === "system-template") {
-        const results = []
-        for (let index = 0; index < source.copies; index += 1) {
-          results.push(
-            await service.printByTemplate({
-              printerId,
-              printerName,
-              templateId: source.templateId,
-              input: source.input,
-              renderOptions: source.renderOptions,
-            })
-          )
-        }
-        console.log(
-          JSON.stringify({ dataDir, source, result: results[results.length - 1], results }, null, 2)
-        )
-        return
-      }
-      const results = []
-      for (let index = 0; index < source.copies; index += 1) {
-        results.push(
-          await service.printCanvas({
-            printerId,
-            printerName,
-            canvas: source.canvas,
-            renderOptions: source.renderOptions,
-          })
-        )
-      }
-      console.log(
-        JSON.stringify(
-          {
-            dataDir,
-            source: { kind: source.kind, copies: source.copies },
-            result: results[results.length - 1],
-            results,
-          },
-          null,
-          2
-        )
-      )
+      console.log(JSON.stringify({ instance: client.instance, result }, null, 2))
       return
     }
     default:

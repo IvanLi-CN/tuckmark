@@ -4,7 +4,7 @@ import path from "node:path"
 import type { PreviewArtifact } from "@tuckmark/core"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { createServer, type McpService } from "./index.js"
+import { createServer, type McpService, type McpTemplateDataService } from "./index.js"
 
 const cleanupPaths: string[] = []
 
@@ -214,6 +214,58 @@ class FakeMcpService implements McpService {
 }
 
 describe("mcp", () => {
+  it("registers injected user-template management tools without filesystem or DEVD URL inputs", async () => {
+    const calls: string[] = []
+    const templateDataService: McpTemplateDataService = {
+      list: async ({ includeArchived }) => ({ templates: [], includeArchived }),
+      get: async (templateId) => ({ templateId }),
+      createOrUpdatePackage: async ({ expectedRevision }) => ({ expectedRevision }),
+      updateMetadata: async ({ templateId, patch, expectedRevision }) => ({
+        templateId,
+        patch,
+        expectedRevision,
+      }),
+      rename: async ({ templateId }) => {
+        calls.push("rename")
+        return { templateId }
+      },
+      archive: async ({ templateId }) => ({ templateId }),
+      restore: async ({ templateId }) => ({ templateId }),
+      delete: async ({ templateId }) => ({ templateId }),
+    }
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-mcp-management-"))
+    cleanupPaths.push(root)
+    const artifact = createArtifact(root)
+    await writeFile(artifact.pngPath, Buffer.from("png-data"))
+    const server = createServer(new FakeMcpService(artifact), templateDataService)
+    const registeredTools = (
+      server as unknown as {
+        _registeredTools: Record<string, { handler: (...args: unknown[]) => Promise<unknown> }>
+      }
+    )._registeredTools
+    expect(registeredTools).toHaveProperty("template_list")
+    expect(registeredTools).toHaveProperty("template_get")
+    expect(registeredTools).toHaveProperty("template_create_or_update_package")
+    expect(registeredTools).toHaveProperty("template_update_metadata")
+    expect(registeredTools).toHaveProperty("template_delete")
+
+    const metadata = await registeredTools.template_update_metadata?.handler(
+      {
+        templateId: "user-template",
+        expectedRevision: 3,
+        patch: { recommendedUse: "electronics" },
+      },
+      {} as never
+    )
+    expect(metadata).toMatchObject({ structuredContent: { templateId: "user-template" } })
+    const renamed = await registeredTools.template_rename?.handler(
+      { templateId: "user-template", name: "Renamed", expectedRevision: 4 },
+      {} as never
+    )
+    expect(renamed).toMatchObject({ structuredContent: { templateId: "user-template" } })
+    expect(calls).toEqual(["rename"])
+  })
+
   it("registers template preview and artifact print tools on the shared service", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-mcp-"))
     cleanupPaths.push(root)

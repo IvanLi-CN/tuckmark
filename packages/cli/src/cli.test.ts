@@ -1,19 +1,16 @@
 import { execFile } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
-import type { AddressInfo } from "node:net"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-
-import { afterEach, beforeAll, describe, expect, it } from "vitest"
-
+import { listenIpc } from "@tuckmark/ipc"
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
+import { DevdConfigService } from "../../server/src/devd-config.js"
+import { DevdDataService } from "../../server/src/devd-data-service.js"
+import { createApp } from "../../server/src/index.js"
 import { deriveAgentImportWebUrl } from "./agent-import-url.js"
-import {
-  readSharedUserTemplateDetail,
-  resolveInventoryPrintSource,
-} from "./shared-data-directory.js"
 
 const execFileAsync = promisify(execFile)
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
@@ -51,6 +48,47 @@ async function runCliWithEnv(args: string[], env: Record<string, string>) {
   })
 }
 
+async function runCliOn(instance: string, args: string[], env: Record<string, string> = {}) {
+  return runCliWithEnv([...args, "--instance", instance], env)
+}
+
+async function withDevd<T>(
+  dataDir: string,
+  callback: (instance: string) => Promise<T>,
+  env: Record<string, string> = {}
+): Promise<T> {
+  const instance = `test-${Math.random().toString(36).slice(2, 10)}`
+  const configDir = `${dataDir}-config`
+  const previous = new Map<string, string | undefined>()
+  for (const [key, value] of Object.entries(env)) {
+    previous.set(key, process.env[key])
+    process.env[key] = value
+  }
+  const configService = new DevdConfigService({
+    env: { TUCKMARK_DATA_DIR: dataDir },
+    documentsDir: path.join(path.dirname(dataDir), "Documents"),
+    configDir,
+  })
+  configService.resolveStartupDataDirectory()
+  const server = createServer(
+    createApp(undefined, {
+      devdConfigService: configService,
+      devdDataService: new DevdDataService(dataDir),
+    })
+  )
+  await listenIpc(server, instance)
+  try {
+    return await callback(instance)
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await rm(configDir, { recursive: true, force: true })
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+}
+
 async function runCliAllowFailure(args: string[]) {
   return await runCliWithEnvAllowFailure(args, {})
 }
@@ -71,8 +109,13 @@ async function runCliWithEnvAllowFailure(args: string[], env: Record<string, str
 
 describe("cli smoke", () => {
   const tempDirs: string[] = []
+  let runtimeDir: string
+  let previousRuntimeDir: string | undefined
 
   beforeAll(async () => {
+    runtimeDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-ipc-runtime-"))
+    previousRuntimeDir = process.env.XDG_RUNTIME_DIR
+    process.env.XDG_RUNTIME_DIR = runtimeDir
     await execFileAsync("bun", ["run", "--filter", "@tuckmark/core", "build"], {
       cwd: repoRoot,
     })
@@ -84,8 +127,37 @@ describe("cli smoke", () => {
     )
   })
 
+  afterAll(async () => {
+    if (previousRuntimeDir === undefined) delete process.env.XDG_RUNTIME_DIR
+    else process.env.XDG_RUNTIME_DIR = previousRuntimeDir
+    await rm(runtimeDir, { recursive: true, force: true })
+  })
+
   it("loads", () => {
     expect(true).toBe(true)
+  })
+
+  it("gets and sets the DEVD data directory through named IPC", async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-config-data-"))
+    const nextDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-config-next-"))
+    tempDirs.push(dataDir, nextDir)
+
+    await withDevd(dataDir, async (instance) => {
+      const current = JSON.parse((await runCliOn(instance, ["config", "get-data-dir"])).stdout) as {
+        activeDataDir: string
+        activeSource: string
+      }
+      expect(current).toMatchObject({ activeDataDir: dataDir, activeSource: "environment" })
+
+      const updated = JSON.parse(
+        (await runCliOn(instance, ["config", "set-data-dir", "--path", nextDir])).stdout
+      ) as { activeDataDir: string; savedDataDir: string; restartRequired: boolean }
+      expect(updated).toMatchObject({
+        activeDataDir: dataDir,
+        savedDataDir: nextDir,
+        restartRequired: true,
+      })
+    })
   })
 
   it("derives the paired Web port for bracketed IPv6 DEVD URLs", () => {
@@ -220,12 +292,8 @@ describe("cli smoke", () => {
       response.statusCode = 404
       response.end(JSON.stringify({ error: "mock endpoint not found" }))
     })
-    const baseUrl = await new Promise<string>((resolve, reject) => {
-      server.once("error", reject)
-      server.listen(0, "127.0.0.1", () => {
-        resolve(`http://127.0.0.1:${(server.address() as AddressInfo).port}`)
-      })
-    })
+    const instance = `agent-test-${Math.random().toString(36).slice(2, 8)}`
+    await listenIpc(server, instance)
 
     try {
       const create = await runCliWithEnv(
@@ -236,15 +304,11 @@ describe("cli smoke", () => {
           proposalPath,
           "--credential-file",
           credentialPath,
-          "--devd-url",
-          baseUrl,
+          "--instance",
+          instance,
           "--no-open",
         ],
-        {
-          TUCKMARK_DEVD_URL: "http://127.0.0.1:1",
-          TUCKMARK_SERVER_PORT: new URL(baseUrl).port,
-          TUCKMARK_WEB_PORT: "5173",
-        }
+        { TUCKMARK_WEB_PORT: "5173" }
       )
       const created = JSON.parse(create.stdout) as {
         sessionId: string
@@ -265,7 +329,7 @@ describe("cli smoke", () => {
       expect(create.stdout).not.toContain(credential.secret)
 
       const catalog = JSON.parse(
-        (await runCli(["agent-import", "catalog", "--devd-url", baseUrl])).stdout
+        (await runCli(["agent-import", "catalog", "--instance", instance])).stdout
       ) as { templates: Array<{ recommendedUse?: string }> }
       expect(catalog.templates[0]?.recommendedUse).toBe("electronics")
 
@@ -278,8 +342,8 @@ describe("cli smoke", () => {
             created.sessionId,
             "--credential-file",
             credentialPath,
-            "--devd-url",
-            baseUrl,
+            "--instance",
+            instance,
             "--timeout-ms",
             "0",
           ])
@@ -297,8 +361,8 @@ describe("cli smoke", () => {
             created.sessionId,
             "--credential-file",
             credentialPath,
-            "--devd-url",
-            baseUrl,
+            "--instance",
+            instance,
             "--timeout-ms",
             "100",
           ])
@@ -323,8 +387,8 @@ describe("cli smoke", () => {
         "1",
         "--input",
         '{"name":"Mock capacitor"}',
-        "--devd-url",
-        baseUrl,
+        "--instance",
+        instance,
       ])
       expect(received.fulfillHeader).toBe(credential.secret)
       expect(received.fulfillBody).toEqual({
@@ -431,68 +495,40 @@ describe("cli smoke", () => {
   it("imports user templates into the configured data directory", { timeout: 20_000 }, async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-user-template-"))
     tempDirs.push(dataDir)
+    await withDevd(dataDir, async (instance) => {
+      const importResult = JSON.parse(
+        (await runCliOn(instance, ["template", "import", "--file", fixturePath])).stdout
+      ) as { imported: { template: { id: string; name: string } } }
+      expect(importResult.imported.template).toMatchObject({
+        id: "component-bin-sot23",
+        name: "Component Bin SOT-23",
+      })
 
-    const importResult = JSON.parse(
-      (await runCli(["template", "import", "--file", fixturePath, "--data-dir", dataDir])).stdout
-    ) as {
-      imported: { template: { id: string; name: string } }
-    }
-    expect(importResult.imported.template).toMatchObject({
-      id: "component-bin-sot23",
-      name: "Component Bin SOT-23",
-    })
+      const updated = await runCliOn(instance, [
+        "template",
+        "update",
+        "--id",
+        "component-bin-sot23",
+        "--recommended-use",
+        "",
+      ])
+      expect(updated.stdout).toContain('"template"')
 
-    const workingCopyPath = path.join(
-      dataDir,
-      "templates",
-      "component-bin-sot23",
-      "working-copy.json"
-    )
-    const workingCopy = JSON.parse(await readFile(workingCopyPath, "utf8")) as {
-      draft: { recommendedUse?: string }
-    }
-    const unchangedDetail = await readSharedUserTemplateDetail(dataDir, "component-bin-sot23")
-    expect(
-      Object.getOwnPropertyDescriptor(unchangedDetail?.workingCopy?.draft ?? {}, "recommendedUse")
-    ).toBeUndefined()
-
-    workingCopy.draft.recommendedUse = ""
-    await writeFile(workingCopyPath, `${JSON.stringify(workingCopy)}\n`)
-
-    const clearedDetail = await readSharedUserTemplateDetail(dataDir, "component-bin-sot23")
-    expect(
-      Object.getOwnPropertyDescriptor(clearedDetail?.workingCopy?.draft ?? {}, "recommendedUse")
-    ).toBeDefined()
-    expect(clearedDetail?.workingCopy?.draft.recommendedUse).toBeUndefined()
-
-    const showResult = JSON.parse(
-      (await runCli(["template", "show", "--id", "component-bin-sot23", "--data-dir", dataDir]))
-        .stdout
-    ) as {
-      source: string
-      template: { id: string; recommendedUse?: string }
-      savedVersions: Array<{ version: number }>
-    }
-    expect(showResult.source).toBe("user-template")
-    expect(showResult.template.id).toBe("component-bin-sot23")
-    expect(showResult.template.recommendedUse).toBeUndefined()
-    expect(showResult.savedVersions[0]?.version).toBe(1)
-
-    const manifest = JSON.parse(await readFile(path.join(dataDir, "manifest.json"), "utf8")) as {
-      schema: string
-      counts: { templates: number; versions: number; workingCopies: number }
-    }
-    expect(manifest).toMatchObject({
-      schema: "tuckmark.data-dir-manifest.v1",
-      counts: {
-        templates: 1,
-        versions: 1,
-        workingCopies: 1,
-      },
+      const showResult = JSON.parse(
+        (await runCliOn(instance, ["template", "show", "--id", "component-bin-sot23"])).stdout
+      ) as {
+        source: string
+        template: { id: string; recommendedUse?: string }
+        savedVersions: Array<{ version: number }>
+      }
+      expect(showResult.source).toBe("user-template")
+      expect(showResult.template.id).toBe("component-bin-sot23")
+      expect(showResult.template.recommendedUse).toBeUndefined()
+      expect(showResult.savedVersions[0]?.version).toBe(1)
     })
   })
 
-  it("refuses direct writes to a freshly configured DEVD directory", {
+  it("rejects legacy data-directory flags without touching the directory", {
     timeout: 20_000,
   }, async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-devd-owned-"))
@@ -500,21 +536,21 @@ describe("cli smoke", () => {
 
     const result = await runCliWithEnvAllowFailure(
       ["inventory", "create", "--full-name", "Mock protected material", "--data-dir", dataDir],
-      { TUCKMARK_DATA_DIR: dataDir }
+      {}
     )
 
     expect(result).toMatchObject({ failed: true, code: 1 })
-    expect(result.stderr).toContain("owned by DEVD")
+    expect(result.stderr).toContain("Direct data-directory and HTTP DEVD access were removed")
     await expect(
       readFile(path.join(dataDir, "inventory", "materials", "inventory-material.json"), "utf8")
     ).rejects.toMatchObject({ code: "ENOENT" })
 
     const readResult = await runCliWithEnvAllowFailure(
       ["inventory", "list", "--data-dir", dataDir],
-      { TUCKMARK_DATA_DIR: dataDir }
+      {}
     )
     expect(readResult).toMatchObject({ failed: true, code: 1 })
-    expect(readResult.stderr).toContain("owned by DEVD")
+    expect(readResult.stderr).toContain("Direct data-directory and HTTP DEVD access were removed")
   })
 
   it("creates, adjusts, and prints inventory from the shared directory", {
@@ -522,145 +558,80 @@ describe("cli smoke", () => {
   }, async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-inventory-"))
     tempDirs.push(dataDir)
-
-    await runCli(["template", "import", "--file", fixturePath, "--data-dir", dataDir])
-
-    const created = JSON.parse(
-      (
-        await runCli([
-          "inventory",
-          "create",
-          "--full-name",
-          "TPS62933DRLR",
-          "--base-name",
-          "TPS62933",
-          "--variant-name",
-          "DRLR",
-          "--package-name",
-          "SOT-583",
-          "--description",
-          "同步降压 28V",
-          "--device-details",
-          "- 输入范围：4.5V 至 28V\n- 输出：3.3V",
-          "--matrix-code",
-          "P2-Y404125469",
-          "--packaging-remark",
-          "编带一盘 3000pcs",
-          "--bindings",
-          JSON.stringify([
-            {
-              id: "binding-user-template",
-              templateSource: "user-template",
-              templateId: "component-bin-sot23",
-              templateName: "Component Bin SOT-23",
-              printQuantity: 1,
-              fieldOverrides: {
-                model: "TPS62933DRLR",
-              },
-              createdAt: "2026-07-20T09:00:00.000Z",
-              updatedAt: "2026-07-20T09:00:00.000Z",
-            },
-            {
-              id: "binding-system-template",
-              templateSource: "system",
-              templateId: "cable-tag",
-              templateName: "Cable Tag",
-              printQuantity: 1,
-              fieldOverrides: {},
-              createdAt: "2026-07-20T09:00:00.000Z",
-              updatedAt: "2026-07-20T09:00:00.000Z",
-            },
-          ]),
-          "--data-dir",
-          dataDir,
-        ])
-      ).stdout
-    ) as {
-      material: {
-        id: string
-        currentQuantity: number
-        deviceDetails: string
-        labelBindings: Array<{ id: string }>
-      }
-    }
-    expect(created.material.currentQuantity).toBe(0)
-    expect(created.material.deviceDetails).toBe("- 输入范围：4.5V 至 28V\n- 输出：3.3V")
-    expect(created.material.labelBindings[0]?.id).toBe("binding-user-template")
-
-    const adjusted = JSON.parse(
-      (
-        await runCli([
-          "inventory",
-          "adjust",
-          "--id",
-          created.material.id,
-          "--kind",
-          "in",
-          "--quantity",
-          "48",
-          "--note",
-          "initial stock",
-          "--data-dir",
-          dataDir,
-        ])
-      ).stdout
-    ) as {
-      material: { currentQuantity: number }
-      adjustment: { quantityAfter: number }
-    }
-    expect(adjusted.material.currentQuantity).toBe(48)
-    expect(adjusted.adjustment.quantityAfter).toBe(48)
-
-    const systemPrintSource = await resolveInventoryPrintSource({
+    await withDevd(
       dataDir,
-      materialId: created.material.id,
-      bindingId: "binding-system-template",
-      quantity: 2,
-    })
-    expect(systemPrintSource).toMatchObject({
-      kind: "system-template",
-      copies: 2,
-      input: {
-        quantity: "48",
-        currentQuantity: "48",
+      async (instance) => {
+        await runCliOn(instance, ["template", "import", "--file", fixturePath])
+        const created = JSON.parse(
+          (
+            await runCliOn(instance, [
+              "inventory",
+              "create",
+              "--full-name",
+              "TPS62933DRLR",
+              "--device-details",
+              "- 输入范围：4.5V 至 28V\n- 输出：3.3V",
+              "--bindings",
+              JSON.stringify([
+                {
+                  id: "binding-user-template",
+                  templateSource: "user-template",
+                  templateId: "component-bin-sot23",
+                  templateName: "Component Bin SOT-23",
+                  printQuantity: 1,
+                  fieldOverrides: {},
+                  createdAt: "2026-07-20T09:00:00.000Z",
+                  updatedAt: "2026-07-20T09:00:00.000Z",
+                },
+              ]),
+            ])
+          ).stdout
+        ) as { material: { id: string; currentQuantity: number } }
+        expect(created.material.currentQuantity).toBe(0)
+
+        const adjusted = JSON.parse(
+          (
+            await runCliOn(instance, [
+              "inventory",
+              "adjust",
+              "--id",
+              created.material.id,
+              "--kind",
+              "in",
+              "--quantity",
+              "48",
+            ])
+          ).stdout
+        ) as {
+          result: { material: { currentQuantity: number }; adjustment: { quantityAfter: number } }
+        }
+        expect(adjusted.result.material.currentQuantity).toBe(48)
+        expect(adjusted.result.adjustment.quantityAfter).toBe(48)
+
+        const printResult = JSON.parse(
+          (
+            await runCliOn(
+              instance,
+              [
+                "inventory",
+                "print",
+                "--id",
+                created.material.id,
+                "--binding",
+                "binding-user-template",
+                "--printer",
+                "mock-printer",
+                "--quantity",
+                "2",
+              ],
+              { TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1" }
+            )
+          ).stdout
+        ) as { result: { jobs: unknown[] } }
+        expect(printResult.result.jobs).toHaveLength(2)
       },
-    })
-
-    const manifest = JSON.parse(await readFile(path.join(dataDir, "manifest.json"), "utf8")) as {
-      counts: { materials: number; adjustments: number }
-    }
-    expect(manifest.counts).toMatchObject({ materials: 1, adjustments: 1 })
-
-    const printResult = JSON.parse(
-      (
-        await runCliWithEnv(
-          [
-            "inventory",
-            "print",
-            "--id",
-            created.material.id,
-            "--binding",
-            "binding-user-template",
-            "--printer",
-            "mock-printer",
-            "--quantity",
-            "2",
-            "--data-dir",
-            dataDir,
-          ],
-          {
-            TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
-          }
-        )
-      ).stdout
-    ) as {
-      source: { kind: string }
-      result: { preview?: { artifact?: { width: number } } }
-      results: unknown[]
-    }
-    expect(printResult.source.kind).toBe("user-template")
-    expect(printResult.result.preview?.artifact?.width).toBeGreaterThan(0)
-    expect(printResult.results).toHaveLength(2)
+      { TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1" }
+    )
   })
 
   it("rejects inventory adjustments without their operation-specific quantity", {
@@ -668,49 +639,47 @@ describe("cli smoke", () => {
   }, async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-inventory-adjustment-"))
     tempDirs.push(dataDir)
-    const created = JSON.parse(
-      (
-        await runCli([
+    await withDevd(dataDir, async (instance) => {
+      const created = JSON.parse(
+        (await runCliOn(instance, ["inventory", "create", "--full-name", "ADJUSTMENT-TEST"])).stdout
+      ) as { material: { id: string } }
+
+      const missingQuantity = await runCliWithEnvAllowFailure(
+        [
           "inventory",
-          "create",
-          "--full-name",
-          "ADJUSTMENT-TEST",
-          "--data-dir",
-          dataDir,
-        ])
-      ).stdout
-    ) as { material: { id: string } }
+          "adjust",
+          "--id",
+          created.material.id,
+          "--kind",
+          "in",
+          "--instance",
+          instance,
+        ],
+        {}
+      )
+      expect(missingQuantity.stderr).toContain("require a positive --quantity")
 
-    const missingQuantity = await runCliAllowFailure([
-      "inventory",
-      "adjust",
-      "--id",
-      created.material.id,
-      "--kind",
-      "in",
-      "--data-dir",
-      dataDir,
-    ])
-    expect(missingQuantity.stderr).toContain("require a positive --quantity")
+      const missingTarget = await runCliWithEnvAllowFailure(
+        [
+          "inventory",
+          "adjust",
+          "--id",
+          created.material.id,
+          "--kind",
+          "correction",
+          "--instance",
+          instance,
+        ],
+        {}
+      )
+      expect(missingTarget.stderr).toContain("require a non-negative --target-quantity")
 
-    const missingTarget = await runCliAllowFailure([
-      "inventory",
-      "adjust",
-      "--id",
-      created.material.id,
-      "--kind",
-      "correction",
-      "--data-dir",
-      dataDir,
-    ])
-    expect(missingTarget.stderr).toContain("require a non-negative --target-quantity")
-
-    const shown = JSON.parse(
-      (await runCli(["inventory", "show", "--id", created.material.id, "--data-dir", dataDir]))
-        .stdout
-    ) as { material: { currentQuantity: number }; adjustments: unknown[] }
-    expect(shown.material.currentQuantity).toBe(0)
-    expect(shown.adjustments).toHaveLength(0)
+      const shown = JSON.parse(
+        (await runCliOn(instance, ["inventory", "show", "--id", created.material.id])).stdout
+      ) as { material: { currentQuantity: number }; adjustments: unknown[] }
+      expect(shown.material.currentQuantity).toBe(0)
+      expect(shown.adjustments).toHaveLength(0)
+    })
   })
 
   it("recovers an interrupted inventory adjustment before listing materials", {
@@ -718,51 +687,55 @@ describe("cli smoke", () => {
   }, async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-inventory-journal-"))
     tempDirs.push(dataDir)
-    const created = JSON.parse(
-      (await runCli(["inventory", "create", "--full-name", "JOURNAL-TEST", "--data-dir", dataDir]))
-        .stdout
-    ) as { material: { id: string } }
-    const material = JSON.parse(
-      await readFile(
-        path.join(dataDir, "inventory", "materials", `${created.material.id}.json`),
-        "utf8"
+    await withDevd(dataDir, async (instance) => {
+      const created = JSON.parse(
+        (await runCliOn(instance, ["inventory", "create", "--full-name", "JOURNAL-TEST"])).stdout
+      ) as { material: { id: string } }
+      const material = JSON.parse(
+        await readFile(
+          path.join(dataDir, "inventory", "materials", `${created.material.id}.json`),
+          "utf8"
+        )
+      ) as Record<string, unknown>
+      const adjustment = {
+        id: "inventory-adjustment-pending",
+        materialId: created.material.id,
+        kind: "in",
+        quantityDelta: 6,
+        targetQuantity: null,
+        quantityAfter: 6,
+        note: "recovery",
+        actor: "cli",
+        createdAt: "2026-07-27T09:00:00.000Z",
+      }
+      await mkdir(path.join(dataDir, ".tuckmark", "transactions"), { recursive: true })
+      await writeFile(
+        path.join(dataDir, ".tuckmark", "transactions", "2-pending.json"),
+        `${JSON.stringify({
+          schema: "tuckmark.devd-data-transaction.v1",
+          revision: 2,
+          writes: [
+            {
+              relativePath: `inventory/materials/${created.material.id}.json`,
+              value: { ...material, currentQuantity: 6, updatedAt: "2026-07-27T09:00:00.000Z" },
+            },
+            { relativePath: `inventory/adjustments/${adjustment.id}.json`, value: adjustment },
+          ],
+          deletes: [],
+          event: { revision: 2, domains: ["inventory"], reason: "recovery" },
+        })}\n`
       )
-    ) as Record<string, unknown>
-    const adjustment = {
-      id: "inventory-adjustment-pending",
-      materialId: created.material.id,
-      kind: "in",
-      quantityDelta: 6,
-      targetQuantity: null,
-      quantityAfter: 6,
-      note: "recovery",
-      actor: "cli",
-      createdAt: "2026-07-27T09:00:00.000Z",
-    }
-    await mkdir(path.join(dataDir, "inventory", "transactions"), { recursive: true })
-    await writeFile(
-      path.join(dataDir, "inventory", "transactions", `${adjustment.id}.json`),
-      `${JSON.stringify({
-        schema: "tuckmark.inventory-adjustment-transaction.v1",
-        material: {
-          ...material,
-          currentQuantity: 6,
-          updatedAt: "2026-07-27T09:00:00.000Z",
-        },
-        adjustment,
-      })}\n`
-    )
 
-    const listed = JSON.parse(
-      (await runCli(["inventory", "list", "--data-dir", dataDir])).stdout
-    ) as { materials: Array<{ currentQuantity: number }> }
-    const shown = JSON.parse(
-      (await runCli(["inventory", "show", "--id", created.material.id, "--data-dir", dataDir]))
-        .stdout
-    ) as { adjustments: Array<{ id: string }> }
+      const listed = JSON.parse((await runCliOn(instance, ["inventory", "list"])).stdout) as {
+        materials: Array<{ currentQuantity: number }>
+      }
+      const shown = JSON.parse(
+        (await runCliOn(instance, ["inventory", "show", "--id", created.material.id])).stdout
+      ) as { adjustments: Array<{ id: string }> }
 
-    expect(listed.materials[0]?.currentQuantity).toBe(6)
-    expect(shown.adjustments).toEqual([expect.objectContaining({ id: adjustment.id })])
+      expect(listed.materials[0]?.currentQuantity).toBe(6)
+      expect(shown.adjustments).toEqual([expect.objectContaining({ id: adjustment.id })])
+    })
   })
 
   it("blocks archived inventory materials from adjust and print commands", {
@@ -770,102 +743,66 @@ describe("cli smoke", () => {
   }, async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-inventory-archived-"))
     tempDirs.push(dataDir)
+    await withDevd(dataDir, async (instance) => {
+      const created = JSON.parse(
+        (
+          await runCliOn(instance, [
+            "inventory",
+            "create",
+            "--full-name",
+            "TPS62933DRLR",
+            "--bindings",
+            JSON.stringify([
+              {
+                id: "binding-user-template",
+                templateSource: "system",
+                templateId: "cable-tag",
+                templateName: "Cable Tag",
+                printQuantity: 1,
+                fieldOverrides: {},
+                createdAt: "2026-07-20T09:00:00.000Z",
+                updatedAt: "2026-07-20T09:00:00.000Z",
+              },
+            ]),
+          ])
+        ).stdout
+      ) as { material: { id: string } }
 
-    await runCli(["template", "import", "--file", fixturePath, "--data-dir", dataDir])
+      await runCliOn(instance, ["inventory", "archive", "--id", created.material.id])
 
-    const created = JSON.parse(
-      (
-        await runCli([
+      const adjustFailure = await runCliWithEnvAllowFailure(
+        [
           "inventory",
-          "create",
-          "--full-name",
-          "TPS62933DRLR",
-          "--bindings",
-          JSON.stringify([
-            {
-              id: "binding-user-template",
-              templateSource: "user-template",
-              templateId: "component-bin-sot23",
-              templateName: "Component Bin SOT-23",
-              printQuantity: 1,
-              fieldOverrides: {},
-              createdAt: "2026-07-20T09:00:00.000Z",
-              updatedAt: "2026-07-20T09:00:00.000Z",
-            },
-          ]),
-          "--data-dir",
-          dataDir,
-        ])
-      ).stdout
-    ) as {
-      material: { id: string }
-    }
+          "adjust",
+          "--id",
+          created.material.id,
+          "--kind",
+          "in",
+          "--quantity",
+          "1",
+          "--instance",
+          instance,
+        ],
+        {}
+      )
+      expect(adjustFailure.stderr).toContain("已归档物料不能调整库存，请先恢复。")
 
-    await runCli(["inventory", "archive", "--id", created.material.id, "--data-dir", dataDir])
-
-    const adjustFailure = await runCliAllowFailure([
-      "inventory",
-      "adjust",
-      "--id",
-      created.material.id,
-      "--kind",
-      "in",
-      "--quantity",
-      "1",
-      "--data-dir",
-      dataDir,
-    ])
-    expect(adjustFailure).toMatchObject({
-      failed: true,
-      code: 1,
+      const archivedPrintFailure = await runCliWithEnvAllowFailure(
+        [
+          "inventory",
+          "print",
+          "--id",
+          created.material.id,
+          "--binding",
+          "binding-user-template",
+          "--printer",
+          "mock-printer",
+          "--instance",
+          instance,
+        ],
+        { TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1" }
+      )
+      expect(archivedPrintFailure.stderr).toContain("Cannot print labels for an archived material.")
     })
-    expect(adjustFailure.stderr).toContain("已归档物料不能调整库存，请先恢复。")
-
-    const printFailure = await runCliAllowFailure([
-      "inventory",
-      "print",
-      "--id",
-      created.material.id,
-      "--binding",
-      "binding-user-template",
-      "--printer",
-      "mock-printer",
-      "--data-dir",
-      dataDir,
-    ])
-    expect(printFailure).toMatchObject({
-      failed: true,
-      code: 1,
-    })
-    expect(printFailure.stderr).toContain("Set TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 to enable it.")
-
-    const archivedPrintFailure = await runCliWithEnv(
-      [
-        "inventory",
-        "print",
-        "--id",
-        created.material.id,
-        "--binding",
-        "binding-user-template",
-        "--printer",
-        "mock-printer",
-        "--data-dir",
-        dataDir,
-      ],
-      {
-        TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
-      }
-    ).then(
-      () => ({
-        failed: false,
-        stderr: "",
-      }),
-      (error) => ({
-        failed: true,
-        stderr: (error as Error & { stderr?: string }).stderr ?? "",
-      })
-    )
-    expect(archivedPrintFailure.failed).toBe(true)
-    expect(archivedPrintFailure.stderr).toContain("已归档物料不能打印标签，请先恢复。")
   })
 })

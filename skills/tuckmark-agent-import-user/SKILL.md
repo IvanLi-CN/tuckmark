@@ -15,12 +15,12 @@ Use the released `tuckmark` CLI. Tuckmark itself does not parse order files, inv
 
 ## Workflow
 
-1. Resolve DEVD. Pass `--devd-url <url>` or set `TUCKMARK_DEVD_URL`; the command fails without one.
+1. Resolve the named DEVD instance. Pass `--instance <name>` or set `TUCKMARK_DEVD_INSTANCE`; the command fails without one. The CLI uses local Unix socket / Named Pipe IPC and does not accept a DEVD URL or data directory.
 2. Read only the Agent recommendation catalog and current inventory:
 
    ```bash
-   tuckmark agent-import catalog --devd-url "$DEVD_URL"
-   tuckmark agent-import inventory --devd-url "$DEVD_URL" --query "<model or keyword>"
+   tuckmark agent-import catalog --instance "$DEVD_INSTANCE"
+   tuckmark agent-import inventory --instance "$DEVD_INSTANCE" --query "<model or keyword>"
    ```
 
    Catalog results include only system and shared-directory templates. `recommendedUse` is an optional human-readable suggested use; for **new** materials, use the material evidence to select and order up to three suitable templates. An absent suggestion means the template remains usable but is not a default recommendation.
@@ -58,15 +58,15 @@ Use the released `tuckmark` CLI. Tuckmark itself does not parse order files, inv
 6. Create the session. The CLI opens the confirmation page unless `--no-open` is supplied. It prints a session ID and permission-restricted credential-file path, never the secret.
 
    ```bash
-   tuckmark agent-import create --file /tmp/proposal.json --devd-url "$DEVD_URL"
+   tuckmark agent-import create --file /tmp/proposal.json --instance "$DEVD_INSTANCE"
    ```
 
 7. Wait for user changes. If the user switches a new-material template, DEVD creates a field-contract event and freezes only that label panel. Poll and fulfill the exact event revision:
 
    ```bash
-   tuckmark agent-import wait --session <session-id> --devd-url "$DEVD_URL"
+   tuckmark agent-import wait --session <session-id> --instance "$DEVD_INSTANCE"
    tuckmark agent-import fulfill --session <session-id> --event <event-id> --revision <revision> \
-     --input '{"field":"value"}' --devd-url "$DEVD_URL"
+     --input '{"field":"value"}' --instance "$DEVD_INSTANCE"
    ```
 
    Do not fulfill an event with guessed fields. A stale revision is rejected; refresh with `wait`, regenerate values for the new field contract, and continue waiting.

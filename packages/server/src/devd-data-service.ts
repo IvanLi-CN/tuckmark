@@ -132,6 +132,7 @@ type WorkingCopyRecord = {
 export type RuntimeMutation = {
   command:
     | "save-template"
+    | "update-template-metadata"
     | "rename-template"
     | "archive-template"
     | "restore-template"
@@ -444,6 +445,17 @@ const runtimeMutationArgsSchemas = {
     description: z.string().optional(),
     sourceVersionId: dataIdentifierSchema.optional(),
     document: canvasDraftDocumentSchema,
+  }),
+  "update-template-metadata": z.object({
+    templateId: dataIdentifierSchema,
+    patch: z
+      .object({
+        name: dataIdentifierSchema.optional(),
+        description: z.string().trim().optional(),
+        recommendedUse: z.string().trim().optional(),
+      })
+      .strict()
+      .refine((value) => Object.keys(value).length > 0, "Template metadata patch is empty."),
   }),
   "rename-template": z.object({ templateId: dataIdentifierSchema, name: dataIdentifierSchema }),
   "archive-template": z.object({ templateId: dataIdentifierSchema }),
@@ -933,6 +945,26 @@ export class DevdDataService {
     })
   }
 
+  async readInventoryPrintSnapshot(): Promise<{
+    revision: number
+    data: {
+      materials: InventoryMaterial[]
+      runtime: Awaited<ReturnType<DevdDataService["runtimeSnapshot"]>>
+    }
+  }> {
+    return await this.serialize(async () => {
+      await this.recoverTransactions()
+      const revision = await this.readRevision()
+      return {
+        revision,
+        data: {
+          materials: await this.listMaterials("", true, false),
+          runtime: await this.runtimeSnapshot(false),
+        },
+      }
+    })
+  }
+
   async listMaterials(
     query = "",
     includeArchived = false,
@@ -1262,6 +1294,36 @@ export class DevdDataService {
       if (existingWorking >= 0) workingCopies[existingWorking] = workingCopy
       else workingCopies.push(workingCopy)
       data = { template: summary(template), version, workingCopy }
+    } else if (command === "update-template-metadata") {
+      const template = findTemplate(args.templateId)
+      if (!template) throw new DevdDataNotFoundError("Template was not found.")
+      const patch = args.patch as {
+        name?: string
+        description?: string
+        recommendedUse?: string
+      }
+      if (patch.name !== undefined) {
+        template.name = String(patch.name).trim()
+      }
+      if (patch.description !== undefined) {
+        template.description = patch.description
+      }
+      const working = workingCopies.find((item) => item.sourceKey === `user:${template.id}`)
+      if (patch.recommendedUse !== undefined) {
+        const recommendedUse = normalizeRecommendedUse(patch.recommendedUse)
+        if (recommendedUse) template.recommendedUse = recommendedUse
+        else delete template.recommendedUse
+        if (working) {
+          if (recommendedUse) working.draft.recommendedUse = recommendedUse
+          else delete working.draft.recommendedUse
+        }
+      }
+      if (patch.name !== undefined && working) working.draft.name = template.name
+      if (patch.description !== undefined && working)
+        working.draft.description = template.description
+      template.updatedAt = now
+      if (working) working.updatedAt = now
+      data = summary(template)
     } else if (command === "rename-template") {
       const template = findTemplate(args.templateId)
       if (!template) throw new DevdDataNotFoundError("Template was not found.")

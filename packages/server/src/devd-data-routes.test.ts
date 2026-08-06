@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-
+import { DevdConfigService } from "./devd-config.js"
 import { DevdDataService } from "./devd-data-service.js"
 import { createApp } from "./index.js"
 
@@ -14,6 +14,42 @@ afterEach(async () => {
 })
 
 describe("DEVD data HTTP contract", () => {
+  it("reads and updates data-directory configuration through the shared app", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-config-routes-"))
+    cleanup.push(() => rm(root, { recursive: true, force: true }))
+    const activeDir = path.join(root, "active")
+    const nextDir = path.join(root, "next")
+    const configService = new DevdConfigService({
+      env: { TUCKMARK_DATA_DIR: activeDir },
+      documentsDir: path.join(root, "Documents"),
+      configDir: path.join(root, "config"),
+    })
+    configService.resolveStartupDataDirectory()
+    const dataService = new DevdDataService(activeDir)
+    const app = createApp(undefined, {
+      devdConfigService: configService,
+      devdDataService: dataService,
+    })
+    const server = app.listen(0)
+    cleanup.push(() => new Promise<void>((resolve) => server.close(() => resolve())))
+    const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+
+    expect(
+      await fetch(`${baseUrl}/api/data/config`).then((response) => response.json())
+    ).toMatchObject({ activeDataDir: activeDir, activeSource: "environment" })
+    const updated = await fetch(`${baseUrl}/api/data/config/data-directory`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dataDir: nextDir }),
+    })
+    expect(updated.status).toBe(200)
+    expect(await updated.json()).toMatchObject({
+      activeDataDir: activeDir,
+      savedDataDir: nextDir,
+      restartRequired: true,
+    })
+  })
+
   it("exposes status and maps stale commands to a 409 conflict", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-routes-"))
     cleanup.push(() => rm(root, { recursive: true, force: true }))

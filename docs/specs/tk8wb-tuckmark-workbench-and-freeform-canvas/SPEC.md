@@ -520,13 +520,14 @@ output.
 - Scratch canvas drafts use the active runtime store: server-http restores them
   from DEVD working copies, while browser-static keeps browser-owned drafts. No
   cross-device account sync or remote document service is introduced.
-- A configured data directory stores the cross-surface copy of user templates,
+- In `server-http`, the DEVD-resolved active directory stores user templates,
   their saved versions, working copies, archive state, and inventory records;
-  that dataset does not sync through `TuckmarkService`.
-- When no data directory is configured, system-template browsing,
+  that dataset does not sync through `TuckmarkService`. `browser-static` may
+  instead use its separately authorized browser directory handle.
+- When no browser-static directory is configured, system-template browsing,
   browser-local user-template editing, scratch-draft editing, preview, and the
-  existing print paths remain available. Web `/inventory` and CLI
-  data-directory workflows instead surface explicit directory guidance.
+  existing print paths and browser-local inventory remain available. Native
+  CLI workflows remain bound to a named formal DEVD instance.
 - Durable runtime storage contract:
   - supported Chromium desktop / installed-PWA surfaces use a worker-backed
     `SQLite Wasm` runtime with the `opfs-sahpool` VFS for runtime-local drafts,
@@ -550,8 +551,9 @@ output.
   - source kinds are `scratch`, `preset-template`, and `user-template`
   - first save from `scratch` or `preset-template` creates a user template plus
     its first saved version in the active runtime store
-  - if a data directory is configured, that save lands in the directory-backed
-    store; otherwise it remains in the browser-local runtime store
+  - in `server-http`, saves land in the DEVD-backed store; in `browser-static`,
+    an authorized directory receives the save and otherwise it remains in the
+    browser-local runtime store
   - save on a connected user template appends a new saved version
   - save as creates a new user template from the current draft or
     read-only version and does not inherit the source template's history
@@ -570,7 +572,7 @@ output.
   - replaceable-element editing only exposes one field-name input with
     autocomplete and dropdown selection over existing fields; it does not add a
     second binding selector
-- Configured data directory contract:
+- Browser-static configured data directory contract:
   - the directory-backed mainline is only supported when both `File System
     Access API` directory handles and `OPFS` runtime storage are available
   - `/system` persists one `FileSystemDirectoryHandle` and requests
@@ -851,18 +853,17 @@ output.
   browser-local template data into the unified runtime store once, then keep
   user templates, saved versions, working copies, scratch drafts,
   inventory records, and runtime app settings readable after reload.
-- `/system` can show unsupported, unconfigured, permission-required, and
-  configured-healthy data-directory states without breaking the rest of the
-  workbench.
-- `/inventory` is reachable from the top-level header navigation, shows an
-  explicit directory-required state without a configured data directory, and
-  otherwise keeps material search, material editing, label binding, stock
-  adjustment, manual print, and recent-adjustment review inside one routed
-  workspace.
-- In a supported environment, `/system` can authorize a data directory, switch
-  directories, sync the runtime snapshot, create a fixed-location backup,
-  inspect and restore a backup ZIP, inspect and import a runtime ZIP, and
-  export the current runtime ZIP.
+- In `browser-static`, `/system` can show unsupported, unconfigured,
+  permission-required, and configured-healthy directory states without
+  breaking the rest of the workbench. In `server-http`, it reports DEVD's
+  resolved active directory.
+- `/inventory` is reachable from the top-level header navigation and keeps
+  material search, material editing, label binding, stock adjustment, manual
+  print, and recent-adjustment review inside one routed workspace.
+- In a supported `browser-static` environment, `/system` can authorize a data
+  directory, switch directories, sync the runtime snapshot, create a
+  fixed-location backup, inspect and restore a backup ZIP, inspect and import a
+  runtime ZIP, and export the current runtime ZIP.
 - Authorized data directories expose the versioned JSON tree and ZIP backup
   layout described in this spec for runtime template snapshots; permission
   failure or handle loss reports a user-visible error instead of silently

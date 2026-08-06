@@ -21,6 +21,7 @@ import type {
   TuckmarkService,
 } from "@tuckmark/core"
 import { afterEach, describe, expect, it } from "vitest"
+import { DevdConfigService } from "./devd-config.js"
 import { createApp, type ServerService, startServer } from "./index.js"
 
 const cleanupPaths: string[] = []
@@ -463,13 +464,27 @@ describe("server", () => {
   it("still starts when service-api print is not explicitly enabled", async () => {
     const previousEnabled = process.env.TUCKMARK_ENABLE_SERVER_SIDE_PRINT
     const previousRoot = process.env.TUCKMARK_DETONGER_REPO_ROOT
+    const previousInstance = process.env.TUCKMARK_DEVD_INSTANCE
     Reflect.deleteProperty(process.env, "TUCKMARK_ENABLE_SERVER_SIDE_PRINT")
     process.env.TUCKMARK_DETONGER_REPO_ROOT = "/tmp/tuckmark-missing-detonger"
+    process.env.TUCKMARK_DEVD_INSTANCE = `server-test-${Math.random().toString(36).slice(2, 8)}`
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-server-start-"))
+    cleanupPaths.push(root)
+    const devdConfigService = new DevdConfigService({
+      env: { TUCKMARK_DATA_DIR: path.join(root, "data") },
+      documentsDir: path.join(root, "Documents"),
+      configDir: path.join(root, "config"),
+    })
 
     let server: Server | undefined
     try {
       expect(() => {
-        server = startServer(new FakeServerService(createArtifact(os.tmpdir(), "artifact-ok")), 0)
+        server = startServer(
+          new FakeServerService(createArtifact(os.tmpdir(), "artifact-ok")),
+          0,
+          "127.0.0.1",
+          { devdConfigService }
+        )
       }).not.toThrow()
       await new Promise<void>((resolve, reject) => {
         if (server?.listening) return resolve()
@@ -481,6 +496,13 @@ describe("server", () => {
         (resolve, reject) =>
           server?.close((error) => (error ? reject(error) : resolve())) ?? resolve()
       )
+      await new Promise<void>((resolve, reject) =>
+        (server as (Server & { ipcServer?: Server }) | undefined)?.ipcServer?.listening
+          ? (server as Server & { ipcServer?: Server }).ipcServer?.close((error) =>
+              error ? reject(error) : resolve()
+            )
+          : resolve()
+      )
       if (previousEnabled === undefined) {
         Reflect.deleteProperty(process.env, "TUCKMARK_ENABLE_SERVER_SIDE_PRINT")
       } else {
@@ -490,6 +512,11 @@ describe("server", () => {
         Reflect.deleteProperty(process.env, "TUCKMARK_DETONGER_REPO_ROOT")
       } else {
         process.env.TUCKMARK_DETONGER_REPO_ROOT = previousRoot
+      }
+      if (previousInstance === undefined) {
+        Reflect.deleteProperty(process.env, "TUCKMARK_DEVD_INSTANCE")
+      } else {
+        process.env.TUCKMARK_DEVD_INSTANCE = previousInstance
       }
     }
   })

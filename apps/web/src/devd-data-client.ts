@@ -63,6 +63,13 @@ export function isServerHttpDataSurface(): boolean {
 
 export class DevdDataClient {
   private revision: number | null = null
+  private snapshotRequest: Promise<RevisionResponse<RuntimeStoreSnapshot>> | null = null
+  private supersededSnapshotRequest: Promise<RevisionResponse<RuntimeStoreSnapshot>> | null = null
+  private readonly snapshotReplacements = new Map<
+    Promise<RevisionResponse<RuntimeStoreSnapshot>>,
+    Promise<RevisionResponse<RuntimeStoreSnapshot>>
+  >()
+  private minimumSnapshotRevision = 0
   private mutationQueue: Promise<void> = Promise.resolve()
   private readonly pendingAutosaves = new Map<string, PendingAutosave>()
 
@@ -131,8 +138,45 @@ export class DevdDataClient {
     return status
   }
 
+  private async snapshotResponse(): Promise<RevisionResponse<RuntimeStoreSnapshot>> {
+    if (this.snapshotRequest) return await this.snapshotRequest
+
+    let request: Promise<RevisionResponse<RuntimeStoreSnapshot>>
+    request = this.request<RevisionResponse<RuntimeStoreSnapshot>>("/runtime/snapshot").then(
+      async (response) => {
+        if (response.revision < this.minimumSnapshotRevision) {
+          const replacement = this.snapshotReplacements.get(request)
+          if (replacement) {
+            const replacementResponse = await replacement
+            if (replacementResponse.revision >= this.minimumSnapshotRevision) {
+              return replacementResponse
+            }
+          }
+          if (this.snapshotRequest === request) this.snapshotRequest = null
+          return await this.snapshotResponse()
+        }
+        return response
+      }
+    )
+    this.snapshotRequest = request
+    for (const superseded of this.snapshotReplacements.keys()) {
+      this.snapshotReplacements.set(superseded, request)
+    }
+    if (this.supersededSnapshotRequest) {
+      this.snapshotReplacements.set(this.supersededSnapshotRequest, request)
+      this.supersededSnapshotRequest = null
+    }
+    try {
+      return await request
+    } finally {
+      this.snapshotReplacements.delete(request)
+      if (this.supersededSnapshotRequest === request) this.supersededSnapshotRequest = null
+      if (this.snapshotRequest === request) this.snapshotRequest = null
+    }
+  }
+
   async snapshot(): Promise<RuntimeStoreSnapshot> {
-    const response = await this.request<RevisionResponse<RuntimeStoreSnapshot>>("/runtime/snapshot")
+    const response = await this.snapshotResponse()
     this.acceptRevision(response.revision)
     return response.data
   }
@@ -272,8 +316,10 @@ export class DevdDataClient {
     })
   }
 
-  invalidate(_revision: number): void {
-    // An SSE revision only invalidates cached data. Writes remain based on a completed read.
+  invalidate(revision: number): void {
+    this.minimumSnapshotRevision = Math.max(this.minimumSnapshotRevision, revision)
+    if (this.snapshotRequest) this.supersededSnapshotRequest = this.snapshotRequest
+    this.snapshotRequest = null
   }
 }
 

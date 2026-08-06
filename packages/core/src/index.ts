@@ -1,4 +1,5 @@
 export * from "./artifact-store.js"
+export * from "./canvas-draft-render.js"
 export * from "./csv.js"
 export * from "./data-matrix.js"
 export * from "./detonger-adapter.js"

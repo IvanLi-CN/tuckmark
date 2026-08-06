@@ -47,21 +47,29 @@
 - `apps/web/src/inventory-page.stories.tsx` covers browser-local empty,
   configured empty, populated, edit/bind, and adjust/print inventory states
   for review capture.
-- `packages/cli/src/shared-data-directory.ts` implements:
-  - saved CLI config at `~/.config/tuckmark/config.json`
-  - data-directory resolution
-  - user-template lifecycle operations
-  - inventory CRUD and adjustment flows
-  - manifest creation and count refresh for CLI-managed directories
-  - inventory print-source resolution across system templates and user
-    templates
-  - positive adjustment and print-quantity validation
-  - dispatching one print job per requested inventory print copy
-  - separation of material stock fields from manual print-copy counts
-  - user-template package import into the directory-backed user-template store
-- `packages/cli/src/index.ts` now exposes:
-  - `config get-data-dir`
-  - `config set-data-dir`
+- `packages/cli/src/devd-ipc-client.ts` implements the CLI's named IPC client:
+  - required explicit instance resolution
+  - HTTP-shaped revisioned runtime and inventory requests
+  - Agent Import session requests with instance credentials
+  - DEVD-owned inventory print requests
+- `packages/server/src/devd-data-service.ts` remains the sole file-backed
+  runtime owner. Its template metadata patch keeps saved-version history
+  stable, synchronizes user working copies, and rejects stale revisions.
+- `packages/server/src/devd-config.ts` resolves the formal platform default,
+  reads and atomically writes `tuckmark.devd-config.v1`, applies environment,
+  saved, and default precedence, and validates directory switches. The shared
+  Express app exposes this service to Web HTTP and named IPC clients without
+  giving CLI any filesystem ownership.
+- `packages/ipc` implements per-user Unix socket / Named Pipe endpoint
+  resolution, validation, stale Unix socket recovery, and endpoint occupancy
+  errors for named development instances.
+- `scripts/dev-data.ts` prepares a validated, worktree-specific temporary copy
+  of current business data. `scripts/dev-preview.ts` reuses only a valid
+  prepared copy, otherwise creates an empty disposable directory, and derives
+  its default instance from the absolute worktree path.
+- `packages/cli/src/index.ts` exposes:
+  - DEVD-backed `config get-data-dir` and `config set-data-dir`
+  - named `TUCKMARK_DEVD_INSTANCE` IPC startup
   - `template` lifecycle commands
   - `inventory` command family
   - legacy read-only `templates` compatibility listing
@@ -76,9 +84,8 @@
 
 ## Notes
 
-- Attaching a data directory can initialize its versioned tree from current
-  browser-local data. Without an attached directory, the browser-local store
-  remains the active persistence surface for both user templates and inventory.
+- Formal `server-http` startup always resolves one DEVD-owned directory.
+  `browser-static` keeps its independent browser-local persistence surface.
 - CLI and Web reuse the same JSON tree but do not attempt concurrent file-level
   merges beyond the existing latest-wins directory semantics. Runtime-template
   writes intentionally leave inventory files alone so those writes cannot erase

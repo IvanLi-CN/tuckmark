@@ -138,6 +138,157 @@ describe("DevdDataClient", () => {
     })
   })
 
+  it("shares one in-flight snapshot across concurrent read consumers", async () => {
+    let resolveSnapshot: ((response: Response) => void) | undefined
+    const snapshotResponse = new Promise<Response>((resolve) => {
+      resolveSnapshot = resolve
+    })
+    const fetchMock = vi.fn().mockImplementation(() => snapshotResponse)
+    vi.stubGlobal("fetch", fetchMock)
+    const client = new DevdDataClient()
+
+    const reads = [client.snapshot(), client.snapshot(), client.snapshot()]
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    resolveSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 7))
+
+    const snapshots = await Promise.all(reads)
+    expect(snapshots).toHaveLength(3)
+    expect(snapshots.every((snapshot) => snapshot.settings?.version === 2)).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("joins a fresh snapshot when SSE supersedes an older in-flight response", async () => {
+    let resolveStaleSnapshot: ((response: Response) => void) | undefined
+    let resolveFreshSnapshot: ((response: Response) => void) | undefined
+    const staleSnapshotResponse = new Promise<Response>((resolve) => {
+      resolveStaleSnapshot = resolve
+    })
+    const freshSnapshotResponse = new Promise<Response>((resolve) => {
+      resolveFreshSnapshot = resolve
+    })
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => staleSnapshotResponse)
+      .mockImplementationOnce(() => freshSnapshotResponse)
+    vi.stubGlobal("fetch", fetchMock)
+    const client = new DevdDataClient()
+
+    const staleRead = client.snapshot()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    client.invalidate(8)
+    const freshRead = client.snapshot()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    resolveFreshSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 8))
+    await expect(freshRead).resolves.toMatchObject({ settings: { version: 2 } })
+    resolveStaleSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 3))
+    await expect(staleRead).resolves.toMatchObject({ settings: { version: 2 } })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("accepts an in-flight snapshot at the invalidating SSE revision", async () => {
+    let resolveSnapshot: ((response: Response) => void) | undefined
+    const snapshotResponse = new Promise<Response>((resolve) => {
+      resolveSnapshot = resolve
+    })
+    const fetchMock = vi.fn().mockImplementation(() => snapshotResponse)
+    vi.stubGlobal("fetch", fetchMock)
+    const client = new DevdDataClient()
+
+    const read = client.snapshot()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    client.invalidate(8)
+    resolveSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 8))
+
+    await expect(read).resolves.toMatchObject({ settings: { version: 2 } })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("rechecks a replacement snapshot before deriving a settings patch", async () => {
+    let resolveStaleSnapshot: ((response: Response) => void) | undefined
+    let resolveReplacementSnapshot: ((response: Response) => void) | undefined
+    const staleSnapshotResponse = new Promise<Response>((resolve) => {
+      resolveStaleSnapshot = resolve
+    })
+    const replacementSnapshotResponse = new Promise<Response>((resolve) => {
+      resolveReplacementSnapshot = resolve
+    })
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => staleSnapshotResponse)
+      .mockImplementationOnce(() => replacementSnapshotResponse)
+      .mockResolvedValueOnce(status(9))
+    vi.stubGlobal("fetch", fetchMock)
+    const client = new DevdDataClient()
+
+    const update = client.updateSettings(() => ({ showTextBoundingBoxes: true }))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    client.invalidate(8)
+    const replacement = client.snapshot()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    resolveReplacementSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 8))
+    await replacement
+    await client.status()
+    resolveStaleSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 3))
+
+    await expect(update).rejects.toBeInstanceOf(DevdDataConflictError)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it("redirects superseded reads to the latest consecutive invalidation", async () => {
+    const responses = Array.from({ length: 3 }, () => {
+      let resolve: ((response: Response) => void) | undefined
+      const promise = new Promise<Response>((done) => {
+        resolve = done
+      })
+      return { promise, resolve: (response: Response) => resolve?.(response) }
+    })
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => responses[0]?.promise)
+      .mockImplementationOnce(() => responses[1]?.promise)
+      .mockImplementationOnce(() => responses[2]?.promise)
+    vi.stubGlobal("fetch", fetchMock)
+    const client = new DevdDataClient()
+
+    const original = client.snapshot()
+    client.invalidate(8)
+    const revision8 = client.snapshot()
+    responses[1]?.resolve(runtimeSnapshot(createDefaultRuntimeAppSettings(), 8))
+    await revision8
+    client.invalidate(9)
+    const revision9 = client.snapshot()
+    responses[2]?.resolve(runtimeSnapshot(createDefaultRuntimeAppSettings(), 9))
+    await revision9
+    responses[0]?.resolve(runtimeSnapshot(createDefaultRuntimeAppSettings(), 3))
+
+    await expect(original).resolves.toMatchObject({ settings: { version: 2 } })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it("releases an invalidated request that returns the notified revision", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(runtimeSnapshot(createDefaultRuntimeAppSettings(), 8))
+      )
+    vi.stubGlobal("fetch", fetchMock)
+    const client = new DevdDataClient()
+
+    const read = client.snapshot()
+    client.invalidate(8)
+    await read
+    await client.snapshot()
+
+    const internals = client as unknown as {
+      supersededSnapshotRequest: unknown
+      snapshotReplacements: Map<unknown, unknown>
+    }
+    expect(internals.supersededSnapshotRequest).toBeNull()
+    expect(internals.snapshotReplacements.size).toBe(0)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it("does not send a settings patch derived from a stale concurrent snapshot", async () => {
     let resolveSnapshot: ((response: Response) => void) | undefined
     const snapshotResponse = new Promise<Response>((resolve) => {
