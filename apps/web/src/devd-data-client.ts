@@ -63,8 +63,12 @@ export function isServerHttpDataSurface(): boolean {
 
 export class DevdDataClient {
   private revision: number | null = null
-  private snapshotRequest: Promise<RuntimeStoreSnapshot> | null = null
-  private replacementSnapshotRequest: Promise<RuntimeStoreSnapshot> | null = null
+  private snapshotRequest: Promise<RevisionResponse<RuntimeStoreSnapshot>> | null = null
+  private supersededSnapshotRequest: Promise<RevisionResponse<RuntimeStoreSnapshot>> | null = null
+  private readonly snapshotReplacements = new Map<
+    Promise<RevisionResponse<RuntimeStoreSnapshot>>,
+    Promise<RevisionResponse<RuntimeStoreSnapshot>>
+  >()
   private minimumSnapshotRevision = 0
   private mutationQueue: Promise<void> = Promise.resolve()
   private readonly pendingAutosaves = new Map<string, PendingAutosave>()
@@ -134,30 +138,38 @@ export class DevdDataClient {
     return status
   }
 
-  async snapshot(): Promise<RuntimeStoreSnapshot> {
+  private async snapshotResponse(): Promise<RevisionResponse<RuntimeStoreSnapshot>> {
     if (this.snapshotRequest) return await this.snapshotRequest
 
-    let request: Promise<RuntimeStoreSnapshot>
+    let request: Promise<RevisionResponse<RuntimeStoreSnapshot>>
     request = this.request<RevisionResponse<RuntimeStoreSnapshot>>("/runtime/snapshot").then(
       async (response) => {
         if (response.revision < this.minimumSnapshotRevision) {
-          if (this.replacementSnapshotRequest && this.replacementSnapshotRequest !== request) {
-            return await this.replacementSnapshotRequest
-          }
+          const replacement = this.snapshotReplacements.get(request)
+          if (replacement) return await replacement
           if (this.snapshotRequest === request) this.snapshotRequest = null
-          return await this.snapshot()
+          return await this.snapshotResponse()
         }
-        this.acceptRevision(response.revision)
-        return response.data
+        return response
       }
     )
     this.snapshotRequest = request
-    if (this.minimumSnapshotRevision > 0) this.replacementSnapshotRequest = request
+    if (this.supersededSnapshotRequest) {
+      this.snapshotReplacements.set(this.supersededSnapshotRequest, request)
+      this.supersededSnapshotRequest = null
+    }
     try {
       return await request
     } finally {
+      this.snapshotReplacements.delete(request)
       if (this.snapshotRequest === request) this.snapshotRequest = null
     }
+  }
+
+  async snapshot(): Promise<RuntimeStoreSnapshot> {
+    const response = await this.snapshotResponse()
+    this.acceptRevision(response.revision)
+    return response.data
   }
 
   async runtimeCommand<T>(command: string, args: unknown): Promise<T> {
@@ -297,8 +309,8 @@ export class DevdDataClient {
 
   invalidate(revision: number): void {
     this.minimumSnapshotRevision = Math.max(this.minimumSnapshotRevision, revision)
+    if (this.snapshotRequest) this.supersededSnapshotRequest = this.snapshotRequest
     this.snapshotRequest = null
-    this.replacementSnapshotRequest = null
   }
 }
 

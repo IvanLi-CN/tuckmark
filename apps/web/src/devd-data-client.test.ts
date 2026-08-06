@@ -204,6 +204,37 @@ describe("DevdDataClient", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it("rechecks a replacement snapshot before deriving a settings patch", async () => {
+    let resolveStaleSnapshot: ((response: Response) => void) | undefined
+    let resolveReplacementSnapshot: ((response: Response) => void) | undefined
+    const staleSnapshotResponse = new Promise<Response>((resolve) => {
+      resolveStaleSnapshot = resolve
+    })
+    const replacementSnapshotResponse = new Promise<Response>((resolve) => {
+      resolveReplacementSnapshot = resolve
+    })
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => staleSnapshotResponse)
+      .mockImplementationOnce(() => replacementSnapshotResponse)
+      .mockResolvedValueOnce(status(9))
+    vi.stubGlobal("fetch", fetchMock)
+    const client = new DevdDataClient()
+
+    const update = client.updateSettings(() => ({ showTextBoundingBoxes: true }))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    client.invalidate(8)
+    const replacement = client.snapshot()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    resolveReplacementSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 8))
+    await replacement
+    await client.status()
+    resolveStaleSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 3))
+
+    await expect(update).rejects.toBeInstanceOf(DevdDataConflictError)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
   it("does not send a settings patch derived from a stale concurrent snapshot", async () => {
     let resolveSnapshot: ((response: Response) => void) | undefined
     const snapshotResponse = new Promise<Response>((resolve) => {
