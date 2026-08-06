@@ -64,6 +64,7 @@ export function isServerHttpDataSurface(): boolean {
 export class DevdDataClient {
   private revision: number | null = null
   private snapshotRequest: Promise<RuntimeStoreSnapshot> | null = null
+  private snapshotGeneration = 0
   private mutationQueue: Promise<void> = Promise.resolve()
   private readonly pendingAutosaves = new Map<string, PendingAutosave>()
 
@@ -135,8 +136,15 @@ export class DevdDataClient {
   async snapshot(): Promise<RuntimeStoreSnapshot> {
     if (this.snapshotRequest) return await this.snapshotRequest
 
+    const generation = this.snapshotGeneration
     const request = this.request<RevisionResponse<RuntimeStoreSnapshot>>("/runtime/snapshot").then(
       (response) => {
+        if (generation !== this.snapshotGeneration) {
+          throw new DevdDataConflictError(
+            this.revision ?? response.revision,
+            "DEVD data changed while this response was loading. Refresh and retry your edit."
+          )
+        }
         this.acceptRevision(response.revision)
         return response.data
       }
@@ -285,7 +293,8 @@ export class DevdDataClient {
   }
 
   invalidate(_revision: number): void {
-    // An SSE revision only invalidates cached data. Writes remain based on a completed read.
+    this.snapshotGeneration += 1
+    this.snapshotRequest = null
   }
 }
 

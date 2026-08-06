@@ -157,6 +157,34 @@ describe("DevdDataClient", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it("starts a fresh snapshot after SSE invalidates an in-flight request", async () => {
+    let resolveStaleSnapshot: ((response: Response) => void) | undefined
+    let resolveFreshSnapshot: ((response: Response) => void) | undefined
+    const staleSnapshotResponse = new Promise<Response>((resolve) => {
+      resolveStaleSnapshot = resolve
+    })
+    const freshSnapshotResponse = new Promise<Response>((resolve) => {
+      resolveFreshSnapshot = resolve
+    })
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => staleSnapshotResponse)
+      .mockImplementationOnce(() => freshSnapshotResponse)
+    vi.stubGlobal("fetch", fetchMock)
+    const client = new DevdDataClient()
+
+    const staleRead = client.snapshot()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    client.invalidate(8)
+    const freshRead = client.snapshot()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    resolveFreshSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 8))
+    await expect(freshRead).resolves.toMatchObject({ settings: { version: 2 } })
+    resolveStaleSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 3))
+    await expect(staleRead).rejects.toBeInstanceOf(DevdDataConflictError)
+  })
+
   it("does not send a settings patch derived from a stale concurrent snapshot", async () => {
     let resolveSnapshot: ((response: Response) => void) | undefined
     const snapshotResponse = new Promise<Response>((resolve) => {
