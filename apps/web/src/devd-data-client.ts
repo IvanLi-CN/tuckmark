@@ -146,7 +146,12 @@ export class DevdDataClient {
       async (response) => {
         if (response.revision < this.minimumSnapshotRevision) {
           const replacement = this.snapshotReplacements.get(request)
-          if (replacement) return await replacement
+          if (replacement) {
+            const replacementResponse = await replacement
+            if (replacementResponse.revision >= this.minimumSnapshotRevision) {
+              return replacementResponse
+            }
+          }
           if (this.snapshotRequest === request) this.snapshotRequest = null
           return await this.snapshotResponse()
         }
@@ -154,6 +159,9 @@ export class DevdDataClient {
       }
     )
     this.snapshotRequest = request
+    for (const superseded of this.snapshotReplacements.keys()) {
+      this.snapshotReplacements.set(superseded, request)
+    }
     if (this.supersededSnapshotRequest) {
       this.snapshotReplacements.set(this.supersededSnapshotRequest, request)
       this.supersededSnapshotRequest = null
@@ -162,6 +170,7 @@ export class DevdDataClient {
       return await request
     } finally {
       this.snapshotReplacements.delete(request)
+      if (this.supersededSnapshotRequest === request) this.supersededSnapshotRequest = null
       if (this.snapshotRequest === request) this.snapshotRequest = null
     }
   }
