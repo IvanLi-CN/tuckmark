@@ -64,6 +64,7 @@ export function isServerHttpDataSurface(): boolean {
 export class DevdDataClient {
   private revision: number | null = null
   private snapshotRequest: Promise<RuntimeStoreSnapshot> | null = null
+  private replacementSnapshotRequest: Promise<RuntimeStoreSnapshot> | null = null
   private minimumSnapshotRevision = 0
   private mutationQueue: Promise<void> = Promise.resolve()
   private readonly pendingAutosaves = new Map<string, PendingAutosave>()
@@ -136,9 +137,13 @@ export class DevdDataClient {
   async snapshot(): Promise<RuntimeStoreSnapshot> {
     if (this.snapshotRequest) return await this.snapshotRequest
 
-    const request = this.request<RevisionResponse<RuntimeStoreSnapshot>>("/runtime/snapshot").then(
+    let request: Promise<RuntimeStoreSnapshot>
+    request = this.request<RevisionResponse<RuntimeStoreSnapshot>>("/runtime/snapshot").then(
       async (response) => {
         if (response.revision < this.minimumSnapshotRevision) {
+          if (this.replacementSnapshotRequest && this.replacementSnapshotRequest !== request) {
+            return await this.replacementSnapshotRequest
+          }
           if (this.snapshotRequest === request) this.snapshotRequest = null
           return await this.snapshot()
         }
@@ -147,6 +152,7 @@ export class DevdDataClient {
       }
     )
     this.snapshotRequest = request
+    if (this.minimumSnapshotRevision > 0) this.replacementSnapshotRequest = request
     try {
       return await request
     } finally {
@@ -292,6 +298,7 @@ export class DevdDataClient {
   invalidate(revision: number): void {
     this.minimumSnapshotRevision = Math.max(this.minimumSnapshotRevision, revision)
     this.snapshotRequest = null
+    this.replacementSnapshotRequest = null
   }
 }
 

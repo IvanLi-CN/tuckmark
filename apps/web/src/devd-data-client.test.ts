@@ -179,9 +179,10 @@ describe("DevdDataClient", () => {
     const freshRead = client.snapshot()
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
 
-    resolveStaleSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 3))
     resolveFreshSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 8))
-    await expect(Promise.all([staleRead, freshRead])).resolves.toHaveLength(2)
+    await expect(freshRead).resolves.toMatchObject({ settings: { version: 2 } })
+    resolveStaleSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 3))
+    await expect(staleRead).resolves.toMatchObject({ settings: { version: 2 } })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
