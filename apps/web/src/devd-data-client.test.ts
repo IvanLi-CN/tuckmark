@@ -138,6 +138,25 @@ describe("DevdDataClient", () => {
     })
   })
 
+  it("shares one in-flight snapshot across concurrent read consumers", async () => {
+    let resolveSnapshot: ((response: Response) => void) | undefined
+    const snapshotResponse = new Promise<Response>((resolve) => {
+      resolveSnapshot = resolve
+    })
+    const fetchMock = vi.fn().mockImplementation(() => snapshotResponse)
+    vi.stubGlobal("fetch", fetchMock)
+    const client = new DevdDataClient()
+
+    const reads = [client.snapshot(), client.snapshot(), client.snapshot()]
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    resolveSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 7))
+
+    const snapshots = await Promise.all(reads)
+    expect(snapshots).toHaveLength(3)
+    expect(snapshots.every((snapshot) => snapshot.settings?.version === 2)).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it("does not send a settings patch derived from a stale concurrent snapshot", async () => {
     let resolveSnapshot: ((response: Response) => void) | undefined
     const snapshotResponse = new Promise<Response>((resolve) => {

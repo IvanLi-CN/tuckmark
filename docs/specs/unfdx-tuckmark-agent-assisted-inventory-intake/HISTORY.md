@@ -33,6 +33,9 @@ Recent templates and prints are browser-local presentation metadata rather than 
 Restock targets remain immutable after proposal creation, so confirmation edits cannot redirect an inbound adjustment. Agent-import credentials retain the confirmation Web origin separately from the DEVD API origin, which keeps the Vite-backed local confirmation route reachable during normal development.
 
 Web resource commands run through one client mutation chain, so rapid settings and inventory changes use the revision returned by the preceding completed command. Import-session polling rejects responses that would regress an item revision or a terminal session state, and proposal validation rejects duplicate item IDs before a session is created.
+
+Concurrent Web consumers share an in-flight runtime snapshot because template lists, archived templates, settings, and canvas startup all read the same authoritative state. The result is not cached after completion, and mutations still require the latest completed revision, so startup avoids duplicate stale read failures without weakening conflict detection.
+
 - DEVD now owns the native CLI boundary through named Unix socket / Named Pipe
   IPC. CLI template, inventory, Agent Import, and inventory-print workflows no
   longer read business data directories or use an HTTP URL fallback. Remote MCP

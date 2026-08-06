@@ -63,6 +63,7 @@ export function isServerHttpDataSurface(): boolean {
 
 export class DevdDataClient {
   private revision: number | null = null
+  private snapshotRequest: Promise<RuntimeStoreSnapshot> | null = null
   private mutationQueue: Promise<void> = Promise.resolve()
   private readonly pendingAutosaves = new Map<string, PendingAutosave>()
 
@@ -132,9 +133,20 @@ export class DevdDataClient {
   }
 
   async snapshot(): Promise<RuntimeStoreSnapshot> {
-    const response = await this.request<RevisionResponse<RuntimeStoreSnapshot>>("/runtime/snapshot")
-    this.acceptRevision(response.revision)
-    return response.data
+    if (this.snapshotRequest) return await this.snapshotRequest
+
+    const request = this.request<RevisionResponse<RuntimeStoreSnapshot>>("/runtime/snapshot").then(
+      (response) => {
+        this.acceptRevision(response.revision)
+        return response.data
+      }
+    )
+    this.snapshotRequest = request
+    try {
+      return await request
+    } finally {
+      if (this.snapshotRequest === request) this.snapshotRequest = null
+    }
   }
 
   async runtimeCommand<T>(command: string, args: unknown): Promise<T> {
