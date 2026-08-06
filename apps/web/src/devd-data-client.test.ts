@@ -157,7 +157,7 @@ describe("DevdDataClient", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it("starts a fresh snapshot after SSE invalidates an in-flight request", async () => {
+  it("joins a fresh snapshot when SSE supersedes an older in-flight response", async () => {
     let resolveStaleSnapshot: ((response: Response) => void) | undefined
     let resolveFreshSnapshot: ((response: Response) => void) | undefined
     const staleSnapshotResponse = new Promise<Response>((resolve) => {
@@ -179,10 +179,28 @@ describe("DevdDataClient", () => {
     const freshRead = client.snapshot()
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
 
-    resolveFreshSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 8))
-    await expect(freshRead).resolves.toMatchObject({ settings: { version: 2 } })
     resolveStaleSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 3))
-    await expect(staleRead).rejects.toBeInstanceOf(DevdDataConflictError)
+    resolveFreshSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 8))
+    await expect(Promise.all([staleRead, freshRead])).resolves.toHaveLength(2)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("accepts an in-flight snapshot at the invalidating SSE revision", async () => {
+    let resolveSnapshot: ((response: Response) => void) | undefined
+    const snapshotResponse = new Promise<Response>((resolve) => {
+      resolveSnapshot = resolve
+    })
+    const fetchMock = vi.fn().mockImplementation(() => snapshotResponse)
+    vi.stubGlobal("fetch", fetchMock)
+    const client = new DevdDataClient()
+
+    const read = client.snapshot()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    client.invalidate(8)
+    resolveSnapshot?.(runtimeSnapshot(createDefaultRuntimeAppSettings(), 8))
+
+    await expect(read).resolves.toMatchObject({ settings: { version: 2 } })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it("does not send a settings patch derived from a stale concurrent snapshot", async () => {
