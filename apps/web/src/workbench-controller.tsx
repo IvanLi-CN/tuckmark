@@ -64,6 +64,7 @@ import { resolveAppContext } from "./runtime.js"
 import { createDefaultRuntimeAppSettings } from "./runtime-app-settings.js"
 import type { RuntimeStoreAppSettings } from "./runtime-store-contract.js"
 import {
+  getRuntimeStoreEventTabId,
   type RuntimeStoreMutationReason,
   subscribeRuntimeStoreMutations,
 } from "./runtime-store-events.js"
@@ -426,6 +427,7 @@ export function useWorkbenchController({
   )
   const queryClient = useQueryClient()
   const coordinator = React.useMemo(() => getSharedCrossTabCoordinator(), [])
+  const runtimeEventTabId = React.useMemo(() => getRuntimeStoreEventTabId(), [])
   const [runtimeDataGeneration, setRuntimeDataGeneration] = React.useState(
     () => coordinator.getRuntimeReplacementState().generation
   )
@@ -1138,9 +1140,11 @@ export function useWorkbenchController({
 
   React.useEffect(() => {
     const unsubscribe = subscribeRuntimeStoreMutations((event) => {
-      void refreshUserTemplates()
-      void refreshArchivedUserTemplates()
-      void refreshRenderOptionsFromStore()
+      if (event.reason === "snapshot-replaced" || event.originTabId !== runtimeEventTabId) {
+        void refreshUserTemplates()
+        void refreshArchivedUserTemplates()
+        void refreshRenderOptionsFromStore()
+      }
       if (event.reason !== "snapshot-replaced") {
         scheduleDataDirectorySync(event.reason)
       }
@@ -1157,6 +1161,7 @@ export function useWorkbenchController({
     refreshArchivedUserTemplates,
     refreshRenderOptionsFromStore,
     refreshUserTemplates,
+    runtimeEventTabId,
     scheduleDataDirectorySync,
   ])
 
