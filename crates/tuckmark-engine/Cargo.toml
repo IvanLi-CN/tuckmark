@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+base64 = "0.22.1"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -14,6 +15,16 @@ tuckmark-contracts = { path = "../tuckmark-contracts" }
 libc = "0.2.172"
 sha2 = "0.10.8"
 time = { version = "0.3.37", features = ["formatting", "parsing"] }
+code128 = { version = "=0.2.1", default-features = false }
+csv = "=1.4.0"
+datamatrix = "=0.3.3"
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+qrcode = { version = "=0.14.1", default-features = false }
+resvg = { version = "=0.48.1", default-features = false, features = ["text", "system-fonts"] }
+tiny-skia = "=0.12.0"
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+detonger-protocol = { git = "https://github.com/IvanLi-CN/detonger.git", rev = "3ef5904738bb528e8145ab3b9eb71bafc542341f" }
+detonger-printer = { git = "https://github.com/IvanLi-CN/detonger.git", rev = "3ef5904738bb528e8145ab3b9eb71bafc542341f" }
 
 [dev-dependencies]
 tempfile = "3.16.0"

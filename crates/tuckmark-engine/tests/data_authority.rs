@@ -1,6 +1,6 @@
 use std::{
     fs,
-    sync::{Arc, Mutex},
+    sync::{Arc, Barrier, Mutex},
 };
 
 use serde_json::json;
@@ -57,6 +57,18 @@ impl ProcessProbe for LiveProcess {
     }
 }
 
+struct ReusedPidProcess;
+
+impl ProcessProbe for ReusedPidProcess {
+    fn is_alive(&self, _pid: u32) -> bool {
+        true
+    }
+
+    fn start_identity(&self, _pid: u32) -> Option<String> {
+        Some("replacement-process".into())
+    }
+}
+
 fn fixture_options(probe: impl ProcessProbe + 'static) -> DataAuthorityOptions {
     DataAuthorityOptions {
         process_probe: Arc::new(probe),
@@ -106,6 +118,30 @@ fn authority_commits_canonical_json_and_detects_revision_conflicts() {
 }
 
 #[test]
+fn authority_reserves_control_and_manifest_paths_from_public_commits() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+
+    for path in [
+        ".tuckmark/devd-live.lock",
+        ".tuckmark/state.json",
+        "manifest.json",
+    ] {
+        assert!(matches!(
+            authority.commit(CommitRequest {
+                expected_revision: 0,
+                writes: vec![JsonWrite::new(path, json!({ "replaced": true }))],
+                deletes: vec![],
+                domains: vec!["settings".into()],
+                reason: "attempt-control-write".into(),
+            }),
+            Err(DataAuthorityError::InvalidPath(_))
+        ));
+    }
+    assert_eq!(authority.revision().unwrap(), 0);
+}
+
+#[test]
 fn authority_recovers_a_frozen_wal_before_its_first_read() {
     let directory = tempdir().unwrap();
     let control = directory.path().join(".tuckmark/transactions");
@@ -135,6 +171,71 @@ fn authority_recovers_a_frozen_wal_before_its_first_read() {
 }
 
 #[test]
+fn authority_rejects_multiple_wals_with_a_revision_gap() {
+    let directory = tempdir().unwrap();
+    let transactions = directory.path().join(".tuckmark/transactions");
+    fs::create_dir_all(&transactions).unwrap();
+
+    for (revision, material_id) in [(2, "revision-two"), (10, "revision-ten")] {
+        let journal = json!({
+            "schema": "tuckmark.devd-data-transaction.v1",
+            "revision": revision,
+            "writes": [{
+                "relativePath": format!("inventory/materials/{material_id}.json"),
+                "value": {
+                    "id": material_id,
+                    "fullName": format!("Material {revision}"),
+                    "currentQuantity": 0,
+                    "labelBindings": []
+                }
+            }],
+            "deletes": [],
+            "event": {
+                "revision": revision,
+                "domains": ["inventory"],
+                "reason": "recovery-order"
+            }
+        });
+        fs::write(
+            transactions.join(format!("{revision}-fixture.json")),
+            serde_json::to_vec_pretty(&journal).unwrap(),
+        )
+        .unwrap();
+    }
+
+    assert!(matches!(
+        DataAuthority::open(directory.path()),
+        Err(DataAuthorityError::CorruptTransaction(message)) if message.contains("expected 1")
+    ));
+    assert!(transactions.join("2-fixture.json").exists());
+    assert!(transactions.join("10-fixture.json").exists());
+}
+
+#[test]
+fn authority_refreshes_manifest_snapshot_timestamp_from_persisted_records() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+
+    authority
+        .commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![JsonWrite::new(
+                "settings/app-settings.json",
+                json!({ "updatedAt": "2026-01-03T04:05:06Z" }),
+            )],
+            deletes: vec![],
+            domains: vec!["settings".into()],
+            reason: "timestamp-fixture".into(),
+        })
+        .unwrap();
+
+    assert_eq!(
+        authority.read_json("manifest.json").unwrap().unwrap()["snapshotUpdatedAt"],
+        "2026-01-03T04:05:06Z"
+    );
+}
+
+#[test]
 fn authority_reclaims_a_stale_lock_but_rejects_an_active_owner() {
     let stale_directory = tempdir().unwrap();
     let control = stale_directory.path().join(".tuckmark");
@@ -161,6 +262,35 @@ fn authority_reclaims_a_stale_lock_but_rejects_an_active_owner() {
     .unwrap();
     assert_ne!(recovered["token"], "stale-token");
     drop(stale);
+
+    let reused_directory = tempdir().unwrap();
+    let reused_control = reused_directory.path().join(".tuckmark");
+    fs::create_dir_all(&reused_control).unwrap();
+    fs::write(
+        reused_control.join("devd-live.lock"),
+        serde_json::to_vec_pretty(&json!({
+            "schema": "tuckmark.devd-live-lock.v1",
+            "pid": 78,
+            "token": "reused-token",
+            "claimedAt": "2026-01-01T00:00:00Z",
+            "processStartIdentity": "retired-process"
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let reused = DataAuthority::open_with_options(
+        reused_directory.path(),
+        fixture_options(ReusedPidProcess),
+    )
+    .unwrap();
+    assert_ne!(
+        reused
+            .read_json(".tuckmark/devd-live.lock")
+            .unwrap()
+            .unwrap()["token"],
+        "reused-token"
+    );
+    drop(reused);
 
     let live_directory = tempdir().unwrap();
     let live_control = live_directory.path().join(".tuckmark");
@@ -253,8 +383,9 @@ fn authority_exports_inspects_and_restores_archives_atomically() {
     let archive = source.export_archive().unwrap();
     assert_eq!(archive.schema, "tuckmark.devd-data-archive.v1");
     assert_eq!(archive.inventory.materials.len(), 1);
+    let archive_inspection = source.inspect_archive(&archive).unwrap();
     assert_eq!(
-        source.inspect_archive(&archive).unwrap().conflicts,
+        archive_inspection.conflicts,
         vec![
             "material-name:Archive Material",
             "material:archive-material"
@@ -275,7 +406,12 @@ fn authority_exports_inspects_and_restores_archives_atomically() {
             .is_empty()
     );
     let restored = target
-        .import_archive(&archive, ArchiveImportMode::Replace, 0)
+        .import_archive(
+            &archive,
+            &archive_inspection.archive_hash,
+            ArchiveImportMode::Replace,
+            0,
+        )
         .unwrap();
     assert_eq!(restored.revision, 1);
     assert_eq!(target.revision().unwrap(), 1);
@@ -315,9 +451,10 @@ fn authority_rejects_archive_merge_conflicts_and_orphaned_archive_records() {
         .unwrap();
     let archive = authority.export_archive().unwrap();
 
+    let archive_hash = authority.inspect_archive(&archive).unwrap().archive_hash;
     assert!(
         authority
-            .import_archive(&archive, ArchiveImportMode::Merge, 1)
+            .import_archive(&archive, &archive_hash, ArchiveImportMode::Merge, 1)
             .is_err()
     );
     assert_eq!(authority.revision().unwrap(), 1);
@@ -341,11 +478,17 @@ fn authority_retains_the_newest_twenty_protection_archives() {
     let directory = tempdir().unwrap();
     let authority = DataAuthority::open(directory.path()).unwrap();
     let archive = authority.export_archive().unwrap();
+    let archive_hash = authority.inspect_archive(&archive).unwrap().archive_hash;
     let mut revision = 0;
 
     for _ in 0..21 {
         revision = authority
-            .import_archive(&archive, ArchiveImportMode::Replace, revision)
+            .import_archive(
+                &archive,
+                &archive_hash,
+                ArchiveImportMode::Replace,
+                revision,
+            )
             .unwrap()
             .revision;
     }
@@ -358,6 +501,69 @@ fn authority_retains_the_newest_twenty_protection_archives() {
             .len(),
         20
     );
+}
+
+#[test]
+fn agent_import_normalizes_material_defaults_and_matrix_codes() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    let manager = AgentImportManager::new(authority.clone());
+    let proposal: AgentImportProposal = serde_json::from_value(json!({
+        "schema": "tuckmark.agent-import.v1",
+        "items": [{
+            "id": "normalized-material",
+            "kind": "new",
+            "quantity": 1,
+            "material": {
+                "fullName": "Normalized material",
+                "matrixCode": "  MATRIX-42  "
+            },
+            "template": {
+                "source": "system",
+                "id": "cable-tag",
+                "name": "Caller supplied name is ignored",
+                "fields": []
+            },
+            "templateInput": { "name": "Normalized material" }
+        }]
+    }))
+    .unwrap();
+    let session = manager
+        .create_session(CreateAgentImportSession {
+            id: "normalized-material-session".into(),
+            secret: "synthetic-secret-at-least-sixteen".into(),
+            proposal,
+        })
+        .unwrap();
+
+    assert_eq!(session.proposal.source_note.as_deref(), Some(""));
+    assert_eq!(session.proposal.items[0].source_note.as_deref(), Some(""));
+    assert_eq!(session.proposal.items[0].material["description"], "");
+    assert_eq!(session.proposal.items[0].material["deviceDetails"], "");
+    assert_eq!(session.proposal.items[0].material["packagingRemark"], "");
+
+    manager
+        .confirm(
+            "normalized-material-session",
+            "synthetic-secret-at-least-sixteen",
+        )
+        .unwrap();
+    let material_path = authority
+        .list_json_files("inventory/materials")
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    let material_path = material_path
+        .strip_prefix(authority.root())
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    let material = authority.read_json(&material_path).unwrap().unwrap();
+    assert_eq!(material["matrixCode"], "MATRIX-42");
+    assert_eq!(material["description"], "");
+    assert_eq!(material["deviceDetails"], "");
+    assert_eq!(material["packagingRemark"], "");
 }
 
 #[test]
@@ -392,7 +598,14 @@ fn agent_import_confirmation_commits_new_and_restock_items_in_one_revision() {
                 "kind": "new",
                 "selected": true,
                 "quantity": 3,
-                "material": { "fullName": "New Imported Material" }
+                "material": { "fullName": "New Imported Material" },
+                "template": {
+                    "source": "system",
+                    "id": "cable-tag",
+                    "name": "Caller supplied name is ignored",
+                    "fields": []
+                },
+                "templateInput": { "name": "Imported material" }
             },
             {
                 "id": "restock-item",
@@ -437,6 +650,85 @@ fn agent_import_confirmation_commits_new_and_restock_items_in_one_revision() {
 }
 
 #[test]
+fn agent_import_applies_duplicate_restock_targets_against_the_session_snapshot() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    authority
+        .commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![JsonWrite::new(
+                "inventory/materials/duplicate-restock-target.json",
+                json!({
+                    "id": "duplicate-restock-target",
+                    "fullName": "Duplicate Restock Target",
+                    "currentQuantity": 4,
+                    "updatedAt": "2026-01-01T00:00:00Z",
+                    "labelBindings": []
+                }),
+            )],
+            deletes: vec![],
+            domains: vec!["inventory".into()],
+            reason: "seed-duplicate-restock".into(),
+        })
+        .unwrap();
+    let manager = AgentImportManager::new(authority.clone());
+    let proposal: AgentImportProposal = serde_json::from_value(json!({
+        "schema": "tuckmark.agent-import.v1",
+        "items": [
+            {
+                "id": "first-restock",
+                "kind": "restock",
+                "selected": true,
+                "quantity": 2,
+                "targetMaterialId": "duplicate-restock-target",
+                "targetMaterialUpdatedAt": "2026-01-01T00:00:00Z",
+                "material": { "fullName": "Duplicate Restock Target" }
+            },
+            {
+                "id": "second-restock",
+                "kind": "restock",
+                "selected": true,
+                "quantity": 3,
+                "targetMaterialId": "duplicate-restock-target",
+                "targetMaterialUpdatedAt": "2026-01-01T00:00:00Z",
+                "material": { "fullName": "Duplicate Restock Target" }
+            }
+        ]
+    }))
+    .unwrap();
+    manager
+        .create_session(CreateAgentImportSession {
+            id: "duplicate-restock-session".into(),
+            secret: "synthetic-secret-at-least-sixteen".into(),
+            proposal,
+        })
+        .unwrap();
+
+    manager
+        .confirm(
+            "duplicate-restock-session",
+            "synthetic-secret-at-least-sixteen",
+        )
+        .unwrap();
+
+    assert_eq!(authority.revision().unwrap(), 2);
+    assert_eq!(
+        authority
+            .read_json("inventory/materials/duplicate-restock-target.json")
+            .unwrap()
+            .unwrap()["currentQuantity"],
+        9
+    );
+    assert_eq!(
+        authority
+            .list_json_files("inventory/adjustments")
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
 fn agent_import_confirmation_rejects_the_entire_batch_when_one_restock_is_invalid() {
     let directory = tempdir().unwrap();
     let authority = DataAuthority::open(directory.path()).unwrap();
@@ -449,7 +741,14 @@ fn agent_import_confirmation_rejects_the_entire_batch_when_one_restock_is_invali
                 "kind": "new",
                 "selected": true,
                 "quantity": 1,
-                "material": { "fullName": "Must Not Persist" }
+                "material": { "fullName": "Must Not Persist" },
+                "template": {
+                    "source": "system",
+                    "id": "cable-tag",
+                    "name": "Caller supplied name is ignored",
+                    "fields": []
+                },
+                "templateInput": { "name": "Must not persist" }
             },
             {
                 "id": "invalid-restock",
@@ -491,6 +790,224 @@ fn agent_import_confirmation_rejects_the_entire_batch_when_one_restock_is_invali
 }
 
 #[test]
+fn agent_import_serializes_concurrent_confirmations() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    let manager = AgentImportManager::new(authority.clone());
+    let secret = "synthetic-secret-at-least-sixteen";
+
+    for (session_id, material_name) in [
+        ("concurrent-session-one", "Concurrent material one"),
+        ("concurrent-session-two", "Concurrent material two"),
+    ] {
+        let proposal: AgentImportProposal = serde_json::from_value(json!({
+            "schema": "tuckmark.agent-import.v1",
+            "items": [{
+                "id": format!("{session_id}-item"),
+                "kind": "new",
+                "selected": true,
+                "quantity": 1,
+                "material": { "fullName": material_name },
+                "template": {
+                    "source": "system",
+                    "id": "cable-tag",
+                    "name": "Caller supplied name is ignored",
+                    "fields": []
+                },
+                "templateInput": { "name": material_name }
+            }]
+        }))
+        .unwrap();
+        manager
+            .create_session(CreateAgentImportSession {
+                id: session_id.into(),
+                secret: secret.into(),
+                proposal,
+            })
+            .unwrap();
+    }
+
+    let barrier = Arc::new(Barrier::new(3));
+    let (first, second) = std::thread::scope(|scope| {
+        let first_manager = manager.clone();
+        let first_barrier = barrier.clone();
+        let first = scope.spawn(move || {
+            first_barrier.wait();
+            first_manager.confirm("concurrent-session-one", secret)
+        });
+        let second_manager = manager.clone();
+        let second_barrier = barrier.clone();
+        let second = scope.spawn(move || {
+            second_barrier.wait();
+            second_manager.confirm("concurrent-session-two", secret)
+        });
+        barrier.wait();
+        (first.join().unwrap(), second.join().unwrap())
+    });
+
+    assert_eq!(first.unwrap().state, "completed");
+    assert_eq!(second.unwrap().state, "completed");
+    assert_eq!(authority.revision().unwrap(), 2);
+    assert_eq!(
+        authority
+            .list_json_files("inventory/materials")
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn agent_import_rejects_unknown_system_and_user_templates() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    let manager = AgentImportManager::new(authority.clone());
+
+    for (session_id, source) in [
+        ("unknown-system-template", "system"),
+        ("unknown-user-template", "user-template"),
+    ] {
+        let proposal: AgentImportProposal = serde_json::from_value(json!({
+            "schema": "tuckmark.agent-import.v1",
+            "items": [{
+                "id": format!("{source}-item"),
+                "kind": "new",
+                "selected": true,
+                "quantity": 1,
+                "material": { "fullName": format!("Unknown {source} material") },
+                "template": {
+                    "source": source,
+                    "id": "not-in-catalog",
+                    "name": "Forged template",
+                    "fields": []
+                }
+            }]
+        }))
+        .unwrap();
+        manager
+            .create_session(CreateAgentImportSession {
+                id: session_id.into(),
+                secret: "synthetic-secret-at-least-sixteen".into(),
+                proposal,
+            })
+            .unwrap();
+
+        assert!(
+            manager
+                .confirm(session_id, "synthetic-secret-at-least-sixteen")
+                .is_err()
+        );
+    }
+
+    assert_eq!(authority.revision().unwrap(), 0);
+}
+
+#[test]
+fn agent_import_uses_the_current_user_template_catalog_record() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    authority
+        .commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![
+                JsonWrite::new(
+                    "templates/trusted-template/template.json",
+                    json!({
+                        "id": "trusted-template",
+                        "name": "Trusted template name",
+                        "currentVersionId": "trusted-version"
+                    }),
+                ),
+                JsonWrite::new(
+                    "templates/trusted-template/versions/trusted-version.json",
+                    json!({
+                        "id": "trusted-version",
+                        "templateId": "trusted-template",
+                        "version": 1,
+                        "kind": "saved",
+                        "createdAt": "2026-01-01T00:00:00Z",
+                        "label": "Initial",
+                        "document": {
+                            "id": "trusted-template",
+                            "name": "Trusted template name",
+                            "width": 100,
+                            "height": 50,
+                            "fields": [{
+                                "key": "serial",
+                                "label": "Serial number",
+                                "required": true
+                            }],
+                            "elements": []
+                        }
+                    }),
+                ),
+            ],
+            deletes: vec![],
+            domains: vec!["templates".into()],
+            reason: "seed-user-template".into(),
+        })
+        .unwrap();
+
+    let manager = AgentImportManager::new(authority.clone());
+    let proposal: AgentImportProposal = serde_json::from_value(json!({
+        "schema": "tuckmark.agent-import.v1",
+        "items": [{
+            "id": "trusted-user-template-item",
+            "kind": "new",
+            "selected": true,
+            "quantity": 1,
+            "material": { "fullName": "Trusted user template material" },
+            "template": {
+                "source": "user-template",
+                "id": "trusted-template",
+                "name": "Forged caller name",
+                "fields": [{
+                    "key": "attackerField",
+                    "label": "Forged caller field",
+                    "required": true
+                }]
+            },
+            "templateInput": { "serial": "SN-42" }
+        }]
+    }))
+    .unwrap();
+    manager
+        .create_session(CreateAgentImportSession {
+            id: "trusted-user-template-session".into(),
+            secret: "synthetic-secret-at-least-sixteen".into(),
+            proposal,
+        })
+        .unwrap();
+
+    manager
+        .confirm(
+            "trusted-user-template-session",
+            "synthetic-secret-at-least-sixteen",
+        )
+        .unwrap();
+
+    let material = authority
+        .list_json_files("inventory/materials")
+        .unwrap()
+        .into_iter()
+        .next()
+        .and_then(|path| {
+            let relative = path
+                .strip_prefix(authority.root())
+                .ok()?
+                .to_string_lossy()
+                .replace('\\', "/");
+            authority.read_json(&relative).ok().flatten()
+        })
+        .unwrap();
+    let binding = &material["labelBindings"][0];
+    assert_eq!(binding["templateSource"], "user-template");
+    assert_eq!(binding["templateId"], "trusted-template");
+    assert_eq!(binding["templateName"], "Trusted template name");
+    assert_eq!(binding["fieldOverrides"], json!({ "serial": "SN-42" }));
+}
+
+#[test]
 fn agent_import_expires_sessions_and_returns_the_commit_event() {
     let directory = tempdir().unwrap();
     let authority = DataAuthority::open(directory.path()).unwrap();
@@ -503,7 +1020,14 @@ fn agent_import_expires_sessions_and_returns_the_commit_event() {
             "kind": "new",
             "selected": true,
             "quantity": 1,
-            "material": { "fullName": "TTL material" }
+            "material": { "fullName": "TTL material" },
+            "template": {
+                "source": "system",
+                "id": "cable-tag",
+                "name": "Caller supplied name is ignored",
+                "fields": []
+            },
+            "templateInput": { "name": "TTL material" }
         }]
     }))
     .unwrap();
@@ -525,7 +1049,19 @@ fn agent_import_expires_sessions_and_returns_the_commit_event() {
     clock.set("2026-01-02T04:00:00Z");
     let expired_proposal: AgentImportProposal = serde_json::from_value(json!({
         "schema": "tuckmark.agent-import.v1",
-        "items": []
+        "items": [{
+            "id": "expired-unselected",
+            "kind": "new",
+            "selected": false,
+            "quantity": 1,
+            "material": { "fullName": "Session Only" },
+            "template": {
+                "source": "system",
+                "id": "cable-tag",
+                "name": "Caller supplied name is ignored",
+                "fields": []
+            }
+        }]
     }))
     .unwrap();
     manager

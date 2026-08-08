@@ -6,12 +6,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+pub mod render;
+pub use render::*;
+
 pub const DATA_DIRECTORY_MANIFEST_SCHEMA: &str = "tuckmark.data-dir-manifest.v1";
 pub const DEVD_DATA_ARCHIVE_SCHEMA: &str = "tuckmark.devd-data-archive.v1";
 pub const DEVD_DATA_STATE_SCHEMA: &str = "tuckmark.devd-data-state.v1";
 pub const DEVD_DATA_TRANSACTION_SCHEMA: &str = "tuckmark.devd-data-transaction.v1";
 pub const DEVD_LIVE_LOCK_SCHEMA: &str = "tuckmark.devd-live-lock.v1";
 pub const DEVD_OWNER_SCHEMA: &str = "tuckmark.devd-owner.v1";
+pub const RUNTIME_EXPORT_SCHEMA: &str = "tuckmark.runtime-export.v1";
 
 pub type ExtraFields = BTreeMap<String, Value>;
 
@@ -30,6 +34,10 @@ fn non_empty(value: &str, name: &str) -> Result<(), ContractError> {
         )));
     }
     Ok(())
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn expected_schema(actual: &str, expected: &str) -> Result<(), ContractError> {
@@ -375,10 +383,22 @@ pub struct InventoryAdjustment {
 pub struct TemplateRecord {
     pub id: String,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
     #[serde(default)]
     pub current_version_id: Option<String>,
     #[serde(default)]
     pub archived_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub field_order: Vec<String>,
     #[serde(flatten, default)]
     pub extra: ExtraFields,
 }
@@ -388,6 +408,18 @@ pub struct TemplateRecord {
 pub struct TemplateVersion {
     pub id: String,
     pub template_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_version_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document: Option<Value>,
     #[serde(flatten, default)]
     pub extra: ExtraFields,
 }
@@ -398,6 +430,14 @@ pub struct WorkingCopyRecord {
     pub source_key: String,
     #[serde(default)]
     pub source: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_version_id: Option<String>,
     #[serde(flatten, default)]
     pub extra: ExtraFields,
 }
@@ -405,6 +445,10 @@ pub struct WorkingCopyRecord {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeSnapshot {
+    #[serde(default)]
+    pub schema: String,
+    #[serde(default)]
+    pub exported_at: String,
     #[serde(default)]
     pub snapshot_updated_at: Option<String>,
     #[serde(default)]
@@ -417,6 +461,13 @@ pub struct RuntimeSnapshot {
     pub working_copies: Vec<WorkingCopyRecord>,
     #[serde(flatten, default)]
     pub extra: ExtraFields,
+}
+
+impl RuntimeSnapshot {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        expected_schema(&self.schema, RUNTIME_EXPORT_SCHEMA)?;
+        non_empty(&self.exported_at, "runtime.exportedAt")
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -447,6 +498,7 @@ impl DevdDataArchive {
     pub fn validate(&self) -> Result<(), ContractError> {
         expected_schema(&self.schema, DEVD_DATA_ARCHIVE_SCHEMA)?;
         non_empty(&self.exported_at, "archive.exportedAt")?;
+        self.runtime.validate()?;
         validate_referential_integrity(
             &self.runtime.templates,
             &self.runtime.versions,
@@ -481,7 +533,7 @@ pub struct AgentImportTemplate {
 pub struct AgentImportItem {
     pub id: String,
     pub kind: AgentImportItemKind,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub selected: bool,
     #[serde(default)]
     pub material: Value,
@@ -522,6 +574,11 @@ pub struct AgentImportProposal {
 impl AgentImportProposal {
     pub fn validate(&self) -> Result<(), ContractError> {
         expected_schema(&self.schema, "tuckmark.agent-import.v1")?;
+        if self.items.is_empty() {
+            return Err(ContractError::Validation(
+                "agent import proposal must include at least one item".into(),
+            ));
+        }
         let mut ids = BTreeSet::new();
         for item in &self.items {
             non_empty(&item.id, "agent import item id")?;
@@ -531,15 +588,95 @@ impl AgentImportProposal {
                     item.id
                 )));
             }
-            if item.quantity < 0 {
+            if item.quantity <= 0 {
                 return Err(ContractError::Validation(format!(
-                    "agent import item {} has a negative quantity",
+                    "agent import item {} must have a positive quantity",
+                    item.id
+                )));
+            }
+            validate_agent_import_material(&item.material, &item.id)?;
+            if item.kind == AgentImportItemKind::Restock {
+                non_empty(
+                    item.target_material_id.as_deref().unwrap_or_default(),
+                    "agent import restock targetMaterialId",
+                )?;
+            }
+            if item.label_print_quantity == Some(0) {
+                return Err(ContractError::Validation(format!(
+                    "agent import item {} labelPrintQuantity must be positive",
+                    item.id
+                )));
+            }
+            if let Some(template) = &item.template {
+                validate_agent_import_template(template)?;
+            }
+            if item
+                .pending_template_event_id
+                .as_deref()
+                .is_some_and(str::is_empty)
+            {
+                return Err(ContractError::Validation(format!(
+                    "agent import item {} has an empty pending template event id",
                     item.id
                 )));
             }
         }
         Ok(())
     }
+}
+
+fn validate_agent_import_material(value: &Value, item_id: &str) -> Result<(), ContractError> {
+    let material = value.as_object().ok_or_else(|| {
+        ContractError::Validation(format!(
+            "agent import item {item_id} material must be an object"
+        ))
+    })?;
+    non_empty(
+        material
+            .get("fullName")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+        "agent import material fullName",
+    )
+}
+
+fn validate_agent_import_template(template: &AgentImportTemplate) -> Result<(), ContractError> {
+    if !matches!(template.source.as_str(), "system" | "user-template") {
+        return Err(ContractError::Validation(format!(
+            "agent import template source {} is invalid",
+            template.source
+        )));
+    }
+    non_empty(&template.id, "agent import template id")?;
+    non_empty(&template.name, "agent import template name")?;
+    for field in &template.fields {
+        let object = field.as_object().ok_or_else(|| {
+            ContractError::Validation("agent import template field must be an object".into())
+        })?;
+        non_empty(
+            object
+                .get("key")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+            "agent import template field key",
+        )?;
+        non_empty(
+            object
+                .get("label")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+            "agent import template field label",
+        )?;
+        if object
+            .get("required")
+            .is_some_and(|required| !required.is_boolean())
+        {
+            return Err(ContractError::Validation(
+                "agent import template field required must be a boolean".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -585,6 +722,17 @@ pub fn validate_referential_integrity(
     let mut ids = BTreeSet::new();
     for template in templates {
         non_empty(&template.id, "template id")?;
+        non_empty(&template.name, "template name")?;
+        for (field, value) in [
+            ("template width", template.width),
+            ("template height", template.height),
+        ] {
+            if value.is_some_and(|value| !value.is_finite() || value <= 0.0) {
+                return Err(ContractError::Validation(format!(
+                    "{field} must be positive and finite"
+                )));
+            }
+        }
         if !ids.insert(template.id.as_str()) {
             return Err(ContractError::Validation(format!(
                 "duplicate template {}",
@@ -593,7 +741,10 @@ pub fn validate_referential_integrity(
         }
     }
     let mut version_ids = BTreeSet::new();
+    let mut template_versions = BTreeSet::new();
     for version in versions {
+        non_empty(&version.id, "template version id")?;
+        non_empty(&version.template_id, "template version templateId")?;
         if !version_ids.insert(version.id.as_str()) {
             return Err(ContractError::Validation(format!(
                 "duplicate template version {}",
@@ -604,6 +755,28 @@ pub fn validate_referential_integrity(
             return Err(ContractError::Validation(format!(
                 "template version {} references unknown template {}",
                 version.id, version.template_id
+            )));
+        }
+        if let Some(number) = version.version {
+            if number == 0 {
+                return Err(ContractError::Validation(format!(
+                    "template version {} must be positive",
+                    version.id
+                )));
+            }
+            if !template_versions.insert((version.template_id.as_str(), number)) {
+                return Err(ContractError::Validation(format!(
+                    "duplicate template version {}:{}",
+                    version.template_id, number
+                )));
+            }
+        }
+        if let Some(kind) = version.kind.as_deref()
+            && !matches!(kind, "saved" | "autosave")
+        {
+            return Err(ContractError::Validation(format!(
+                "template version {} has invalid kind {kind}",
+                version.id
             )));
         }
     }
@@ -622,18 +795,54 @@ pub fn validate_referential_integrity(
     }
     let mut working_copy_keys = BTreeSet::new();
     for copy in working_copies {
+        non_empty(&copy.source_key, "working copy sourceKey")?;
         if !working_copy_keys.insert(copy.source_key.as_str()) {
             return Err(ContractError::Validation(format!(
                 "duplicate working copy {}",
                 copy.source_key
             )));
         }
-        if let Some(template_id) = copy.source_key.strip_prefix("user:") {
-            if !template_ids.contains(template_id) {
-                return Err(ContractError::Validation(format!(
-                    "working copy {} references unknown template {}",
-                    copy.source_key, template_id
-                )));
+        if let Some(template_id) = copy.source_key.strip_prefix("user:")
+            && !template_ids.contains(template_id)
+        {
+            return Err(ContractError::Validation(format!(
+                "working copy {} references unknown template {}",
+                copy.source_key, template_id
+            )));
+        }
+        if let Some(template_id) = copy.template_id.as_deref()
+            && !template_ids.contains(template_id)
+        {
+            return Err(ContractError::Validation(format!(
+                "working copy {} references unknown template {}",
+                copy.source_key, template_id
+            )));
+        }
+        if let Some(source) = copy.source.as_ref() {
+            let source = source.as_object().ok_or_else(|| {
+                ContractError::Validation(format!(
+                    "working copy {} source must be an object",
+                    copy.source_key
+                ))
+            })?;
+            if source.get("kind").and_then(Value::as_str) == Some("user-template") {
+                let source_template_id = source
+                    .get("templateId")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        ContractError::Validation(format!(
+                            "working copy {} has an invalid template source",
+                            copy.source_key
+                        ))
+                    })?;
+                if copy.template_id.as_deref() != Some(source_template_id)
+                    || !template_ids.contains(source_template_id)
+                {
+                    return Err(ContractError::Validation(format!(
+                        "working copy {} has an invalid template source",
+                        copy.source_key
+                    )));
+                }
             }
         }
     }
@@ -659,12 +868,11 @@ pub fn validate_referential_integrity(
             .matrix_code
             .as_deref()
             .filter(|value| !value.is_empty())
+            && !matrix_codes.insert(matrix_code)
         {
-            if !matrix_codes.insert(matrix_code) {
-                return Err(ContractError::Validation(format!(
-                    "duplicate matrix code {matrix_code}"
-                )));
-            }
+            return Err(ContractError::Validation(format!(
+                "duplicate matrix code {matrix_code}"
+            )));
         }
         for binding in &material.label_bindings {
             if binding.template_source == "user-template"
@@ -707,7 +915,11 @@ pub fn normalize_legacy_value(value: Value) -> Result<Value, ContractError> {
         .ok_or_else(|| ContractError::Validation("persisted contract schema is missing".into()))?;
 
     match schema {
-        "tuckmark.data-archive.v1" | "tuckmark.runtime-export-archive.v1" => {
+        "tuckmark.data-archive.v1" => {
+            let exported_at = object
+                .get("exportedAt")
+                .cloned()
+                .unwrap_or_else(|| Value::String(String::new()));
             object.insert(
                 "schema".into(),
                 Value::String(DEVD_DATA_ARCHIVE_SCHEMA.into()),
@@ -718,6 +930,10 @@ pub fn normalize_legacy_value(value: Value) -> Result<Value, ContractError> {
             let runtime = runtime.as_object_mut().ok_or_else(|| {
                 ContractError::Validation("legacy archive runtime must be an object".into())
             })?;
+            runtime
+                .entry("schema")
+                .or_insert_with(|| Value::String(RUNTIME_EXPORT_SCHEMA.into()));
+            runtime.entry("exportedAt").or_insert(exported_at);
             for key in ["templates", "versions", "workingCopies"] {
                 runtime.entry(key).or_insert_with(|| Value::Array(vec![]));
             }
@@ -735,5 +951,82 @@ pub fn normalize_legacy_value(value: Value) -> Result<Value, ContractError> {
         _ => {}
     }
 
-    Ok(canonicalize_json(Value::Object(object)))
+    let mut normalized = Value::Object(object);
+    normalize_legacy_tree(&mut normalized);
+    Ok(canonicalize_json(normalized))
+}
+
+fn normalize_legacy_tree(value: &mut Value) {
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                normalize_legacy_tree(value);
+            }
+        }
+        Value::Object(object) => {
+            normalize_recommended_use(object);
+            if object.get("kind").and_then(Value::as_str) == Some("text") {
+                normalize_stretch_aliases(object);
+            }
+            for value in object.values_mut() {
+                normalize_legacy_tree(value);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_recommended_use(object: &mut serde_json::Map<String, Value>) {
+    let current = object
+        .get("recommendedUse")
+        .and_then(normalize_recommended_value);
+    let legacy = object
+        .get("recommendedUses")
+        .and_then(normalize_recommended_value);
+    object.remove("recommendedUses");
+    match current.or(legacy) {
+        Some(value) => {
+            object.insert("recommendedUse".into(), Value::String(value));
+        }
+        None => {
+            object.remove("recommendedUse");
+        }
+    }
+}
+
+fn normalize_recommended_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => non_empty_recommended_use(value),
+        Value::Object(value) => value
+            .get("scope")
+            .and_then(Value::as_str)
+            .and_then(non_empty_recommended_use),
+        Value::Array(values) => {
+            let joined = values
+                .iter()
+                .filter_map(normalize_recommended_value)
+                .collect::<Vec<_>>()
+                .join("；");
+            non_empty_recommended_use(&joined)
+        }
+        _ => None,
+    }
+}
+
+fn non_empty_recommended_use(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.into())
+}
+
+fn normalize_stretch_aliases(object: &mut serde_json::Map<String, Value>) {
+    for (legacy, grow, shrink) in [
+        ("stretchX", "stretchXGrow", "stretchXShrink"),
+        ("stretchY", "stretchYGrow", "stretchYShrink"),
+    ] {
+        let Some(value) = object.get(legacy).and_then(Value::as_bool) else {
+            continue;
+        };
+        object.entry(grow).or_insert(Value::Bool(value));
+        object.entry(shrink).or_insert(Value::Bool(value));
+    }
 }

@@ -20,6 +20,10 @@ use tuckmark_contracts::{
 };
 use uuid::Uuid;
 
+use crate::archive_codec::{
+    ArchiveCodecError, ArchiveZipInput, DirectoryTreeArchive, decode_archive_zip,
+};
+
 const CONTROL_DIRECTORY: &str = ".tuckmark";
 const LIVE_LOCK_NAME: &str = "devd-live.lock";
 const OWNER_NAME: &str = "devd-owner.json";
@@ -48,6 +52,12 @@ pub enum DataAuthorityError {
     Json(#[from] serde_json::Error),
     #[error("archive merge conflicts: {0}")]
     ArchiveConflicts(String),
+    #[error("data authority journal is corrupt: {0}")]
+    CorruptTransaction(String),
+    #[error("archive content changed after inspection")]
+    ArchiveContentChanged,
+    #[error("archive ZIP codec failed: {0}")]
+    ArchiveCodec(#[from] ArchiveCodecError),
 }
 
 pub trait ProcessProbe: Send + Sync {
@@ -67,7 +77,7 @@ impl ProcessProbe for SystemProcessProbe {
             if result == 0 {
                 return true;
             }
-            return io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
+            io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
         }
         #[cfg(not(unix))]
         {
@@ -78,11 +88,20 @@ impl ProcessProbe for SystemProcessProbe {
     fn start_identity(&self, pid: u32) -> Option<String> {
         #[cfg(target_os = "linux")]
         {
-            return fs::read_to_string(format!("/proc/{pid}/stat"))
+            fs::read_to_string(format!("/proc/{pid}/stat"))
                 .ok()
-                .and_then(|stat| stat.rsplit(')').next().map(str::trim).map(str::to_owned));
+                .and_then(|stat| process_start_identity_from_stat(&stat))
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        {
+            macos_process_start_identity(pid)
+        }
+        #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+        {
+            let _ = pid;
+            None
+        }
+        #[cfg(not(unix))]
         {
             let _ = pid;
             None
@@ -259,6 +278,17 @@ impl DataAuthority {
         self.build_archive_locked()
     }
 
+    /// Exports the portable `tuckmark.runtime-export-archive.v1` directory-tree ZIP.
+    ///
+    /// The DEVD JSON archive remains available through [`Self::export_archive`] because
+    /// manual/protection snapshots use that persistence format for compatibility.
+    pub fn export_archive_zip(&self) -> Result<Vec<u8>, DataAuthorityError> {
+        let _guard = self.lock_mutation()?;
+        self.recover_transactions_locked()?;
+        let archive = self.build_archive_locked()?;
+        Ok(DirectoryTreeArchive::from_devd_data_archive(&archive)?.encode_zip()?)
+    }
+
     pub fn inspect_archive(
         &self,
         archive: &DevdDataArchive,
@@ -267,6 +297,15 @@ impl DataAuthority {
         let _guard = self.lock_mutation()?;
         self.recover_transactions_locked()?;
         self.inspect_archive_locked(archive)
+    }
+
+    /// Inspects a portable directory-tree or legacy single-snapshot ZIP archive.
+    pub fn inspect_archive_zip(
+        &self,
+        archive_zip: &[u8],
+    ) -> Result<ArchiveInspection, DataAuthorityError> {
+        let archive = archive_from_zip(archive_zip)?;
+        self.inspect_archive(&archive)
     }
 
     pub fn create_backup(
@@ -298,6 +337,7 @@ impl DataAuthority {
     pub fn import_archive(
         &self,
         archive: &DevdDataArchive,
+        expected_archive_hash: &str,
         mode: ArchiveImportMode,
         expected_revision: u64,
     ) -> Result<ArchiveImportResult, DataAuthorityError> {
@@ -312,6 +352,9 @@ impl DataAuthority {
             });
         }
         let inspection = self.inspect_archive_locked(archive)?;
+        if inspection.archive_hash != expected_archive_hash {
+            return Err(DataAuthorityError::ArchiveContentChanged);
+        }
         if mode == ArchiveImportMode::Merge && !inspection.conflicts.is_empty() {
             return Err(DataAuthorityError::ArchiveConflicts(
                 inspection.conflicts.join(", "),
@@ -363,6 +406,19 @@ impl DataAuthority {
         })
     }
 
+    /// Imports a portable directory-tree or legacy single-snapshot ZIP archive after
+    /// verifying the inspection hash returned by [`Self::inspect_archive_zip`].
+    pub fn import_archive_zip(
+        &self,
+        archive_zip: &[u8],
+        expected_archive_hash: &str,
+        mode: ArchiveImportMode,
+        expected_revision: u64,
+    ) -> Result<ArchiveImportResult, DataAuthorityError> {
+        let archive = archive_from_zip(archive_zip)?;
+        self.import_archive(&archive, expected_archive_hash, mode, expected_revision)
+    }
+
     fn commit_locked(&self, request: CommitRequest) -> Result<RevisionEvent, DataAuthorityError> {
         self.recover_transactions_locked()?;
         let actual = self.read_revision_locked()?;
@@ -378,6 +434,7 @@ impl DataAuthority {
         let transaction =
             DevdDataTransaction::new(revision, request.writes, request.deletes, event);
         transaction.validate()?;
+        validate_managed_transaction_paths(&transaction)?;
         self.validate_transaction_integrity_locked(&transaction)?;
         let journal_path = self
             .transactions_dir()
@@ -439,6 +496,8 @@ impl DataAuthority {
 
     fn recover_transactions_locked(&self) -> Result<(), DataAuthorityError> {
         fs::create_dir_all(self.transactions_dir())?;
+        let state_was_missing = !self.control_dir().join(STATE_NAME).exists();
+        let mut journals = Vec::new();
         for journal_path in list_json_files(&self.transactions_dir())? {
             let value = read_json_required(&journal_path)?;
             let transaction: DevdDataTransaction = serde_json::from_value(value)?;
@@ -448,9 +507,42 @@ impl DataAuthority {
                 )));
             }
             transaction.validate()?;
+            validate_managed_transaction_paths(&transaction)?;
+            journals.push((journal_path, transaction));
+        }
+        journals.sort_by(|(left_path, left), (right_path, right)| {
+            left.revision
+                .cmp(&right.revision)
+                .then_with(|| left_path.cmp(right_path))
+        });
+        for pair in journals.windows(2) {
+            if pair[0].1.revision == pair[1].1.revision {
+                return Err(DataAuthorityError::CorruptTransaction(format!(
+                    "duplicate revision {}",
+                    pair[0].1.revision
+                )));
+            }
+        }
+        let allow_isolated_legacy_gap = state_was_missing && journals.len() == 1;
+        for (journal_path, transaction) in journals {
             let current = self.read_revision_locked()?;
-            if current <= transaction.revision {
-                self.apply_transaction_locked(&transaction)?;
+            match current.cmp(&transaction.revision) {
+                std::cmp::Ordering::Greater => {}
+                std::cmp::Ordering::Equal => {
+                    self.validate_transaction_integrity_locked(&transaction)?;
+                    self.apply_transaction_locked(&transaction)?;
+                }
+                std::cmp::Ordering::Less => {
+                    let expected = current.saturating_add(1);
+                    if transaction.revision != expected && !allow_isolated_legacy_gap {
+                        return Err(DataAuthorityError::CorruptTransaction(format!(
+                            "revision {} follows {current}, expected {expected}",
+                            transaction.revision
+                        )));
+                    }
+                    self.validate_transaction_integrity_locked(&transaction)?;
+                    self.apply_transaction_locked(&transaction)?;
+                }
             }
             fs::remove_file(journal_path)?;
         }
@@ -566,10 +658,13 @@ impl DataAuthority {
         let snapshot_updated_at = read_json_optional(&self.inner.root.join("manifest.json"))?
             .and_then(|value| serde_json::from_value::<DataDirectoryManifest>(value).ok())
             .and_then(|manifest| manifest.snapshot_updated_at);
+        let exported_at = self.inner.options.clock.now();
         let archive = DevdDataArchive {
             schema: tuckmark_contracts::DEVD_DATA_ARCHIVE_SCHEMA.into(),
-            exported_at: self.inner.options.clock.now(),
+            exported_at: exported_at.clone(),
             runtime: RuntimeSnapshot {
+                schema: tuckmark_contracts::RUNTIME_EXPORT_SCHEMA.into(),
+                exported_at,
                 snapshot_updated_at,
                 settings: read_json_optional(&self.inner.root.join("settings/app-settings.json"))?
                     .unwrap_or_else(|| Value::Object(Default::default())),
@@ -652,6 +747,7 @@ impl DataAuthority {
         });
         manifest.schema = DATA_DIRECTORY_MANIFEST_SCHEMA.into();
         manifest.generated_at = self.inner.options.clock.now();
+        manifest.snapshot_updated_at = snapshot_updated_at(&self.inner.root)?;
         manifest.counts.templates = count_template_records(&self.inner.root)?;
         manifest.counts.versions = count_template_versions(&self.inner.root)?;
         manifest.counts.working_copies = count_working_copies(&self.inner.root)?;
@@ -662,6 +758,82 @@ impl DataAuthority {
         manifest.validate()?;
         atomic_write_json(&manifest_path, &manifest)
     }
+}
+
+#[cfg(target_os = "linux")]
+fn process_start_identity_from_stat(stat: &str) -> Option<String> {
+    // `/proc/<pid>/stat` fields one and two are pid and a parenthesized command.
+    // Field 22 is process start time, which remains stable while CPU/state fields change.
+    stat.rsplit_once(')')?
+        .1
+        .split_whitespace()
+        .nth(19)
+        .map(str::to_owned)
+}
+
+#[cfg(target_os = "macos")]
+const PROC_PIDTBSDINFO: libc::c_int = 3;
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+struct ProcBsdInfo {
+    pbi_flags: u32,
+    pbi_status: u32,
+    pbi_xstatus: u32,
+    pbi_pid: u32,
+    pbi_ppid: u32,
+    pbi_uid: libc::uid_t,
+    pbi_gid: libc::gid_t,
+    pbi_ruid: libc::uid_t,
+    pbi_rgid: libc::gid_t,
+    pbi_svuid: libc::uid_t,
+    pbi_svgid: libc::gid_t,
+    pbi_rfu_1: u32,
+    pbi_comm: [libc::c_char; 16],
+    pbi_name: [libc::c_char; 32],
+    pbi_nfiles: u32,
+    pbi_pgid: u32,
+    pbi_pjobc: u32,
+    e_tdev: u32,
+    e_tpgid: u32,
+    pbi_nice: i32,
+    pbi_start_tvsec: u64,
+    pbi_start_tvusec: u64,
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "proc")]
+unsafe extern "C" {
+    fn proc_pidinfo(
+        pid: libc::c_int,
+        flavor: libc::c_int,
+        arg: u64,
+        buffer: *mut libc::c_void,
+        buffersize: libc::c_int,
+    ) -> libc::c_int;
+}
+
+#[cfg(target_os = "macos")]
+fn macos_process_start_identity(pid: u32) -> Option<String> {
+    let mut info = std::mem::MaybeUninit::<ProcBsdInfo>::zeroed();
+    let expected_size = std::mem::size_of::<ProcBsdInfo>();
+    let written = unsafe {
+        proc_pidinfo(
+            pid as libc::c_int,
+            PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            expected_size.try_into().ok()?,
+        )
+    };
+    if written < expected_size.try_into().ok()? {
+        return None;
+    }
+    let info = unsafe { info.assume_init() };
+    Some(format!(
+        "{}.{}",
+        info.pbi_start_tvsec, info.pbi_start_tvusec
+    ))
 }
 
 fn ensure_owner(path: &Path, options: &DataAuthorityOptions) -> Result<(), DataAuthorityError> {
@@ -796,10 +968,10 @@ fn retire_stale_lock(
         fs::remove_file(retired)?;
         Ok(true)
     })();
-    if let Ok(current) = read_lock(&recovery_path) {
-        if same_lock(&current, &recovery) {
-            let _ = fs::remove_file(&recovery_path);
-        }
+    if let Ok(current) = read_lock(&recovery_path)
+        && same_lock(&current, &recovery)
+    {
+        let _ = fs::remove_file(&recovery_path);
     }
     result
 }
@@ -915,9 +1087,85 @@ fn collect_json_tree(
     Ok(())
 }
 
+fn snapshot_updated_at(root: &Path) -> Result<Option<String>, DataAuthorityError> {
+    let mut timestamps = Vec::new();
+    if let Some(settings) = read_json_optional(&root.join("settings/app-settings.json"))? {
+        collect_timestamp(&settings, "updatedAt", &mut timestamps);
+    }
+    let mut files = BTreeMap::new();
+    for directory in ["templates", "drafts"] {
+        collect_json_tree(&root.join(directory), directory, &mut files)?;
+    }
+    for (path, value) in files {
+        let timestamp_field = if path.starts_with("templates/") && path.contains("/versions/") {
+            Some("createdAt")
+        } else if (path.starts_with("templates/") && path.ends_with("/template.json"))
+            || (path.starts_with("templates/") && path.ends_with("/working-copy.json"))
+            || path.starts_with("drafts/")
+        {
+            Some("updatedAt")
+        } else {
+            None
+        };
+        if let Some(timestamp_field) = timestamp_field {
+            collect_timestamp(&value, timestamp_field, &mut timestamps);
+        }
+    }
+    Ok(timestamps.into_iter().max())
+}
+
+fn collect_timestamp(value: &Value, field: &str, timestamps: &mut Vec<String>) {
+    if let Some(timestamp) = value
+        .as_object()
+        .and_then(|object| object.get(field))
+        .and_then(Value::as_str)
+        .filter(|timestamp| !timestamp.is_empty())
+    {
+        timestamps.push(timestamp.into());
+    }
+}
+
+fn validate_managed_transaction_paths(
+    transaction: &DevdDataTransaction,
+) -> Result<(), DataAuthorityError> {
+    for path in transaction
+        .writes
+        .iter()
+        .map(|write| write.relative_path.as_str())
+        .chain(transaction.deletes.iter().map(String::as_str))
+    {
+        if !is_managed_data_path(path) {
+            return Err(DataAuthorityError::InvalidPath(path.into()));
+        }
+    }
+    Ok(())
+}
+
+fn is_managed_data_path(path: &str) -> bool {
+    [
+        "settings/",
+        "templates/",
+        "drafts/",
+        "inventory/materials/",
+        "inventory/adjustments/",
+        "backups/",
+    ]
+    .iter()
+    .any(|prefix| path.starts_with(prefix))
+}
+
+fn archive_from_zip(archive_zip: &[u8]) -> Result<DevdDataArchive, DataAuthorityError> {
+    match decode_archive_zip(archive_zip)? {
+        ArchiveZipInput::DirectoryTree(archive) => Ok(archive.to_devd_data_archive()?),
+        ArchiveZipInput::LegacySnapshot(archive) => Ok(archive),
+    }
+}
+
 fn archive_hash(archive: &DevdDataArchive) -> Result<String, DataAuthorityError> {
     let mut hasher = Sha256::new();
-    hasher.update(canonical_json_bytes(archive)?);
+    // TS computes this confirmation token from JSON.stringify(archive), without the
+    // pretty-print newline used for durable JSON files.
+    hasher.update(serde_json::to_vec(archive)?);
     Ok(format!("{:x}", hasher.finalize()))
 }
 
@@ -1006,10 +1254,9 @@ fn archive_conflicts(incoming: &DevdDataArchive, current: &DevdDataArchive) -> V
             .matrix_code
             .as_deref()
             .filter(|value| !value.is_empty())
+            && current_matrix_codes.contains(matrix_code)
         {
-            if current_matrix_codes.contains(matrix_code) {
-                conflicts.insert(format!("matrix-code:{matrix_code}"), ());
-            }
+            conflicts.insert(format!("matrix-code:{matrix_code}"), ());
         }
     }
     for item in &incoming.inventory.adjustments {
@@ -1157,4 +1404,42 @@ fn count_working_copies(root: &Path) -> Result<u64, DataAuthorityError> {
         drafts += list_json_files(&root.join("drafts").join(kind))?.len() as u64;
     }
     Ok(template_copies + drafts)
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(target_os = "linux")]
+    use super::process_start_identity_from_stat;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn extracts_the_stable_linux_process_start_time_field() {
+        let fields = [
+            "S", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15",
+            "16", "17", "18", "987654", "20",
+        ];
+        let stat = format!("42 (render worker) {}", fields.join(" "));
+
+        assert_eq!(
+            process_start_identity_from_stat(&stat).as_deref(),
+            Some("987654")
+        );
+    }
+
+    #[test]
+    fn authority_lock_checks_do_not_spawn_external_processes() {
+        let source = include_str!("authority.rs");
+        let process_command = ["std::process", "::Command"].concat();
+        let command_new = ["Command", "::new"].concat();
+
+        assert!(!source.contains(&process_command));
+        assert!(!source.contains(&command_new));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_reads_a_start_identity_through_libproc() {
+        assert_eq!(std::mem::size_of::<super::ProcBsdInfo>(), 136);
+        assert!(super::macos_process_start_identity(std::process::id()).is_some());
+    }
 }
