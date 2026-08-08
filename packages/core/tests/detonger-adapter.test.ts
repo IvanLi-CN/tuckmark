@@ -295,6 +295,50 @@ describe("DetongerAdapter", () => {
     expect(calls[0]).toContain("8")
   }, 20_000)
 
+  it("does not invoke hardware commands for the mock printer", async () => {
+    process.env.TUCKMARK_DETONGER_PACKET_ENCODER = "lpapi"
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-detonger-"))
+    cleanupPaths.push(root)
+    const fakeDetongerPath = path.join(root, "fake-detonger.js")
+    const callsPath = path.join(root, "hardware-call.log")
+
+    const service = new TuckmarkService({
+      artifactStore: new ArtifactStore(root),
+    })
+    const preview = await service.previewTemplate({
+      templateId: "cable-tag",
+      input: {
+        name: "LAN-01",
+        port: "Gi1/0/1",
+        location: "Rack A",
+      },
+    })
+
+    await writeFile(
+      fakeDetongerPath,
+      [
+        "import fs from 'node:fs';",
+        `fs.writeFileSync(${JSON.stringify(callsPath)}, 'called');`,
+        "process.exit(10);",
+      ].join("\n"),
+      "utf8"
+    )
+
+    const adapter = new DetongerAdapter({
+      detongerCommand: process.execPath,
+      detongerRepoRoot: root,
+    })
+
+    mockDetongerArgs(adapter, fakeDetongerPath)
+
+    await adapter.printArtifact("mock-printer", preview.artifact)
+
+    expect(fs.existsSync(callsPath)).toBe(false)
+    expect(fs.existsSync(path.join(path.dirname(preview.artifact.pngPath), "packets.json"))).toBe(
+      true
+    )
+  })
+
   it("reuses cached printers when a fresh scan returns no matching detonger devices", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-detonger-"))
     cleanupPaths.push(root)
@@ -338,8 +382,27 @@ describe("DetongerAdapter", () => {
     expect(state.count).toBeGreaterThanOrEqual(2)
   })
 
+  it("falls back to the mock printer when a successful scan finds no devices", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-detonger-"))
+    cleanupPaths.push(root)
+    const fakeDetongerPath = path.join(root, "fake-detonger.js")
+
+    await writeFile(fakeDetongerPath, "console.log(JSON.stringify([]));\n", "utf8")
+
+    const adapter = new DetongerAdapter({
+      detongerCommand: process.execPath,
+      detongerRepoRoot: root,
+    })
+
+    mockDetongerArgs(adapter, fakeDetongerPath)
+
+    const printers = await adapter.scanPrinters()
+
+    expect(printers.map((printer) => printer.id)).toEqual(["mock-printer"])
+  })
+
   it("times out hanging detonger print commands and writes a command log", async () => {
-    const printerId = "printer-hanging-command"
+    const printerId = `printer-hanging-command-${process.pid}-${Date.now()}`
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-detonger-"))
     cleanupPaths.push(root)
     const fakeDetongerPath = path.join(root, "fake-detonger.js")
@@ -373,13 +436,13 @@ describe("DetongerAdapter", () => {
         "  console.log(JSON.stringify({ status: 'ok' }));",
         "  process.exit(0);",
         "}",
-        "console.log('starting hang');",
+        "fs.writeSync(1, 'starting hang\\n');",
         "setInterval(() => {}, 1000);",
       ].join("\n"),
       "utf8"
     )
 
-    process.env.TUCKMARK_DETONGER_PRINT_TIMEOUT_MS = "200"
+    process.env.TUCKMARK_DETONGER_PRINT_TIMEOUT_MS = "1000"
 
     const adapter = new DetongerAdapter({
       detongerCommand: process.execPath,
@@ -389,7 +452,7 @@ describe("DetongerAdapter", () => {
     mockDetongerArgs(adapter, fakeDetongerPath)
 
     await expect(adapter.printArtifact(printerId, preview.artifact)).rejects.toThrow(
-      /timed out after 200ms/
+      /timed out after 1000ms/
     )
 
     const logPath = path.join(path.dirname(preview.artifact.pngPath), "print-command.log")

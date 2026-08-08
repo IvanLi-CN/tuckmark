@@ -32,6 +32,19 @@ export class DetongerAdapter {
         }
         return args;
     }
+    mockPrinter() {
+        return printerSchema.parse({
+            id: "mock-printer",
+            name: "Mock Label Printer",
+            capabilities: {
+                dpi: 203,
+                printWidthDots: 384,
+                supportedPaperTypes: ["gap", "continuous"],
+                colors: ["mono"],
+                notes: ["Mock fallback printer while detonger is unavailable."],
+            },
+        });
+    }
     async scanPrinters() {
         try {
             const { stdout } = await execFileAsync(this.command, this.detongerArgs(["scan", "--format", "json"]), {
@@ -39,6 +52,9 @@ export class DetongerAdapter {
             });
             const parsed = JSON.parse(stdout);
             const filtered = parsed.filter((item) => item.name ? printerNamePrefixes.some((prefix) => item.name?.startsWith(prefix)) : false);
+            if (filtered.length === 0 && this.mockEnabled) {
+                return [this.mockPrinter()];
+            }
             return filtered
                 .map((item) => printerSchema.parse({
                 id: item.device,
@@ -58,22 +74,13 @@ export class DetongerAdapter {
             if (!this.mockEnabled) {
                 throw error;
             }
-            return [
-                printerSchema.parse({
-                    id: "mock-printer",
-                    name: "Mock Label Printer",
-                    capabilities: {
-                        dpi: 203,
-                        printWidthDots: 384,
-                        supportedPaperTypes: ["gap", "continuous"],
-                        colors: ["mono"],
-                        notes: ["Mock fallback printer while detonger is unavailable."]
-                    }
-                })
-            ];
+            return [this.mockPrinter()];
         }
     }
     async printArtifact(printerId, artifact) {
+        if (printerId === "mock-printer" && this.mockEnabled) {
+            return;
+        }
         try {
             await this.withPrinterLock(printerId, async () => {
                 const args = [
