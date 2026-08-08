@@ -275,6 +275,20 @@ export class DetongerAdapter {
     })
   }
 
+  private mockPrinter(): Printer {
+    return printerSchema.parse({
+      id: "mock-printer",
+      name: "Mock Label Printer",
+      capabilities: {
+        dpi: 203,
+        printWidthDots: 384,
+        supportedPaperTypes: ["gap", "continuous"],
+        colors: ["mono"],
+        notes: ["Mock fallback printer while detonger is unavailable."],
+      },
+    })
+  }
+
   private rememberPrinters(printers: Printer[]): void {
     const now = Date.now()
     for (const printer of printers) {
@@ -311,6 +325,9 @@ export class DetongerAdapter {
         if (cached.length > 0) {
           return cached
         }
+        if (this.mockEnabled) {
+          return [this.mockPrinter()]
+        }
       }
       const printers = filtered
         .map((item) => this.buildPrinter(item))
@@ -330,19 +347,7 @@ export class DetongerAdapter {
         throw error
       }
 
-      return [
-        printerSchema.parse({
-          id: "mock-printer",
-          name: "Mock Label Printer",
-          capabilities: {
-            dpi: 203,
-            printWidthDots: 384,
-            supportedPaperTypes: ["gap", "continuous"],
-            colors: ["mono"],
-            notes: ["Mock fallback printer while detonger is unavailable."],
-          },
-        }),
-      ]
+      return [this.mockPrinter()]
     }
   }
 
@@ -399,6 +404,11 @@ export class DetongerAdapter {
   }
 
   async printArtifact(printerId: string, artifact: PreviewArtifact): Promise<void> {
+    if (printerId === "mock-printer" && this.mockEnabled) {
+      await this.encodeArtifactPackets(artifact)
+      return
+    }
+
     try {
       await this.withPrinterLock(printerId, async () => {
         const packets = await this.encodeArtifactPackets(artifact)
