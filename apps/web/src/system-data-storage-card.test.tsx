@@ -349,14 +349,6 @@ describe("SystemDataStorageCard", () => {
     })
 
     expect(document.body.textContent).toContain("请先处理未保存草稿")
-    const canvasLink = Array.from(document.querySelectorAll("a")).find((link) =>
-      link.textContent?.includes("去处理")
-    )
-    expect(canvasLink?.getAttribute("href")).toBe(
-      "/canvas?source=user-template&templateId=power-module"
-    )
-    expect(canvasLink?.getAttribute("target")).toBe("_blank")
-    expect(canvasLink?.getAttribute("rel")).toContain("noopener")
     const forceButton = Array.from(document.querySelectorAll("button")).find((button) =>
       button.textContent?.includes("管理员强制替换")
     )
@@ -387,7 +379,9 @@ describe("SystemDataStorageCard", () => {
     expect(confirmForcedReplacement).toHaveBeenCalledTimes(1)
   })
 
-  it("opens the matching draft in a new tab", async () => {
+  it("opens the matching draft in the restricted processing layout", async () => {
+    const focus = vi.fn()
+    const openWindow = vi.spyOn(window, "open").mockReturnValue({ focus } as unknown as Window)
     const pendingDraftDialog = {
       kind: "drafts-required" as const,
       drafts: [
@@ -406,12 +400,20 @@ describe("SystemDataStorageCard", () => {
 
     await renderCard({ dialog: pendingDraftDialog })
 
-    const canvasLink = Array.from(document.querySelectorAll("a")).find((link) =>
-      link.textContent?.includes("去处理")
+    const processButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("去处理")
     )
-    expect(canvasLink?.getAttribute("href")).toBe(
-      "/canvas?source=user-template&templateId=power-module"
+    if (!processButton) {
+      throw new Error("Missing draft processing button")
+    }
+    await act(async () => {
+      processButton.click()
+      await flush()
+    })
+    expect(openWindow).toHaveBeenCalledWith(
+      "/canvas/draft-processing?source=user-template&templateId=power-module",
+      "_blank"
     )
-    expect(canvasLink?.getAttribute("target")).toBe("_blank")
+    expect(focus).toHaveBeenCalledTimes(1)
   })
 })

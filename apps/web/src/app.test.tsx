@@ -1223,6 +1223,51 @@ describe("web workbench app", () => {
     expect(rightsLink?.textContent).toBe("© 2026 Ivan Li")
   })
 
+  it("renders draft processing without the ordinary workbench exit paths", async () => {
+    await renderWorkbenchApp(
+      browserRuntimeContext,
+      "wide-default",
+      "/canvas/draft-processing?presetId=shipping-wide"
+    )
+
+    expect(document.body.textContent).toContain("草稿处理")
+    expect(document.body.textContent).toContain("标签编辑台")
+    expect(document.querySelector('[aria-label="Main navigation"]')).toBeNull()
+    expect(document.querySelector(".tm-footer")).toBeNull()
+    expect(document.querySelectorAll("a")).toHaveLength(0)
+    expect(document.querySelector('button[aria-label="返回草稿处理弹窗"]')?.textContent).toContain(
+      "返回"
+    )
+  })
+
+  it("keeps saved drafts inside the restricted processing route", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Draft Processing Template",
+      document: {
+        ...baseDraft,
+        name: "Draft Processing Template",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas/draft-processing?source=user-template&templateId=${saved.template.id}`
+    )
+    await flush(8)
+
+    await act(async () => {
+      queryButton("保存").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(12)
+    })
+
+    expect(window.location.pathname).toBe("/canvas/draft-processing")
+    expect(window.location.search).toContain(`templateId=${saved.template.id}`)
+    expect(document.querySelector('[aria-label="Main navigation"]')).toBeNull()
+  })
+
   it("keeps the runtime shell hidden while the startup overlay is still active", async () => {
     document.body.innerHTML = '<div id="root"></div>'
     const rootElement = document.getElementById("root")

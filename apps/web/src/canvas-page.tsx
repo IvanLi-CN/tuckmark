@@ -139,6 +139,7 @@ import {
 } from "./components/ui/tooltip.js"
 import { defaultDraftRenderOptions } from "./demo-data.js"
 import { isServerHttpDataSurface } from "./devd-data-client.js"
+import { getDraftProcessingPath } from "./draft-processing-route.js"
 import {
   buildCanvasDimensionOptions,
   type CanvasDimension,
@@ -181,6 +182,7 @@ import { canvasRouteDataQueryOptions } from "./workbench-query.js"
 
 type CanvasPageProps = {
   controller: WorkbenchController
+  draftProcessing?: boolean
   initialScenario?: CanvasStoryScenario
   initialLoadedRouteData?: LoadedCanvasRouteData
 }
@@ -6328,6 +6330,7 @@ function CanvasVersionsPanel({
 
 export function CanvasWorkspace({
   controller,
+  draftProcessing = false,
   initialScenario,
   initialLoadedRouteData,
 }: CanvasPageProps) {
@@ -6932,10 +6935,14 @@ export function CanvasWorkspace({
       await controller.handleImportantUserDataSaved()
 
       const history = await readUserTemplateHistory(result.template.id)
+      const savedStatus = mode === "save" && existingTemplateId ? "saved" : "created"
       navigate(
-        `/canvas?source=user-template&templateId=${result.template.id}&panel=versions&status=${
-          mode === "save" && existingTemplateId ? "saved" : "created"
-        }`,
+        draftProcessing
+          ? getDraftProcessingPath(
+              { kind: "user-template", templateId: result.template.id },
+              { panel: "versions", status: savedStatus }
+            )
+          : `/canvas?source=user-template&templateId=${result.template.id}&panel=versions&status=${savedStatus}`,
         { replace: true }
       )
       setState(
@@ -6952,6 +6959,7 @@ export function CanvasWorkspace({
       controller.handleImportantUserDataSaved,
       controller.recordCanvasDimension,
       controller.refreshUserTemplates,
+      draftProcessing,
       draftWithCurrentRenderOptions,
       navigate,
       readOnly,

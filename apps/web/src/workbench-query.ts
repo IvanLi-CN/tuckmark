@@ -5,6 +5,7 @@ import {
   loadCanvasRouteData,
   resolveCanvasSource,
 } from "./canvas-route-data.js"
+import { isDraftProcessingPath } from "./draft-processing-route.js"
 import type { AppContext, CanvasDraftSource, UserTemplateSummary } from "./types.js"
 import { listArchivedUserTemplates, listUserTemplates } from "./user-template-store.js"
 
@@ -116,7 +117,7 @@ export async function preloadWorkbenchRouteData(args: {
     return
   }
 
-  if (normalizedPath.endsWith("/canvas")) {
+  if (normalizedPath.endsWith("/canvas") || isDraftProcessingPath(normalizedPath)) {
     const routeSource = resolveCanvasSource(targetUrl.searchParams)
     await args.queryClient.ensureQueryData(canvasRouteDataQueryOptions(args.context, routeSource))
   }

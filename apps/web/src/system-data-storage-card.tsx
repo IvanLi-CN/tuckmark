@@ -37,7 +37,7 @@ import type {
   RuntimeSnapshotSummary,
 } from "./data-directory-types.js"
 import { devdDataClient } from "./devd-data-client.js"
-import type { CanvasDraftSource } from "./types.js"
+import { openDraftProcessingWindow } from "./draft-processing-route.js"
 import type { WorkbenchDataDirectoryDialogState } from "./workbench-controller.js"
 
 type DataStorageCardProps = {
@@ -58,16 +58,6 @@ type DataStorageCardProps = {
   onOpenForceReplacementConfirmation: () => void
   onSyncNow: () => void
   onTakeOverWrites: () => void
-}
-
-function getCanvasDraftPath(source: CanvasDraftSource): string {
-  if (source.kind === "user-template") {
-    return `/canvas?source=user-template&templateId=${encodeURIComponent(source.templateId)}`
-  }
-  if (source.kind === "preset-template") {
-    return `/canvas?source=preset-template&templateId=${encodeURIComponent(source.presetId)}`
-  }
-  return `/canvas?presetId=${encodeURIComponent(source.presetId)}`
 }
 
 function formatTimestamp(value: string | null): string {
@@ -517,7 +507,7 @@ function PendingDraftsDialog({
           <DialogDescription>
             {forceConfirmation
               ? "强制替换会放弃下列草稿及无响应标签尚未写入的数据。该操作不可撤销。"
-              : "切换目录或整库恢复会替换当前画布数据。点击“去处理”会在新标签页中打开对应草稿；保存或重置全部草稿后再重试。"}
+              : "切换目录或整库恢复会替换当前画布数据。点击“去处理”会在新标签页中打开受限草稿处理页；保存或重置全部草稿后，返回此弹窗再重试。"}
           </DialogDescription>
         </DialogHeader>
         <ul className="grid gap-2 text-sm">
@@ -531,14 +521,13 @@ function PendingDraftsDialog({
                 </span>
               </div>
               {!forceConfirmation ? (
-                <Button asChild type="button" variant="outline" size="sm">
-                  <a
-                    href={getCanvasDraftPath(draft.source)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    去处理
-                  </a>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openDraftProcessingWindow(draft.source)}
+                >
+                  去处理
                 </Button>
               ) : null}
             </li>

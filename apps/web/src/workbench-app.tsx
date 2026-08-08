@@ -102,6 +102,8 @@ import { Textarea } from "./components/ui/textarea.js"
 import { DataDirectoryNudgeToast } from "./data-directory-nudge-toast.js"
 import { DataReplacementOverlay } from "./data-replacement-overlay.js"
 import { buildInputFromTemplate, defaultDraftRenderOptions } from "./demo-data.js"
+import { DraftProcessingLayout } from "./draft-processing-layout.js"
+import { DRAFT_PROCESSING_ROUTE_PATH, isDraftProcessingPath } from "./draft-processing-route.js"
 import { FooterBuildMeta } from "./footer-build-meta.js"
 import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
 import { canvasDotsToMillimeters, canvasMillimetersToDots } from "./lib/canvas-units.js"
@@ -1856,7 +1858,7 @@ function WorkbenchLayout({
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const runtimePwaUpdate = usePwaUpdate(controller.context)
   const pwaUpdate = pwaUpdateSnapshot ?? runtimePwaUpdate
-  const isCanvasRoute = pathname === "/canvas"
+  const isCanvasRoute = pathname === "/canvas" || isDraftProcessingPath(pathname)
   const handleDrawerOpenChange = React.useCallback(
     (nextOpen: boolean) => {
       if (!nextOpen) {
@@ -4568,6 +4570,12 @@ const workbenchCanvasRoute = createRoute({
   component: WorkbenchCanvasRouteComponent,
 })
 
+const workbenchDraftProcessingRoute = createRoute({
+  getParentRoute: () => workbenchRootRoute,
+  path: DRAFT_PROCESSING_ROUTE_PATH,
+  component: WorkbenchDraftProcessingRouteComponent,
+})
+
 const workbenchInventoryRoute = createRoute({
   getParentRoute: () => workbenchRootRoute,
   path: "/inventory",
@@ -4598,6 +4606,7 @@ const workbenchRouteTree = workbenchRootRoute.addChildren([
   workbenchDashboardRoute,
   workbenchTemplatesRoute,
   workbenchCanvasRoute,
+  workbenchDraftProcessingRoute,
   workbenchInventoryRoute,
   workbenchInventoryDetailRoute,
   workbenchSystemRoute,
@@ -4627,20 +4636,28 @@ function WorkbenchRootRouteComponent() {
     pwaUpdateSnapshot,
     shellHidden,
   } = useWorkbenchRenderContext()
+  const pathname = useWorkbenchPathname()
+  const isDraftProcessing = isDraftProcessingPath(pathname)
 
   return (
     <>
       <WorkbenchNavigationObserver navigationStateLocked={navigationStateLocked} />
-      <WorkbenchLayout
-        controller={controller}
-        forcePendingContent={forcePendingContent}
-        hydrationState={hydrationState}
-        navigationState={navigationState}
-        pwaUpdateSnapshot={pwaUpdateSnapshot}
-        archiveToast={archiveToast}
-        onUndoArchiveToast={onUndoArchiveToast}
-        shellHidden={shellHidden}
-      />
+      {isDraftProcessing ? (
+        <DraftProcessingLayout>
+          {forcePendingContent ? <RouteLoadingPanel /> : <Outlet />}
+        </DraftProcessingLayout>
+      ) : (
+        <WorkbenchLayout
+          controller={controller}
+          forcePendingContent={forcePendingContent}
+          hydrationState={hydrationState}
+          navigationState={navigationState}
+          pwaUpdateSnapshot={pwaUpdateSnapshot}
+          archiveToast={archiveToast}
+          onUndoArchiveToast={onUndoArchiveToast}
+          shellHidden={shellHidden}
+        />
+      )}
     </>
   )
 }
@@ -4749,7 +4766,7 @@ function WorkbenchTemplatesRouteComponent() {
   )
 }
 
-function WorkbenchCanvasRouteComponent() {
+function WorkbenchCanvasRouteComponent({ draftProcessing = false }: { draftProcessing?: boolean }) {
   const { canvasScenario, controller } = useWorkbenchRenderContext()
   const queryClient = useQueryClient()
   const searchParams = useWorkbenchSearchParams()
@@ -4771,11 +4788,16 @@ function WorkbenchCanvasRouteComponent() {
     <React.Suspense fallback={<RouteLoadingPanel />}>
       <LazyWorkbenchCanvasRoute
         controller={controller}
+        draftProcessing={draftProcessing}
         initialScenario={canvasScenario}
         initialLoadedRouteData={initialLoadedRouteData ?? undefined}
       />
     </React.Suspense>
   )
+}
+
+function WorkbenchDraftProcessingRouteComponent() {
+  return <WorkbenchCanvasRouteComponent draftProcessing />
 }
 
 function WorkbenchInventoryRouteComponent() {

@@ -778,6 +778,43 @@ export const CanvasWorkspace: Story = {
   },
 }
 
+export const CanvasDraftProcessing: Story = {
+  args: {
+    context: runtimeContext,
+    canvasScenario: "wide-default",
+    initialEntries: ["/canvas/draft-processing?presetId=shipping-wide"],
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "canvas-wide-editor",
+    },
+  },
+  globals: {
+    viewport: { value: "canvas-wide-editor", isRotated: false },
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body)
+    await expect(page.getByRole("heading", { name: "草稿处理" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "返回草稿处理弹窗" })).toBeVisible()
+    await waitFor(() => expect(page.getByText("标签编辑台")).toBeVisible(), {
+      timeout: 10_000,
+    })
+    await expect(page.queryByRole("navigation", { name: "Main navigation" })).toBeNull()
+  },
+}
+
+export const CanvasDraftProcessingMobile: Story = {
+  ...CanvasDraftProcessing,
+  parameters: {
+    viewport: {
+      defaultViewport: "data-replacement-mobile",
+    },
+  },
+  globals: {
+    viewport: { value: "data-replacement-mobile", isRotated: false },
+  },
+}
+
 export const CanvasWorkspaceGridSizeMenu: Story = {
   args: {
     context: runtimeContext,

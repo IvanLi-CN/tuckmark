@@ -108,9 +108,8 @@ export const PendingDrafts: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
     await expect(canvas.getByText("请先处理未保存草稿")).toBeVisible()
-    const links = canvas.getAllByRole("link", { name: "去处理" })
-    await expect(links).toHaveLength(2)
-    await expect(links[0]).toHaveAttribute("target", "_blank")
+    const processButtons = canvas.getAllByRole("button", { name: "去处理" })
+    await expect(processButtons).toHaveLength(2)
     await expect(canvas.getByRole("button", { name: "管理员强制替换" })).toBeVisible()
   },
 }
