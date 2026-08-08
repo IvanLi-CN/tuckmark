@@ -1,0 +1,18 @@
+[package]
+name = "tuckmark-engine"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+tuckmark-contracts = { path = "../tuckmark-contracts" }
+libc = "0.2.172"
+time = { version = "0.3.37", features = ["formatting"] }
+
+[dev-dependencies]
+tempfile = "3.16.0"

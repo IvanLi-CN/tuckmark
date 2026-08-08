@@ -11,3 +11,4 @@ work/
 playwright-report
 test-results
 tools/**/target
+target/

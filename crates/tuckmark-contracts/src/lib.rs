@@ -1,0 +1,688 @@
+//! Language-neutral wire and persistence contracts for the native Tuckmark engine.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use thiserror::Error;
+
+pub const DATA_DIRECTORY_MANIFEST_SCHEMA: &str = "tuckmark.data-dir-manifest.v1";
+pub const DEVD_DATA_ARCHIVE_SCHEMA: &str = "tuckmark.devd-data-archive.v1";
+pub const DEVD_DATA_STATE_SCHEMA: &str = "tuckmark.devd-data-state.v1";
+pub const DEVD_DATA_TRANSACTION_SCHEMA: &str = "tuckmark.devd-data-transaction.v1";
+pub const DEVD_LIVE_LOCK_SCHEMA: &str = "tuckmark.devd-live-lock.v1";
+pub const DEVD_OWNER_SCHEMA: &str = "tuckmark.devd-owner.v1";
+
+pub type ExtraFields = BTreeMap<String, Value>;
+
+#[derive(Debug, Error)]
+pub enum ContractError {
+    #[error("JSON serialization failed: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("invalid contract: {0}")]
+    Validation(String),
+}
+
+fn non_empty(value: &str, name: &str) -> Result<(), ContractError> {
+    if value.trim().is_empty() {
+        return Err(ContractError::Validation(format!(
+            "{name} must not be empty"
+        )));
+    }
+    Ok(())
+}
+
+fn expected_schema(actual: &str, expected: &str) -> Result<(), ContractError> {
+    if actual != expected {
+        return Err(ContractError::Validation(format!(
+            "expected schema {expected}, received {actual}"
+        )));
+    }
+    Ok(())
+}
+
+/// Recursively sorts JSON object keys. Arrays retain their defined order.
+pub fn canonicalize_json(value: Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(values.into_iter().map(canonicalize_json).collect()),
+        Value::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(key, value)| (key, canonicalize_json(value)))
+                .collect(),
+        ),
+        value => value,
+    }
+}
+
+/// Tuckmark's file-backed JSON uses stable, pretty JSON with one trailing newline.
+pub fn canonical_json_string<T: Serialize>(value: &T) -> Result<String, ContractError> {
+    let value = canonicalize_json(serde_json::to_value(value)?);
+    Ok(format!("{}\n", serde_json::to_string_pretty(&value)?))
+}
+
+pub fn canonical_json_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, ContractError> {
+    Ok(canonical_json_string(value)?.into_bytes())
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataDirectoryFiles {
+    pub settings: String,
+    pub templates_dir: String,
+    pub drafts_dir: String,
+    pub inventory_dir: String,
+    pub backups_dir: String,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataDirectoryCounts {
+    pub templates: u64,
+    pub versions: u64,
+    pub working_copies: u64,
+    pub materials: u64,
+    pub adjustments: u64,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataDirectoryManifest {
+    pub schema: String,
+    pub generated_at: String,
+    pub snapshot_updated_at: Option<String>,
+    pub source: String,
+    pub files: DataDirectoryFiles,
+    pub counts: DataDirectoryCounts,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+impl DataDirectoryManifest {
+    pub fn new(source: impl Into<String>, generated_at: impl Into<String>) -> Self {
+        Self {
+            schema: DATA_DIRECTORY_MANIFEST_SCHEMA.into(),
+            generated_at: generated_at.into(),
+            snapshot_updated_at: None,
+            source: source.into(),
+            files: DataDirectoryFiles {
+                settings: "settings/app-settings.json".into(),
+                templates_dir: "templates".into(),
+                drafts_dir: "drafts".into(),
+                inventory_dir: "inventory".into(),
+                backups_dir: "backups".into(),
+                extra: ExtraFields::new(),
+            },
+            counts: DataDirectoryCounts::default(),
+            extra: ExtraFields::new(),
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), ContractError> {
+        expected_schema(&self.schema, DATA_DIRECTORY_MANIFEST_SCHEMA)?;
+        non_empty(&self.generated_at, "manifest.generatedAt")?;
+        non_empty(&self.source, "manifest.source")?;
+        for (name, path) in [
+            ("manifest.files.settings", &self.files.settings),
+            ("manifest.files.templatesDir", &self.files.templates_dir),
+            ("manifest.files.draftsDir", &self.files.drafts_dir),
+            ("manifest.files.inventoryDir", &self.files.inventory_dir),
+            ("manifest.files.backupsDir", &self.files.backups_dir),
+        ] {
+            non_empty(path, name)?;
+            validate_relative_path(path)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevisionEvent {
+    pub revision: u64,
+    #[serde(default)]
+    pub domains: Vec<String>,
+    pub reason: String,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+impl RevisionEvent {
+    pub fn new(revision: u64, domains: Vec<String>, reason: impl Into<String>) -> Self {
+        Self {
+            revision,
+            domains,
+            reason: reason.into(),
+            extra: ExtraFields::new(),
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), ContractError> {
+        non_empty(&self.reason, "transaction.event.reason")?;
+        if self.domains.iter().any(|domain| domain.trim().is_empty()) {
+            return Err(ContractError::Validation(
+                "transaction.event.domains contains an empty domain".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JsonWrite {
+    pub relative_path: String,
+    pub value: Value,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+impl JsonWrite {
+    pub fn new(relative_path: impl Into<String>, value: Value) -> Self {
+        Self {
+            relative_path: relative_path.into(),
+            value,
+            extra: ExtraFields::new(),
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), ContractError> {
+        validate_relative_path(&self.relative_path)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevdDataTransaction {
+    pub schema: String,
+    pub revision: u64,
+    #[serde(default)]
+    pub writes: Vec<JsonWrite>,
+    #[serde(default)]
+    pub deletes: Vec<String>,
+    pub event: RevisionEvent,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+impl DevdDataTransaction {
+    pub fn new(
+        revision: u64,
+        writes: Vec<JsonWrite>,
+        deletes: Vec<String>,
+        event: RevisionEvent,
+    ) -> Self {
+        Self {
+            schema: DEVD_DATA_TRANSACTION_SCHEMA.into(),
+            revision,
+            writes,
+            deletes,
+            event,
+            extra: ExtraFields::new(),
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), ContractError> {
+        expected_schema(&self.schema, DEVD_DATA_TRANSACTION_SCHEMA)?;
+        if self.event.revision != self.revision {
+            return Err(ContractError::Validation(format!(
+                "transaction event revision {} differs from journal revision {}",
+                self.event.revision, self.revision
+            )));
+        }
+        self.event.validate()?;
+        let mut paths = BTreeSet::new();
+        for write in &self.writes {
+            write.validate()?;
+            if !paths.insert(write.relative_path.clone()) {
+                return Err(ContractError::Validation(format!(
+                    "transaction contains duplicate write path {}",
+                    write.relative_path
+                )));
+            }
+        }
+        for path in &self.deletes {
+            validate_relative_path(path)?;
+            if !paths.insert(path.clone()) {
+                return Err(ContractError::Validation(format!(
+                    "transaction writes and deletes the same path {path}"
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevdDataState {
+    pub schema: String,
+    pub revision: u64,
+    pub updated_at: String,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+impl DevdDataState {
+    pub fn new(revision: u64, updated_at: impl Into<String>) -> Self {
+        Self {
+            schema: DEVD_DATA_STATE_SCHEMA.into(),
+            revision,
+            updated_at: updated_at.into(),
+            extra: ExtraFields::new(),
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), ContractError> {
+        expected_schema(&self.schema, DEVD_DATA_STATE_SCHEMA)?;
+        non_empty(&self.updated_at, "state.updatedAt")
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevdLiveLock {
+    pub schema: String,
+    pub pid: u32,
+    pub token: String,
+    pub claimed_at: String,
+    pub process_start_identity: Option<String>,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+impl DevdLiveLock {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        expected_schema(&self.schema, DEVD_LIVE_LOCK_SCHEMA)?;
+        if self.pid == 0 {
+            return Err(ContractError::Validation(
+                "live lock pid must be positive".into(),
+            ));
+        }
+        non_empty(&self.token, "live lock token")?;
+        non_empty(&self.claimed_at, "live lock claimedAt")
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevdOwner {
+    pub schema: String,
+    pub claimed_at: String,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelBinding {
+    pub id: String,
+    pub template_source: String,
+    pub template_id: String,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InventoryMaterial {
+    pub id: String,
+    pub full_name: String,
+    #[serde(default)]
+    pub current_quantity: i64,
+    #[serde(default)]
+    pub matrix_code: Option<String>,
+    #[serde(default)]
+    pub label_bindings: Vec<LabelBinding>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+    #[serde(default)]
+    pub archived_at: Option<String>,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InventoryAdjustment {
+    pub id: String,
+    pub material_id: String,
+    pub kind: String,
+    #[serde(default)]
+    pub quantity_delta: Option<i64>,
+    #[serde(default)]
+    pub target_quantity: Option<i64>,
+    #[serde(default)]
+    pub quantity_after: Option<i64>,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub actor: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateRecord {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub current_version_id: Option<String>,
+    #[serde(default)]
+    pub archived_at: Option<String>,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateVersion {
+    pub id: String,
+    pub template_id: String,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkingCopyRecord {
+    pub source_key: String,
+    #[serde(default)]
+    pub source: Option<Value>,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeSnapshot {
+    #[serde(default)]
+    pub snapshot_updated_at: Option<String>,
+    #[serde(default)]
+    pub settings: Value,
+    #[serde(default)]
+    pub templates: Vec<TemplateRecord>,
+    #[serde(default)]
+    pub versions: Vec<TemplateVersion>,
+    #[serde(default)]
+    pub working_copies: Vec<WorkingCopyRecord>,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InventorySnapshot {
+    #[serde(default)]
+    pub materials: Vec<InventoryMaterial>,
+    #[serde(default)]
+    pub adjustments: Vec<InventoryAdjustment>,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevdDataArchive {
+    pub schema: String,
+    pub exported_at: String,
+    #[serde(default)]
+    pub runtime: RuntimeSnapshot,
+    #[serde(default)]
+    pub inventory: InventorySnapshot,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+impl DevdDataArchive {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        expected_schema(&self.schema, DEVD_DATA_ARCHIVE_SCHEMA)?;
+        non_empty(&self.exported_at, "archive.exportedAt")?;
+        validate_referential_integrity(
+            &self.runtime.templates,
+            &self.runtime.versions,
+            &self.runtime.working_copies,
+            &self.inventory.materials,
+            &self.inventory.adjustments,
+        )
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentImportItemKind {
+    New,
+    Restock,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentImportTemplate {
+    pub source: String,
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub fields: Vec<Value>,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentImportItem {
+    pub id: String,
+    pub kind: AgentImportItemKind,
+    #[serde(default)]
+    pub selected: bool,
+    #[serde(default)]
+    pub material: Value,
+    #[serde(default)]
+    pub target_material_id: Option<String>,
+    #[serde(default)]
+    pub target_material_updated_at: Option<String>,
+    #[serde(default)]
+    pub quantity: i64,
+    #[serde(default)]
+    pub source_note: Option<String>,
+    #[serde(default)]
+    pub template: Option<AgentImportTemplate>,
+    #[serde(default)]
+    pub template_input: BTreeMap<String, String>,
+    #[serde(default)]
+    pub pending_template_event_id: Option<String>,
+    #[serde(default)]
+    pub label_print_quantity: Option<u32>,
+    #[serde(default)]
+    pub revision: u64,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentImportProposal {
+    pub schema: String,
+    #[serde(default)]
+    pub source_note: Option<String>,
+    #[serde(default)]
+    pub items: Vec<AgentImportItem>,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
+impl AgentImportProposal {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        expected_schema(&self.schema, "tuckmark.agent-import.v1")?;
+        let mut ids = BTreeSet::new();
+        for item in &self.items {
+            non_empty(&item.id, "agent import item id")?;
+            if !ids.insert(item.id.clone()) {
+                return Err(ContractError::Validation(format!(
+                    "agent import has duplicate item id {}",
+                    item.id
+                )));
+            }
+            if item.quantity < 0 {
+                return Err(ContractError::Validation(format!(
+                    "agent import item {} has a negative quantity",
+                    item.id
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn validate_relative_path(path: &str) -> Result<(), ContractError> {
+    let normalized = path.replace('\\', "/");
+    if normalized.is_empty()
+        || normalized.starts_with('/')
+        || normalized
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return Err(ContractError::Validation(format!(
+            "invalid relative path {path}"
+        )));
+    }
+    Ok(())
+}
+
+pub fn validate_referential_integrity(
+    templates: &[TemplateRecord],
+    versions: &[TemplateVersion],
+    working_copies: &[WorkingCopyRecord],
+    materials: &[InventoryMaterial],
+    adjustments: &[InventoryAdjustment],
+) -> Result<(), ContractError> {
+    let template_ids: BTreeSet<_> = templates
+        .iter()
+        .map(|template| template.id.as_str())
+        .collect();
+    let material_ids: BTreeSet<_> = materials
+        .iter()
+        .map(|material| material.id.as_str())
+        .collect();
+    let mut ids = BTreeSet::new();
+    for template in templates {
+        non_empty(&template.id, "template id")?;
+        if !ids.insert(template.id.as_str()) {
+            return Err(ContractError::Validation(format!(
+                "duplicate template {}",
+                template.id
+            )));
+        }
+    }
+    for version in versions {
+        if !template_ids.contains(version.template_id.as_str()) {
+            return Err(ContractError::Validation(format!(
+                "template version {} references unknown template {}",
+                version.id, version.template_id
+            )));
+        }
+    }
+    for copy in working_copies {
+        if let Some(template_id) = copy.source_key.strip_prefix("user:") {
+            if !template_ids.contains(template_id) {
+                return Err(ContractError::Validation(format!(
+                    "working copy {} references unknown template {}",
+                    copy.source_key, template_id
+                )));
+            }
+        }
+    }
+    let mut material_names = BTreeSet::new();
+    let mut matrix_codes = BTreeSet::new();
+    for material in materials {
+        non_empty(&material.id, "material id")?;
+        non_empty(&material.full_name, "material fullName")?;
+        if !material_names.insert(material.full_name.as_str()) {
+            return Err(ContractError::Validation(format!(
+                "duplicate material fullName {}",
+                material.full_name
+            )));
+        }
+        if let Some(matrix_code) = material
+            .matrix_code
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            if !matrix_codes.insert(matrix_code) {
+                return Err(ContractError::Validation(format!(
+                    "duplicate matrix code {matrix_code}"
+                )));
+            }
+        }
+        for binding in &material.label_bindings {
+            if binding.template_source == "user-template"
+                && !template_ids.contains(binding.template_id.as_str())
+            {
+                return Err(ContractError::Validation(format!(
+                    "material {} references unknown user template {}",
+                    material.id, binding.template_id
+                )));
+            }
+        }
+    }
+    for adjustment in adjustments {
+        if !material_ids.contains(adjustment.material_id.as_str()) {
+            return Err(ContractError::Validation(format!(
+                "adjustment {} references unknown material {}",
+                adjustment.id, adjustment.material_id
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Converts legacy read formats to the canonical, already-existing DEVD v1 archive shape.
+/// This only normalizes in-memory values; it never mutates source files or upgrades schemas.
+pub fn normalize_legacy_value(value: Value) -> Result<Value, ContractError> {
+    let mut object = value.as_object().cloned().ok_or_else(|| {
+        ContractError::Validation("persisted contract must be a JSON object".into())
+    })?;
+    let schema = object
+        .get("schema")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ContractError::Validation("persisted contract schema is missing".into()))?;
+
+    match schema {
+        "tuckmark.data-archive.v1" | "tuckmark.runtime-export-archive.v1" => {
+            object.insert(
+                "schema".into(),
+                Value::String(DEVD_DATA_ARCHIVE_SCHEMA.into()),
+            );
+            let runtime = object
+                .entry("runtime")
+                .or_insert_with(|| Value::Object(Default::default()));
+            let runtime = runtime.as_object_mut().ok_or_else(|| {
+                ContractError::Validation("legacy archive runtime must be an object".into())
+            })?;
+            for key in ["templates", "versions", "workingCopies"] {
+                runtime.entry(key).or_insert_with(|| Value::Array(vec![]));
+            }
+            let inventory = object
+                .entry("inventory")
+                .or_insert_with(|| Value::Object(Default::default()));
+            let inventory = inventory.as_object_mut().ok_or_else(|| {
+                ContractError::Validation("legacy archive inventory must be an object".into())
+            })?;
+            for key in ["materials", "adjustments"] {
+                inventory.entry(key).or_insert_with(|| Value::Array(vec![]));
+            }
+        }
+        "tuckmark.devd-data-archive.v1" => {}
+        _ => {}
+    }
+
+    Ok(canonicalize_json(Value::Object(object)))
+}
