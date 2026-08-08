@@ -1,0 +1,24 @@
+{
+  "schema": "tuckmark.compatibility-fixture.archive.v1",
+  "synthetic": true,
+  "format": "zip-directory-tree",
+  "entries": {
+    "archive.json": {
+      "schema": "tuckmark.runtime-export-archive.v1",
+      "createdAt": "2026-01-02T03:04:05.000Z"
+    },
+    "manifest.json": {
+      "schema": "tuckmark.data-dir-manifest.v1",
+      "counts": {
+        "templates": 0,
+        "versions": 0,
+        "workingCopies": 0,
+        "materials": 0,
+        "adjustments": 0
+      }
+    },
+    "settings/app-settings.json": { "threshold": 144, "paperType": "gap" }
+  },
+  "excluded": ["owner.json", "live-lock.json", "transactions/", "agent-import/sessions/"],
+  "legacyReadSchema": "tuckmark.data-archive.v1"
+}

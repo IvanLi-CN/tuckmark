@@ -1,0 +1,873 @@
+{
+  "schema": "tuckmark.compatibility-manifest.v1",
+  "baseline": "b8321bbe987b3f2e13b7bb8fd3366dda3839a4e7",
+  "productionAuthority": {
+    "cli": "rust",
+    "devd": "rust",
+    "typescriptDisposition": "compatibility-reference-only"
+  },
+  "persistedSchemaChange": "none",
+  "cliBehavior": {
+    "stdout": "Successful structured results are pretty-printed JSON followed by LF; help is UTF-8 text followed by LF.",
+    "stderr": "Failures write the Error message as one UTF-8 line.",
+    "unknownCommand": "Print help to stdout and exit 1.",
+    "uncaughtError": "Print the error message to stderr and exit 1.",
+    "instance": "DEVD-owned commands require --instance or TUCKMARK_DEVD_INSTANCE.",
+    "legacyAccess": "--data-dir, --devd-url, and TUCKMARK_DEVD_URL fail with the migration error in fixtures/cli-output.json."
+  },
+  "cliCommands": [
+    { "command": "help", "flags": [], "output": "text", "exitCodes": { "success": 0, "error": 1 } },
+    {
+      "command": "templates",
+      "flags": [],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "template list",
+      "flags": ["--instance", "--source", "--all"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "template show",
+      "flags": ["--id", "--instance"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "template import",
+      "flags": ["--file", "--instance", "--id", "--name", "--description"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "template update",
+      "flags": ["--id", "--instance", "--name", "--description", "--recommended-use"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "template rename",
+      "flags": ["--id", "--name", "--instance"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "template archive",
+      "flags": ["--id", "--instance"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "template restore",
+      "flags": ["--id", "--instance"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "template delete",
+      "flags": ["--id", "--instance"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "inventory list",
+      "flags": ["--instance", "--query", "--all"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "inventory show",
+      "flags": ["--id", "--instance"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "inventory create",
+      "flags": [
+        "--full-name",
+        "--instance",
+        "--base-name",
+        "--variant-name",
+        "--package-name",
+        "--description",
+        "--device-details",
+        "--matrix-code",
+        "--packaging-remark",
+        "--bindings"
+      ],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "inventory update",
+      "flags": [
+        "--id",
+        "--instance",
+        "--full-name",
+        "--base-name",
+        "--variant-name",
+        "--package-name",
+        "--description",
+        "--device-details",
+        "--matrix-code",
+        "--packaging-remark",
+        "--bindings"
+      ],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "inventory archive",
+      "flags": ["--id", "--instance"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "inventory restore",
+      "flags": ["--id", "--instance"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "inventory delete",
+      "flags": ["--id", "--instance"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "inventory adjust",
+      "flags": [
+        "--id",
+        "--instance",
+        "--kind",
+        "--quantity",
+        "--target-quantity",
+        "--note",
+        "--actor"
+      ],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "inventory print",
+      "flags": [
+        "--id",
+        "--binding",
+        "--printer",
+        "--instance",
+        "--printer-name",
+        "--quantity",
+        "--render-options"
+      ],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "agent-import catalog",
+      "flags": ["--instance"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "agent-import inventory",
+      "flags": ["--instance", "--query"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "agent-import create",
+      "flags": ["--file", "--instance", "--web-url", "--no-open", "--credential-file"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "agent-import open",
+      "flags": ["--session", "--web-url", "--credential-file"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "agent-import wait",
+      "flags": ["--session", "--instance", "--timeout-ms", "--credential-file"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "agent-import fulfill",
+      "flags": ["--session", "--event", "--revision", "--input", "--instance", "--credential-file"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "config get-data-dir",
+      "flags": ["--instance"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "config set-data-dir",
+      "flags": ["--path", "--instance"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "printers",
+      "flags": [],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "probe",
+      "flags": ["--printer", "--printer-name"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "preview",
+      "flags": ["--template", "--input", "--canvas", "--safe-text", "--render-options"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "batch-preview",
+      "flags": ["--template", "--csv", "--render-options"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "print",
+      "flags": [
+        "--printer",
+        "--printer-name",
+        "--artifact",
+        "--artifacts",
+        "--safe-text",
+        "--template",
+        "--input",
+        "--render-options"
+      ],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "template-package validate",
+      "flags": ["--file"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "template-package preview",
+      "flags": ["--file", "--input", "--render-options"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "template-package packets",
+      "flags": ["--file", "--input", "--render-options"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    },
+    {
+      "command": "template-package print",
+      "flags": ["--printer", "--printer-name", "--file", "--input", "--render-options"],
+      "output": "json",
+      "exitCodes": { "success": 0, "error": 1 }
+    }
+  ],
+  "httpBehavior": {
+    "routeAccounting": "47 explicit API/health handlers plus CORS preflight, static asset GET, and SPA fallback GET form the 50-route observable contract.",
+    "binding": "HTTP listens on 127.0.0.1 by default; /api/data and /api/agent-import reject non-loopback peers, non-loopback Host values, and non-local Origin values with 403.",
+    "jsonError": { "status": "error", "error": "message" },
+    "dataErrors": {
+      "400": "validation_error or operation error",
+      "403": "transport/origin rejection",
+      "404": "not_found",
+      "409": "revision_conflict with expectedRevision and actualRevision",
+      "503": "data_unavailable"
+    }
+  },
+  "httpRoutes": [
+    {
+      "method": "GET",
+      "path": "/health",
+      "transport": "http",
+      "statuses": [200],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/data/status",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/data/config",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/data/config/data-directory",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/data/runtime/snapshot",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/data/runtime/:command",
+      "commands": [
+        "save-template",
+        "update-template-metadata",
+        "rename-template",
+        "archive-template",
+        "restore-template",
+        "purge-template",
+        "save-autosave",
+        "replace-working-copy",
+        "clear-working-copy",
+        "clear-template-autosaves",
+        "save-settings",
+        "replace-snapshot"
+      ],
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 404, 409, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/data/inventory/materials",
+      "query": ["query", "includeArchived"],
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/data/inventory/adjustments",
+      "query": ["materialId"],
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/data/inventory/print-binding",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 404, 409, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/data/inventory/:command",
+      "commands": [
+        "save-material",
+        "archive-material",
+        "restore-material",
+        "delete-material",
+        "apply-adjustment"
+      ],
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 404, 409, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/data/events",
+      "transport": "sse",
+      "statuses": [200, 403, 503],
+      "contentType": "text/event-stream",
+      "events": ["ready", "revision"]
+    },
+    {
+      "method": "GET",
+      "path": "/api/data/archive",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/data/archive/inspect",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/data/archive/import",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 404, 409, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/data/backups",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403, 409, 503],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/templates",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/printers",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/printers/probe",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/artifacts",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/artifacts/:artifactId",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/artifacts/:artifactId/png",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "image/png"
+    },
+    {
+      "method": "GET",
+      "path": "/api/artifacts/:artifactId/packets",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/artifacts/:artifactId/svg",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "image/svg+xml"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sync/state",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sync/state",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sync/template-usage",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sync/recent-print",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sync/canvas-draft",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/template",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/canvas",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/batch",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/safe-text",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/print/artifact",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/print/batch",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/print/template",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/print/canvas",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/print/safe-text",
+      "transport": "http",
+      "statuses": [200, 400],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-import/catalog",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-import/inventory",
+      "query": ["query"],
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agent-import/sessions",
+      "transport": "http+ipc",
+      "statuses": [201, 400, 403],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-import/sessions/:sessionId",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-import/sessions/:sessionId/events",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403],
+      "contentType": "application/json"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-import/sessions/:sessionId/restock-targets",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403],
+      "contentType": "application/json"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/agent-import/sessions/:sessionId/items/:itemId",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agent-import/sessions/:sessionId/items/:itemId/template-input",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agent-import/sessions/:sessionId/events/:eventId/fulfill",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403],
+      "contentType": "application/json"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agent-import/sessions/:sessionId/confirm",
+      "transport": "http+ipc",
+      "statuses": [200, 400, 403],
+      "contentType": "application/json"
+    },
+    {
+      "method": "OPTIONS",
+      "path": "/*",
+      "transport": "http",
+      "statuses": [204],
+      "contentType": "none",
+      "source": "cors middleware preflight"
+    },
+    {
+      "method": "GET",
+      "path": "/<static-asset>",
+      "transport": "http",
+      "statuses": [200, 404],
+      "contentType": "asset-dependent",
+      "source": "express.static"
+    },
+    {
+      "method": "GET",
+      "path": "/<spa-route>",
+      "transport": "http",
+      "statuses": [200, 404],
+      "contentType": "text/html",
+      "source": "non-API SPA fallback"
+    }
+  ],
+  "ipcRules": [
+    {
+      "name": "instance-source",
+      "rule": "Use explicit --instance first, then TUCKMARK_DEVD_INSTANCE; absence is an error."
+    },
+    {
+      "name": "instance-format",
+      "rule": "Normalize to lowercase; require 1-48 lowercase ASCII letters, digits, or hyphens; first and last characters are alphanumeric."
+    },
+    {
+      "name": "unix-address",
+      "rule": "On macOS/Linux, use XDG_RUNTIME_DIR or the OS temp directory and a per-user, per-instance SHA-256-derived t-<12 hex> Unix socket."
+    },
+    {
+      "name": "windows-address",
+      "rule": "On Windows, use \\\\.\\pipe\\tuckmark-<user token>-<instance>."
+    },
+    {
+      "name": "permissions",
+      "rule": "Unix socket and endpoint lock are owner-only mode 0600; a newly created endpoint directory is mode 0700."
+    },
+    {
+      "name": "ownership",
+      "rule": "One listener owns an instance. Live owners reject a second listener; stale Unix sockets and stale PID locks are recoverable."
+    },
+    {
+      "name": "protocol",
+      "rule": "Send HTTP semantics over the named endpoint with x-tuckmark-ipc: 1, accept application/json, JSON request bodies, and JSON responses."
+    },
+    { "name": "method-default", "rule": "Default to GET without a body and POST with a body." },
+    {
+      "name": "errors",
+      "rule": "Connection, timeout, invalid JSON, and non-2xx responses are errors; non-2xx JSON preserves status, code, revision fields, and message."
+    },
+    {
+      "name": "authority",
+      "rule": "HTTP and IPC listeners in one DEVD process share the same service and active data-directory authority."
+    }
+  ],
+  "persistedSchemas": [
+    {
+      "name": "tuckmark.agent-import.v1",
+      "medium": "proposal JSON",
+      "shape": ["schema", "source", "items"]
+    },
+    {
+      "name": "tuckmark.agent-import-transaction.v1",
+      "medium": "transaction journal",
+      "shape": ["schema", "writes"]
+    },
+    {
+      "name": "tuckmark.data-archive.v1",
+      "medium": "legacy ZIP snapshot",
+      "shape": ["schema", "createdAt", "runtime"]
+    },
+    {
+      "name": "tuckmark.data-dir-manifest.v1",
+      "medium": "manifest.json",
+      "shape": ["schema", "generatedAt", "snapshotUpdatedAt", "source", "files", "counts"]
+    },
+    {
+      "name": "tuckmark.data-directory-status.v1",
+      "medium": "browser local storage key",
+      "shape": ["lastSyncAt", "lastError"]
+    },
+    {
+      "name": "tuckmark.dev-data-copy.v1",
+      "medium": "development copy marker",
+      "shape": ["schema", "source", "preparedAt", "counts"]
+    },
+    {
+      "name": "tuckmark.devd-config.v1",
+      "medium": "platform devd.json",
+      "shape": ["schema", "dataDir"]
+    },
+    {
+      "name": "tuckmark.devd-data-archive.v1",
+      "medium": "DEVD backup JSON",
+      "shape": ["schema", "createdAt", "data"]
+    },
+    {
+      "name": "tuckmark.devd-data-state.v1",
+      "medium": "DEVD state",
+      "shape": ["schema", "revision", "updatedAt"]
+    },
+    {
+      "name": "tuckmark.devd-data-transaction.v1",
+      "medium": "DEVD transaction journal",
+      "shape": ["schema", "revision", "writes", "deletes", "event"]
+    },
+    {
+      "name": "tuckmark.devd-live-lock.v1",
+      "medium": "live ownership lock",
+      "shape": ["schema", "pid", "token", "createdAt"]
+    },
+    {
+      "name": "tuckmark.devd-owner.v1",
+      "medium": "directory owner marker",
+      "shape": ["schema", "token", "createdAt"]
+    },
+    {
+      "name": "tuckmark.inventory-adjustment-transaction.v1",
+      "medium": "inventory transaction journal",
+      "shape": ["schema", "material", "adjustment"]
+    },
+    {
+      "name": "tuckmark.inventory-snapshot.v1",
+      "medium": "browser local storage key",
+      "shape": ["materials", "adjustments"]
+    },
+    {
+      "name": "tuckmark.recent-activity.v1",
+      "medium": "browser local storage key",
+      "shape": ["templates", "prints"]
+    },
+    {
+      "name": "tuckmark.runtime-export-archive.v1",
+      "medium": "directory-tree ZIP archive.json",
+      "shape": ["schema", "createdAt"]
+    },
+    {
+      "name": "tuckmark.runtime-export.v1",
+      "medium": "runtime snapshot",
+      "shape": ["schema", "settings", "templates", "versions", "workingCopies", "inventory"]
+    },
+    {
+      "name": "tuckmark.runtime-writer-lease.v1",
+      "medium": "browser local storage key",
+      "shape": ["tabId", "expiresAt", "updatedAt"]
+    },
+    {
+      "name": "tuckmark.sync-state.v1",
+      "medium": "browser local storage key",
+      "shape": ["updatedAt", "templateUsageRecords", "recentPrintRecords", "canvasDraftRecords"]
+    },
+    {
+      "name": "tuckmark.text-font-usage.v1",
+      "medium": "browser local storage key",
+      "shape": ["fonts"]
+    },
+    {
+      "name": "tuckmark.user-template-package.v1",
+      "medium": "portable template JSON",
+      "shape": [
+        "schema",
+        "id",
+        "name",
+        "description",
+        "canvas",
+        "fields",
+        "sampleInput",
+        "renderOptions"
+      ]
+    }
+  ],
+  "fixtures": [
+    {
+      "kind": "cli-output",
+      "path": "fixtures/cli-output.json",
+      "schema": "tuckmark.compatibility-fixture.cli-output.v1"
+    },
+    {
+      "kind": "http",
+      "path": "fixtures/http.json",
+      "schema": "tuckmark.compatibility-fixture.http.v1"
+    },
+    {
+      "kind": "sse",
+      "path": "fixtures/sse.json",
+      "schema": "tuckmark.compatibility-fixture.sse.v1"
+    },
+    {
+      "kind": "data-tree",
+      "path": "fixtures/data-tree.json",
+      "schema": "tuckmark.compatibility-fixture.data-tree.v1"
+    },
+    {
+      "kind": "interrupted-transaction",
+      "path": "fixtures/interrupted-transaction.json",
+      "schema": "tuckmark.compatibility-fixture.interrupted-transaction.v1"
+    },
+    {
+      "kind": "archive",
+      "path": "fixtures/archive.json",
+      "schema": "tuckmark.compatibility-fixture.archive.v1"
+    },
+    {
+      "kind": "decoded-render",
+      "path": "fixtures/decoded-render.json",
+      "schema": "tuckmark.compatibility-fixture.decoded-render.v1"
+    },
+    {
+      "kind": "print-packets",
+      "path": "fixtures/print-packets.json",
+      "schema": "tuckmark.compatibility-fixture.print-packets.v1"
+    },
+    {
+      "kind": "release",
+      "path": "fixtures/release.json",
+      "schema": "tuckmark.compatibility-fixture.release.v1"
+    }
+  ]
+}

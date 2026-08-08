@@ -1,0 +1,11 @@
+{
+  "schema": "tuckmark.compatibility-fixture.print-packets.v1",
+  "synthetic": true,
+  "artifactId": "fixture-artifact",
+  "encoding": "unsigned-byte-arrays",
+  "packets": {
+    "info": [[27, 64], [29, 73, 67]],
+    "data": [[29, 118, 48, 0, 1, 0, 4, 0, 129, 66, 36, 24]],
+    "finish": [[12]]
+  }
+}

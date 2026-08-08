@@ -9,6 +9,14 @@
 - `service-api print path`: the Web product path where the Web app asks the service runtime API to control hardware on its behalf
 - `runtime bundle`: the release artifact for the HTTP runtime surface
 - `CLI bundle`: the release artifact for the CLI surface
+- `Rust CLI`: the only production implementation of the `tuckmark` command
+  surface
+- `Rust DEVD`: the only production implementation of the HTTP, SSE, and named
+  IPC service surfaces and the sole authority for the active data directory
+- `compatibility manifest`: the language-neutral inventory of observable CLI,
+  DEVD transport, persisted-data, archive, rendering, and release contracts
+- `synthetic golden fixture`: repository-owned contract data containing no real
+  user content and requiring no TypeScript CLI or server runtime
 - `Web app static runtime`: the owner-facing static deployment that runs fully in
   the browser
 - `demo mode`: the formal Web route tree backed by the Mock API layer with
@@ -36,6 +44,11 @@ artifacts and multiple automation surfaces.
 The Web product has two formal print paths with two separate switches. The
 `browser-direct print path` is a pure-browser path. The `service-api print path`
 is a separate runtime path with stronger dependency requirements.
+
+Rust CLI and Rust DEVD are the only production implementations of their
+respective surfaces. Rust DEVD remains the single data authority when HTTP and
+named IPC listeners are both enabled. Compatibility fixtures preserve existing
+observable behavior and do not authorize persisted schema changes.
 
 `detonger` remains an implementation dependency. It should appear as a powered
 by / lower-layer attribution, not as the user-facing brand.

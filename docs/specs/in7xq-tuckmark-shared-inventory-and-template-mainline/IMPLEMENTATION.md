@@ -92,3 +92,14 @@
   stock changed by another surface.
 - Inventory v1 deliberately stores only total stock; deeper warehouse modeling
   remains out of scope for this topic.
+
+## Compatibility mapping
+
+- `compatibility/manifest.v1.json` freezes 36 CLI commands, 50 HTTP/SSE routes,
+  named IPC rules, and persisted `tuckmark.*.v1` shapes at the implementation
+  replacement boundary.
+- The data-tree, interrupted-transaction, and archive fixtures exercise DEVD's
+  single-writer directory ownership without importing TypeScript CLI or server
+  modules.
+- The root `test:contracts` command is part of normal workspace CI and remains
+  independently runnable when the reference TypeScript runtime is removed.

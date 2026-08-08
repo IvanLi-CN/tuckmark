@@ -1,0 +1,35 @@
+{
+  "schema": "tuckmark.compatibility-fixture.interrupted-transaction.v1",
+  "synthetic": true,
+  "journalPath": ".tuckmark/transactions/8-fixture-transaction.json",
+  "journal": {
+    "schema": "tuckmark.devd-data-transaction.v1",
+    "revision": 8,
+    "writes": [
+      {
+        "relativePath": "inventory/materials/fixture-material.json",
+        "value": {
+          "id": "fixture-material",
+          "fullName": "Synthetic Component",
+          "currentQuantity": 11
+        }
+      },
+      {
+        "relativePath": "inventory/adjustments/fixture-adjustment-out.json",
+        "value": {
+          "id": "fixture-adjustment-out",
+          "materialId": "fixture-material",
+          "kind": "out",
+          "quantityDelta": -1
+        }
+      }
+    ],
+    "deletes": [],
+    "event": { "revision": 8, "domains": ["inventory"], "reason": "fixture-adjustment" }
+  },
+  "observableRecovery": {
+    "replayBeforeRead": true,
+    "revisionAfterReplay": 8,
+    "journalRemovedAfterCommit": true
+  }
+}

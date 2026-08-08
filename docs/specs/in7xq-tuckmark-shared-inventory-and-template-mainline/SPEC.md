@@ -12,6 +12,10 @@ business-data authority. Web uses HTTP resource commands; CLI and installed
 native tools use named IPC instances. It does not define a separate "shared
 template" category: user templates remain the same "我的模板" records.
 
+Production CLI and DEVD behavior is implemented only in Rust. TypeScript CLI
+or server source retained during migration is reference material, not a second
+production runtime or data authority.
+
 This round also introduces `/inventory` as a top-level workbench route and
 `plugins/inventory` as the shared domain boundary for material records, stock
 adjustments, template bindings, and print-input assembly. Dynamic third-party
@@ -82,6 +86,21 @@ built-in.
 - DEVD may expose HTTP and named IPC listeners for the same app. macOS/Linux
   use Unix sockets and Windows uses Named Pipes; instance names are explicit so
   multiple development projects can run concurrently.
+
+### Compatibility authority
+
+- `compatibility/manifest.v1.json` normatively inventories all CLI commands and
+  flags, the 50 HTTP/SSE routes, status/error/exit behavior, named IPC rules,
+  and persisted `tuckmark.*.v1` shapes.
+- Nine synthetic golden fixture categories cover CLI output, HTTP, SSE, data
+  trees, interrupted transactions, archives, decoded rendering, print packets,
+  and release artifacts without using real user data.
+- `test:contracts` validates those assets without importing TypeScript CLI or
+  server modules and remains runnable after those sources are removed.
+- The Rust migration makes no persisted schema change. Existing schema names,
+  shapes, paths, archive layouts, recovery semantics, render output, and packet
+  bytes remain compatible. Schema evolution requires a separate approved Spec
+  and migration contract.
 
 ### Material and stock contract
 

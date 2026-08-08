@@ -44,3 +44,8 @@ Concurrent Web consumers share an in-flight runtime snapshot because template li
 - Formal DEVD startup resolves and saves its own platform data-directory
   configuration. Development Agent Import uses an explicit per-worktree test
   copy instead of requiring direct operation on the formal directory.
+
+Agent Import compatibility is frozen outside the implementation language. The
+Rust DEVD authority retains the HTTP, SSE, IPC, revision, session, recovery, and
+archive contracts without changing proposal, inventory, or transaction data
+shapes.

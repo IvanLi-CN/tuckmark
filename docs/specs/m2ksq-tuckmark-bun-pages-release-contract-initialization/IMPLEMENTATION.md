@@ -136,3 +136,12 @@
   version, PR number, channel, type label, merge SHA, and run URL when that
   context is available. If the artifact is unavailable, the notifier still
   emits the workflow run id and URL instead of failing a second time.
+
+## Compatibility mapping
+
+- The synthetic release fixture freezes release intent, release-context artifact
+  entries, mandatory release-note sections, and bundle names.
+- Workspace CI runs `test:contracts` before implementation tests, so the release
+  contract remains checkable after TypeScript CLI/server source removal.
+- Runtime and CLI bundles designate Rust DEVD and Rust CLI as their only
+  production service and command implementations.

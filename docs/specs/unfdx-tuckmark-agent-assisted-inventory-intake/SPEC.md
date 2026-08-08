@@ -60,6 +60,13 @@ Starting DEVD claims its configured directory with a durable ownership marker an
 
 `browser-static` retains browser-local persistence. It is not a fallback for `server-http`, does not request a directory on behalf of DEVD, and is never migrated automatically.
 
+Rust DEVD is the only production implementation of Agent Import HTTP and named
+IPC behavior. Its routes, session-key errors, revision conflicts,
+`data-revision` SSE frames, transaction recovery, and archive behavior are
+frozen in the language-neutral compatibility manifest and synthetic fixtures.
+No Agent Import or inventory persisted shape changes as part of the runtime
+replacement.
+
 Recent templates and prints remain browser-local presentation metadata in both Web surfaces. They are never used as a fallback for DEVD-owned records, do not call the legacy `/api/sync` endpoint, and do not enter DEVD archives or backups.
 
 Archive imports are explicitly selected as `merge` or `replace`. Archive validation rejects duplicate records and broken references: a template must name one of its versions, versions and user-template working copies must target a contained template, user-template inventory bindings must target a contained template, and adjustments must target a contained material. Merge accepts only complete, purely new template and inventory aggregates and preserves current settings; any identifier, material name, matrix code, version, working-copy, or adjustment conflict rejects the entire transaction. Replace creates a protection backup and atomically replaces the managed data set. Both modes revalidate the inspected content hash and expected revision at commit time.

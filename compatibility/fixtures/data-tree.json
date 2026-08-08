@@ -1,0 +1,75 @@
+{
+  "schema": "tuckmark.compatibility-fixture.data-tree.v1",
+  "synthetic": true,
+  "root": "/synthetic/Tuckmark",
+  "entries": {
+    "manifest.json": {
+      "schema": "tuckmark.data-dir-manifest.v1",
+      "createdAt": "2026-01-02T03:04:05.000Z",
+      "updatedAt": "2026-01-02T03:04:06.000Z",
+      "source": { "kind": "fixture" },
+      "counts": {
+        "templates": 1,
+        "versions": 1,
+        "workingCopies": 1,
+        "materials": 1,
+        "adjustments": 1
+      }
+    },
+    "settings/app-settings.json": { "threshold": 144, "paperType": "gap" },
+    "templates/fixture-template/template.json": {
+      "id": "fixture-template",
+      "name": "Synthetic Bin Label",
+      "currentVersionId": "fixture-version",
+      "fieldOrder": ["part"]
+    },
+    "templates/fixture-template/versions/fixture-version.json": {
+      "id": "fixture-version",
+      "templateId": "fixture-template",
+      "version": 1,
+      "kind": "saved",
+      "document": {
+        "id": "fixture-template",
+        "name": "Synthetic Bin Label",
+        "width": 320,
+        "height": 180,
+        "fields": [{ "key": "part" }],
+        "elements": []
+      }
+    },
+    "templates/fixture-template/working-copy.json": {
+      "sourceKey": "user:fixture-template",
+      "draft": {
+        "id": "fixture-template",
+        "name": "Synthetic Bin Label",
+        "width": 320,
+        "height": 180,
+        "fields": [{ "key": "part" }],
+        "elements": []
+      }
+    },
+    "inventory/materials/fixture-material.json": {
+      "id": "fixture-material",
+      "fullName": "Synthetic Component",
+      "currentQuantity": 12,
+      "labelBindings": [],
+      "createdAt": "2026-01-02T03:04:05.000Z",
+      "updatedAt": "2026-01-02T03:04:06.000Z"
+    },
+    "inventory/adjustments/fixture-adjustment.json": {
+      "id": "fixture-adjustment",
+      "materialId": "fixture-material",
+      "kind": "in",
+      "quantityDelta": 12,
+      "actor": "fixture",
+      "createdAt": "2026-01-02T03:04:06.000Z"
+    },
+    "drafts/scratch/fixture-draft.json": {
+      "id": "fixture-draft",
+      "name": "Synthetic Draft",
+      "width": 320,
+      "height": 180,
+      "elements": []
+    }
+  }
+}

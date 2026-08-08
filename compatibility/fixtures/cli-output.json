@@ -1,0 +1,27 @@
+{
+  "schema": "tuckmark.compatibility-fixture.cli-output.v1",
+  "synthetic": true,
+  "cases": [
+    {
+      "name": "inventory-list-success",
+      "argv": ["inventory", "list", "--instance", "fixture-devd"],
+      "stdoutJson": { "instance": "fixture-devd", "materials": [] },
+      "stderr": "",
+      "exitCode": 0
+    },
+    {
+      "name": "missing-required-flag",
+      "argv": ["inventory", "show", "--instance", "fixture-devd"],
+      "stdout": "",
+      "stderr": "Missing required flag: --id\n",
+      "exitCode": 1
+    },
+    {
+      "name": "legacy-data-access",
+      "argv": ["template", "list", "--data-dir", "/synthetic/old-data"],
+      "stdout": "",
+      "stderr": "Direct data-directory and HTTP DEVD access were removed. Use --instance or TUCKMARK_DEVD_INSTANCE.\n",
+      "exitCode": 1
+    }
+  ]
+}
