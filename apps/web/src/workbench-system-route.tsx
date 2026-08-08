@@ -42,6 +42,7 @@ export default function WorkbenchSystemRoute({
           onInspectRestoreBackup={(entry) => void controller.inspectRestoreBackup(entry)}
           onRequestPermission={() => void controller.requestDataDirectoryPermission()}
           onOpenForceReplacementConfirmation={controller.openForceReplacementConfirmation}
+          onRequestDraftAttention={controller.requestDataReplacementDraftAttention}
           onSyncNow={() => void controller.syncDataDirectoryNow()}
           onTakeOverWrites={controller.takeOverDataDirectoryWrites}
         />

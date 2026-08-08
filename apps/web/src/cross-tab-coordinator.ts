@@ -11,6 +11,23 @@ type RuntimeReplacementRecord = {
   updatedAt: string
 }
 
+export type CanvasDraftSession = {
+  tabId: string
+  sourceKey: string
+  updatedAt: string
+}
+
+type CanvasDraftSessionRecord = {
+  version: 1
+  sessions: CanvasDraftSession[]
+}
+
+export type CanvasDraftAttentionRequest = {
+  sourceKey: string
+  requestedAt: string
+  requesterTabId: string
+}
+
 export type CrossTabLeaseState = {
   role: "writer" | "follower" | "unsupported"
   currentTabId: string
@@ -28,16 +45,22 @@ export type RuntimeReplacementState = {
 
 type LeaseListener = (state: CrossTabLeaseState) => void
 type RuntimeReplacementListener = (state: RuntimeReplacementState) => void
+type CanvasDraftSessionListener = (sessions: CanvasDraftSession[]) => void
+type CanvasDraftAttentionListener = (request: CanvasDraftAttentionRequest) => void
 
 const CHANNEL_NAME = "tuckmark.cross-tab-coordinator.v1"
 const LEASE_STORAGE_KEY = "tuckmark.runtime-writer-lease.v1"
 const RUNTIME_REPLACEMENT_STORAGE_KEY = "tuckmark.runtime-replacement.v1"
 const RUNTIME_GENERATION_STORAGE_KEY = "tuckmark.runtime-generation.v1"
+const CANVAS_DRAFT_SESSIONS_STORAGE_KEY = "tuckmark.canvas-draft-sessions.v1"
+const CANVAS_DRAFT_ATTENTION_STORAGE_KEY = "tuckmark.canvas-draft-attention.v1"
 const RUNTIME_ACCESS_LOCK_NAME = "tuckmark.runtime-access.v1"
 const LEASE_TTL_MS = 15_000
 const RUNTIME_REPLACEMENT_TTL_MS = 60_000
 const RUNTIME_REPLACEMENT_HEARTBEAT_MS = 15_000
 const HEARTBEAT_INTERVAL_MS = 5_000
+const CANVAS_DRAFT_SESSION_TTL_MS = 20_000
+const CANVAS_DRAFT_SESSION_HEARTBEAT_MS = 5_000
 
 function createTabId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -105,6 +128,70 @@ function parseRuntimeGeneration(raw: string | null): number {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0
 }
 
+function parseCanvasDraftSessionRecord(raw: string | null): CanvasDraftSession[] {
+  if (!raw) {
+    return []
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<CanvasDraftSessionRecord>
+    if (parsed.version !== 1 || !Array.isArray(parsed.sessions)) {
+      return []
+    }
+    return parsed.sessions.flatMap((session) => {
+      if (
+        !session ||
+        typeof session.tabId !== "string" ||
+        typeof session.sourceKey !== "string" ||
+        typeof session.updatedAt !== "string"
+      ) {
+        return []
+      }
+      return [session]
+    })
+  } catch {
+    return []
+  }
+}
+
+function parseCanvasDraftAttentionRequest(raw: string | null): CanvasDraftAttentionRequest | null {
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<CanvasDraftAttentionRequest>
+    if (
+      typeof parsed.sourceKey !== "string" ||
+      typeof parsed.requestedAt !== "string" ||
+      typeof parsed.requesterTabId !== "string"
+    ) {
+      return null
+    }
+    return parsed as CanvasDraftAttentionRequest
+  } catch {
+    return null
+  }
+}
+
+function getActiveCanvasDraftSessions(
+  sessions: CanvasDraftSession[],
+  now = Date.now()
+): CanvasDraftSession[] {
+  return sessions.filter((session) => {
+    const updatedAt = Date.parse(session.updatedAt)
+    return Number.isFinite(updatedAt) && updatedAt + CANVAS_DRAFT_SESSION_TTL_MS > now
+  })
+}
+
+function sameCanvasDraftSessions(left: CanvasDraftSession[], right: CanvasDraftSession[]): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+  return left.every(
+    (session, index) =>
+      session.tabId === right[index]?.tabId && session.sourceKey === right[index]?.sourceKey
+  )
+}
+
 export class RuntimeDataSourceChangedError extends Error {
   constructor() {
     super("数据源已切换，请在最新数据集上重试。")
@@ -116,8 +203,12 @@ export class CrossTabCoordinator {
   private readonly tabId = createTabId()
   private readonly listeners = new Set<LeaseListener>()
   private readonly runtimeReplacementListeners = new Set<RuntimeReplacementListener>()
+  private readonly canvasDraftSessionListeners = new Set<CanvasDraftSessionListener>()
+  private readonly canvasDraftAttentionListeners = new Set<CanvasDraftAttentionListener>()
   private channel: BroadcastChannel | null = null
   private heartbeatTimer: number | null = null
+  private canvasDraftSessionHeartbeatTimer: number | null = null
+  private activeCanvasDraftSourceKey: string | null = null
   private started = false
   private state: CrossTabLeaseState = {
     role: "unsupported",
@@ -132,6 +223,7 @@ export class CrossTabCoordinator {
     operationId: null,
     ownerTabId: null,
   }
+  private canvasDraftSessions: CanvasDraftSession[] = []
 
   start(): void {
     if (this.started) {
@@ -150,17 +242,16 @@ export class CrossTabCoordinator {
 
     if (typeof BroadcastChannel !== "undefined") {
       this.channel = new BroadcastChannel(CHANNEL_NAME)
-      this.channel.addEventListener("message", () => {
-        this.refreshState()
-        this.refreshRuntimeReplacementState()
-      })
+      this.channel.addEventListener("message", this.handleCoordinatorMessage)
     }
     window.addEventListener("storage", this.handleStorageEvent)
     this.refreshState(true)
     this.refreshRuntimeReplacementState()
+    this.refreshCanvasDraftSessions()
     this.heartbeatTimer = window.setInterval(() => {
       this.refreshState(true)
       this.refreshRuntimeReplacementState()
+      this.refreshCanvasDraftSessions()
     }, HEARTBEAT_INTERVAL_MS)
   }
 
@@ -169,6 +260,7 @@ export class CrossTabCoordinator {
       return
     }
     this.started = false
+    this.clearActiveCanvasDraftSession()
     if (typeof window !== "undefined") {
       window.removeEventListener("storage", this.handleStorageEvent)
       if (this.heartbeatTimer !== null) {
@@ -176,6 +268,7 @@ export class CrossTabCoordinator {
       }
     }
     this.heartbeatTimer = null
+    this.channel?.removeEventListener("message", this.handleCoordinatorMessage)
     this.channel?.close()
     this.channel = null
   }
@@ -194,6 +287,61 @@ export class CrossTabCoordinator {
     return () => {
       this.runtimeReplacementListeners.delete(listener)
     }
+  }
+
+  subscribeCanvasDraftSessions(listener: CanvasDraftSessionListener): () => void {
+    this.canvasDraftSessionListeners.add(listener)
+    listener(this.canvasDraftSessions)
+    return () => {
+      this.canvasDraftSessionListeners.delete(listener)
+    }
+  }
+
+  subscribeCanvasDraftAttention(listener: CanvasDraftAttentionListener): () => void {
+    this.canvasDraftAttentionListeners.add(listener)
+    return () => {
+      this.canvasDraftAttentionListeners.delete(listener)
+    }
+  }
+
+  getCanvasDraftSessions(sourceKey?: string): CanvasDraftSession[] {
+    this.refreshCanvasDraftSessions()
+    return sourceKey
+      ? this.canvasDraftSessions.filter((session) => session.sourceKey === sourceKey)
+      : this.canvasDraftSessions
+  }
+
+  registerCanvasDraftSession(sourceKey: string): () => void {
+    if (!sourceKey) {
+      return () => undefined
+    }
+    this.start()
+    this.clearActiveCanvasDraftSession()
+    this.activeCanvasDraftSourceKey = sourceKey
+    this.publishActiveCanvasDraftSession()
+    if (typeof window !== "undefined") {
+      this.canvasDraftSessionHeartbeatTimer = window.setInterval(() => {
+        this.publishActiveCanvasDraftSession()
+      }, CANVAS_DRAFT_SESSION_HEARTBEAT_MS)
+    }
+    return () => {
+      if (this.activeCanvasDraftSourceKey === sourceKey) {
+        this.clearActiveCanvasDraftSession()
+      }
+    }
+  }
+
+  requestCanvasDraftAttention(sourceKey: string): void {
+    if (!sourceKey || typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return
+    }
+    const request: CanvasDraftAttentionRequest = {
+      sourceKey,
+      requestedAt: new Date().toISOString(),
+      requesterTabId: this.tabId,
+    }
+    window.localStorage.setItem(CANVAS_DRAFT_ATTENTION_STORAGE_KEY, JSON.stringify(request))
+    this.channel?.postMessage({ type: "canvas-draft-attention", request })
   }
 
   getState(): CrossTabLeaseState {
@@ -295,6 +443,35 @@ export class CrossTabCoordinator {
     this.refreshState()
   }
 
+  private readonly handleCoordinatorMessage = (event: MessageEvent<unknown>) => {
+    const payload = event.data
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "type" in payload &&
+      payload.type === "canvas-draft-attention" &&
+      "request" in payload
+    ) {
+      const request = payload.request
+      if (
+        request &&
+        typeof request === "object" &&
+        "sourceKey" in request &&
+        "requestedAt" in request &&
+        "requesterTabId" in request &&
+        typeof request.sourceKey === "string" &&
+        typeof request.requestedAt === "string" &&
+        typeof request.requesterTabId === "string"
+      ) {
+        this.notifyCanvasDraftAttention(request as CanvasDraftAttentionRequest)
+      }
+      return
+    }
+    this.refreshState()
+    this.refreshRuntimeReplacementState()
+    this.refreshCanvasDraftSessions()
+  }
+
   private readonly handleStorageEvent = (event: StorageEvent) => {
     if (event.key === LEASE_STORAGE_KEY) {
       this.refreshState()
@@ -305,6 +482,94 @@ export class CrossTabCoordinator {
       event.key === RUNTIME_GENERATION_STORAGE_KEY
     ) {
       this.refreshRuntimeReplacementState()
+      return
+    }
+    if (event.key === CANVAS_DRAFT_SESSIONS_STORAGE_KEY) {
+      this.refreshCanvasDraftSessions()
+      return
+    }
+    if (event.key === CANVAS_DRAFT_ATTENTION_STORAGE_KEY) {
+      const request = parseCanvasDraftAttentionRequest(event.newValue)
+      if (request) {
+        this.notifyCanvasDraftAttention(request)
+      }
+    }
+  }
+
+  private readCanvasDraftSessions(): CanvasDraftSession[] {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return []
+    }
+    return getActiveCanvasDraftSessions(
+      parseCanvasDraftSessionRecord(window.localStorage.getItem(CANVAS_DRAFT_SESSIONS_STORAGE_KEY))
+    )
+  }
+
+  private writeCanvasDraftSessions(sessions: CanvasDraftSession[]): void {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return
+    }
+    window.localStorage.setItem(
+      CANVAS_DRAFT_SESSIONS_STORAGE_KEY,
+      JSON.stringify({ version: 1, sessions } satisfies CanvasDraftSessionRecord)
+    )
+  }
+
+  private publishActiveCanvasDraftSession(): void {
+    const sourceKey = this.activeCanvasDraftSourceKey
+    if (!sourceKey) {
+      return
+    }
+    const sessions = this.readCanvasDraftSessions().filter(
+      (session) => session.tabId !== this.tabId
+    )
+    sessions.push({
+      tabId: this.tabId,
+      sourceKey,
+      updatedAt: new Date().toISOString(),
+    })
+    this.writeCanvasDraftSessions(sessions)
+    this.refreshCanvasDraftSessions()
+    this.broadcastState()
+  }
+
+  private clearActiveCanvasDraftSession(): void {
+    if (this.canvasDraftSessionHeartbeatTimer !== null && typeof window !== "undefined") {
+      window.clearInterval(this.canvasDraftSessionHeartbeatTimer)
+    }
+    this.canvasDraftSessionHeartbeatTimer = null
+    if (!this.activeCanvasDraftSourceKey) {
+      return
+    }
+    const sessions = this.readCanvasDraftSessions().filter(
+      (session) => session.tabId !== this.tabId
+    )
+    this.activeCanvasDraftSourceKey = null
+    this.writeCanvasDraftSessions(sessions)
+    this.refreshCanvasDraftSessions()
+    this.broadcastState()
+  }
+
+  private refreshCanvasDraftSessions(): void {
+    const next = this.readCanvasDraftSessions().sort((left, right) =>
+      left.tabId.localeCompare(right.tabId)
+    )
+    if (sameCanvasDraftSessions(this.canvasDraftSessions, next)) {
+      this.canvasDraftSessions = next
+      return
+    }
+    this.canvasDraftSessions = next
+    for (const listener of this.canvasDraftSessionListeners) {
+      listener(next)
+    }
+  }
+
+  private notifyCanvasDraftAttention(request: CanvasDraftAttentionRequest): void {
+    if (request.requesterTabId === this.tabId) {
+      return
+    }
+    for (const listener of this.canvasDraftAttentionListeners) {
+      listener(request)
     }
   }
 

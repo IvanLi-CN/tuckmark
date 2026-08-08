@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CrossTabCoordinator, RuntimeDataSourceChangedError } from "./cross-tab-coordinator.js"
 
 const replacementStorageKey = "tuckmark.runtime-replacement.v1"
+const canvasDraftAttentionStorageKey = "tuckmark.canvas-draft-attention.v1"
 
 function createMemoryStorage(): Storage {
   const entries = new Map<string, string>()
@@ -152,5 +153,34 @@ describe("CrossTabCoordinator runtime replacement", () => {
     await expect(replacement).resolves.toBe("replaced")
     await expect(staleRequest).rejects.toBeInstanceOf(RuntimeDataSourceChangedError)
     expect(staleRequestRan).toBe(false)
+  })
+
+  it("records active canvas sessions and delivers a processing reminder to their source tab", () => {
+    const systemTab = new CrossTabCoordinator()
+    const canvasTab = new CrossTabCoordinator()
+    coordinators.push(systemTab, canvasTab)
+    systemTab.start()
+    canvasTab.start()
+
+    const releaseCanvasSession = canvasTab.registerCanvasDraftSession("user:power-module")
+    expect(systemTab.getCanvasDraftSessions("user:power-module")).toHaveLength(1)
+
+    const onAttention = vi.fn()
+    canvasTab.subscribeCanvasDraftAttention(onAttention)
+    systemTab.requestCanvasDraftAttention("user:power-module")
+    const request = storage.getItem(canvasDraftAttentionStorageKey)
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: canvasDraftAttentionStorageKey,
+        newValue: request,
+      })
+    )
+
+    expect(onAttention).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceKey: "user:power-module" })
+    )
+
+    releaseCanvasSession()
+    expect(systemTab.getCanvasDraftSessions("user:power-module")).toEqual([])
   })
 })

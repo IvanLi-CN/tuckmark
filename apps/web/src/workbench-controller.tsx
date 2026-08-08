@@ -144,12 +144,12 @@ type DataDirectoryDialogState =
     }
   | {
       kind: "drafts-required"
-      drafts: PendingRuntimeDraft[]
+      drafts: PendingDataReplacementDraft[]
       operation: DataReplacementOperation
     }
   | {
       kind: "force-replace"
-      drafts: PendingRuntimeDraft[]
+      drafts: PendingDataReplacementDraft[]
       operation: DataReplacementOperation
     }
 
@@ -168,6 +168,11 @@ export type DataReplacementOperation =
       entry: DataDirectoryBackupEntry
       inspection: DataArchiveInspection
     }
+
+export type PendingDataReplacementDraft = PendingRuntimeDraft & {
+  activeCanvasTabCount: number
+  attentionRequested?: boolean
+}
 
 export type WorkbenchDataDirectoryDialogState = DataDirectoryDialogState
 export type WorkbenchDeviceDrawerFeedback = {
@@ -426,6 +431,9 @@ export function useWorkbenchController({
   )
   const queryClient = useQueryClient()
   const coordinator = React.useMemo(() => getSharedCrossTabCoordinator(), [])
+  const [canvasDraftSessions, setCanvasDraftSessions] = React.useState(() =>
+    coordinator.getCanvasDraftSessions()
+  )
   const [runtimeDataGeneration, setRuntimeDataGeneration] = React.useState(
     () => coordinator.getRuntimeReplacementState().generation
   )
@@ -929,6 +937,47 @@ export function useWorkbenchController({
       setRuntimeDataGeneration(state.generation)
     })
   }, [coordinator, storyStateOverrides])
+
+  React.useEffect(
+    () => coordinator.subscribeCanvasDraftSessions(setCanvasDraftSessions),
+    [coordinator]
+  )
+
+  const applyCanvasDraftSessionState = React.useCallback(
+    (
+      drafts: readonly (PendingRuntimeDraft | PendingDataReplacementDraft)[]
+    ): PendingDataReplacementDraft[] => {
+      const activeCountBySourceKey = new Map<string, number>()
+      for (const session of canvasDraftSessions) {
+        activeCountBySourceKey.set(
+          session.sourceKey,
+          (activeCountBySourceKey.get(session.sourceKey) ?? 0) + 1
+        )
+      }
+      return drafts.map((draft) => ({
+        ...draft,
+        activeCanvasTabCount: activeCountBySourceKey.get(draft.sourceKey) ?? 0,
+        attentionRequested:
+          "attentionRequested" in draft ? Boolean(draft.attentionRequested) : undefined,
+      }))
+    },
+    [canvasDraftSessions]
+  )
+
+  React.useEffect(() => {
+    setDataDirectoryDialog((current) => {
+      if (current?.kind !== "drafts-required" && current?.kind !== "force-replace") {
+        return current
+      }
+      const drafts = applyCanvasDraftSessionState(current.drafts)
+      const unchanged = current.drafts.every(
+        (draft, index) =>
+          draft.activeCanvasTabCount === drafts[index]?.activeCanvasTabCount &&
+          draft.attentionRequested === drafts[index]?.attentionRequested
+      )
+      return unchanged ? current : { ...current, drafts }
+    })
+  }, [applyCanvasDraftSessionState])
 
   const previousRuntimeDataGenerationRef = React.useRef(runtimeDataGeneration)
   React.useEffect(() => {
@@ -1872,14 +1921,14 @@ export function useWorkbenchController({
       if (drafts.length > 0) {
         setDataDirectoryDialog({
           kind: "drafts-required",
-          drafts,
+          drafts: applyCanvasDraftSessionState(drafts),
           operation,
         })
         return
       }
       await executeDataReplacement(operation)
     },
-    [executeDataReplacement, runDataDirectoryTask]
+    [applyCanvasDraftSessionState, executeDataReplacement, runDataDirectoryTask]
   )
 
   const confirmDataDirectoryAttachment = React.useCallback(
@@ -1987,6 +2036,26 @@ export function useWorkbenchController({
     })
   }, [dataDirectoryDialog])
 
+  const requestDataReplacementDraftAttention = React.useCallback(
+    (sourceKey: string) => {
+      if (dataDirectoryDialog?.kind !== "drafts-required") {
+        return
+      }
+      const target = dataDirectoryDialog.drafts.find((draft) => draft.sourceKey === sourceKey)
+      if (!target || target.activeCanvasTabCount === 0) {
+        return
+      }
+      coordinator.requestCanvasDraftAttention(sourceKey)
+      setDataDirectoryDialog({
+        ...dataDirectoryDialog,
+        drafts: dataDirectoryDialog.drafts.map((draft) =>
+          draft.sourceKey === sourceKey ? { ...draft, attentionRequested: true } : draft
+        ),
+      })
+    },
+    [coordinator, dataDirectoryDialog]
+  )
+
   const confirmForcedDataReplacement = React.useCallback(async () => {
     if (dataDirectoryDialog?.kind !== "force-replace") {
       return
@@ -2035,6 +2104,7 @@ export function useWorkbenchController({
     confirmRestoreBackup,
     openForceReplacementConfirmation,
     confirmForcedDataReplacement,
+    requestDataReplacementDraftAttention,
     takeOverDataDirectoryWrites,
     directorySetupNudgeOpen,
     dismissDirectorySetupNudge,

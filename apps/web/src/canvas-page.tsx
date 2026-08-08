@@ -137,6 +137,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./components/ui/tooltip.js"
+import { getSharedCrossTabCoordinator } from "./cross-tab-coordinator.js"
 import { defaultDraftRenderOptions } from "./demo-data.js"
 import { isServerHttpDataSurface } from "./devd-data-client.js"
 import {
@@ -170,6 +171,7 @@ import type {
 import {
   clearTemplateAutosaves,
   clearWorkingCopy,
+  getCanvasDraftSourceKey,
   readUserTemplateHistory,
   replaceUserTemplateWorkingCopy,
   saveUserTemplate,
@@ -6333,8 +6335,13 @@ export function CanvasWorkspace({
 }: CanvasPageProps) {
   const navigate = useWorkbenchNavigate()
   const queryClient = useQueryClient()
+  const coordinator = React.useMemo(() => getSharedCrossTabCoordinator(), [])
   const searchParams = useWorkbenchSearchParams()
   const routeSource = React.useMemo(() => resolveCanvasSource(searchParams), [searchParams])
+  const canvasDraftSourceKey = React.useMemo(
+    () => getCanvasDraftSourceKey(routeSource),
+    [routeSource]
+  )
   const runtimeDataGeneration = controller.runtimeDataGeneration
   const routeDataQueryOptions = React.useMemo(
     () => canvasRouteDataQueryOptions(controller.context, routeSource, runtimeDataGeneration),
@@ -6392,6 +6399,7 @@ export function CanvasWorkspace({
   )
   const [templateNameDialog, setTemplateNameDialog] =
     React.useState<TemplateNameDialogState | null>(null)
+  const [draftProcessingRequested, setDraftProcessingRequested] = React.useState(false)
   const readOnly = state.readOnlyVersion !== null
   const interactionLocked = readOnly || state.loading || controller.runtimeDataReplacementActive
   const asyncClipboardSupported = supportsAsyncClipboard()
@@ -6411,6 +6419,32 @@ export function CanvasWorkspace({
   React.useEffect(() => {
     stateRef.current = state
   }, [state])
+
+  React.useEffect(() => {
+    setDraftProcessingRequested(false)
+    return coordinator.registerCanvasDraftSession(canvasDraftSourceKey)
+  }, [canvasDraftSourceKey, coordinator])
+
+  React.useEffect(
+    () =>
+      coordinator.subscribeCanvasDraftAttention((request) => {
+        if (request.sourceKey === canvasDraftSourceKey) {
+          setDraftProcessingRequested(true)
+        }
+      }),
+    [canvasDraftSourceKey, coordinator]
+  )
+
+  React.useEffect(() => {
+    if (!draftProcessingRequested || typeof document === "undefined") {
+      return
+    }
+    const originalTitle = document.title
+    document.title = `请处理草稿 - ${originalTitle}`
+    return () => {
+      document.title = originalTitle
+    }
+  }, [draftProcessingRequested])
 
   React.useEffect(() => {
     interactionLockedRef.current = interactionLocked
@@ -6947,6 +6981,7 @@ export function CanvasWorkspace({
             mode === "save" && existingTemplateId ? "已保存新版本。" : "已保存为用户模板。",
         })
       )
+      setDraftProcessingRequested(false)
     },
     [
       controller.handleImportantUserDataSaved,
@@ -6991,6 +7026,7 @@ export function CanvasWorkspace({
       controller,
     })
     setState(nextState)
+    setDraftProcessingRequested(false)
   }, [controller, state])
 
   const handleCopyToClipboard = React.useCallback(async () => {
@@ -7062,6 +7098,15 @@ export function CanvasWorkspace({
 
   return (
     <section className="tm-workspace">
+      {draftProcessingRequested ? (
+        <Alert variant="destructive">
+          <AlertCircle className="mt-0.5 size-4" />
+          <AlertTitle>系统页正在等待处理这份草稿</AlertTitle>
+          <AlertDescription>
+            请保存为用户模板，或使用“重置”放弃草稿；完成后回到系统页重试目录操作。
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <CanvasToolbar
         state={state}
         canUndo={canUndo}

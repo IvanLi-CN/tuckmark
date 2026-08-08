@@ -56,6 +56,7 @@ type DataStorageCardProps = {
   onInspectRestoreBackup: (entry: DataDirectoryBackupEntry) => void
   onRequestPermission: () => void
   onOpenForceReplacementConfirmation: () => void
+  onRequestDraftAttention: (sourceKey: string) => void
   onSyncNow: () => void
   onTakeOverWrites: () => void
 }
@@ -497,11 +498,13 @@ function PendingDraftsDialog({
   onCancel,
   onForce,
   onConfirmForce,
+  onRequestDraftAttention,
 }: {
   dialog: WorkbenchDataDirectoryDialogState | null
   onCancel: () => void
   onForce: () => void
   onConfirmForce: () => void
+  onRequestDraftAttention: (sourceKey: string) => void
 }) {
   if (!dialog || (dialog.kind !== "drafts-required" && dialog.kind !== "force-replace")) {
     return null
@@ -517,7 +520,7 @@ function PendingDraftsDialog({
           <DialogDescription>
             {forceConfirmation
               ? "强制替换会放弃下列草稿及无响应标签尚未写入的数据。该操作不可撤销。"
-              : "切换目录或整库恢复会替换当前画布数据。请逐项前往画布：保存为用户模板，或重置并放弃草稿；全部处理完成后再重试。"}
+              : "切换目录或整库恢复会替换当前画布数据。已在画布标签页打开的草稿会收到处理提示；其余草稿可在当前标签页打开。保存或重置全部草稿后再重试。"}
           </DialogDescription>
         </DialogHeader>
         <ul className="grid gap-2 text-sm">
@@ -531,9 +534,27 @@ function PendingDraftsDialog({
                 </span>
               </div>
               {!forceConfirmation ? (
-                <Button asChild type="button" variant="outline" size="sm">
-                  <a href={getCanvasDraftPath(draft.source)}>前往处理草稿</a>
-                </Button>
+                draft.activeCanvasTabCount > 0 ? (
+                  <div className="grid justify-items-end gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onRequestDraftAttention(draft.sourceKey)}
+                    >
+                      提醒画布标签页处理
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      {draft.attentionRequested
+                        ? "已发送处理提示，请手动切换到该标签页。"
+                        : `已在 ${draft.activeCanvasTabCount} 个画布标签页打开`}
+                    </span>
+                  </div>
+                ) : (
+                  <Button asChild type="button" variant="outline" size="sm">
+                    <a href={getCanvasDraftPath(draft.source)}>在此标签页处理</a>
+                  </Button>
+                )
               ) : null}
             </li>
           ))}
@@ -573,6 +594,7 @@ export function SystemDataStorageCard({
   onInspectRestoreBackup,
   onRequestPermission,
   onOpenForceReplacementConfirmation,
+  onRequestDraftAttention,
   onSyncNow,
   onTakeOverWrites,
 }: DataStorageCardProps) {
@@ -802,6 +824,7 @@ export function SystemDataStorageCard({
         onCancel={onCancelDialog}
         onForce={onOpenForceReplacementConfirmation}
         onConfirmForce={onConfirmForcedReplacement}
+        onRequestDraftAttention={onRequestDraftAttention}
       />
     </>
   )

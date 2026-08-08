@@ -92,6 +92,7 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof SystemDataSto
       onInspectRestoreBackup={() => undefined}
       onRequestPermission={() => undefined}
       onOpenForceReplacementConfirmation={() => undefined}
+      onRequestDraftAttention={() => undefined}
       onSyncNow={() => undefined}
       onTakeOverWrites={() => undefined}
       {...overrides}
@@ -335,6 +336,7 @@ describe("SystemDataStorageCard", () => {
           source: { kind: "user-template" as const, templateId: "power-module" },
           sourceKey: "user:power-module",
           updatedAt: "2026-08-08T10:00:00.000Z",
+          activeCanvasTabCount: 0,
         },
       ],
       operation: {
@@ -350,7 +352,7 @@ describe("SystemDataStorageCard", () => {
 
     expect(document.body.textContent).toContain("请先处理未保存草稿")
     const canvasLink = Array.from(document.querySelectorAll("a")).find((link) =>
-      link.textContent?.includes("前往处理草稿")
+      link.textContent?.includes("在此标签页处理")
     )
     expect(canvasLink?.getAttribute("href")).toBe(
       "/canvas?source=user-template&templateId=power-module"
@@ -383,5 +385,48 @@ describe("SystemDataStorageCard", () => {
       await flush()
     })
     expect(confirmForcedReplacement).toHaveBeenCalledTimes(1)
+  })
+
+  it("reminds an active canvas tab instead of navigating this tab", async () => {
+    const requestDraftAttention = vi.fn()
+    const pendingDraftDialog = {
+      kind: "drafts-required" as const,
+      drafts: [
+        {
+          label: "电源模块标签",
+          source: { kind: "user-template" as const, templateId: "power-module" },
+          sourceKey: "user:power-module",
+          updatedAt: "2026-08-08T10:00:00.000Z",
+          activeCanvasTabCount: 1,
+        },
+      ],
+      operation: {
+        kind: "import" as const,
+        inspection: {} as never,
+      },
+    }
+
+    await renderCard({
+      dialog: pendingDraftDialog,
+      onRequestDraftAttention: requestDraftAttention,
+    })
+
+    expect(document.body.textContent).toContain("已在 1 个画布标签页打开")
+    expect(
+      Array.from(document.querySelectorAll("a")).find((link) =>
+        link.textContent?.includes("在此标签页处理")
+      )
+    ).toBeUndefined()
+    const requestButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("提醒画布标签页处理")
+    )
+    if (!requestButton) {
+      throw new Error("Missing canvas attention button")
+    }
+    await act(async () => {
+      requestButton.click()
+      await flush()
+    })
+    expect(requestDraftAttention).toHaveBeenCalledWith("user:power-module")
   })
 })

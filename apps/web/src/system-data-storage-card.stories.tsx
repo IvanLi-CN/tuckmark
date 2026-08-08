@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { expect, within } from "storybook/test"
+import React from "react"
+import { expect, userEvent, within } from "storybook/test"
 import { SystemDataStorageCard } from "./system-data-storage-card.js"
 import {
   createBackupListDataDirectoryStatus,
@@ -43,6 +44,7 @@ const meta = {
     onInspectRestoreBackup: () => undefined,
     onRequestPermission: () => undefined,
     onOpenForceReplacementConfirmation: () => undefined,
+    onRequestDraftAttention: () => undefined,
     onSyncNow: () => undefined,
     onTakeOverWrites: () => undefined,
   },
@@ -51,6 +53,30 @@ const meta = {
 export default meta
 
 type Story = StoryObj<typeof meta>
+
+function PendingDraftsStoryHarness(props: React.ComponentProps<typeof SystemDataStorageCard>) {
+  const [dialog, setDialog] = React.useState(props.dialog)
+  return (
+    <SystemDataStorageCard
+      {...props}
+      dialog={dialog}
+      onRequestDraftAttention={(sourceKey) => {
+        props.onRequestDraftAttention(sourceKey)
+        setDialog((current) => {
+          if (current?.kind !== "drafts-required") {
+            return current
+          }
+          return {
+            ...current,
+            drafts: current.drafts.map((draft) =>
+              draft.sourceKey === sourceKey ? { ...draft, attentionRequested: true } : draft
+            ),
+          }
+        })
+      }}
+    />
+  )
+}
 
 export const Unsupported: Story = {
   args: {
@@ -105,11 +131,28 @@ export const PendingDrafts: Story = {
   args: {
     dialog: createPendingDraftsDialog(),
   },
+  render: (args) => <PendingDraftsStoryHarness {...args} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
     await expect(canvas.getByText("请先处理未保存草稿")).toBeVisible()
-    await expect(canvas.getAllByRole("link", { name: "前往处理草稿" })).toHaveLength(2)
+    const reminderButton = canvas.getByRole("button", { name: "提醒画布标签页处理" })
+    await expect(reminderButton).toBeVisible()
+    await expect(canvas.getByRole("link", { name: "在此标签页处理" })).toBeVisible()
+    await userEvent.click(reminderButton)
+    await expect(canvas.getByText("已发送处理提示，请手动切换到该标签页。")).toBeVisible()
     await expect(canvas.getByRole("button", { name: "管理员强制替换" })).toBeVisible()
+  },
+}
+
+export const PendingDraftsMobile: Story = {
+  ...PendingDrafts,
+  parameters: {
+    viewport: {
+      defaultViewport: "data-replacement-mobile",
+    },
+  },
+  globals: {
+    viewport: { value: "data-replacement-mobile", isRotated: false },
   },
 }
 
