@@ -568,10 +568,6 @@ pub fn validate_referential_integrity(
         .iter()
         .map(|template| template.id.as_str())
         .collect();
-    let material_ids: BTreeSet<_> = materials
-        .iter()
-        .map(|material| material.id.as_str())
-        .collect();
     let mut ids = BTreeSet::new();
     for template in templates {
         non_empty(&template.id, "template id")?;
@@ -582,7 +578,14 @@ pub fn validate_referential_integrity(
             )));
         }
     }
+    let mut version_ids = BTreeSet::new();
     for version in versions {
+        if !version_ids.insert(version.id.as_str()) {
+            return Err(ContractError::Validation(format!(
+                "duplicate template version {}",
+                version.id
+            )));
+        }
         if !template_ids.contains(version.template_id.as_str()) {
             return Err(ContractError::Validation(format!(
                 "template version {} references unknown template {}",
@@ -590,7 +593,27 @@ pub fn validate_referential_integrity(
             )));
         }
     }
+    for template in templates {
+        if let Some(current_version_id) = template.current_version_id.as_deref() {
+            let current_version = versions
+                .iter()
+                .find(|version| version.id == current_version_id);
+            if current_version.is_none_or(|version| version.template_id != template.id) {
+                return Err(ContractError::Validation(format!(
+                    "template {} references unknown current version {}",
+                    template.id, current_version_id
+                )));
+            }
+        }
+    }
+    let mut working_copy_keys = BTreeSet::new();
     for copy in working_copies {
+        if !working_copy_keys.insert(copy.source_key.as_str()) {
+            return Err(ContractError::Validation(format!(
+                "duplicate working copy {}",
+                copy.source_key
+            )));
+        }
         if let Some(template_id) = copy.source_key.strip_prefix("user:") {
             if !template_ids.contains(template_id) {
                 return Err(ContractError::Validation(format!(
@@ -600,11 +623,18 @@ pub fn validate_referential_integrity(
             }
         }
     }
+    let mut material_ids = BTreeSet::new();
     let mut material_names = BTreeSet::new();
     let mut matrix_codes = BTreeSet::new();
     for material in materials {
         non_empty(&material.id, "material id")?;
         non_empty(&material.full_name, "material fullName")?;
+        if !material_ids.insert(material.id.as_str()) {
+            return Err(ContractError::Validation(format!(
+                "duplicate material {}",
+                material.id
+            )));
+        }
         if !material_names.insert(material.full_name.as_str()) {
             return Err(ContractError::Validation(format!(
                 "duplicate material fullName {}",
@@ -633,7 +663,14 @@ pub fn validate_referential_integrity(
             }
         }
     }
+    let mut adjustment_ids = BTreeSet::new();
     for adjustment in adjustments {
+        if !adjustment_ids.insert(adjustment.id.as_str()) {
+            return Err(ContractError::Validation(format!(
+                "duplicate adjustment {}",
+                adjustment.id
+            )));
+        }
         if !material_ids.contains(adjustment.material_id.as_str()) {
             return Err(ContractError::Validation(format!(
                 "adjustment {} references unknown material {}",

@@ -3,8 +3,8 @@ use std::{fs, sync::Arc};
 use serde_json::json;
 use tempfile::tempdir;
 use tuckmark_engine::{
-    Clock, CommitRequest, DataAuthority, DataAuthorityError, DataAuthorityOptions, JsonWrite,
-    ProcessProbe,
+    ArchiveImportMode, Clock, CommitRequest, DataAuthority, DataAuthorityError,
+    DataAuthorityOptions, JsonWrite, ProcessProbe,
 };
 
 struct FixedClock;
@@ -207,5 +207,137 @@ fn authority_rejects_referentially_invalid_commits_without_partial_writes() {
             .list_json_files(".tuckmark/transactions")
             .unwrap()
             .is_empty()
+    );
+}
+
+#[test]
+fn authority_exports_inspects_and_restores_archives_atomically() {
+    let source_directory = tempdir().unwrap();
+    let source = DataAuthority::open(source_directory.path()).unwrap();
+    source
+        .commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![JsonWrite::new(
+                "inventory/materials/archive-material.json",
+                json!({
+                    "id": "archive-material",
+                    "fullName": "Archive Material",
+                    "currentQuantity": 12,
+                    "labelBindings": []
+                }),
+            )],
+            deletes: vec![],
+            domains: vec!["inventory".into()],
+            reason: "archive-fixture".into(),
+        })
+        .unwrap();
+
+    let archive = source.export_archive().unwrap();
+    assert_eq!(archive.schema, "tuckmark.devd-data-archive.v1");
+    assert_eq!(archive.inventory.materials.len(), 1);
+    assert_eq!(
+        source.inspect_archive(&archive).unwrap().conflicts,
+        vec![
+            "material-name:Archive Material",
+            "material:archive-material"
+        ]
+    );
+
+    let backup = source.create_backup(1).unwrap();
+    assert_eq!(backup.revision, 2);
+    assert!(backup.path.exists());
+
+    let target_directory = tempdir().unwrap();
+    let target = DataAuthority::open(target_directory.path()).unwrap();
+    assert!(
+        target
+            .inspect_archive(&archive)
+            .unwrap()
+            .conflicts
+            .is_empty()
+    );
+    let restored = target
+        .import_archive(&archive, ArchiveImportMode::Replace, 0)
+        .unwrap();
+    assert_eq!(restored.revision, 1);
+    assert_eq!(target.revision().unwrap(), 1);
+    assert_eq!(
+        target
+            .read_json("inventory/materials/archive-material.json")
+            .unwrap()
+            .unwrap()["currentQuantity"],
+        12
+    );
+    assert_eq!(
+        target.list_json_files("backups/protection").unwrap().len(),
+        1
+    );
+}
+
+#[test]
+fn authority_rejects_archive_merge_conflicts_and_orphaned_archive_records() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    authority
+        .commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![JsonWrite::new(
+                "inventory/materials/same-material.json",
+                json!({
+                    "id": "same-material",
+                    "fullName": "Current Material",
+                    "currentQuantity": 0,
+                    "labelBindings": []
+                }),
+            )],
+            deletes: vec![],
+            domains: vec!["inventory".into()],
+            reason: "current".into(),
+        })
+        .unwrap();
+    let archive = authority.export_archive().unwrap();
+
+    assert!(
+        authority
+            .import_archive(&archive, ArchiveImportMode::Merge, 1)
+            .is_err()
+    );
+    assert_eq!(authority.revision().unwrap(), 1);
+
+    let mut orphaned = archive.clone();
+    orphaned.inventory.adjustments.push(
+        serde_json::from_value(json!({
+            "id": "orphan-adjustment",
+            "materialId": "missing-material",
+            "kind": "in",
+            "quantityDelta": 1
+        }))
+        .unwrap(),
+    );
+    assert!(authority.inspect_archive(&orphaned).is_err());
+    assert_eq!(authority.revision().unwrap(), 1);
+}
+
+#[test]
+fn authority_retains_the_newest_twenty_protection_archives() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    let archive = authority.export_archive().unwrap();
+    let mut revision = 0;
+
+    for _ in 0..21 {
+        revision = authority
+            .import_archive(&archive, ArchiveImportMode::Replace, revision)
+            .unwrap()
+            .revision;
+    }
+
+    assert_eq!(revision, 21);
+    assert_eq!(
+        authority
+            .list_json_files("backups/protection")
+            .unwrap()
+            .len(),
+        20
     );
 }

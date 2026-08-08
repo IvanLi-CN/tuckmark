@@ -3,7 +3,8 @@
 mod authority;
 
 pub use authority::{
-    Clock, CommitRequest, DataAuthority, DataAuthorityError, DataAuthorityOptions, ProcessProbe,
+    ArchiveImportMode, ArchiveImportResult, ArchiveInspection, ArchiveSummary, BackupRecord, Clock,
+    CommitRequest, DataAuthority, DataAuthorityError, DataAuthorityOptions, ProcessProbe,
     SystemClock, SystemProcessProbe,
 };
-pub use tuckmark_contracts::{JsonWrite, RevisionEvent};
+pub use tuckmark_contracts::{DevdDataArchive, JsonWrite, RevisionEvent};

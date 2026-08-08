@@ -7,14 +7,16 @@ use std::{
 };
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tuckmark_contracts::{
     ContractError, DATA_DIRECTORY_MANIFEST_SCHEMA, DEVD_DATA_TRANSACTION_SCHEMA,
-    DEVD_LIVE_LOCK_SCHEMA, DEVD_OWNER_SCHEMA, DataDirectoryManifest, DevdDataState,
-    DevdDataTransaction, DevdLiveLock, DevdOwner, InventoryAdjustment, InventoryMaterial,
-    JsonWrite, RevisionEvent, TemplateRecord, TemplateVersion, WorkingCopyRecord,
-    canonical_json_bytes, validate_referential_integrity, validate_relative_path,
+    DEVD_LIVE_LOCK_SCHEMA, DEVD_OWNER_SCHEMA, DataDirectoryManifest, DevdDataArchive,
+    DevdDataState, DevdDataTransaction, DevdLiveLock, DevdOwner, InventoryAdjustment,
+    InventoryMaterial, InventorySnapshot, JsonWrite, RevisionEvent, RuntimeSnapshot,
+    TemplateRecord, TemplateVersion, WorkingCopyRecord, canonical_json_bytes,
+    validate_referential_integrity, validate_relative_path,
 };
 use uuid::Uuid;
 
@@ -44,6 +46,8 @@ pub enum DataAuthorityError {
     InvalidPath(String),
     #[error("JSON decoding failed: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("archive merge conflicts: {0}")]
+    ArchiveConflicts(String),
 }
 
 pub trait ProcessProbe: Send + Sync {
@@ -123,6 +127,41 @@ pub struct CommitRequest {
     pub deletes: Vec<String>,
     pub domains: Vec<String>,
     pub reason: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArchiveImportMode {
+    Merge,
+    Replace,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArchiveSummary {
+    pub templates: usize,
+    pub versions: usize,
+    pub working_copies: usize,
+    pub materials: usize,
+    pub adjustments: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArchiveInspection {
+    pub archive_hash: String,
+    pub summary: ArchiveSummary,
+    pub conflicts: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct BackupRecord {
+    pub name: String,
+    pub path: PathBuf,
+    pub revision: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct ArchiveImportResult {
+    pub revision: u64,
+    pub inspection: ArchiveInspection,
 }
 
 struct AuthorityInner {
@@ -211,6 +250,120 @@ impl DataAuthority {
 
     pub fn commit(&self, request: CommitRequest) -> Result<RevisionEvent, DataAuthorityError> {
         let _guard = self.lock_mutation()?;
+        self.commit_locked(request)
+    }
+
+    pub fn export_archive(&self) -> Result<DevdDataArchive, DataAuthorityError> {
+        let _guard = self.lock_mutation()?;
+        self.recover_transactions_locked()?;
+        self.build_archive_locked()
+    }
+
+    pub fn inspect_archive(
+        &self,
+        archive: &DevdDataArchive,
+    ) -> Result<ArchiveInspection, DataAuthorityError> {
+        archive.validate()?;
+        let _guard = self.lock_mutation()?;
+        self.recover_transactions_locked()?;
+        self.inspect_archive_locked(archive)
+    }
+
+    pub fn create_backup(
+        &self,
+        expected_revision: u64,
+    ) -> Result<BackupRecord, DataAuthorityError> {
+        let _guard = self.lock_mutation()?;
+        self.recover_transactions_locked()?;
+        let archive = self.build_archive_locked()?;
+        let name = format!("{}-{}.json", self.inner.options.clock.now(), Uuid::new_v4());
+        let relative_path = format!("backups/manual/{name}");
+        let event = self.commit_locked(CommitRequest {
+            expected_revision,
+            writes: vec![JsonWrite::new(
+                relative_path.clone(),
+                serde_json::to_value(archive)?,
+            )],
+            deletes: vec![],
+            domains: vec!["archive".into()],
+            reason: "backup-created".into(),
+        })?;
+        Ok(BackupRecord {
+            name,
+            path: self.resolve_relative(&relative_path)?,
+            revision: event.revision,
+        })
+    }
+
+    pub fn import_archive(
+        &self,
+        archive: &DevdDataArchive,
+        mode: ArchiveImportMode,
+        expected_revision: u64,
+    ) -> Result<ArchiveImportResult, DataAuthorityError> {
+        archive.validate()?;
+        let _guard = self.lock_mutation()?;
+        self.recover_transactions_locked()?;
+        let actual = self.read_revision_locked()?;
+        if actual != expected_revision {
+            return Err(DataAuthorityError::RevisionConflict {
+                expected: expected_revision,
+                actual,
+            });
+        }
+        let inspection = self.inspect_archive_locked(archive)?;
+        if mode == ArchiveImportMode::Merge && !inspection.conflicts.is_empty() {
+            return Err(DataAuthorityError::ArchiveConflicts(
+                inspection.conflicts.join(", "),
+            ));
+        }
+        let current = self.build_archive_locked()?;
+        let next = match mode {
+            ArchiveImportMode::Replace => archive.clone(),
+            ArchiveImportMode::Merge => merge_archives(&current, archive),
+        };
+        next.validate()?;
+        let mut writes = archive_writes(&next)?;
+        writes.push(JsonWrite::new(
+            format!(
+                "backups/protection/{}-{}.json",
+                self.inner.options.clock.now(),
+                Uuid::new_v4()
+            ),
+            serde_json::to_value(current)?,
+        ));
+        let deletes = match mode {
+            ArchiveImportMode::Merge => vec![],
+            ArchiveImportMode::Replace => {
+                let desired = writes
+                    .iter()
+                    .map(|write| write.relative_path.as_str())
+                    .collect::<std::collections::BTreeSet<_>>();
+                self.known_data_paths_locked()?
+                    .into_iter()
+                    .filter(|path| !desired.contains(path.as_str()))
+                    .collect()
+            }
+        };
+        let mut deletes = deletes;
+        deletes.extend(self.protection_snapshot_deletions_locked()?);
+        let event = self.commit_locked(CommitRequest {
+            expected_revision,
+            writes,
+            deletes,
+            domains: vec!["templates".into(), "inventory".into(), "archive".into()],
+            reason: match mode {
+                ArchiveImportMode::Merge => "archive-merge".into(),
+                ArchiveImportMode::Replace => "archive-replace".into(),
+            },
+        })?;
+        Ok(ArchiveImportResult {
+            revision: event.revision,
+            inspection,
+        })
+    }
+
+    fn commit_locked(&self, request: CommitRequest) -> Result<RevisionEvent, DataAuthorityError> {
         self.recover_transactions_locked()?;
         let actual = self.read_revision_locked()?;
         if actual != request.expected_revision {
@@ -373,6 +526,121 @@ impl DataAuthority {
             &adjustments,
         )?;
         Ok(())
+    }
+
+    fn build_archive_locked(&self) -> Result<DevdDataArchive, DataAuthorityError> {
+        let mut files = BTreeMap::new();
+        for directory in [
+            "templates",
+            "drafts",
+            "inventory/materials",
+            "inventory/adjustments",
+        ] {
+            collect_json_tree(&self.inner.root.join(directory), directory, &mut files)?;
+        }
+        let mut templates = Vec::new();
+        let mut versions = Vec::new();
+        let mut working_copies = Vec::new();
+        let mut materials = Vec::new();
+        let mut adjustments = Vec::new();
+        for (path, value) in files {
+            if path.starts_with("templates/") && path.ends_with("/template.json") {
+                templates.push(serde_json::from_value::<TemplateRecord>(value)?);
+            } else if path.starts_with("templates/") && path.contains("/versions/") {
+                versions.push(serde_json::from_value::<TemplateVersion>(value)?);
+            } else if (path.starts_with("templates/") && path.ends_with("/working-copy.json"))
+                || path.starts_with("drafts/")
+            {
+                working_copies.push(serde_json::from_value::<WorkingCopyRecord>(value)?);
+            } else if path.starts_with("inventory/materials/") {
+                materials.push(serde_json::from_value::<InventoryMaterial>(value)?);
+            } else if path.starts_with("inventory/adjustments/") {
+                adjustments.push(serde_json::from_value::<InventoryAdjustment>(value)?);
+            }
+        }
+        templates.sort_by(|left, right| left.id.cmp(&right.id));
+        versions.sort_by(|left, right| left.id.cmp(&right.id));
+        working_copies.sort_by(|left, right| left.source_key.cmp(&right.source_key));
+        materials.sort_by(|left, right| left.id.cmp(&right.id));
+        adjustments.sort_by(|left, right| left.id.cmp(&right.id));
+        let snapshot_updated_at = read_json_optional(&self.inner.root.join("manifest.json"))?
+            .and_then(|value| serde_json::from_value::<DataDirectoryManifest>(value).ok())
+            .and_then(|manifest| manifest.snapshot_updated_at);
+        let archive = DevdDataArchive {
+            schema: tuckmark_contracts::DEVD_DATA_ARCHIVE_SCHEMA.into(),
+            exported_at: self.inner.options.clock.now(),
+            runtime: RuntimeSnapshot {
+                snapshot_updated_at,
+                settings: read_json_optional(&self.inner.root.join("settings/app-settings.json"))?
+                    .unwrap_or_else(|| Value::Object(Default::default())),
+                templates,
+                versions,
+                working_copies,
+                extra: Default::default(),
+            },
+            inventory: InventorySnapshot {
+                materials,
+                adjustments,
+                extra: Default::default(),
+            },
+            extra: Default::default(),
+        };
+        archive.validate()?;
+        Ok(archive)
+    }
+
+    fn inspect_archive_locked(
+        &self,
+        archive: &DevdDataArchive,
+    ) -> Result<ArchiveInspection, DataAuthorityError> {
+        let current = self.build_archive_locked()?;
+        Ok(ArchiveInspection {
+            archive_hash: archive_hash(archive)?,
+            summary: archive_summary(archive),
+            conflicts: archive_conflicts(archive, &current),
+        })
+    }
+
+    fn known_data_paths_locked(&self) -> Result<Vec<String>, DataAuthorityError> {
+        let mut files = BTreeMap::new();
+        for directory in [
+            "settings",
+            "templates",
+            "drafts",
+            "inventory/materials",
+            "inventory/adjustments",
+        ] {
+            collect_json_tree(&self.inner.root.join(directory), directory, &mut files)?;
+        }
+        Ok(files.into_keys().collect())
+    }
+
+    fn protection_snapshot_deletions_locked(&self) -> Result<Vec<String>, DataAuthorityError> {
+        const MAX_PROTECTION_SNAPSHOTS: usize = 20;
+        let directory = self.inner.root.join("backups/protection");
+        let mut snapshots = list_json_files(&directory)?
+            .into_iter()
+            .map(|path| {
+                let modified = fs::metadata(&path)
+                    .and_then(|metadata| metadata.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                (path, modified)
+            })
+            .collect::<Vec<_>>();
+        snapshots.sort_by(|(left_path, left_time), (right_path, right_time)| {
+            right_time
+                .cmp(left_time)
+                .then_with(|| right_path.cmp(left_path))
+        });
+        Ok(snapshots
+            .into_iter()
+            .skip(MAX_PROTECTION_SNAPSHOTS.saturating_sub(1))
+            .filter_map(|(path, _)| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| format!("backups/protection/{name}"))
+            })
+            .collect())
     }
 
     fn refresh_manifest_locked(&self) -> Result<(), DataAuthorityError> {
@@ -645,6 +913,219 @@ fn collect_json_tree(
         }
     }
     Ok(())
+}
+
+fn archive_hash(archive: &DevdDataArchive) -> Result<String, DataAuthorityError> {
+    let mut hasher = Sha256::new();
+    hasher.update(canonical_json_bytes(archive)?);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn archive_summary(archive: &DevdDataArchive) -> ArchiveSummary {
+    ArchiveSummary {
+        templates: archive.runtime.templates.len(),
+        versions: archive.runtime.versions.len(),
+        working_copies: archive.runtime.working_copies.len(),
+        materials: archive.inventory.materials.len(),
+        adjustments: archive.inventory.adjustments.len(),
+    }
+}
+
+fn archive_conflicts(incoming: &DevdDataArchive, current: &DevdDataArchive) -> Vec<String> {
+    let current_template_ids = current
+        .runtime
+        .templates
+        .iter()
+        .map(|template| template.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let current_version_ids = current
+        .runtime
+        .versions
+        .iter()
+        .map(|version| version.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let current_working_keys = current
+        .runtime
+        .working_copies
+        .iter()
+        .map(|copy| copy.source_key.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let current_material_ids = current
+        .inventory
+        .materials
+        .iter()
+        .map(|material| material.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let current_material_names = current
+        .inventory
+        .materials
+        .iter()
+        .map(|material| material.full_name.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let current_matrix_codes = current
+        .inventory
+        .materials
+        .iter()
+        .filter_map(|material| {
+            material
+                .matrix_code
+                .as_deref()
+                .filter(|value| !value.is_empty())
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let current_adjustment_ids = current
+        .inventory
+        .adjustments
+        .iter()
+        .map(|adjustment| adjustment.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut conflicts = BTreeMap::new();
+    for item in &incoming.runtime.templates {
+        if current_template_ids.contains(item.id.as_str()) {
+            conflicts.insert(format!("template:{}", item.id), ());
+        }
+    }
+    for item in &incoming.runtime.versions {
+        if current_version_ids.contains(item.id.as_str()) {
+            conflicts.insert(format!("version:{}", item.id), ());
+        }
+    }
+    for item in &incoming.runtime.working_copies {
+        if current_working_keys.contains(item.source_key.as_str()) {
+            conflicts.insert(format!("working-copy:{}", item.source_key), ());
+        }
+    }
+    for item in &incoming.inventory.materials {
+        if current_material_ids.contains(item.id.as_str()) {
+            conflicts.insert(format!("material:{}", item.id), ());
+        }
+        if current_material_names.contains(item.full_name.as_str()) {
+            conflicts.insert(format!("material-name:{}", item.full_name), ());
+        }
+        if let Some(matrix_code) = item
+            .matrix_code
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            if current_matrix_codes.contains(matrix_code) {
+                conflicts.insert(format!("matrix-code:{matrix_code}"), ());
+            }
+        }
+    }
+    for item in &incoming.inventory.adjustments {
+        if current_adjustment_ids.contains(item.id.as_str()) {
+            conflicts.insert(format!("adjustment:{}", item.id), ());
+        }
+    }
+    conflicts.into_keys().collect()
+}
+
+fn merge_archives(current: &DevdDataArchive, incoming: &DevdDataArchive) -> DevdDataArchive {
+    let mut merged = current.clone();
+    merged.exported_at = incoming.exported_at.clone();
+    merged
+        .runtime
+        .templates
+        .extend(incoming.runtime.templates.clone());
+    merged
+        .runtime
+        .versions
+        .extend(incoming.runtime.versions.clone());
+    merged
+        .runtime
+        .working_copies
+        .extend(incoming.runtime.working_copies.clone());
+    merged
+        .inventory
+        .materials
+        .extend(incoming.inventory.materials.clone());
+    merged
+        .inventory
+        .adjustments
+        .extend(incoming.inventory.adjustments.clone());
+    merged
+}
+
+fn archive_writes(archive: &DevdDataArchive) -> Result<Vec<JsonWrite>, DataAuthorityError> {
+    let mut writes = vec![JsonWrite::new(
+        "settings/app-settings.json",
+        archive.runtime.settings.clone(),
+    )];
+    for template in &archive.runtime.templates {
+        writes.push(JsonWrite::new(
+            format!("templates/{}/template.json", safe_segment(&template.id)?),
+            serde_json::to_value(template)?,
+        ));
+    }
+    for version in &archive.runtime.versions {
+        writes.push(JsonWrite::new(
+            format!(
+                "templates/{}/versions/{}.json",
+                safe_segment(&version.template_id)?,
+                safe_segment(&version.id)?
+            ),
+            serde_json::to_value(version)?,
+        ));
+    }
+    for copy in &archive.runtime.working_copies {
+        writes.push(JsonWrite::new(
+            working_copy_path(copy)?,
+            serde_json::to_value(copy)?,
+        ));
+    }
+    for material in &archive.inventory.materials {
+        writes.push(JsonWrite::new(
+            format!("inventory/materials/{}.json", safe_segment(&material.id)?),
+            serde_json::to_value(material)?,
+        ));
+    }
+    for adjustment in &archive.inventory.adjustments {
+        writes.push(JsonWrite::new(
+            format!(
+                "inventory/adjustments/{}.json",
+                safe_segment(&adjustment.id)?
+            ),
+            serde_json::to_value(adjustment)?,
+        ));
+    }
+    writes.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    Ok(writes)
+}
+
+fn working_copy_path(copy: &WorkingCopyRecord) -> Result<String, DataAuthorityError> {
+    if let Some(template_id) = copy.source_key.strip_prefix("user:") {
+        return Ok(format!(
+            "templates/{}/working-copy.json",
+            safe_segment(template_id)?
+        ));
+    }
+    let source = copy.source.as_ref().and_then(Value::as_object);
+    let kind = source
+        .and_then(|source| source.get("kind"))
+        .and_then(Value::as_str)
+        .unwrap_or("scratch");
+    let identifier = source
+        .and_then(|source| source.get("presetId"))
+        .or_else(|| source.and_then(|source| source.get("id")))
+        .and_then(Value::as_str)
+        .or_else(|| copy.source_key.split_once(':').map(|(_, value)| value))
+        .unwrap_or(&copy.source_key);
+    Ok(format!(
+        "drafts/{}/{}.json",
+        safe_segment(kind)?,
+        safe_segment(identifier)?
+    ))
+}
+
+fn safe_segment(value: &str) -> Result<&str, DataAuthorityError> {
+    if value.is_empty()
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    {
+        return Err(DataAuthorityError::InvalidPath(value.into()));
+    }
+    Ok(value)
 }
 
 fn count_template_records(root: &Path) -> Result<u64, DataAuthorityError> {
