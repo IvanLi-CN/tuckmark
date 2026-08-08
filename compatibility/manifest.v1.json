@@ -711,7 +711,7 @@
     {
       "name": "tuckmark.agent-import.v1",
       "medium": "proposal JSON",
-      "shape": ["schema", "source", "items"]
+      "shape": ["schema", "sourceNote", "items"]
     },
     {
       "name": "tuckmark.agent-import-transaction.v1",
@@ -721,7 +721,7 @@
     {
       "name": "tuckmark.data-archive.v1",
       "medium": "legacy ZIP snapshot",
-      "shape": ["schema", "createdAt", "runtime"]
+      "shape": ["schema", "exportedAt", "runtime", "inventory"]
     },
     {
       "name": "tuckmark.data-dir-manifest.v1",
@@ -736,7 +736,7 @@
     {
       "name": "tuckmark.dev-data-copy.v1",
       "medium": "development copy marker",
-      "shape": ["schema", "source", "preparedAt", "counts"]
+      "shape": ["schema", "sourceDataDir", "preparedAt"]
     },
     {
       "name": "tuckmark.devd-config.v1",
@@ -746,7 +746,7 @@
     {
       "name": "tuckmark.devd-data-archive.v1",
       "medium": "DEVD backup JSON",
-      "shape": ["schema", "createdAt", "data"]
+      "shape": ["schema", "exportedAt", "runtime", "inventory"]
     },
     {
       "name": "tuckmark.devd-data-state.v1",
@@ -761,12 +761,12 @@
     {
       "name": "tuckmark.devd-live-lock.v1",
       "medium": "live ownership lock",
-      "shape": ["schema", "pid", "token", "createdAt"]
+      "shape": ["schema", "pid", "token", "claimedAt", "processStartIdentity"]
     },
     {
       "name": "tuckmark.devd-owner.v1",
       "medium": "directory owner marker",
-      "shape": ["schema", "token", "createdAt"]
+      "shape": ["schema", "claimedAt"]
     },
     {
       "name": "tuckmark.inventory-adjustment-transaction.v1",
@@ -786,12 +786,20 @@
     {
       "name": "tuckmark.runtime-export-archive.v1",
       "medium": "directory-tree ZIP archive.json",
-      "shape": ["schema", "createdAt"]
+      "shape": ["schema", "exportedAt"]
     },
     {
       "name": "tuckmark.runtime-export.v1",
       "medium": "runtime snapshot",
-      "shape": ["schema", "settings", "templates", "versions", "workingCopies", "inventory"]
+      "shape": [
+        "schema",
+        "exportedAt",
+        "snapshotUpdatedAt",
+        "settings",
+        "templates",
+        "versions",
+        "workingCopies"
+      ]
     },
     {
       "name": "tuckmark.runtime-writer-lease.v1",
@@ -801,7 +809,13 @@
     {
       "name": "tuckmark.sync-state.v1",
       "medium": "browser local storage key",
-      "shape": ["updatedAt", "templateUsageRecords", "recentPrintRecords", "canvasDraftRecords"]
+      "shape": [
+        "schemaVersion",
+        "updatedAt",
+        "templateUsageRecords",
+        "recentPrintRecords",
+        "canvasDraftRecords"
+      ]
     },
     {
       "name": "tuckmark.text-font-usage.v1",
@@ -818,8 +832,12 @@
         "description",
         "canvas",
         "fields",
+        "elements",
         "sampleInput",
-        "renderOptions"
+        "renderOptions",
+        "tags",
+        "recommendedUse",
+        "recommendedUses"
       ]
     }
   ],

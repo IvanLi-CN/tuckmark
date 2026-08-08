@@ -5,10 +5,20 @@
   "entries": {
     "archive.json": {
       "schema": "tuckmark.runtime-export-archive.v1",
-      "createdAt": "2026-01-02T03:04:05.000Z"
+      "exportedAt": "2026-01-02T03:04:05.000Z"
     },
     "manifest.json": {
       "schema": "tuckmark.data-dir-manifest.v1",
+      "generatedAt": "2026-01-02T03:04:05.000Z",
+      "snapshotUpdatedAt": null,
+      "source": "backup-archive",
+      "files": {
+        "settings": "settings/app-settings.json",
+        "templatesDir": "templates",
+        "draftsDir": "drafts",
+        "inventoryDir": "inventory",
+        "backupsDir": "backups"
+      },
       "counts": {
         "templates": 0,
         "versions": 0,
@@ -19,6 +29,11 @@
     },
     "settings/app-settings.json": { "threshold": 144, "paperType": "gap" }
   },
-  "excluded": ["owner.json", "live-lock.json", "transactions/", "agent-import/sessions/"],
+  "excluded": [
+    ".tuckmark/devd-owner.json",
+    ".tuckmark/devd-live.lock",
+    ".tuckmark/transactions/",
+    "in-memory agent-import sessions"
+  ],
   "legacyReadSchema": "tuckmark.data-archive.v1"
 }

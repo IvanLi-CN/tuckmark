@@ -5,9 +5,16 @@
   "entries": {
     "manifest.json": {
       "schema": "tuckmark.data-dir-manifest.v1",
-      "createdAt": "2026-01-02T03:04:05.000Z",
-      "updatedAt": "2026-01-02T03:04:06.000Z",
-      "source": { "kind": "fixture" },
+      "generatedAt": "2026-01-02T03:04:05.000Z",
+      "snapshotUpdatedAt": "2026-01-02T03:04:06.000Z",
+      "source": "runtime-sync",
+      "files": {
+        "settings": "settings/app-settings.json",
+        "templatesDir": "templates",
+        "draftsDir": "drafts",
+        "inventoryDir": "inventory",
+        "backupsDir": "backups"
+      },
       "counts": {
         "templates": 1,
         "versions": 1,
@@ -61,6 +68,9 @@
       "materialId": "fixture-material",
       "kind": "in",
       "quantityDelta": 12,
+      "targetQuantity": null,
+      "quantityAfter": 12,
+      "note": "",
       "actor": "fixture",
       "createdAt": "2026-01-02T03:04:06.000Z"
     },
