@@ -1889,58 +1889,112 @@ fn text_font_stack(font_family: Option<&str>) -> &'static str {
         "noto-serif-sc" => {
             "'Noto Serif SC Variable', 'Songti SC', 'Noto Serif CJK SC', 'Source Han Serif SC', serif"
         }
-        "arial" => "Arial, 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-        "georgia" => "Georgia, 'Noto Serif SC Variable', 'Noto Serif SC', serif",
-        "courier-new" => "'Courier New', 'Noto Sans SC Variable', 'Noto Sans SC', monospace",
-        "times-new-roman" => "'Times New Roman', 'Noto Serif SC Variable', 'Noto Serif SC', serif",
-        "system-serif" => "'Times New Roman', 'Noto Serif SC Variable', 'Noto Serif SC', serif",
-        "system-mono" => "'Courier New', 'Noto Sans SC Variable', 'Noto Sans SC', monospace",
-        "ibm-plex-mono" => "'IBM Plex Mono', 'Noto Sans SC Variable', 'Noto Sans SC', monospace",
-        "inconsolata" => "'Inconsolata', 'Noto Sans SC Variable', 'Noto Sans SC', monospace",
-        "jetbrains-mono" => "'JetBrains Mono', 'Noto Sans SC Variable', 'Noto Sans SC', monospace",
-        "space-mono" => "'Space Mono', 'Noto Sans SC Variable', 'Noto Sans SC', monospace",
-        "ibm-plex-serif" => "'IBM Plex Serif', 'Noto Serif SC Variable', 'Noto Serif SC', serif",
-        "source-serif-4" => "'Source Serif 4', 'Noto Serif SC Variable', 'Noto Serif SC', serif",
+        "arial" => "Arial, 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif",
+        "georgia" => {
+            "Georgia, 'Noto Serif SC Variable', 'Noto Serif SC', 'Noto Serif CJK SC', serif"
+        }
+        "courier-new" => {
+            "'Courier New', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', monospace"
+        }
+        "times-new-roman" => {
+            "'Times New Roman', 'Noto Serif SC Variable', 'Noto Serif SC', 'Noto Serif CJK SC', serif"
+        }
+        "system-serif" => {
+            "'Times New Roman', 'Noto Serif SC Variable', 'Noto Serif SC', 'Noto Serif CJK SC', serif"
+        }
+        "system-mono" => {
+            "'Courier New', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', monospace"
+        }
+        "ibm-plex-mono" => {
+            "'IBM Plex Mono', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', monospace"
+        }
+        "inconsolata" => {
+            "'Inconsolata', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', monospace"
+        }
+        "jetbrains-mono" => {
+            "'JetBrains Mono', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', monospace"
+        }
+        "space-mono" => {
+            "'Space Mono', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', monospace"
+        }
+        "ibm-plex-serif" => {
+            "'IBM Plex Serif', 'Noto Serif SC Variable', 'Noto Serif SC', 'Noto Serif CJK SC', serif"
+        }
+        "source-serif-4" => {
+            "'Source Serif 4', 'Noto Serif SC Variable', 'Noto Serif SC', 'Noto Serif CJK SC', serif"
+        }
         "noto-sans-sc" => {
-            "'Noto Sans SC Variable', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif"
+            "'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', 'PingFang SC', 'Microsoft YaHei', sans-serif"
         }
         family => match family {
-            "archivo" => "'Archivo', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "barlow" => "'Barlow', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "barlow-condensed" => {
-                "'Barlow Condensed', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif"
+            "archivo" => {
+                "'Archivo', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
             }
-            "bebas-neue" => "'Bebas Neue', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "dm-sans" => "'DM Sans', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "exo-2" => "'Exo 2', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+            "barlow" => {
+                "'Barlow', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "barlow-condensed" => {
+                "'Barlow Condensed', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "bebas-neue" => {
+                "'Bebas Neue', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "dm-sans" => {
+                "'DM Sans', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "exo-2" => {
+                "'Exo 2', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
             "ibm-plex-sans" => {
-                "'IBM Plex Sans', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif"
+                "'IBM Plex Sans', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
             }
             "inter" => {
-                "'Inter Variable', 'Inter', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif"
+                "'Inter Variable', 'Inter', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
             }
-            "inter-tight" => "'Inter Tight', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "manrope" => "'Manrope', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "oswald" => "'Oswald', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "outfit" => "'Outfit', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "overpass" => "'Overpass', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "public-sans" => "'Public Sans', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "rajdhani" => "'Rajdhani', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "roboto" => "'Roboto', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+            "inter-tight" => {
+                "'Inter Tight', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "manrope" => {
+                "'Manrope', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "oswald" => {
+                "'Oswald', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "outfit" => {
+                "'Outfit', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "overpass" => {
+                "'Overpass', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "public-sans" => {
+                "'Public Sans', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "rajdhani" => {
+                "'Rajdhani', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "roboto" => {
+                "'Roboto', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
             "roboto-condensed" => {
-                "'Roboto Condensed', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif"
+                "'Roboto Condensed', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
             }
             "source-sans-3" => {
-                "'Source Sans 3', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif"
+                "'Source Sans 3', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
             }
             "space-grotesk" => {
-                "'Space Grotesk', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif"
+                "'Space Grotesk', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
             }
-            "trebuchet-ms" => "'Trebuchet MS', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "verdana" => "Verdana, 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
-            "work-sans" => "'Work Sans', 'Noto Sans SC Variable', 'Noto Sans SC', sans-serif",
+            "trebuchet-ms" => {
+                "'Trebuchet MS', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "verdana" => {
+                "Verdana, 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
+            "work-sans" => {
+                "'Work Sans', 'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif"
+            }
             _ => {
-                "'Noto Sans SC Variable', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif"
+                "'Noto Sans SC Variable', 'Noto Sans SC', 'Noto Sans CJK SC', 'PingFang SC', 'Microsoft YaHei', sans-serif"
             }
         },
     }
