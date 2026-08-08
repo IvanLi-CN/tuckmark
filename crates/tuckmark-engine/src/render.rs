@@ -475,12 +475,16 @@ fn draft_fields(
         .filter_map(Value::as_object)
         .filter_map(|field| {
             let key = field.get("key")?.as_str()?;
-            let value = input.get(key).cloned().or_else(|| {
-                field
-                    .get("defaultValue")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })?;
+            let value = input
+                .get(key)
+                .cloned()
+                .or_else(|| {
+                    field
+                        .get("defaultValue")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                })
+                .unwrap_or_default();
             Some((key.into(), value))
         })
         .collect()
@@ -515,15 +519,15 @@ fn compile_canvas_element(
         .unwrap_or(kind);
     element.insert("key".into(), Value::String(key.into()));
     if matches!(kind, "text" | "barcode" | "qr" | "datamatrix") {
-        let resolved = binding_key
-            .and_then(|binding| fields.get(binding).cloned())
-            .or_else(|| {
-                source
-                    .get("value")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .unwrap_or_default();
+        let resolved = if let Some(binding) = binding_key {
+            fields.get(binding).cloned().unwrap_or_default()
+        } else {
+            source
+                .get("value")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_default()
+        };
         element.insert("value".into(), Value::String(resolved));
     }
     for &field in geometry_fields(kind) {

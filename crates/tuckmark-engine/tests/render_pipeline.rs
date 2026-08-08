@@ -362,3 +362,63 @@ fn canvas_draft_compiles_millimeters_bindings_and_visibility_to_dots() {
     );
     assert!(rendered.svg.contains("M-001"));
 }
+
+#[test]
+fn canvas_draft_binding_uses_declared_field_resolution_not_persisted_value() {
+    let draft = json!({
+        "id": "bound-canvas",
+        "name": "Bound Canvas",
+        "width": 40,
+        "height": 20,
+        "fields": [
+            { "key": "empty" },
+            { "key": "defaulted", "defaultValue": "field-default" },
+            { "key": "provided", "defaultValue": "ignored-default" }
+        ],
+        "elements": [
+            {
+                "id": "text-empty",
+                "kind": "text",
+                "x": 1,
+                "y": 1,
+                "fontSize": 10,
+                "binding": { "fieldKey": "empty" },
+                "value": "persisted-empty"
+            },
+            {
+                "id": "text-defaulted",
+                "kind": "text",
+                "x": 1,
+                "y": 1,
+                "fontSize": 10,
+                "binding": { "fieldKey": "defaulted" },
+                "value": "persisted-default"
+            },
+            {
+                "id": "text-provided",
+                "kind": "text",
+                "x": 1,
+                "y": 1,
+                "fontSize": 10,
+                "binding": { "fieldKey": "provided" },
+                "value": "persisted-provided"
+            }
+        ]
+    });
+
+    let canvas = compile_canvas_draft(
+        &draft,
+        &BTreeMap::from([("provided".into(), "request-value".into())]),
+        203,
+    )
+    .unwrap();
+    let values = canvas
+        .elements
+        .iter()
+        .map(|element| match element {
+            tuckmark_contracts::TemplateElement::Text { value, .. } => value.clone().unwrap(),
+            _ => unreachable!("fixture contains only text elements"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(values, ["", "field-default", "request-value"]);
+}

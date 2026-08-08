@@ -358,7 +358,9 @@ impl AgentImportManager {
                 quantity_after: Some(material.current_quantity),
                 note: item
                     .source_note
-                    .clone()
+                    .as_deref()
+                    .filter(|note| !note.is_empty())
+                    .map(str::to_owned)
                     .or_else(|| proposal.source_note.clone()),
                 actor: Some("agent-import".into()),
                 created_at: Some(now.clone()),

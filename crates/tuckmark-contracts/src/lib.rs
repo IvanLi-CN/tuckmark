@@ -19,6 +19,18 @@ pub const RUNTIME_EXPORT_SCHEMA: &str = "tuckmark.runtime-export.v1";
 
 pub type ExtraFields = BTreeMap<String, Value>;
 
+// These values are only introduced while deserializing a JSON object that omitted a
+// field required by the DEVD archive schema. Validation rejects them before an archive
+// can be persisted or imported, while keeping the public wire field types compatible.
+const MISSING_RUNTIME_SNAPSHOT_UPDATED_AT: &str = "\0tuckmark:missing:runtime.snapshotUpdatedAt";
+const MISSING_RUNTIME_TEMPLATES: &str = "\0tuckmark:missing:runtime.templates";
+const MISSING_RUNTIME_VERSIONS: &str = "\0tuckmark:missing:runtime.versions";
+const MISSING_RUNTIME_WORKING_COPIES: &str = "\0tuckmark:missing:runtime.workingCopies";
+const MISSING_TEMPLATE_FIELD_ORDER: &str = "\0tuckmark:missing:template.fieldOrder";
+const MISSING_INVENTORY_MATERIALS: &str = "\0tuckmark:missing:inventory.materials";
+const MISSING_INVENTORY_ADJUSTMENTS: &str = "\0tuckmark:missing:inventory.adjustments";
+const MISSING_ADJUSTMENT_TARGET_QUANTITY: i64 = i64::MIN;
+
 #[derive(Debug, Error)]
 pub enum ContractError {
     #[error("JSON serialization failed: {0}")]
@@ -53,12 +65,13 @@ fn expected_schema(actual: &str, expected: &str) -> Result<(), ContractError> {
 pub fn canonicalize_json(value: Value) -> Value {
     match value {
         Value::Array(values) => Value::Array(values.into_iter().map(canonicalize_json).collect()),
-        Value::Object(values) => Value::Object(
-            values
-                .into_iter()
-                .map(|(key, value)| (key, canonicalize_json(value)))
-                .collect(),
-        ),
+        Value::Object(values) => {
+            let mut ordered = BTreeMap::new();
+            for (key, value) in values {
+                ordered.insert(key, canonicalize_json(value));
+            }
+            Value::Object(ordered.into_iter().collect())
+        }
         value => value,
     }
 }
@@ -364,7 +377,7 @@ pub struct InventoryAdjustment {
     pub kind: String,
     #[serde(default)]
     pub quantity_delta: Option<i64>,
-    #[serde(default)]
+    #[serde(default = "missing_adjustment_target_quantity")]
     pub target_quantity: Option<i64>,
     #[serde(default)]
     pub quantity_after: Option<i64>,
@@ -376,6 +389,39 @@ pub struct InventoryAdjustment {
     pub created_at: Option<String>,
     #[serde(flatten, default)]
     pub extra: ExtraFields,
+}
+
+fn missing_adjustment_target_quantity() -> Option<i64> {
+    Some(MISSING_ADJUSTMENT_TARGET_QUANTITY)
+}
+
+fn missing_inventory_materials() -> Vec<InventoryMaterial> {
+    vec![InventoryMaterial {
+        id: MISSING_INVENTORY_MATERIALS.into(),
+        full_name: String::new(),
+        current_quantity: 0,
+        matrix_code: None,
+        label_bindings: Vec::new(),
+        created_at: None,
+        updated_at: None,
+        archived_at: None,
+        extra: ExtraFields::new(),
+    }]
+}
+
+fn missing_inventory_adjustments() -> Vec<InventoryAdjustment> {
+    vec![InventoryAdjustment {
+        id: MISSING_INVENTORY_ADJUSTMENTS.into(),
+        material_id: String::new(),
+        kind: String::new(),
+        quantity_delta: None,
+        target_quantity: None,
+        quantity_after: None,
+        note: None,
+        actor: None,
+        created_at: None,
+        extra: ExtraFields::new(),
+    }]
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -397,7 +443,7 @@ pub struct TemplateRecord {
     pub current_version_id: Option<String>,
     #[serde(default)]
     pub archived_at: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default = "missing_template_field_order")]
     pub field_order: Vec<String>,
     #[serde(flatten, default)]
     pub extra: ExtraFields,
@@ -442,6 +488,56 @@ pub struct WorkingCopyRecord {
     pub extra: ExtraFields,
 }
 
+fn missing_template_field_order() -> Vec<String> {
+    vec![MISSING_TEMPLATE_FIELD_ORDER.into()]
+}
+
+fn missing_runtime_snapshot_updated_at() -> Option<String> {
+    Some(MISSING_RUNTIME_SNAPSHOT_UPDATED_AT.into())
+}
+
+fn missing_runtime_templates() -> Vec<TemplateRecord> {
+    vec![TemplateRecord {
+        id: MISSING_RUNTIME_TEMPLATES.into(),
+        name: String::new(),
+        description: None,
+        width: None,
+        height: None,
+        created_at: None,
+        updated_at: None,
+        current_version_id: None,
+        archived_at: None,
+        field_order: Vec::new(),
+        extra: ExtraFields::new(),
+    }]
+}
+
+fn missing_runtime_versions() -> Vec<TemplateVersion> {
+    vec![TemplateVersion {
+        id: MISSING_RUNTIME_VERSIONS.into(),
+        template_id: String::new(),
+        version: None,
+        kind: None,
+        created_at: None,
+        label: None,
+        source_version_id: None,
+        document: None,
+        extra: ExtraFields::new(),
+    }]
+}
+
+fn missing_runtime_working_copies() -> Vec<WorkingCopyRecord> {
+    vec![WorkingCopyRecord {
+        source_key: MISSING_RUNTIME_WORKING_COPIES.into(),
+        source: None,
+        template_id: None,
+        draft: None,
+        updated_at: None,
+        base_version_id: None,
+        extra: ExtraFields::new(),
+    }]
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeSnapshot {
@@ -449,15 +545,15 @@ pub struct RuntimeSnapshot {
     pub schema: String,
     #[serde(default)]
     pub exported_at: String,
-    #[serde(default)]
+    #[serde(default = "missing_runtime_snapshot_updated_at")]
     pub snapshot_updated_at: Option<String>,
     #[serde(default)]
     pub settings: Value,
-    #[serde(default)]
+    #[serde(default = "missing_runtime_templates")]
     pub templates: Vec<TemplateRecord>,
-    #[serde(default)]
+    #[serde(default = "missing_runtime_versions")]
     pub versions: Vec<TemplateVersion>,
-    #[serde(default)]
+    #[serde(default = "missing_runtime_working_copies")]
     pub working_copies: Vec<WorkingCopyRecord>,
     #[serde(flatten, default)]
     pub extra: ExtraFields,
@@ -466,19 +562,89 @@ pub struct RuntimeSnapshot {
 impl RuntimeSnapshot {
     pub fn validate(&self) -> Result<(), ContractError> {
         expected_schema(&self.schema, RUNTIME_EXPORT_SCHEMA)?;
-        non_empty(&self.exported_at, "runtime.exportedAt")
+        non_empty(&self.exported_at, "runtime.exportedAt")?;
+        if self.snapshot_updated_at.as_deref() == Some(MISSING_RUNTIME_SNAPSHOT_UPDATED_AT) {
+            return Err(ContractError::Validation(
+                "runtime.snapshotUpdatedAt is required".into(),
+            ));
+        }
+        if !self.settings.is_object() {
+            return Err(ContractError::Validation(
+                "runtime.settings must be an object".into(),
+            ));
+        }
+        if self
+            .templates
+            .iter()
+            .any(|template| template.id == MISSING_RUNTIME_TEMPLATES)
+        {
+            return Err(ContractError::Validation(
+                "runtime.templates is required".into(),
+            ));
+        }
+        if self
+            .versions
+            .iter()
+            .any(|version| version.id == MISSING_RUNTIME_VERSIONS)
+        {
+            return Err(ContractError::Validation(
+                "runtime.versions is required".into(),
+            ));
+        }
+        if self
+            .working_copies
+            .iter()
+            .any(|copy| copy.source_key == MISSING_RUNTIME_WORKING_COPIES)
+        {
+            return Err(ContractError::Validation(
+                "runtime.workingCopies is required".into(),
+            ));
+        }
+        Ok(())
     }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InventorySnapshot {
-    #[serde(default)]
+    #[serde(default = "missing_inventory_materials")]
     pub materials: Vec<InventoryMaterial>,
-    #[serde(default)]
+    #[serde(default = "missing_inventory_adjustments")]
     pub adjustments: Vec<InventoryAdjustment>,
     #[serde(flatten, default)]
     pub extra: ExtraFields,
+}
+
+impl InventorySnapshot {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        if self
+            .materials
+            .iter()
+            .any(|material| material.id == MISSING_INVENTORY_MATERIALS)
+        {
+            return Err(ContractError::Validation(
+                "inventory.materials is required".into(),
+            ));
+        }
+        if self
+            .adjustments
+            .iter()
+            .any(|adjustment| adjustment.id == MISSING_INVENTORY_ADJUSTMENTS)
+        {
+            return Err(ContractError::Validation(
+                "inventory.adjustments is required".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn missing_inventory_snapshot() -> InventorySnapshot {
+    InventorySnapshot {
+        materials: missing_inventory_materials(),
+        adjustments: missing_inventory_adjustments(),
+        extra: ExtraFields::new(),
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -488,7 +654,7 @@ pub struct DevdDataArchive {
     pub exported_at: String,
     #[serde(default)]
     pub runtime: RuntimeSnapshot,
-    #[serde(default)]
+    #[serde(default = "missing_inventory_snapshot")]
     pub inventory: InventorySnapshot,
     #[serde(flatten, default)]
     pub extra: ExtraFields,
@@ -499,6 +665,9 @@ impl DevdDataArchive {
         expected_schema(&self.schema, DEVD_DATA_ARCHIVE_SCHEMA)?;
         non_empty(&self.exported_at, "archive.exportedAt")?;
         self.runtime.validate()?;
+        validate_archive_runtime_records(&self.runtime)?;
+        self.inventory.validate()?;
+        validate_archive_inventory_records(&self.inventory)?;
         validate_referential_integrity(
             &self.runtime.templates,
             &self.runtime.versions,
@@ -705,6 +874,570 @@ pub fn validate_relative_path(path: &str) -> Result<(), ContractError> {
             "invalid relative path {path}"
         )));
     }
+    Ok(())
+}
+
+fn required_string(value: Option<&str>, name: &str, nonempty: bool) -> Result<(), ContractError> {
+    let value = value.ok_or_else(|| ContractError::Validation(format!("{name} is required")))?;
+    if nonempty {
+        non_empty(value, name)?;
+    }
+    Ok(())
+}
+
+fn required_positive_number(value: Option<f64>, name: &str) -> Result<(), ContractError> {
+    let value = value.ok_or_else(|| ContractError::Validation(format!("{name} is required")))?;
+    if !value.is_finite() || value <= 0.0 {
+        return Err(ContractError::Validation(format!(
+            "{name} must be positive and finite"
+        )));
+    }
+    Ok(())
+}
+
+fn required_object<'a>(
+    value: Option<&'a Value>,
+    name: &str,
+) -> Result<&'a serde_json::Map<String, Value>, ContractError> {
+    value
+        .ok_or_else(|| ContractError::Validation(format!("{name} is required")))
+        .and_then(|value| object_value(value, name))
+}
+
+fn object_value<'a>(
+    value: &'a Value,
+    name: &str,
+) -> Result<&'a serde_json::Map<String, Value>, ContractError> {
+    value
+        .as_object()
+        .ok_or_else(|| ContractError::Validation(format!("{name} must be an object")))
+}
+
+fn required_field<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    field: &str,
+    name: &str,
+) -> Result<&'a Value, ContractError> {
+    object
+        .get(field)
+        .ok_or_else(|| ContractError::Validation(format!("{name}.{field} is required")))
+}
+
+fn required_string_field<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    field: &str,
+    name: &str,
+) -> Result<&'a str, ContractError> {
+    required_field(object, field, name)?
+        .as_str()
+        .ok_or_else(|| ContractError::Validation(format!("{name}.{field} must be a string")))
+}
+
+fn required_identifier_field(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+    name: &str,
+) -> Result<(), ContractError> {
+    let value = required_string_field(object, field, name)?;
+    non_empty(value, &format!("{name}.{field}"))
+}
+
+fn optional_identifier_field(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+    name: &str,
+) -> Result<(), ContractError> {
+    let Some(value) = object.get(field) else {
+        return Ok(());
+    };
+    let value = value
+        .as_str()
+        .ok_or_else(|| ContractError::Validation(format!("{name}.{field} must be a string")))?;
+    non_empty(value, &format!("{name}.{field}"))
+}
+
+fn optional_string_field(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+    name: &str,
+) -> Result<(), ContractError> {
+    if object.get(field).is_some_and(|value| !value.is_string()) {
+        return Err(ContractError::Validation(format!(
+            "{name}.{field} must be a string"
+        )));
+    }
+    Ok(())
+}
+
+fn required_boolean_field(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+    name: &str,
+) -> Result<(), ContractError> {
+    if !required_field(object, field, name)?.is_boolean() {
+        return Err(ContractError::Validation(format!(
+            "{name}.{field} must be a boolean"
+        )));
+    }
+    Ok(())
+}
+
+fn optional_boolean_field(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+    name: &str,
+) -> Result<(), ContractError> {
+    if object.get(field).is_some_and(|value| !value.is_boolean()) {
+        return Err(ContractError::Validation(format!(
+            "{name}.{field} must be a boolean"
+        )));
+    }
+    Ok(())
+}
+
+fn required_finite_number_field(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+    name: &str,
+) -> Result<f64, ContractError> {
+    required_field(object, field, name)?
+        .as_f64()
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| ContractError::Validation(format!("{name}.{field} must be a finite number")))
+}
+
+fn required_positive_number_field(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+    name: &str,
+) -> Result<(), ContractError> {
+    if required_finite_number_field(object, field, name)? <= 0.0 {
+        return Err(ContractError::Validation(format!(
+            "{name}.{field} must be positive"
+        )));
+    }
+    Ok(())
+}
+
+fn optional_finite_number_field(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+    name: &str,
+) -> Result<(), ContractError> {
+    let Some(value) = object.get(field) else {
+        return Ok(());
+    };
+    if !value.as_f64().is_some_and(f64::is_finite) {
+        return Err(ContractError::Validation(format!(
+            "{name}.{field} must be a finite number"
+        )));
+    }
+    Ok(())
+}
+
+fn required_array_field<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    field: &str,
+    name: &str,
+) -> Result<&'a Vec<Value>, ContractError> {
+    required_field(object, field, name)?
+        .as_array()
+        .ok_or_else(|| ContractError::Validation(format!("{name}.{field} must be an array")))
+}
+
+fn validate_canvas_draft_source(
+    source: &serde_json::Map<String, Value>,
+    name: &str,
+) -> Result<(), ContractError> {
+    let kind = required_string_field(source, "kind", name)?;
+    match kind {
+        "scratch" | "preset-template" => {
+            required_identifier_field(source, "presetId", name)?;
+        }
+        "user-template" => {
+            required_identifier_field(source, "templateId", name)?;
+        }
+        _ => {
+            return Err(ContractError::Validation(format!(
+                "{name}.kind must be a supported source kind"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn required_enum_field(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+    name: &str,
+    allowed: &[&str],
+) -> Result<(), ContractError> {
+    let value = required_string_field(object, field, name)?;
+    if !allowed.contains(&value) {
+        return Err(ContractError::Validation(format!(
+            "{name}.{field} has an invalid value {value}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_recommended_use(value: &Value, name: &str) -> Result<(), ContractError> {
+    if value.is_string() {
+        return Ok(());
+    }
+    let object = object_value(value, name)?;
+    required_identifier_field(object, "scope", name)
+}
+
+fn validate_canvas_draft_document(value: &Value, name: &str) -> Result<(), ContractError> {
+    let document = object_value(value, name)?;
+    if required_field(document, "version", name)?.as_i64() != Some(1) {
+        return Err(ContractError::Validation(format!(
+            "{name}.version must be 1"
+        )));
+    }
+    if document
+        .get("unit")
+        .is_some_and(|unit| unit.as_str() != Some("mm"))
+    {
+        return Err(ContractError::Validation(format!("{name}.unit must be mm")));
+    }
+    for field in ["id", "presetId", "name"] {
+        required_identifier_field(document, field, name)?;
+    }
+    let source = object_value(
+        required_field(document, "source", name)?,
+        &format!("{name}.source"),
+    )?;
+    validate_canvas_draft_source(source, &format!("{name}.source"))?;
+    for field in ["templateId", "baseVersionId"] {
+        optional_identifier_field(document, field, name)?;
+    }
+    if let Some(last_saved_at) = document.get("lastSavedAt") {
+        let last_saved_at = last_saved_at.as_str().ok_or_else(|| {
+            ContractError::Validation(format!("{name}.lastSavedAt must be a string"))
+        })?;
+        if last_saved_at.is_empty() {
+            return Err(ContractError::Validation(format!(
+                "{name}.lastSavedAt must not be empty"
+            )));
+        }
+    }
+    required_positive_number_field(document, "width", name)?;
+    required_positive_number_field(document, "height", name)?;
+    if let Some(render_options) = document.get("renderOptions") {
+        object_value(render_options, &format!("{name}.renderOptions"))?;
+    }
+    if let Some(recommended_use) = document.get("recommendedUse") {
+        validate_recommended_use(recommended_use, &format!("{name}.recommendedUse"))?;
+    }
+    if let Some(recommended_uses) = document.get("recommendedUses") {
+        let recommended_uses = recommended_uses.as_array().ok_or_else(|| {
+            ContractError::Validation(format!("{name}.recommendedUses must be an array"))
+        })?;
+        for recommended_use in recommended_uses {
+            validate_recommended_use(recommended_use, &format!("{name}.recommendedUses"))?;
+        }
+    }
+
+    let fields = required_array_field(document, "fields", name)?;
+    for field in fields {
+        let field = object_value(field, &format!("{name}.fields"))?;
+        required_identifier_field(field, "key", &format!("{name}.fields"))?;
+        required_identifier_field(field, "label", &format!("{name}.fields"))?;
+    }
+
+    let elements = required_array_field(document, "elements", name)?;
+    for element in elements {
+        validate_canvas_draft_element(element, &format!("{name}.elements"))?;
+    }
+
+    let editor = object_value(
+        required_field(document, "editor", name)?,
+        &format!("{name}.editor"),
+    )?;
+    required_boolean_field(editor, "gridEnabled", &format!("{name}.editor"))?;
+    required_boolean_field(editor, "snapEnabled", &format!("{name}.editor"))?;
+    // Zod preprocesses any absent or malformed grid values to the canonical defaults.
+    // Accept them here so archive validation preserves that existing read behavior.
+
+    Ok(())
+}
+
+fn validate_required_finite_numbers(
+    object: &serde_json::Map<String, Value>,
+    name: &str,
+    fields: &[&str],
+) -> Result<(), ContractError> {
+    for field in fields {
+        required_finite_number_field(object, field, name)?;
+    }
+    Ok(())
+}
+
+fn validate_canvas_draft_element(value: &Value, name: &str) -> Result<(), ContractError> {
+    let element = object_value(value, name)?;
+    required_identifier_field(element, "id", name)?;
+    let meta = object_value(
+        required_field(element, "meta", name)?,
+        &format!("{name}.meta"),
+    )?;
+    required_string_field(meta, "name", &format!("{name}.meta"))?;
+    required_boolean_field(meta, "visible", &format!("{name}.meta"))?;
+    required_boolean_field(meta, "locked", &format!("{name}.meta"))?;
+    if let Some(binding) = element.get("binding") {
+        let binding = object_value(binding, &format!("{name}.binding"))?;
+        required_string_field(binding, "fieldKey", &format!("{name}.binding"))?;
+        required_enum_field(
+            binding,
+            "kind",
+            &format!("{name}.binding"),
+            &["text", "barcode", "qr", "datamatrix"],
+        )?;
+    }
+
+    let kind = required_string_field(element, "kind", name)?;
+    match kind {
+        "text" => {
+            validate_required_finite_numbers(
+                element,
+                name,
+                &["x", "y", "width", "height", "fontSize", "lineHeight"],
+            )?;
+            let font_family = required_string_field(element, "fontFamily", name)?;
+            if font_family.is_empty() {
+                return Err(ContractError::Validation(format!(
+                    "{name}.fontFamily must not be empty"
+                )));
+            }
+            required_enum_field(element, "fontWeight", name, &["normal", "bold"])?;
+            required_string_field(element, "align", name)?;
+            optional_string_field(element, "justifyAlign", name)?;
+            required_string_field(element, "verticalAlign", name)?;
+            for field in [
+                "stretchXGrow",
+                "stretchXShrink",
+                "stretchYGrow",
+                "stretchYShrink",
+                "stretchX",
+                "stretchY",
+                "adaptiveFontSize",
+            ] {
+                optional_boolean_field(element, field, name)?;
+            }
+            let has_legacy_stretch_flags =
+                element.contains_key("stretchX") && element.contains_key("stretchY");
+            let has_axis_fit_flags = [
+                "stretchXGrow",
+                "stretchXShrink",
+                "stretchYGrow",
+                "stretchYShrink",
+            ]
+            .iter()
+            .all(|field| element.contains_key(*field));
+            if !has_legacy_stretch_flags && !has_axis_fit_flags {
+                return Err(ContractError::Validation(format!(
+                    "{name} text element requires stretch flags"
+                )));
+            }
+            required_boolean_field(element, "autoWrap", name)?;
+            required_boolean_field(element, "verticalText", name)?;
+            required_string_field(element, "value", name)?;
+            optional_finite_number_field(element, "maxLines", name)?;
+            optional_finite_number_field(element, "rotation", name)?;
+        }
+        "rect" => {
+            validate_required_finite_numbers(
+                element,
+                name,
+                &["x", "y", "width", "height", "strokeWidth", "radius"],
+            )?;
+            required_string_field(element, "fill", name)?;
+            required_string_field(element, "stroke", name)?;
+            optional_finite_number_field(element, "rotation", name)?;
+        }
+        "circle" => {
+            validate_required_finite_numbers(element, name, &["x", "y", "size", "strokeWidth"])?;
+            required_string_field(element, "fill", name)?;
+            required_string_field(element, "stroke", name)?;
+        }
+        "triangle" => {
+            validate_required_finite_numbers(
+                element,
+                name,
+                &["x", "y", "width", "height", "strokeWidth"],
+            )?;
+            required_string_field(element, "fill", name)?;
+            required_string_field(element, "stroke", name)?;
+            optional_finite_number_field(element, "rotation", name)?;
+        }
+        "line" => {
+            validate_required_finite_numbers(
+                element,
+                name,
+                &["x", "y", "x2", "y2", "strokeWidth"],
+            )?;
+            required_string_field(element, "stroke", name)?;
+        }
+        "barcode" => {
+            validate_required_finite_numbers(element, name, &["x", "y", "width", "height"])?;
+            required_string_field(element, "value", name)?;
+            required_enum_field(element, "format", name, &["CODE128"])?;
+            required_boolean_field(element, "showValue", name)?;
+            optional_finite_number_field(element, "rotation", name)?;
+        }
+        "qr" => {
+            validate_required_finite_numbers(element, name, &["x", "y", "size"])?;
+            required_string_field(element, "value", name)?;
+            required_enum_field(element, "errorCorrectionLevel", name, &["L", "M", "Q", "H"])?;
+            optional_finite_number_field(element, "rotation", name)?;
+        }
+        "datamatrix" => {
+            validate_required_finite_numbers(element, name, &["x", "y", "size"])?;
+            required_string_field(element, "value", name)?;
+            optional_finite_number_field(element, "rotation", name)?;
+        }
+        _ => {
+            return Err(ContractError::Validation(format!(
+                "{name}.kind has an invalid value {kind}"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_archive_runtime_records(runtime: &RuntimeSnapshot) -> Result<(), ContractError> {
+    for template in &runtime.templates {
+        required_string(
+            template.description.as_deref(),
+            "template description",
+            false,
+        )?;
+        required_positive_number(template.width, "template width")?;
+        required_positive_number(template.height, "template height")?;
+        required_string(template.created_at.as_deref(), "template createdAt", true)?;
+        required_string(template.updated_at.as_deref(), "template updatedAt", true)?;
+        required_string(
+            template.current_version_id.as_deref(),
+            "template currentVersionId",
+            true,
+        )?;
+        if template
+            .field_order
+            .iter()
+            .any(|field| field == MISSING_TEMPLATE_FIELD_ORDER)
+        {
+            return Err(ContractError::Validation(
+                "template fieldOrder is required".into(),
+            ));
+        }
+    }
+
+    for version in &runtime.versions {
+        let version_number = version.version.ok_or_else(|| {
+            ContractError::Validation("template version version is required".into())
+        })?;
+        if version_number == 0 {
+            return Err(ContractError::Validation(
+                "template version version must be positive".into(),
+            ));
+        }
+        let kind = version
+            .kind
+            .as_deref()
+            .ok_or_else(|| ContractError::Validation("template version kind is required".into()))?;
+        if !matches!(kind, "saved" | "autosave") {
+            return Err(ContractError::Validation(format!(
+                "template version {} has invalid kind {kind}",
+                version.id
+            )));
+        }
+        required_string(
+            version.created_at.as_deref(),
+            "template version createdAt",
+            true,
+        )?;
+        required_string(version.label.as_deref(), "template version label", false)?;
+        let document = version.document.as_ref().ok_or_else(|| {
+            ContractError::Validation("template version document is required".into())
+        })?;
+        validate_canvas_draft_document(document, "template version document")?;
+    }
+
+    for copy in &runtime.working_copies {
+        let source = required_object(copy.source.as_ref(), "working copy source")?;
+        validate_canvas_draft_source(source, "working copy source")?;
+        let draft = copy
+            .draft
+            .as_ref()
+            .ok_or_else(|| ContractError::Validation("working copy draft is required".into()))?;
+        validate_canvas_draft_document(draft, "working copy draft")?;
+        required_string(copy.updated_at.as_deref(), "working copy updatedAt", true)?;
+    }
+
+    Ok(())
+}
+
+fn validate_archive_inventory_records(inventory: &InventorySnapshot) -> Result<(), ContractError> {
+    for material in &inventory.materials {
+        if material.current_quantity < 0 {
+            return Err(ContractError::Validation(format!(
+                "material {} currentQuantity must be non-negative",
+                material.id
+            )));
+        }
+        required_string(material.created_at.as_deref(), "material createdAt", true)?;
+        required_string(material.updated_at.as_deref(), "material updatedAt", true)?;
+    }
+
+    for adjustment in &inventory.adjustments {
+        if !matches!(adjustment.kind.as_str(), "in" | "out" | "correction") {
+            return Err(ContractError::Validation(format!(
+                "adjustment {} has invalid kind {}",
+                adjustment.id, adjustment.kind
+            )));
+        }
+        if adjustment.quantity_delta.is_none() {
+            return Err(ContractError::Validation(format!(
+                "adjustment {} quantityDelta is required",
+                adjustment.id
+            )));
+        }
+        match adjustment.target_quantity {
+            Some(MISSING_ADJUSTMENT_TARGET_QUANTITY) => {
+                return Err(ContractError::Validation(format!(
+                    "adjustment {} targetQuantity is required",
+                    adjustment.id
+                )));
+            }
+            Some(value) if value < 0 => {
+                return Err(ContractError::Validation(format!(
+                    "adjustment {} targetQuantity must be non-negative or null",
+                    adjustment.id
+                )));
+            }
+            _ => {}
+        }
+        let quantity_after = adjustment.quantity_after.ok_or_else(|| {
+            ContractError::Validation(format!(
+                "adjustment {} quantityAfter is required",
+                adjustment.id
+            ))
+        })?;
+        if quantity_after < 0 {
+            return Err(ContractError::Validation(format!(
+                "adjustment {} quantityAfter must be non-negative",
+                adjustment.id
+            )));
+        }
+        required_string(
+            adjustment.created_at.as_deref(),
+            "adjustment createdAt",
+            true,
+        )?;
+    }
+
     Ok(())
 }
 
@@ -934,6 +1667,10 @@ pub fn normalize_legacy_value(value: Value) -> Result<Value, ContractError> {
                 .entry("schema")
                 .or_insert_with(|| Value::String(RUNTIME_EXPORT_SCHEMA.into()));
             runtime.entry("exportedAt").or_insert(exported_at);
+            runtime.entry("snapshotUpdatedAt").or_insert(Value::Null);
+            runtime
+                .entry("settings")
+                .or_insert_with(|| Value::Object(Default::default()));
             for key in ["templates", "versions", "workingCopies"] {
                 runtime.entry(key).or_insert_with(|| Value::Array(vec![]));
             }

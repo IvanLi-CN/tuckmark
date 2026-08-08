@@ -16,6 +16,8 @@ fn authority_round_trips_portable_zip_archives_after_hash_confirmation() {
                     "id": "zip-material",
                     "fullName": "Portable ZIP Material",
                     "currentQuantity": 7,
+                    "createdAt": "2026-01-01T00:00:00Z",
+                    "updatedAt": "2026-01-01T00:00:00Z",
                     "labelBindings": []
                 }),
             )],

@@ -1,5 +1,6 @@
 use std::{
     fs,
+    path::Path,
     sync::{Arc, Barrier, Mutex},
 };
 
@@ -74,6 +75,16 @@ fn fixture_options(probe: impl ProcessProbe + 'static) -> DataAuthorityOptions {
         process_probe: Arc::new(probe),
         clock: Arc::new(FixedClock),
     }
+}
+
+fn backup_file_paths(directory: &Path) -> Vec<std::path::PathBuf> {
+    let mut paths = fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_file())
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths
 }
 
 #[test]
@@ -168,6 +179,82 @@ fn authority_recovers_a_frozen_wal_before_its_first_read() {
             .exists()
     );
     assert!(!control.join("8-fixture-transaction.json").exists());
+}
+
+#[test]
+fn authority_rejects_legacy_wal_gaps_when_managed_data_already_exists() {
+    let directory = tempdir().unwrap();
+    let transactions = directory.path().join(".tuckmark/transactions");
+    fs::create_dir_all(&transactions).unwrap();
+    fs::create_dir_all(directory.path().join("settings")).unwrap();
+    fs::write(
+        directory.path().join("settings/app-settings.json"),
+        r#"{"updatedAt":"2026-01-01T00:00:00Z"}"#,
+    )
+    .unwrap();
+    fs::write(
+        transactions.join("8-legacy.json"),
+        serde_json::to_vec_pretty(&json!({
+            "schema": "tuckmark.devd-data-transaction.v1",
+            "revision": 8,
+            "writes": [],
+            "deletes": [],
+            "event": {
+                "revision": 8,
+                "domains": ["settings"],
+                "reason": "legacy-gap"
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        DataAuthority::open(directory.path()),
+        Err(DataAuthorityError::CorruptTransaction(message)) if message.contains("expected 1")
+    ));
+    assert!(transactions.join("8-legacy.json").exists());
+}
+
+#[test]
+fn authority_only_cleans_an_already_committed_journal() {
+    let directory = tempdir().unwrap();
+    let transactions = directory.path().join(".tuckmark/transactions");
+    fs::create_dir_all(&transactions).unwrap();
+    fs::write(
+        directory.path().join(".tuckmark/state.json"),
+        r#"{"schema":"tuckmark.devd-data-state.v1","revision":1,"updatedAt":"2026-01-01T00:00:00Z"}"#,
+    )
+    .unwrap();
+    fs::write(
+        transactions.join("1-committed.json"),
+        serde_json::to_vec_pretty(&json!({
+            "schema": "tuckmark.devd-data-transaction.v1",
+            "revision": 1,
+            "writes": [{
+                "relativePath": "inventory/materials/should-not-be-written.json",
+                "value": { "id": "should-not-be-written" }
+            }],
+            "deletes": [],
+            "event": {
+                "revision": 1,
+                "domains": ["inventory"],
+                "reason": "completed"
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    assert_eq!(authority.revision().unwrap(), 1);
+    assert!(
+        !directory
+            .path()
+            .join("inventory/materials/should-not-be-written.json")
+            .exists()
+    );
+    assert!(!transactions.join("1-committed.json").exists());
 }
 
 #[test]
@@ -371,6 +458,8 @@ fn authority_exports_inspects_and_restores_archives_atomically() {
                     "id": "archive-material",
                     "fullName": "Archive Material",
                     "currentQuantity": 12,
+                    "createdAt": "2026-01-01T00:00:00Z",
+                    "updatedAt": "2026-01-01T00:00:00Z",
                     "labelBindings": []
                 }),
             )],
@@ -423,7 +512,7 @@ fn authority_exports_inspects_and_restores_archives_atomically() {
         12
     );
     assert_eq!(
-        target.list_json_files("backups/protection").unwrap().len(),
+        backup_file_paths(&target.root().join("backups/protection")).len(),
         1
     );
 }
@@ -441,6 +530,8 @@ fn authority_rejects_archive_merge_conflicts_and_orphaned_archive_records() {
                     "id": "same-material",
                     "fullName": "Current Material",
                     "currentQuantity": 0,
+                    "createdAt": "2026-01-01T00:00:00Z",
+                    "updatedAt": "2026-01-01T00:00:00Z",
                     "labelBindings": []
                 }),
             )],
@@ -494,12 +585,86 @@ fn authority_retains_the_newest_twenty_protection_archives() {
     }
 
     assert_eq!(revision, 21);
+    let protection = backup_file_paths(&authority.root().join("backups/protection"));
+    assert_eq!(protection.len(), 20);
+    assert!(
+        protection
+            .iter()
+            .all(|path| path.extension().is_some_and(|extension| extension == "zip"))
+    );
+}
+
+#[test]
+fn authority_writes_manual_and_protection_backups_as_portable_zip_archives() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+
+    let manual = authority.create_backup(0).unwrap();
     assert_eq!(
-        authority
-            .list_json_files("backups/protection")
+        manual
+            .path
+            .extension()
+            .and_then(|extension| extension.to_str()),
+        Some("zip")
+    );
+    let manual_inspection = authority
+        .inspect_archive_zip(&fs::read(&manual.path).unwrap())
+        .unwrap();
+    assert_eq!(manual_inspection.summary.materials, 0);
+
+    let archive = authority.export_archive().unwrap();
+    let archive_hash = authority.inspect_archive(&archive).unwrap().archive_hash;
+    authority
+        .import_archive(&archive, &archive_hash, ArchiveImportMode::Replace, 1)
+        .unwrap();
+
+    let protection = backup_file_paths(&authority.root().join("backups/protection"));
+    assert_eq!(protection.len(), 1);
+    assert_eq!(
+        protection[0]
+            .extension()
+            .and_then(|extension| extension.to_str()),
+        Some("zip")
+    );
+    let protection_inspection = authority
+        .inspect_archive_zip(&fs::read(&protection[0]).unwrap())
+        .unwrap();
+    assert_eq!(protection_inspection.summary.materials, 0);
+}
+
+#[test]
+fn authority_retention_counts_legacy_json_and_portable_zip_protection_backups() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    let archive = authority.export_archive().unwrap();
+    let archive_hash = authority.inspect_archive(&archive).unwrap().archive_hash;
+    let protection_directory = authority.root().join("backups/protection");
+    fs::create_dir_all(&protection_directory).unwrap();
+    fs::write(
+        protection_directory.join("legacy.json"),
+        serde_json::to_vec(&archive).unwrap(),
+    )
+    .unwrap();
+
+    let mut revision = 0;
+    for _ in 0..20 {
+        revision = authority
+            .import_archive(
+                &archive,
+                &archive_hash,
+                ArchiveImportMode::Replace,
+                revision,
+            )
             .unwrap()
-            .len(),
-        20
+            .revision;
+    }
+
+    let retained = backup_file_paths(&protection_directory);
+    assert_eq!(retained.len(), 20);
+    assert!(
+        retained
+            .iter()
+            .any(|path| path.extension().is_some_and(|ext| ext == "zip"))
     );
 }
 
@@ -564,6 +729,57 @@ fn agent_import_normalizes_material_defaults_and_matrix_codes() {
     assert_eq!(material["description"], "");
     assert_eq!(material["deviceDetails"], "");
     assert_eq!(material["packagingRemark"], "");
+}
+
+#[test]
+fn agent_import_falls_back_to_the_proposal_source_note() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    let manager = AgentImportManager::new(authority.clone());
+    let proposal: AgentImportProposal = serde_json::from_value(json!({
+        "schema": "tuckmark.agent-import.v1",
+        "sourceNote": "proposal-wide source note",
+        "items": [{
+            "id": "proposal-note-material",
+            "kind": "new",
+            "quantity": 1,
+            "material": { "fullName": "Proposal note material" },
+            "template": {
+                "source": "system",
+                "id": "cable-tag",
+                "name": "Caller supplied name is ignored",
+                "fields": []
+            },
+            "templateInput": { "name": "Proposal note material" }
+        }]
+    }))
+    .unwrap();
+    manager
+        .create_session(CreateAgentImportSession {
+            id: "proposal-note-session".into(),
+            secret: "synthetic-secret-at-least-sixteen".into(),
+            proposal,
+        })
+        .unwrap();
+
+    manager
+        .confirm("proposal-note-session", "synthetic-secret-at-least-sixteen")
+        .unwrap();
+    let adjustment_path = authority
+        .list_json_files("inventory/adjustments")
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    let adjustment_path = adjustment_path
+        .strip_prefix(authority.root())
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    assert_eq!(
+        authority.read_json(&adjustment_path).unwrap().unwrap()["note"],
+        "proposal-wide source note"
+    );
 }
 
 #[test]

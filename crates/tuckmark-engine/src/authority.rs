@@ -6,6 +6,10 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
+use serde::{
+    Serialize, Serializer,
+    ser::{SerializeMap, SerializeSeq},
+};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -280,8 +284,8 @@ impl DataAuthority {
 
     /// Exports the portable `tuckmark.runtime-export-archive.v1` directory-tree ZIP.
     ///
-    /// The DEVD JSON archive remains available through [`Self::export_archive`] because
-    /// manual/protection snapshots use that persistence format for compatibility.
+    /// The DEVD JSON archive remains available through [`Self::export_archive`] for
+    /// in-process consumers; durable manual and protection snapshots are portable ZIPs.
     pub fn export_archive_zip(&self) -> Result<Vec<u8>, DataAuthorityError> {
         let _guard = self.lock_mutation()?;
         self.recover_transactions_locked()?;
@@ -315,14 +319,19 @@ impl DataAuthority {
         let _guard = self.lock_mutation()?;
         self.recover_transactions_locked()?;
         let archive = self.build_archive_locked()?;
-        let name = format!("{}-{}.json", self.inner.options.clock.now(), Uuid::new_v4());
+        let actual = self.read_revision_locked()?;
+        if actual != expected_revision {
+            return Err(DataAuthorityError::RevisionConflict {
+                expected: expected_revision,
+                actual,
+            });
+        }
+        let name = format!("{}-{}.zip", self.inner.options.clock.now(), Uuid::new_v4());
         let relative_path = format!("backups/manual/{name}");
+        write_archive_zip(&self.resolve_relative(&relative_path)?, &archive)?;
         let event = self.commit_locked(CommitRequest {
             expected_revision,
-            writes: vec![JsonWrite::new(
-                relative_path.clone(),
-                serde_json::to_value(archive)?,
-            )],
+            writes: vec![],
             deletes: vec![],
             domains: vec!["archive".into()],
             reason: "backup-created".into(),
@@ -366,15 +375,12 @@ impl DataAuthority {
             ArchiveImportMode::Merge => merge_archives(&current, archive),
         };
         next.validate()?;
-        let mut writes = archive_writes(&next)?;
-        writes.push(JsonWrite::new(
-            format!(
-                "backups/protection/{}-{}.json",
-                self.inner.options.clock.now(),
-                Uuid::new_v4()
-            ),
-            serde_json::to_value(current)?,
-        ));
+        let writes = archive_writes(&next)?;
+        let protection_relative_path = format!(
+            "backups/protection/{}-{}.zip",
+            self.inner.options.clock.now(),
+            Uuid::new_v4()
+        );
         let deletes = match mode {
             ArchiveImportMode::Merge => vec![],
             ArchiveImportMode::Replace => {
@@ -390,6 +396,7 @@ impl DataAuthority {
         };
         let mut deletes = deletes;
         deletes.extend(self.protection_snapshot_deletions_locked()?);
+        write_archive_zip(&self.resolve_relative(&protection_relative_path)?, &current)?;
         let event = self.commit_locked(CommitRequest {
             expected_revision,
             writes,
@@ -523,15 +530,17 @@ impl DataAuthority {
                 )));
             }
         }
-        let allow_isolated_legacy_gap = state_was_missing && journals.len() == 1;
+        let allow_isolated_legacy_gap = state_was_missing
+            && journals.len() == 1
+            && self.known_data_paths_locked()?.is_empty()
+            && journal_revision_matches_filename(&journals[0].0, journals[0].1.revision);
         for (journal_path, transaction) in journals {
             let current = self.read_revision_locked()?;
             match current.cmp(&transaction.revision) {
                 std::cmp::Ordering::Greater => {}
-                std::cmp::Ordering::Equal => {
-                    self.validate_transaction_integrity_locked(&transaction)?;
-                    self.apply_transaction_locked(&transaction)?;
-                }
+                // The state write is the transaction commit point. A matching journal is
+                // therefore already applied and only needs durable cleanup.
+                std::cmp::Ordering::Equal => {}
                 std::cmp::Ordering::Less => {
                     let expected = current.saturating_add(1);
                     if transaction.revision != expected && !allow_isolated_legacy_gap {
@@ -713,7 +722,7 @@ impl DataAuthority {
     fn protection_snapshot_deletions_locked(&self) -> Result<Vec<String>, DataAuthorityError> {
         const MAX_PROTECTION_SNAPSHOTS: usize = 20;
         let directory = self.inner.root.join("backups/protection");
-        let mut snapshots = list_json_files(&directory)?
+        let mut snapshots = list_backup_files(&directory)?
             .into_iter()
             .map(|path| {
                 let modified = fs::metadata(&path)
@@ -758,6 +767,13 @@ impl DataAuthority {
         manifest.validate()?;
         atomic_write_json(&manifest_path, &manifest)
     }
+}
+
+fn journal_revision_matches_filename(path: &Path, revision: u64) -> bool {
+    path.file_stem()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.split_once('-'))
+        .is_some_and(|(prefix, _)| prefix == revision.to_string())
 }
 
 #[cfg(target_os = "linux")]
@@ -830,10 +846,31 @@ fn macos_process_start_identity(pid: u32) -> Option<String> {
         return None;
     }
     let info = unsafe { info.assume_init() };
-    Some(format!(
-        "{}.{}",
-        info.pbi_start_tvsec, info.pbi_start_tvusec
-    ))
+    macos_lstart_identity(info.pbi_start_tvsec)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_lstart_identity(seconds: u64) -> Option<String> {
+    let seconds: libc::time_t = seconds.try_into().ok()?;
+    let mut local_time = std::mem::MaybeUninit::<libc::tm>::zeroed();
+    if unsafe { libc::localtime_r(&seconds, local_time.as_mut_ptr()) }.is_null() {
+        return None;
+    }
+    let local_time = unsafe { local_time.assume_init() };
+    let mut output = [0_i8; 64];
+    let written = unsafe {
+        libc::strftime(
+            output.as_mut_ptr(),
+            output.len(),
+            c"%a %b %e %T %Y".as_ptr(),
+            &local_time,
+        )
+    };
+    if written == 0 {
+        return None;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(output.as_ptr().cast::<u8>(), written) };
+    String::from_utf8(bytes.to_vec()).ok()
 }
 
 fn ensure_owner(path: &Path, options: &DataAuthorityOptions) -> Result<(), DataAuthorityError> {
@@ -1014,6 +1051,31 @@ fn atomic_write_json<T: serde::Serialize>(
     result
 }
 
+fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<(), DataAuthorityError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| DataAuthorityError::InvalidPath(path.display().to_string()))?;
+    fs::create_dir_all(parent)?;
+    let temporary = parent.join(format!(
+        ".{}.{}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("value"),
+        Uuid::new_v4()
+    ));
+    let result = (|| -> Result<(), DataAuthorityError> {
+        let mut file = File::create(&temporary)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temporary);
+    }
+    result
+}
+
 fn contract_to_io(error: ContractError) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, error.to_string())
 }
@@ -1043,6 +1105,27 @@ fn list_json_files(directory: &Path) -> Result<Vec<PathBuf>, DataAuthorityError>
             let path = entry.path();
             (entry.file_type().ok()?.is_file() && path.extension().is_some_and(|ext| ext == "json"))
                 .then_some(path)
+        })
+        .collect::<Vec<_>>();
+    files.sort();
+    Ok(files)
+}
+
+fn list_backup_files(directory: &Path) -> Result<Vec<PathBuf>, DataAuthorityError> {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(error) => return Err(error.into()),
+    };
+    let mut files = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            (entry.file_type().ok()?.is_file()
+                && path
+                    .extension()
+                    .is_some_and(|extension| extension == "zip" || extension == "json"))
+            .then_some(path)
         })
         .collect::<Vec<_>>();
     files.sort();
@@ -1161,12 +1244,885 @@ fn archive_from_zip(archive_zip: &[u8]) -> Result<DevdDataArchive, DataAuthority
     }
 }
 
+fn write_archive_zip(path: &Path, archive: &DevdDataArchive) -> Result<(), DataAuthorityError> {
+    let bytes = DirectoryTreeArchive::from_devd_data_archive(archive)?.encode_zip()?;
+    atomic_write_bytes(path, &bytes)
+}
+
 fn archive_hash(archive: &DevdDataArchive) -> Result<String, DataAuthorityError> {
     let mut hasher = Sha256::new();
-    // TS computes this confirmation token from JSON.stringify(archive), without the
-    // pretty-print newline used for durable JSON files.
-    hasher.update(serde_json::to_vec(archive)?);
+    // The existing runtime hashes JSON.stringify() after its Zod schemas rebuild
+    // the archive objects. These serializers reproduce that schema field order;
+    // durable file JSON remains independently canonical and pretty-printed.
+    hasher.update(serde_json::to_vec(&TypeScriptArchive(archive))?);
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+struct TypeScriptArchive<'a>(&'a DevdDataArchive);
+
+impl Serialize for TypeScriptArchive<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let archive = self.0;
+        let mut map = serializer.serialize_map(Some(4))?;
+        map.serialize_entry("schema", &archive.schema)?;
+        map.serialize_entry("exportedAt", &archive.exported_at)?;
+        map.serialize_entry("runtime", &TypeScriptRuntime(&archive.runtime))?;
+        map.serialize_entry("inventory", &TypeScriptInventory(&archive.inventory))?;
+        map.end()
+    }
+}
+
+struct TypeScriptRuntime<'a>(&'a RuntimeSnapshot);
+
+impl Serialize for TypeScriptRuntime<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let runtime = self.0;
+        let mut map = serializer.serialize_map(Some(7))?;
+        map.serialize_entry("schema", &runtime.schema)?;
+        map.serialize_entry("exportedAt", &runtime.exported_at)?;
+        map.serialize_entry("snapshotUpdatedAt", &runtime.snapshot_updated_at)?;
+        map.serialize_entry("settings", &JavaScriptValue(&runtime.settings))?;
+        map.serialize_entry("templates", &TypeScriptTemplates(&runtime.templates))?;
+        map.serialize_entry("versions", &TypeScriptVersions(&runtime.versions))?;
+        map.serialize_entry(
+            "workingCopies",
+            &TypeScriptWorkingCopies(&runtime.working_copies),
+        )?;
+        map.end()
+    }
+}
+
+struct TypeScriptInventory<'a>(&'a InventorySnapshot);
+
+impl Serialize for TypeScriptInventory<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let inventory = self.0;
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("materials", &TypeScriptMaterials(&inventory.materials))?;
+        map.serialize_entry(
+            "adjustments",
+            &TypeScriptAdjustments(&inventory.adjustments),
+        )?;
+        map.end()
+    }
+}
+
+struct TypeScriptTemplates<'a>(&'a [TemplateRecord]);
+
+impl Serialize for TypeScriptTemplates<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for record in self.0 {
+            sequence.serialize_element(&TypeScriptTemplate(record))?;
+        }
+        sequence.end()
+    }
+}
+
+struct TypeScriptVersions<'a>(&'a [TemplateVersion]);
+
+impl Serialize for TypeScriptVersions<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for record in self.0 {
+            sequence.serialize_element(&TypeScriptVersion(record))?;
+        }
+        sequence.end()
+    }
+}
+
+struct TypeScriptWorkingCopies<'a>(&'a [WorkingCopyRecord]);
+
+impl Serialize for TypeScriptWorkingCopies<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for record in self.0 {
+            sequence.serialize_element(&TypeScriptWorkingCopy(record))?;
+        }
+        sequence.end()
+    }
+}
+
+struct TypeScriptMaterials<'a>(&'a [InventoryMaterial]);
+
+impl Serialize for TypeScriptMaterials<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for record in self.0 {
+            sequence.serialize_element(&TypeScriptMaterial(record))?;
+        }
+        sequence.end()
+    }
+}
+
+struct TypeScriptAdjustments<'a>(&'a [InventoryAdjustment]);
+
+impl Serialize for TypeScriptAdjustments<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for record in self.0 {
+            sequence.serialize_element(&TypeScriptAdjustment(record))?;
+        }
+        sequence.end()
+    }
+}
+
+struct TypeScriptTemplate<'a>(&'a TemplateRecord);
+
+impl Serialize for TypeScriptTemplate<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let record = self.0;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("id", &record.id)?;
+        map.serialize_entry("name", &record.name)?;
+        map.serialize_entry("description", &record.description.as_deref().unwrap_or(""))?;
+        map.serialize_entry("width", &JavaScriptNumber(record.width.unwrap_or_default()))?;
+        map.serialize_entry(
+            "height",
+            &JavaScriptNumber(record.height.unwrap_or_default()),
+        )?;
+        map.serialize_entry("createdAt", &record.created_at.as_deref().unwrap_or(""))?;
+        map.serialize_entry("updatedAt", &record.updated_at.as_deref().unwrap_or(""))?;
+        if let Some(archived_at) = &record.archived_at {
+            map.serialize_entry("archivedAt", archived_at)?;
+        }
+        map.serialize_entry(
+            "currentVersionId",
+            &record.current_version_id.as_deref().unwrap_or(""),
+        )?;
+        map.serialize_entry("fieldOrder", &record.field_order)?;
+        if let Some(recommended_use) = type_script_recommended_use(&record.extra) {
+            map.serialize_entry("recommendedUse", &recommended_use)?;
+        }
+        map.end()
+    }
+}
+
+struct JavaScriptNumber(f64);
+
+impl Serialize for JavaScriptNumber {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if self.0 == 0.0 {
+            serializer.serialize_u8(0)
+        } else if self.0.fract() == 0.0 && self.0 >= i64::MIN as f64 && self.0 <= i64::MAX as f64 {
+            serializer.serialize_i64(self.0 as i64)
+        } else {
+            serializer.serialize_f64(self.0)
+        }
+    }
+}
+
+struct JavaScriptValue<'a>(&'a Value);
+
+impl Serialize for JavaScriptValue<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.0 {
+            Value::Null => serializer.serialize_unit(),
+            Value::Bool(value) => serializer.serialize_bool(*value),
+            Value::Number(value) => {
+                if let Some(value) = value.as_i64() {
+                    serializer.serialize_i64(value)
+                } else if let Some(value) = value.as_u64() {
+                    serializer.serialize_u64(value)
+                } else {
+                    JavaScriptNumber(value.as_f64().unwrap_or_default()).serialize(serializer)
+                }
+            }
+            Value::String(value) => serializer.serialize_str(value),
+            Value::Array(values) => {
+                let mut sequence = serializer.serialize_seq(Some(values.len()))?;
+                for value in values {
+                    sequence.serialize_element(&JavaScriptValue(value))?;
+                }
+                sequence.end()
+            }
+            Value::Object(values) => {
+                let mut map = serializer.serialize_map(Some(values.len()))?;
+                for (key, value) in values {
+                    map.serialize_entry(key, &JavaScriptValue(value))?;
+                }
+                map.end()
+            }
+        }
+    }
+}
+
+struct TypeScriptCanvasDocument<'a>(&'a Value);
+
+impl Serialize for TypeScriptCanvasDocument<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let Some(document) = self.0.as_object() else {
+            return JavaScriptValue(self.0).serialize(serializer);
+        };
+        let mut map = serializer.serialize_map(None)?;
+        for field in ["version", "unit", "id", "presetId", "name"] {
+            serialize_document_value(&mut map, document, field)?;
+        }
+        if let Some(source) = document.get("source") {
+            map.serialize_entry("source", &TypeScriptCanvasSource(source))?;
+        }
+        for field in [
+            "templateId",
+            "baseVersionId",
+            "lastSavedAt",
+            "width",
+            "height",
+            "renderOptions",
+        ] {
+            serialize_document_value(&mut map, document, field)?;
+        }
+        let has_recommended_use = document.contains_key("recommendedUse");
+        let legacy_recommended_use = (!has_recommended_use)
+            .then(|| {
+                document
+                    .get("recommendedUses")
+                    .and_then(Value::as_array)
+                    .and_then(|values| {
+                        let values = values
+                            .iter()
+                            .filter_map(normalize_recommended_use)
+                            .collect::<Vec<_>>();
+                        (!values.is_empty()).then(|| values.join("；"))
+                    })
+            })
+            .flatten();
+        if let Some(recommended_use) = document
+            .get("recommendedUse")
+            .and_then(normalize_recommended_use)
+        {
+            map.serialize_entry("recommendedUse", &recommended_use)?;
+        }
+        if let Some(fields) = document.get("fields") {
+            map.serialize_entry("fields", &TypeScriptCanvasFields(fields))?;
+        }
+        if let Some(elements) = document.get("elements") {
+            map.serialize_entry("elements", &TypeScriptCanvasElements(elements))?;
+        }
+        if let Some(editor) = document.get("editor") {
+            map.serialize_entry("editor", &TypeScriptCanvasEditor(editor))?;
+        }
+        for (key, value) in document {
+            if !matches!(
+                key.as_str(),
+                "version"
+                    | "unit"
+                    | "id"
+                    | "presetId"
+                    | "name"
+                    | "source"
+                    | "templateId"
+                    | "baseVersionId"
+                    | "lastSavedAt"
+                    | "width"
+                    | "height"
+                    | "renderOptions"
+                    | "recommendedUse"
+                    | "recommendedUses"
+                    | "fields"
+                    | "elements"
+                    | "editor"
+            ) {
+                map.serialize_entry(key, &JavaScriptValue(value))?;
+            }
+        }
+        if let Some(recommended_use) = legacy_recommended_use {
+            map.serialize_entry("recommendedUse", &recommended_use)?;
+        }
+        map.end()
+    }
+}
+
+fn serialize_document_value<M>(
+    map: &mut M,
+    document: &serde_json::Map<String, Value>,
+    field: &'static str,
+) -> Result<(), M::Error>
+where
+    M: SerializeMap,
+{
+    if let Some(value) = document.get(field) {
+        map.serialize_entry(field, &JavaScriptValue(value))?;
+    }
+    Ok(())
+}
+
+struct TypeScriptCanvasSource<'a>(&'a Value);
+
+impl Serialize for TypeScriptCanvasSource<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let Some(source) = self.0.as_object() else {
+            return JavaScriptValue(self.0).serialize(serializer);
+        };
+        let mut map = serializer.serialize_map(Some(2))?;
+        if let Some(kind) = source.get("kind") {
+            map.serialize_entry("kind", &JavaScriptValue(kind))?;
+        }
+        let identifier = match source.get("kind").and_then(Value::as_str) {
+            Some("user-template") => "templateId",
+            _ => "presetId",
+        };
+        if let Some(value) = source.get(identifier) {
+            map.serialize_entry(identifier, &JavaScriptValue(value))?;
+        }
+        map.end()
+    }
+}
+
+struct TypeScriptCanvasFields<'a>(&'a Value);
+
+impl Serialize for TypeScriptCanvasFields<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let Some(fields) = self.0.as_array() else {
+            return JavaScriptValue(self.0).serialize(serializer);
+        };
+        let mut sequence = serializer.serialize_seq(Some(fields.len()))?;
+        for field in fields {
+            sequence.serialize_element(&TypeScriptCanvasField(field))?;
+        }
+        sequence.end()
+    }
+}
+
+struct TypeScriptCanvasField<'a>(&'a Value);
+
+impl Serialize for TypeScriptCanvasField<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let Some(field) = self.0.as_object() else {
+            return JavaScriptValue(self.0).serialize(serializer);
+        };
+        let mut map = serializer.serialize_map(None)?;
+        for key in ["key", "label"] {
+            if let Some(value) = field.get(key) {
+                map.serialize_entry(key, &JavaScriptValue(value))?;
+            }
+        }
+        for (key, value) in field {
+            if !matches!(key.as_str(), "key" | "label") {
+                map.serialize_entry(key, &JavaScriptValue(value))?;
+            }
+        }
+        map.end()
+    }
+}
+
+struct TypeScriptCanvasElements<'a>(&'a Value);
+
+impl Serialize for TypeScriptCanvasElements<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let Some(elements) = self.0.as_array() else {
+            return JavaScriptValue(self.0).serialize(serializer);
+        };
+        let mut sequence = serializer.serialize_seq(Some(elements.len()))?;
+        for element in elements {
+            sequence.serialize_element(&TypeScriptCanvasElement(element))?;
+        }
+        sequence.end()
+    }
+}
+
+struct TypeScriptCanvasElement<'a>(&'a Value);
+
+impl Serialize for TypeScriptCanvasElement<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let Some(element) = self.0.as_object() else {
+            return JavaScriptValue(self.0).serialize(serializer);
+        };
+        let mut map = serializer.serialize_map(None)?;
+        if let Some(id) = element.get("id") {
+            map.serialize_entry("id", &JavaScriptValue(id))?;
+        }
+        if let Some(meta) = element.get("meta") {
+            map.serialize_entry("meta", &TypeScriptCanvasMeta(meta))?;
+        }
+        if let Some(binding) = element.get("binding") {
+            map.serialize_entry("binding", &TypeScriptCanvasBinding(binding))?;
+        }
+        let kind = element
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if let Some(value) = element.get("kind") {
+            map.serialize_entry("kind", &JavaScriptValue(value))?;
+        }
+        for field in canvas_element_fields(kind) {
+            if let Some(value) = element.get(*field) {
+                map.serialize_entry(*field, &JavaScriptValue(value))?;
+            }
+        }
+        map.end()
+    }
+}
+
+fn canvas_element_fields(kind: &str) -> &'static [&'static str] {
+    match kind {
+        "text" => &[
+            "x",
+            "y",
+            "width",
+            "height",
+            "fontSize",
+            "fontFamily",
+            "lineHeight",
+            "fontWeight",
+            "align",
+            "justifyAlign",
+            "verticalAlign",
+            "stretchXGrow",
+            "stretchXShrink",
+            "stretchYGrow",
+            "stretchYShrink",
+            "stretchX",
+            "stretchY",
+            "autoWrap",
+            "adaptiveFontSize",
+            "verticalText",
+            "value",
+            "maxLines",
+            "rotation",
+        ],
+        "rect" => &[
+            "x",
+            "y",
+            "width",
+            "height",
+            "strokeWidth",
+            "fill",
+            "stroke",
+            "radius",
+            "rotation",
+        ],
+        "circle" => &["x", "y", "size", "strokeWidth", "fill", "stroke"],
+        "triangle" => &[
+            "x",
+            "y",
+            "width",
+            "height",
+            "strokeWidth",
+            "fill",
+            "stroke",
+            "rotation",
+        ],
+        "line" => &["x", "y", "x2", "y2", "strokeWidth", "stroke"],
+        "barcode" => &[
+            "x",
+            "y",
+            "width",
+            "height",
+            "value",
+            "format",
+            "showValue",
+            "rotation",
+        ],
+        "qr" => &[
+            "x",
+            "y",
+            "size",
+            "value",
+            "errorCorrectionLevel",
+            "rotation",
+        ],
+        "datamatrix" => &["x", "y", "size", "value", "rotation"],
+        _ => &[],
+    }
+}
+
+struct TypeScriptCanvasMeta<'a>(&'a Value);
+
+impl Serialize for TypeScriptCanvasMeta<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let Some(meta) = self.0.as_object() else {
+            return JavaScriptValue(self.0).serialize(serializer);
+        };
+        let mut map = serializer.serialize_map(Some(3))?;
+        for key in ["name", "visible", "locked"] {
+            if let Some(value) = meta.get(key) {
+                map.serialize_entry(key, &JavaScriptValue(value))?;
+            }
+        }
+        map.end()
+    }
+}
+
+struct TypeScriptCanvasBinding<'a>(&'a Value);
+
+impl Serialize for TypeScriptCanvasBinding<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let Some(binding) = self.0.as_object() else {
+            return JavaScriptValue(self.0).serialize(serializer);
+        };
+        let mut map = serializer.serialize_map(Some(2))?;
+        for key in ["fieldKey", "kind"] {
+            if let Some(value) = binding.get(key) {
+                map.serialize_entry(key, &JavaScriptValue(value))?;
+            }
+        }
+        map.end()
+    }
+}
+
+struct TypeScriptCanvasEditor<'a>(&'a Value);
+
+impl Serialize for TypeScriptCanvasEditor<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let Some(editor) = self.0.as_object() else {
+            return JavaScriptValue(self.0).serialize(serializer);
+        };
+        let mut map = serializer.serialize_map(Some(4))?;
+        if let Some(value) = editor.get("gridEnabled") {
+            map.serialize_entry("gridEnabled", &JavaScriptValue(value))?;
+        }
+        if let Some(value) = editor.get("gridSize") {
+            map.serialize_entry("gridSize", &JavaScriptNumber(normalize_grid_size(value)))?;
+        }
+        if let Some(value) = editor.get("snapEnabled") {
+            map.serialize_entry("snapEnabled", &JavaScriptValue(value))?;
+        }
+        if let Some(value) = editor.get("snapStep") {
+            map.serialize_entry("snapStep", &JavaScriptNumber(normalize_snap_step(value)))?;
+        }
+        map.end()
+    }
+}
+
+fn normalize_grid_size(value: &Value) -> f64 {
+    let value = value.as_f64().unwrap_or(1.0);
+    if [1.0, 2.0, 5.0].contains(&value) {
+        value
+    } else {
+        1.0
+    }
+}
+
+fn normalize_snap_step(value: &Value) -> f64 {
+    let value = value.as_f64().unwrap_or(1.0);
+    if [0.25, 0.5, 1.0].contains(&value) {
+        value
+    } else {
+        1.0
+    }
+}
+
+struct TypeScriptVersion<'a>(&'a TemplateVersion);
+
+impl Serialize for TypeScriptVersion<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let record = self.0;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("id", &record.id)?;
+        map.serialize_entry("templateId", &record.template_id)?;
+        map.serialize_entry("version", &record.version.unwrap_or_default())?;
+        map.serialize_entry("kind", &record.kind.as_deref().unwrap_or(""))?;
+        map.serialize_entry("createdAt", &record.created_at.as_deref().unwrap_or(""))?;
+        map.serialize_entry("label", &record.label.as_deref().unwrap_or(""))?;
+        if let Some(source_version_id) = &record.source_version_id {
+            map.serialize_entry("sourceVersionId", source_version_id)?;
+        }
+        map.serialize_entry(
+            "document",
+            &record.document.as_ref().map(TypeScriptCanvasDocument),
+        )?;
+        map.end()
+    }
+}
+
+struct TypeScriptWorkingCopy<'a>(&'a WorkingCopyRecord);
+
+impl Serialize for TypeScriptWorkingCopy<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let record = self.0;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("sourceKey", &record.source_key)?;
+        map.serialize_entry(
+            "source",
+            &record.source.as_ref().map(TypeScriptCanvasSource),
+        )?;
+        if let Some(template_id) = &record.template_id {
+            map.serialize_entry("templateId", template_id)?;
+        }
+        map.serialize_entry(
+            "draft",
+            &record.draft.as_ref().map(TypeScriptCanvasDocument),
+        )?;
+        map.serialize_entry("updatedAt", &record.updated_at.as_deref().unwrap_or(""))?;
+        if let Some(base_version_id) = &record.base_version_id {
+            map.serialize_entry("baseVersionId", base_version_id)?;
+        }
+        map.end()
+    }
+}
+
+struct TypeScriptMaterial<'a>(&'a InventoryMaterial);
+
+impl Serialize for TypeScriptMaterial<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let material = self.0;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("id", &material.id)?;
+        map.serialize_entry("fullName", &material.full_name)?;
+        for field in ["baseName", "variantName", "packageName"] {
+            if let Some(value) = material.extra.get(field) {
+                map.serialize_entry(field, &JavaScriptValue(value))?;
+            }
+        }
+        for field in ["description", "deviceDetails"] {
+            let value = material
+                .extra
+                .get(field)
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            map.serialize_entry(field, value)?;
+        }
+        if let Some(matrix_code) = &material.matrix_code {
+            map.serialize_entry("matrixCode", matrix_code)?;
+        }
+        let packaging_remark = material
+            .extra
+            .get("packagingRemark")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        map.serialize_entry("packagingRemark", packaging_remark)?;
+        map.serialize_entry("currentQuantity", &material.current_quantity)?;
+        map.serialize_entry("createdAt", &material.created_at.as_deref().unwrap_or(""))?;
+        map.serialize_entry("updatedAt", &material.updated_at.as_deref().unwrap_or(""))?;
+        if let Some(archived_at) = &material.archived_at {
+            map.serialize_entry("archivedAt", archived_at)?;
+        }
+        map.serialize_entry(
+            "labelBindings",
+            &TypeScriptBindings(&material.label_bindings),
+        )?;
+        serialize_material_passthrough(&mut map, material)?;
+        map.end()
+    }
+}
+
+struct TypeScriptBindings<'a>(&'a [tuckmark_contracts::LabelBinding]);
+
+impl Serialize for TypeScriptBindings<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for binding in self.0 {
+            sequence.serialize_element(&TypeScriptBinding(binding))?;
+        }
+        sequence.end()
+    }
+}
+
+struct TypeScriptBinding<'a>(&'a tuckmark_contracts::LabelBinding);
+
+impl Serialize for TypeScriptBinding<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let binding = self.0;
+        let default_print_quantity = Value::from(1);
+        let default_field_overrides = Value::Object(Default::default());
+        let mut map = serializer.serialize_map(Some(8))?;
+        map.serialize_entry("id", &binding.id)?;
+        map.serialize_entry("templateSource", &binding.template_source)?;
+        map.serialize_entry("templateId", &binding.template_id)?;
+        map.serialize_entry(
+            "templateName",
+            binding
+                .extra
+                .get("templateName")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )?;
+        map.serialize_entry(
+            "printQuantity",
+            &JavaScriptValue(
+                binding
+                    .extra
+                    .get("printQuantity")
+                    .unwrap_or(&default_print_quantity),
+            ),
+        )?;
+        map.serialize_entry(
+            "fieldOverrides",
+            &JavaScriptValue(
+                binding
+                    .extra
+                    .get("fieldOverrides")
+                    .unwrap_or(&default_field_overrides),
+            ),
+        )?;
+        map.serialize_entry(
+            "createdAt",
+            binding
+                .extra
+                .get("createdAt")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )?;
+        map.serialize_entry(
+            "updatedAt",
+            binding
+                .extra
+                .get("updatedAt")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )?;
+        map.end()
+    }
+}
+
+struct TypeScriptAdjustment<'a>(&'a InventoryAdjustment);
+
+impl Serialize for TypeScriptAdjustment<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let adjustment = self.0;
+        let mut map = serializer.serialize_map(Some(9))?;
+        map.serialize_entry("id", &adjustment.id)?;
+        map.serialize_entry("materialId", &adjustment.material_id)?;
+        map.serialize_entry("kind", &adjustment.kind)?;
+        map.serialize_entry(
+            "quantityDelta",
+            &adjustment.quantity_delta.unwrap_or_default(),
+        )?;
+        map.serialize_entry("targetQuantity", &adjustment.target_quantity)?;
+        map.serialize_entry(
+            "quantityAfter",
+            &adjustment.quantity_after.unwrap_or_default(),
+        )?;
+        map.serialize_entry("note", &adjustment.note.as_deref().unwrap_or(""))?;
+        map.serialize_entry("actor", &adjustment.actor.as_deref().unwrap_or("unknown"))?;
+        map.serialize_entry("createdAt", &adjustment.created_at.as_deref().unwrap_or(""))?;
+        map.end()
+    }
+}
+
+fn serialize_material_passthrough<M>(
+    map: &mut M,
+    material: &InventoryMaterial,
+) -> Result<(), M::Error>
+where
+    M: SerializeMap,
+{
+    for (key, value) in &material.extra {
+        if !matches!(
+            key.as_str(),
+            "baseName"
+                | "variantName"
+                | "packageName"
+                | "description"
+                | "deviceDetails"
+                | "packagingRemark"
+        ) {
+            map.serialize_entry(key, &JavaScriptValue(value))?;
+        }
+    }
+    Ok(())
+}
+
+fn type_script_recommended_use(extra: &tuckmark_contracts::ExtraFields) -> Option<String> {
+    extra
+        .get("recommendedUse")
+        .and_then(normalize_recommended_use)
+        .or_else(|| {
+            extra
+                .get("recommendedUses")
+                .and_then(Value::as_array)
+                .and_then(|values| {
+                    let values = values
+                        .iter()
+                        .filter_map(normalize_recommended_use)
+                        .collect::<Vec<_>>();
+                    (!values.is_empty()).then(|| values.join("；"))
+                })
+        })
+}
+
+fn normalize_recommended_use(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => {
+            let value = value.trim();
+            (!value.is_empty()).then(|| value.into())
+        }
+        Value::Object(value) => value
+            .get("scope")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        _ => None,
+    }
 }
 
 fn archive_summary(archive: &DevdDataArchive) -> ArchiveSummary {
@@ -1410,6 +2366,7 @@ fn count_working_copies(root: &Path) -> Result<u64, DataAuthorityError> {
 mod tests {
     #[cfg(target_os = "linux")]
     use super::process_start_identity_from_stat;
+    use serde_json::json;
 
     #[cfg(target_os = "linux")]
     #[test]
@@ -1436,10 +2393,113 @@ mod tests {
         assert!(!source.contains(&command_new));
     }
 
+    #[test]
+    fn archive_hash_serialization_uses_the_existing_schema_field_order() {
+        let archive = serde_json::from_value(json!({
+            "schema": "tuckmark.devd-data-archive.v1",
+            "exportedAt": "2026-01-02T03:04:05Z",
+            "runtime": {
+                "schema": "tuckmark.runtime-export.v1",
+                "exportedAt": "2026-01-02T03:04:05Z",
+                "snapshotUpdatedAt": null,
+                "settings": { "threshold": 144 },
+                "templates": [{
+                    "id": "template-one",
+                    "name": "Template One",
+                    "description": "",
+                    "width": 100,
+                    "height": 50,
+                    "createdAt": "2026-01-01T00:00:00Z",
+                    "updatedAt": "2026-01-01T00:00:00Z",
+                    "currentVersionId": "version-one",
+                    "fieldOrder": []
+                }],
+                "versions": [{
+                    "id": "version-one",
+                    "templateId": "template-one",
+                    "version": 1,
+                    "kind": "saved",
+                    "createdAt": "2026-01-01T00:00:00Z",
+                    "label": "",
+                    "document": {
+                        "version": 1,
+                        "id": "template-one",
+                        "presetId": "shipping-compact",
+                        "name": "Template One",
+                        "source": { "kind": "scratch", "presetId": "shipping-compact" },
+                        "width": 100,
+                        "height": 50,
+                        "fields": [],
+                        "elements": [],
+                        "editor": {
+                            "gridEnabled": true,
+                            "gridSize": 1,
+                            "snapEnabled": true,
+                            "snapStep": 1
+                        }
+                    }
+                }],
+                "workingCopies": []
+            },
+            "inventory": {
+                "materials": [{
+                    "id": "material-one",
+                    "fullName": "Material One",
+                    "description": "A material",
+                    "deviceDetails": "Device detail",
+                    "matrixCode": "MATRIX-1",
+                    "packagingRemark": "Boxed",
+                    "currentQuantity": 3,
+                    "createdAt": "2026-01-01T00:00:00Z",
+                    "updatedAt": "2026-01-01T00:00:00Z",
+                    "labelBindings": []
+                }],
+                "adjustments": []
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            serde_json::to_string(&super::TypeScriptArchive(&archive)).unwrap(),
+            r#"{"schema":"tuckmark.devd-data-archive.v1","exportedAt":"2026-01-02T03:04:05Z","runtime":{"schema":"tuckmark.runtime-export.v1","exportedAt":"2026-01-02T03:04:05Z","snapshotUpdatedAt":null,"settings":{"threshold":144},"templates":[{"id":"template-one","name":"Template One","description":"","width":100,"height":50,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","currentVersionId":"version-one","fieldOrder":[]}],"versions":[{"id":"version-one","templateId":"template-one","version":1,"kind":"saved","createdAt":"2026-01-01T00:00:00Z","label":"","document":{"version":1,"id":"template-one","presetId":"shipping-compact","name":"Template One","source":{"kind":"scratch","presetId":"shipping-compact"},"width":100,"height":50,"fields":[],"elements":[],"editor":{"gridEnabled":true,"gridSize":1,"snapEnabled":true,"snapStep":1}}}],"workingCopies":[]},"inventory":{"materials":[{"id":"material-one","fullName":"Material One","description":"A material","deviceDetails":"Device detail","matrixCode":"MATRIX-1","packagingRemark":"Boxed","currentQuantity":3,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","labelBindings":[]}],"adjustments":[]}}"#
+        );
+    }
+
+    #[test]
+    fn archive_hash_document_projection_matches_legacy_zod_transforms() {
+        let document = json!({
+            "version": 1,
+            "id": "legacy-template",
+            "presetId": "shipping-compact",
+            "name": "Legacy template",
+            "source": { "kind": "scratch", "presetId": "shipping-compact" },
+            "width": 100,
+            "height": 50,
+            "recommendedUses": [{ "scope": "electronics" }],
+            "fields": [],
+            "elements": [],
+            "editor": {
+                "gridEnabled": true,
+                "gridSize": 7,
+                "snapEnabled": true,
+                "snapStep": 2
+            },
+            "legacyFlag": "retained"
+        });
+
+        assert_eq!(
+            serde_json::to_string(&super::TypeScriptCanvasDocument(&document)).unwrap(),
+            r#"{"version":1,"id":"legacy-template","presetId":"shipping-compact","name":"Legacy template","source":{"kind":"scratch","presetId":"shipping-compact"},"width":100,"height":50,"fields":[],"elements":[],"editor":{"gridEnabled":true,"gridSize":1,"snapEnabled":true,"snapStep":1},"legacyFlag":"retained","recommendedUse":"electronics"}"#
+        );
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_reads_a_start_identity_through_libproc() {
         assert_eq!(std::mem::size_of::<super::ProcBsdInfo>(), 136);
-        assert!(super::macos_process_start_identity(std::process::id()).is_some());
+        let identity = super::macos_process_start_identity(std::process::id()).unwrap();
+        // Match `ps -o lstart=` without spawning `ps`: `Thu Feb  6 07:45:41 2026`.
+        assert_eq!(identity.len(), 24);
+        assert_eq!(identity.split_whitespace().count(), 5);
     }
 }
