@@ -245,14 +245,12 @@ export function createPendingDraftsDialog(
         source: { kind: "user-template", templateId: "power-module" },
         sourceKey: "user:power-module",
         updatedAt: STORY_TIMESTAMP,
-        activeCanvasTabCount: 1,
       },
       {
         label: "线缆标签",
         source: { kind: "preset-template", presetId: "cable-tag" },
         sourceKey: "preset:cable-tag",
         updatedAt: STORY_TIMESTAMP,
-        activeCanvasTabCount: 0,
       },
     ],
   }

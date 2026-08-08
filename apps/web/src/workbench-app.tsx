@@ -3219,7 +3219,6 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
           onInspectRestoreBackup={(entry) => void controller.inspectRestoreBackup(entry)}
           onRequestPermission={() => void controller.requestDataDirectoryPermission()}
           onOpenForceReplacementConfirmation={controller.openForceReplacementConfirmation}
-          onRequestDraftAttention={controller.requestDataReplacementDraftAttention}
           onSyncNow={() => void controller.syncDataDirectoryNow()}
           onTakeOverWrites={controller.takeOverDataDirectoryWrites}
         />
