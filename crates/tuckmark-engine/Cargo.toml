@@ -24,6 +24,8 @@ resvg = { version = "=0.48.1", default-features = false, features = ["text", "sy
 tiny-skia = "=0.12.0"
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 detonger-protocol = { git = "https://github.com/IvanLi-CN/detonger.git", rev = "3ef5904738bb528e8145ab3b9eb71bafc542341f" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
 detonger-printer = { git = "https://github.com/IvanLi-CN/detonger.git", rev = "3ef5904738bb528e8145ab3b9eb71bafc542341f" }
 
 [dev-dependencies]

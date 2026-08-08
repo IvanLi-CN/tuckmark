@@ -1,3 +1,4 @@
+#[cfg(target_os = "macos")]
 use std::marker::PhantomData;
 
 use detonger_protocol::{
@@ -57,6 +58,7 @@ pub trait PrintTransport {
 }
 
 /// Keeps the pinned `detonger-printer` crate in the native link graph without initiating BLE work.
+#[cfg(target_os = "macos")]
 #[derive(Clone, Debug, Default)]
 pub struct DetongerPrinterLink {
     _marker: PhantomData<detonger_printer::DeviceId>,
@@ -180,10 +182,12 @@ impl PrintEngine {
         transport.write_vendor_messages(packets)
     }
 
+    #[cfg(target_os = "macos")]
     pub fn static_printer_link() -> DetongerPrinterLink {
         DetongerPrinterLink::default()
     }
 
+    #[cfg(target_os = "macos")]
     pub fn static_printer_link_marker() -> &'static str {
         std::any::type_name::<detonger_printer::DeviceId>()
     }

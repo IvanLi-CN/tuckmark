@@ -21,9 +21,9 @@ pub use authority::{
     CommitRequest, DataAuthority, DataAuthorityError, DataAuthorityOptions, ProcessProbe,
     SystemClock, SystemProcessProbe,
 };
-pub use print::{
-    CompatibilityPackets, DetongerPrinterLink, PrintEngine, PrintError, PrintTransport,
-};
+#[cfg(target_os = "macos")]
+pub use print::DetongerPrinterLink;
+pub use print::{CompatibilityPackets, PrintEngine, PrintError, PrintTransport};
 pub use render::{MonoBitmap, RenderEngine, RenderError, RenderedArtifact, compile_canvas_draft};
 pub use tuckmark_contracts::{
     AgentImportProposal, AgentImportSession, ArtifactPackets, DevdDataArchive, JsonWrite,

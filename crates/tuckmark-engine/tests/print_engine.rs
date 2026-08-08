@@ -50,5 +50,11 @@ fn print_engine_uses_the_pinned_detonger_protocol_without_hardware() {
             .any(|packet| packet.starts_with(&[0x1f, 0x20]))
     );
     assert_eq!(packets.last().and_then(|packet| packet.last()), Some(&0x0c));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_print_engine_keeps_the_static_detonger_printer_link() {
     assert!(PrintEngine::static_printer_link_marker().contains("detonger_printer"));
+    let _link = PrintEngine::static_printer_link();
 }
