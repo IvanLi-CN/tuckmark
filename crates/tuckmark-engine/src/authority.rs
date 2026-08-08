@@ -227,14 +227,19 @@ impl DataAuthority {
         root: impl AsRef<Path>,
         options: DataAuthorityOptions,
     ) -> Result<Self, DataAuthorityError> {
-        fs::create_dir_all(root.as_ref())?;
+        create_dir_all_durable(root.as_ref())?;
         let root = fs::canonicalize(root.as_ref())?;
-        let control = root.join(CONTROL_DIRECTORY);
-        fs::create_dir_all(control.join(TRANSACTIONS_DIRECTORY))?;
+        let transactions = resolve_path_within_root(
+            &root,
+            &format!("{CONTROL_DIRECTORY}/{TRANSACTIONS_DIRECTORY}"),
+        )?;
+        create_dir_all_durable(&transactions)?;
 
-        let owner_path = control.join(OWNER_NAME);
+        let owner_path =
+            resolve_path_within_root(&root, &format!("{CONTROL_DIRECTORY}/{OWNER_NAME}"))?;
         ensure_owner(&owner_path, &options)?;
-        let lock_path = control.join(LIVE_LOCK_NAME);
+        let lock_path =
+            resolve_path_within_root(&root, &format!("{CONTROL_DIRECTORY}/{LIVE_LOCK_NAME}"))?;
         let lock = claim_live_lock(&lock_path, &options)?;
         let authority = Self {
             inner: Arc::new(AuthorityInner {
@@ -444,7 +449,7 @@ impl DataAuthority {
         validate_managed_transaction_paths(&transaction)?;
         self.validate_transaction_integrity_locked(&transaction)?;
         let journal_path = self
-            .transactions_dir()
+            .transactions_dir()?
             .join(format!("{revision}-{}.json", Uuid::new_v4()));
         atomic_write_json(&journal_path, &transaction)?;
         self.apply_transaction_locked(&transaction)?;
@@ -458,7 +463,10 @@ impl DataAuthority {
     ) -> Result<Vec<PathBuf>, DataAuthorityError> {
         let _guard = self.lock_mutation()?;
         self.recover_transactions_locked()?;
-        list_json_files(&self.resolve_relative(relative_directory)?)
+        list_json_files(
+            &self.inner.root,
+            &self.resolve_relative(relative_directory)?,
+        )
     }
 
     fn lock_mutation(&self) -> Result<MutexGuard<'_, ()>, DataAuthorityError> {
@@ -468,28 +476,16 @@ impl DataAuthority {
             .map_err(|_| DataAuthorityError::Poisoned)
     }
 
-    fn control_dir(&self) -> PathBuf {
-        self.inner.root.join(CONTROL_DIRECTORY)
-    }
-
-    fn transactions_dir(&self) -> PathBuf {
-        self.control_dir().join(TRANSACTIONS_DIRECTORY)
+    fn transactions_dir(&self) -> Result<PathBuf, DataAuthorityError> {
+        self.resolve_relative(&format!("{CONTROL_DIRECTORY}/{TRANSACTIONS_DIRECTORY}"))
     }
 
     fn resolve_relative(&self, relative_path: &str) -> Result<PathBuf, DataAuthorityError> {
-        if relative_path.contains('\\') {
-            return Err(DataAuthorityError::InvalidPath(relative_path.into()));
-        }
-        validate_relative_path(relative_path)?;
-        let candidate = self.inner.root.join(relative_path);
-        if !candidate.starts_with(&self.inner.root) {
-            return Err(DataAuthorityError::InvalidPath(relative_path.into()));
-        }
-        Ok(candidate)
+        resolve_path_within_root(&self.inner.root, relative_path)
     }
 
     fn read_revision_locked(&self) -> Result<u64, DataAuthorityError> {
-        let state_path = self.control_dir().join(STATE_NAME);
+        let state_path = self.resolve_relative(&format!("{CONTROL_DIRECTORY}/{STATE_NAME}"))?;
         let Some(value) = read_json_optional(&state_path)? else {
             return Ok(0);
         };
@@ -502,10 +498,12 @@ impl DataAuthority {
     }
 
     fn recover_transactions_locked(&self) -> Result<(), DataAuthorityError> {
-        fs::create_dir_all(self.transactions_dir())?;
-        let state_was_missing = !self.control_dir().join(STATE_NAME).exists();
+        let transactions_dir = self.transactions_dir()?;
+        create_dir_all_durable(&transactions_dir)?;
+        let state_path = self.resolve_relative(&format!("{CONTROL_DIRECTORY}/{STATE_NAME}"))?;
+        let state_was_missing = !state_path.exists();
         let mut journals = Vec::new();
-        for journal_path in list_json_files(&self.transactions_dir())? {
+        for journal_path in list_json_files(&self.inner.root, &transactions_dir)? {
             let value = read_json_required(&journal_path)?;
             let transaction: DevdDataTransaction = serde_json::from_value(value)?;
             if transaction.schema != DEVD_DATA_TRANSACTION_SCHEMA {
@@ -575,7 +573,8 @@ impl DataAuthority {
             }
         }
         let state = DevdDataState::new(transaction.revision, self.inner.options.clock.now());
-        atomic_write_json(&self.control_dir().join(STATE_NAME), &state)?;
+        let state_path = self.resolve_relative(&format!("{CONTROL_DIRECTORY}/{STATE_NAME}"))?;
+        atomic_write_json(&state_path, &state)?;
         self.refresh_manifest_locked()
     }
 
@@ -590,7 +589,7 @@ impl DataAuthority {
             "inventory/materials",
             "inventory/adjustments",
         ] {
-            collect_json_tree(&self.inner.root.join(directory), directory, &mut files)?;
+            collect_json_tree(&self.inner.root, directory, &mut files)?;
         }
         for relative_path in &transaction.deletes {
             files.remove(relative_path);
@@ -637,7 +636,7 @@ impl DataAuthority {
             "inventory/materials",
             "inventory/adjustments",
         ] {
-            collect_json_tree(&self.inner.root.join(directory), directory, &mut files)?;
+            collect_json_tree(&self.inner.root, directory, &mut files)?;
         }
         let mut templates = Vec::new();
         let mut versions = Vec::new();
@@ -664,7 +663,7 @@ impl DataAuthority {
         working_copies.sort_by(|left, right| left.source_key.cmp(&right.source_key));
         materials.sort_by(|left, right| left.id.cmp(&right.id));
         adjustments.sort_by(|left, right| left.id.cmp(&right.id));
-        let snapshot_updated_at = read_json_optional(&self.inner.root.join("manifest.json"))?
+        let snapshot_updated_at = read_json_optional(&self.resolve_relative("manifest.json")?)?
             .and_then(|value| serde_json::from_value::<DataDirectoryManifest>(value).ok())
             .and_then(|manifest| manifest.snapshot_updated_at);
         let exported_at = self.inner.options.clock.now();
@@ -675,8 +674,10 @@ impl DataAuthority {
                 schema: tuckmark_contracts::RUNTIME_EXPORT_SCHEMA.into(),
                 exported_at,
                 snapshot_updated_at,
-                settings: read_json_optional(&self.inner.root.join("settings/app-settings.json"))?
-                    .unwrap_or_else(|| Value::Object(Default::default())),
+                settings: read_json_optional(
+                    &self.resolve_relative("settings/app-settings.json")?,
+                )?
+                .unwrap_or_else(|| Value::Object(Default::default())),
                 templates,
                 versions,
                 working_copies,
@@ -714,7 +715,7 @@ impl DataAuthority {
             "inventory/materials",
             "inventory/adjustments",
         ] {
-            collect_json_tree(&self.inner.root.join(directory), directory, &mut files)?;
+            collect_json_tree(&self.inner.root, directory, &mut files)?;
         }
         Ok(files.into_keys().collect())
     }
@@ -722,7 +723,7 @@ impl DataAuthority {
     fn protection_snapshot_deletions_locked(&self) -> Result<Vec<String>, DataAuthorityError> {
         const MAX_PROTECTION_SNAPSHOTS: usize = 20;
         let directory = self.inner.root.join("backups/protection");
-        let mut snapshots = list_backup_files(&directory)?
+        let mut snapshots = list_backup_files(&self.inner.root, &directory)?
             .into_iter()
             .map(|path| {
                 let modified = fs::metadata(&path)
@@ -748,7 +749,7 @@ impl DataAuthority {
     }
 
     fn refresh_manifest_locked(&self) -> Result<(), DataAuthorityError> {
-        let manifest_path = self.inner.root.join("manifest.json");
+        let manifest_path = self.resolve_relative("manifest.json")?;
         let existing = read_json_optional(&manifest_path)?
             .and_then(|value| serde_json::from_value::<DataDirectoryManifest>(value).ok());
         let mut manifest = existing.unwrap_or_else(|| {
@@ -760,12 +761,55 @@ impl DataAuthority {
         manifest.counts.templates = count_template_records(&self.inner.root)?;
         manifest.counts.versions = count_template_versions(&self.inner.root)?;
         manifest.counts.working_copies = count_working_copies(&self.inner.root)?;
-        manifest.counts.materials =
-            list_json_files(&self.inner.root.join("inventory/materials"))?.len() as u64;
-        manifest.counts.adjustments =
-            list_json_files(&self.inner.root.join("inventory/adjustments"))?.len() as u64;
+        manifest.counts.materials = list_json_files(
+            &self.inner.root,
+            &self.inner.root.join("inventory/materials"),
+        )?
+        .len() as u64;
+        manifest.counts.adjustments = list_json_files(
+            &self.inner.root,
+            &self.inner.root.join("inventory/adjustments"),
+        )?
+        .len() as u64;
         manifest.validate()?;
         atomic_write_json(&manifest_path, &manifest)
+    }
+}
+
+fn resolve_path_within_root(
+    root: &Path,
+    relative_path: &str,
+) -> Result<PathBuf, DataAuthorityError> {
+    if relative_path.contains('\\') {
+        return Err(DataAuthorityError::InvalidPath(relative_path.into()));
+    }
+    validate_relative_path(relative_path)?;
+    let candidate = root.join(relative_path);
+    if !candidate.starts_with(root) {
+        return Err(DataAuthorityError::InvalidPath(relative_path.into()));
+    }
+
+    // Canonicalize the deepest existing ancestor before creating or reading a
+    // descendant. This catches an in-tree symlink that would otherwise direct
+    // a managed operation outside the authority root.
+    let mut ancestor = candidate.as_path();
+    loop {
+        match fs::symlink_metadata(ancestor) {
+            Ok(_) => {
+                let resolved = fs::canonicalize(ancestor)
+                    .map_err(|_| DataAuthorityError::InvalidPath(relative_path.into()))?;
+                if !resolved.starts_with(root) {
+                    return Err(DataAuthorityError::InvalidPath(relative_path.into()));
+                }
+                return Ok(candidate);
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                ancestor = ancestor
+                    .parent()
+                    .ok_or_else(|| DataAuthorityError::InvalidPath(relative_path.into()))?;
+            }
+            Err(error) => return Err(error.into()),
+        }
     }
 }
 
@@ -1015,11 +1059,12 @@ fn retire_stale_lock(
 
 fn create_new_json<T: serde::Serialize>(path: &Path, value: &T) -> io::Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        create_dir_all_durable(parent)?;
     }
     let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
     file.write_all(&canonical_json_bytes(value).map_err(contract_to_io)?)?;
     file.sync_all()?;
+    sync_parent_directory(path)?;
     Ok(())
 }
 
@@ -1030,7 +1075,7 @@ fn atomic_write_json<T: serde::Serialize>(
     let parent = path
         .parent()
         .ok_or_else(|| DataAuthorityError::InvalidPath(path.display().to_string()))?;
-    fs::create_dir_all(parent)?;
+    create_dir_all_durable(parent)?;
     let temporary = parent.join(format!(
         ".{}.{}.tmp",
         path.file_name()
@@ -1043,6 +1088,7 @@ fn atomic_write_json<T: serde::Serialize>(
         file.write_all(&canonical_json_bytes(value)?)?;
         file.sync_all()?;
         fs::rename(&temporary, path)?;
+        sync_directory(parent)?;
         Ok(())
     })();
     if result.is_err() {
@@ -1055,7 +1101,7 @@ fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<(), DataAuthorityErro
     let parent = path
         .parent()
         .ok_or_else(|| DataAuthorityError::InvalidPath(path.display().to_string()))?;
-    fs::create_dir_all(parent)?;
+    create_dir_all_durable(parent)?;
     let temporary = parent.join(format!(
         ".{}.{}.tmp",
         path.file_name()
@@ -1068,12 +1114,60 @@ fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<(), DataAuthorityErro
         file.write_all(bytes)?;
         file.sync_all()?;
         fs::rename(&temporary, path)?;
+        sync_directory(parent)?;
         Ok(())
     })();
     if result.is_err() {
         let _ = fs::remove_file(temporary);
     }
     result
+}
+
+fn create_dir_all_durable(directory: &Path) -> io::Result<()> {
+    let mut missing = Vec::new();
+    let mut current = directory;
+    loop {
+        match fs::metadata(current) {
+            Ok(_) => break,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                missing.push(current);
+                current = current.parent().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!(
+                            "directory has no existing ancestor: {}",
+                            directory.display()
+                        ),
+                    )
+                })?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    fs::create_dir_all(directory)?;
+    for created in missing {
+        sync_directory(created)?;
+        sync_parent_directory(created)?;
+    }
+    Ok(())
+}
+
+fn sync_parent_directory(path: &Path) -> io::Result<()> {
+    match path.parent() {
+        Some(parent) => sync_directory(parent),
+        None => Ok(()),
+    }
+}
+
+#[cfg(unix)]
+fn sync_directory(directory: &Path) -> io::Result<()> {
+    File::open(directory)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_directory: &Path) -> io::Result<()> {
+    Ok(())
 }
 
 fn contract_to_io(error: ContractError) -> io::Error {
@@ -1093,7 +1187,8 @@ fn read_json_required(path: &Path) -> Result<Value, DataAuthorityError> {
     Ok(serde_json::from_str(&raw)?)
 }
 
-fn list_json_files(directory: &Path) -> Result<Vec<PathBuf>, DataAuthorityError> {
+fn list_json_files(root: &Path, directory: &Path) -> Result<Vec<PathBuf>, DataAuthorityError> {
+    ensure_scan_directory_safe(root, directory)?;
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(vec![]),
@@ -1111,7 +1206,8 @@ fn list_json_files(directory: &Path) -> Result<Vec<PathBuf>, DataAuthorityError>
     Ok(files)
 }
 
-fn list_backup_files(directory: &Path) -> Result<Vec<PathBuf>, DataAuthorityError> {
+fn list_backup_files(root: &Path, directory: &Path) -> Result<Vec<PathBuf>, DataAuthorityError> {
+    ensure_scan_directory_safe(root, directory)?;
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(vec![]),
@@ -1132,7 +1228,8 @@ fn list_backup_files(directory: &Path) -> Result<Vec<PathBuf>, DataAuthorityErro
     Ok(files)
 }
 
-fn list_directories(directory: &Path) -> Result<Vec<PathBuf>, DataAuthorityError> {
+fn list_directories(root: &Path, directory: &Path) -> Result<Vec<PathBuf>, DataAuthorityError> {
+    ensure_scan_directory_safe(root, directory)?;
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(vec![]),
@@ -1146,11 +1243,37 @@ fn list_directories(directory: &Path) -> Result<Vec<PathBuf>, DataAuthorityError
     Ok(directories)
 }
 
+fn ensure_scan_directory_safe(root: &Path, directory: &Path) -> Result<(), DataAuthorityError> {
+    let relative = directory
+        .strip_prefix(root)
+        .map_err(|_| DataAuthorityError::InvalidPath(directory.display().to_string()))?;
+    let relative = relative.to_string_lossy();
+    let resolved = resolve_path_within_root(root, &relative)?;
+    match fs::symlink_metadata(&resolved) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            Err(DataAuthorityError::InvalidPath(relative.into_owned()))
+        }
+        Ok(metadata) if !metadata.is_dir() => {
+            Err(DataAuthorityError::InvalidPath(relative.into_owned()))
+        }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn collect_json_tree(
-    directory: &Path,
+    root: &Path,
     relative_prefix: &str,
     files: &mut BTreeMap<String, Value>,
 ) -> Result<(), DataAuthorityError> {
+    let directory = resolve_path_within_root(root, relative_prefix)?;
+    if fs::symlink_metadata(&directory)
+        .map(|metadata| metadata.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        return Err(DataAuthorityError::InvalidPath(relative_prefix.into()));
+    }
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
@@ -1162,9 +1285,10 @@ fn collect_json_tree(
         let relative_path = format!("{relative_prefix}/{name}");
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            collect_json_tree(&entry.path(), &relative_path, files)?;
+            collect_json_tree(root, &relative_path, files)?;
         } else if file_type.is_file() && entry.path().extension().is_some_and(|ext| ext == "json") {
-            files.insert(relative_path, read_json_required(&entry.path())?);
+            let path = resolve_path_within_root(root, &relative_path)?;
+            files.insert(relative_path, read_json_required(&path)?);
         }
     }
     Ok(())
@@ -1172,12 +1296,13 @@ fn collect_json_tree(
 
 fn snapshot_updated_at(root: &Path) -> Result<Option<String>, DataAuthorityError> {
     let mut timestamps = Vec::new();
-    if let Some(settings) = read_json_optional(&root.join("settings/app-settings.json"))? {
+    let settings_path = resolve_path_within_root(root, "settings/app-settings.json")?;
+    if let Some(settings) = read_json_optional(&settings_path)? {
         collect_timestamp(&settings, "updatedAt", &mut timestamps);
     }
     let mut files = BTreeMap::new();
     for directory in ["templates", "drafts"] {
-        collect_json_tree(&root.join(directory), directory, &mut files)?;
+        collect_json_tree(root, directory, &mut files)?;
     }
     for (path, value) in files {
         let timestamp_field = if path.starts_with("templates/") && path.contains("/versions/") {
@@ -2332,34 +2457,51 @@ fn safe_segment(value: &str) -> Result<&str, DataAuthorityError> {
 }
 
 fn count_template_records(root: &Path) -> Result<u64, DataAuthorityError> {
-    Ok(list_directories(&root.join("templates"))?
-        .iter()
-        .filter(|directory| directory.join("template.json").is_file())
-        .count() as u64)
+    let mut count = 0;
+    for directory in list_directories(root, &root.join("templates"))? {
+        if is_regular_file_within_root(root, &directory.join("template.json"))? {
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 fn count_template_versions(root: &Path) -> Result<u64, DataAuthorityError> {
     let mut count = 0;
-    for directory in list_directories(&root.join("templates"))? {
-        count += list_json_files(&directory.join("versions"))?.len() as u64;
+    for directory in list_directories(root, &root.join("templates"))? {
+        count += list_json_files(root, &directory.join("versions"))?.len() as u64;
     }
     Ok(count)
 }
 
 fn count_working_copies(root: &Path) -> Result<u64, DataAuthorityError> {
-    let template_copies = list_directories(&root.join("templates"))?
-        .iter()
-        .filter(|directory| directory.join("working-copy.json").is_file())
-        .count() as u64;
-    let mut drafts = if root.join("drafts/scratch.json").is_file() {
+    let mut template_copies = 0;
+    for directory in list_directories(root, &root.join("templates"))? {
+        if is_regular_file_within_root(root, &directory.join("working-copy.json"))? {
+            template_copies += 1;
+        }
+    }
+    let mut drafts = if is_regular_file_within_root(root, &root.join("drafts/scratch.json"))? {
         1
     } else {
         0
     };
     for kind in ["scratch", "preset-template"] {
-        drafts += list_json_files(&root.join("drafts").join(kind))?.len() as u64;
+        drafts += list_json_files(root, &root.join("drafts").join(kind))?.len() as u64;
     }
     Ok(template_copies + drafts)
+}
+
+fn is_regular_file_within_root(root: &Path, path: &Path) -> Result<bool, DataAuthorityError> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| DataAuthorityError::InvalidPath(path.display().to_string()))?;
+    let resolved = resolve_path_within_root(root, &relative.to_string_lossy())?;
+    match fs::symlink_metadata(resolved) {
+        Ok(metadata) => Ok(metadata.file_type().is_file()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
 }
 
 #[cfg(test)]
@@ -2391,6 +2533,33 @@ mod tests {
 
         assert!(!source.contains(&process_command));
         assert!(!source.contains(&command_new));
+    }
+
+    #[test]
+    fn atomic_writes_sync_the_parent_directory_after_rename() {
+        let source = include_str!("authority.rs");
+
+        for (function, following_function) in [
+            ("atomic_write_json", "atomic_write_bytes"),
+            ("atomic_write_bytes", "contract_to_io"),
+        ] {
+            let start = source
+                .find(&format!("fn {function}"))
+                .expect("atomic write helper exists");
+            let after_start = &source[start..];
+            let end = after_start
+                .find(&format!("\nfn {following_function}"))
+                .expect("following helper exists");
+            let body = &after_start[..end];
+            let rename = body
+                .find("fs::rename(&temporary, path)?;")
+                .expect("atomic write renames its prepared file");
+            let sync = body[rename..]
+                .find("sync_directory(parent)?;")
+                .expect("atomic write syncs the parent directory after rename");
+
+            assert!(sync > 0, "{function} must sync after the rename");
+        }
     }
 
     #[test]

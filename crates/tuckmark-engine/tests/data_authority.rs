@@ -4,6 +4,9 @@ use std::{
     sync::{Arc, Barrier, Mutex},
 };
 
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
+
 use serde_json::json;
 use tempfile::tempdir;
 use tuckmark_contracts::AgentImportProposal;
@@ -150,6 +153,80 @@ fn authority_reserves_control_and_manifest_paths_from_public_commits() {
         ));
     }
     assert_eq!(authority.revision().unwrap(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn authority_rejects_commit_through_an_ancestor_symlink_without_writing_outside_root() {
+    let directory = tempdir().unwrap();
+    let outside = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+
+    symlink(outside.path(), directory.path().join("settings")).unwrap();
+
+    assert!(matches!(
+        authority.commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![JsonWrite::new(
+                "settings/app-settings.json",
+                json!({ "updatedAt": "2026-01-03T04:05:06Z" }),
+            )],
+            deletes: vec![],
+            domains: vec!["settings".into()],
+            reason: "reject-symlink-escape".into(),
+        }),
+        Err(DataAuthorityError::InvalidPath(path)) if path == "settings/app-settings.json"
+    ));
+    assert!(!outside.path().join("app-settings.json").exists());
+    assert!(!directory.path().join(".tuckmark/state.json").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn authority_rejects_an_outside_symlink_when_scanning_managed_data() {
+    let directory = tempdir().unwrap();
+    let outside = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+
+    fs::create_dir_all(outside.path().join("materials")).unwrap();
+    fs::write(
+        outside.path().join("materials/outside-material.json"),
+        r#"{
+            "id":"outside-material",
+            "fullName":"Outside Material",
+            "currentQuantity":0,
+            "createdAt":"2026-01-01T00:00:00Z",
+            "updatedAt":"2026-01-01T00:00:00Z",
+            "labelBindings":[]
+        }"#,
+    )
+    .unwrap();
+    symlink(outside.path(), directory.path().join("inventory")).unwrap();
+
+    assert!(matches!(
+        authority.export_archive(),
+        Err(DataAuthorityError::InvalidPath(path)) if path == "inventory/materials"
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn authority_rejects_read_through_an_ancestor_symlink() {
+    let directory = tempdir().unwrap();
+    let outside = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+
+    fs::write(
+        outside.path().join("app-settings.json"),
+        r#"{"secret":"outside-root"}"#,
+    )
+    .unwrap();
+    symlink(outside.path(), directory.path().join("settings")).unwrap();
+
+    assert!(matches!(
+        authority.read_json("settings/app-settings.json"),
+        Err(DataAuthorityError::InvalidPath(path)) if path == "settings/app-settings.json"
+    ));
 }
 
 #[test]
