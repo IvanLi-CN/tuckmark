@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -11,8 +12,9 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tuckmark_contracts::{
     ContractError, DATA_DIRECTORY_MANIFEST_SCHEMA, DEVD_DATA_TRANSACTION_SCHEMA,
     DEVD_LIVE_LOCK_SCHEMA, DEVD_OWNER_SCHEMA, DataDirectoryManifest, DevdDataState,
-    DevdDataTransaction, DevdLiveLock, DevdOwner, JsonWrite, RevisionEvent, canonical_json_bytes,
-    validate_relative_path,
+    DevdDataTransaction, DevdLiveLock, DevdOwner, InventoryAdjustment, InventoryMaterial,
+    JsonWrite, RevisionEvent, TemplateRecord, TemplateVersion, WorkingCopyRecord,
+    canonical_json_bytes, validate_referential_integrity, validate_relative_path,
 };
 use uuid::Uuid;
 
@@ -223,6 +225,7 @@ impl DataAuthority {
         let transaction =
             DevdDataTransaction::new(revision, request.writes, request.deletes, event);
         transaction.validate()?;
+        self.validate_transaction_integrity_locked(&transaction)?;
         let journal_path = self
             .transactions_dir()
             .join(format!("{revision}-{}.json", Uuid::new_v4()));
@@ -320,6 +323,56 @@ impl DataAuthority {
         let state = DevdDataState::new(transaction.revision, self.inner.options.clock.now());
         atomic_write_json(&self.control_dir().join(STATE_NAME), &state)?;
         self.refresh_manifest_locked()
+    }
+
+    fn validate_transaction_integrity_locked(
+        &self,
+        transaction: &DevdDataTransaction,
+    ) -> Result<(), DataAuthorityError> {
+        let mut files = BTreeMap::new();
+        for directory in [
+            "templates",
+            "drafts",
+            "inventory/materials",
+            "inventory/adjustments",
+        ] {
+            collect_json_tree(&self.inner.root.join(directory), directory, &mut files)?;
+        }
+        for relative_path in &transaction.deletes {
+            files.remove(relative_path);
+        }
+        for write in &transaction.writes {
+            files.insert(write.relative_path.clone(), write.value.clone());
+        }
+
+        let mut templates = Vec::new();
+        let mut versions = Vec::new();
+        let mut working_copies = Vec::new();
+        let mut materials = Vec::new();
+        let mut adjustments = Vec::new();
+        for (path, value) in files {
+            if path.starts_with("templates/") && path.ends_with("/template.json") {
+                templates.push(serde_json::from_value::<TemplateRecord>(value)?);
+            } else if path.starts_with("templates/") && path.contains("/versions/") {
+                versions.push(serde_json::from_value::<TemplateVersion>(value)?);
+            } else if (path.starts_with("templates/") && path.ends_with("/working-copy.json"))
+                || path.starts_with("drafts/")
+            {
+                working_copies.push(serde_json::from_value::<WorkingCopyRecord>(value)?);
+            } else if path.starts_with("inventory/materials/") {
+                materials.push(serde_json::from_value::<InventoryMaterial>(value)?);
+            } else if path.starts_with("inventory/adjustments/") {
+                adjustments.push(serde_json::from_value::<InventoryAdjustment>(value)?);
+            }
+        }
+        validate_referential_integrity(
+            &templates,
+            &versions,
+            &working_copies,
+            &materials,
+            &adjustments,
+        )?;
+        Ok(())
     }
 
     fn refresh_manifest_locked(&self) -> Result<(), DataAuthorityError> {
@@ -568,6 +621,30 @@ fn list_directories(directory: &Path) -> Result<Vec<PathBuf>, DataAuthorityError
         .collect::<Vec<_>>();
     directories.sort();
     Ok(directories)
+}
+
+fn collect_json_tree(
+    directory: &Path,
+    relative_prefix: &str,
+    files: &mut BTreeMap<String, Value>,
+) -> Result<(), DataAuthorityError> {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let relative_path = format!("{relative_prefix}/{name}");
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            collect_json_tree(&entry.path(), &relative_path, files)?;
+        } else if file_type.is_file() && entry.path().extension().is_some_and(|ext| ext == "json") {
+            files.insert(relative_path, read_json_required(&entry.path())?);
+        }
+    }
+    Ok(())
 }
 
 fn count_template_records(root: &Path) -> Result<u64, DataAuthorityError> {
