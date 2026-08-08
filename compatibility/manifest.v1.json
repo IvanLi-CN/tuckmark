@@ -388,7 +388,7 @@
       "transport": "sse",
       "statuses": [200, 403, 503],
       "contentType": "text/event-stream",
-      "events": ["ready", "revision"]
+      "events": ["data-revision"]
     },
     {
       "method": "GET",

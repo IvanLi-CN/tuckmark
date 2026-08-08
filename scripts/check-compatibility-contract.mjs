@@ -35,9 +35,23 @@ const approvedHashes = {
   cliBehavior: "1938785aba11b000812d00fbdf4ba411be8032a4be6718278e900cedb7f21b39",
   cliCommands: "4b78ea7fc795443ff1496782a4ae71a41542efa3ec5f8694046cba2b0f1b73a6",
   httpBehavior: "6a6aefd327361cb7b59cab5ee03c3f1f4044d615c6c02b86b3b429633311956b",
-  httpRoutes: "40bb5c3f1e31bee87553a9c710d772c80fbff125b070721e0467058d34101d5f",
+  httpRoutes: "d01c864145c43bec3db0b5e62e27e8f05daba9b6d2e50993673a8859e368db72",
   ipcRules: "358af8b90a671ac20a05ecdf29521ab878a8f5467935a667a3df6800ffd4bd71",
   persistedSchemas: "f0fb8ee6a411b721f61469150a1e4e575a4e4418c4515e12c8440ff80743df12",
+}
+
+const approvedFixtureHashes = {
+  "fixtures/cli-output.json": "5c099be96123b0cfcd7dca667bcc34815db1090a8537f8b6218936c7bd0f3c29",
+  "fixtures/http.json": "e21ad28ed57dd9f9ab36195bc7b9bcc9caac00d58d8de6a815aa883fef28ad18",
+  "fixtures/sse.json": "9072d0de89296754864bc8ab551821a38d7adb1c85190c194caef7249821b4a6",
+  "fixtures/data-tree.json": "8798d09a84ec3348b7fd882e2bd7035ee30933aa95902b9f6ac5aca95fbf4c38",
+  "fixtures/interrupted-transaction.json":
+    "c466d162b1c805ad04e7360cda9f48484ea9f5561f948d959f78433bd439aabe",
+  "fixtures/archive.json": "0d213306e3f53618f0e1f4aa7e3540f25957a9debe3fa0b79a56c2055c2991ce",
+  "fixtures/decoded-render.json":
+    "f02164e6be76e207b84d89afb419fc614d70eec3ad282e26582fa63766cd289a",
+  "fixtures/print-packets.json": "a2897710b8774d68cb189b7325b0e5a0b02f912beb0d6363d7d2415142e183e0",
+  "fixtures/release.json": "79de98aa3b54828057ce5dd450764a1c18c373fe129c37228a2f7e46d355541c",
 }
 
 for (const [section, expectedHash] of Object.entries(approvedHashes)) {
@@ -97,6 +111,11 @@ assert.ok(
 const fixtureKinds = new Set()
 for (const fixture of manifest.fixtures) {
   const value = await readJson(fixture.path)
+  assert.equal(
+    contractHash(value),
+    approvedFixtureHashes[fixture.path],
+    `${fixture.path} differs from approved golden fixture`
+  )
   assert.equal(value.schema, fixture.schema, `${fixture.path} schema does not match manifest`)
   assert.equal(value.synthetic, true, `${fixture.path} must declare synthetic data`)
   fixtureKinds.add(fixture.kind)
