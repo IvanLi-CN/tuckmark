@@ -69,6 +69,16 @@ startup readiness enforcement.
 - Product docs, runtime contracts, Storybook/demo state, and UI copy all use
   the same dual-path terminology.
 
+### Runtime compatibility
+
+- Rust DEVD is the only production service-api implementation.
+- Decoded render and print-packet golden fixtures freeze the service-api output
+  boundary independently of the implementation language.
+- Browser-direct remains a separate Web implementation path; the Rust DEVD
+  decision does not turn service-api packets into a browser-direct dependency.
+- Existing render options, artifact dimensions, decoded pixels, packet order,
+  and packet bytes change only through an approved compatibility contract.
+
 ## Visual Evidence
 
 ![Desktop evidence for browser-direct available and service-api disabled](assets/dual-print-browser-only-desktop.png)

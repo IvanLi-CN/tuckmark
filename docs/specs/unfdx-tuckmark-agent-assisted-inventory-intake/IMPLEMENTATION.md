@@ -22,3 +22,14 @@ Tests use isolated temporary fixtures. Development previews reuse a valid
 worktree-specific copy prepared by `bun run dev:data:prepare`, or use a newly
 created empty temporary directory when no prepared copy exists. They never
 default to the formal user directory.
+
+## Compatibility mapping
+
+- The manifest enumerates Agent Import routes, CLI commands, named IPC rules,
+  status codes, session authorization errors, and the `data-revision` SSE wire
+  format.
+- HTTP, SSE, data-tree, and interrupted-transaction fixtures contain synthetic
+  identities and content only. They preserve revision conflict and recovery
+  behavior without exposing an order export, credential, or user directory.
+- Rust DEVD is the production service and transaction owner; TypeScript service
+  modules are not loaded by the compatibility check.

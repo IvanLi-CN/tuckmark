@@ -1,0 +1,47 @@
+{
+  "schema": "tuckmark.compatibility-fixture.http.v1",
+  "synthetic": true,
+  "cases": [
+    {
+      "name": "health",
+      "request": { "method": "GET", "path": "/health" },
+      "response": {
+        "status": 200,
+        "contentType": "application/json",
+        "body": { "status": "ok", "name": "tuckmark" }
+      }
+    },
+    {
+      "name": "revision-conflict",
+      "request": {
+        "method": "POST",
+        "path": "/api/data/runtime/save-settings",
+        "body": { "expectedRevision": 4, "args": { "patch": { "threshold": 144 } } }
+      },
+      "response": {
+        "status": 409,
+        "contentType": "application/json",
+        "body": {
+          "status": "error",
+          "code": "revision_conflict",
+          "expectedRevision": 4,
+          "actualRevision": 5,
+          "error": "Expected revision 4 but current revision is 5."
+        }
+      }
+    },
+    {
+      "name": "cross-origin-rejected",
+      "request": {
+        "method": "GET",
+        "path": "/api/data/status",
+        "headers": { "origin": "https://synthetic.invalid" }
+      },
+      "response": {
+        "status": 403,
+        "contentType": "application/json",
+        "body": { "status": "error", "error": "Cross-origin DEVD access is forbidden." }
+      }
+    }
+  ]
+}

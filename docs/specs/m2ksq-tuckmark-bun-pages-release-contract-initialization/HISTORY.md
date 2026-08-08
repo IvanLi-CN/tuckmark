@@ -110,3 +110,8 @@ installed complete version and all browser user data.
 The install-identity surface was later clarified so browser-static builds keep
 the standard icon, maskable safe-zone icon, Apple Touch icon, and favicon
 contracts distinct instead of relying on one PNG for every browser context.
+
+Release compatibility now includes a language-neutral synthetic fixture for
+release intent, context evidence, release-note sections, and bundle names. The
+bundles identify Rust CLI and Rust DEVD as the sole production implementations
+without changing the established label, snapshot, or publication contract.

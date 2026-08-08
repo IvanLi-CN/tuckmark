@@ -90,6 +90,11 @@ and a reproducible worktree bootstrap path.
 ### Delivery
 
 - PR labels are the release-intent source of truth.
+- Release bundles ship Rust CLI and Rust DEVD as the only production command
+  and service implementations.
+- The language-neutral release fixture freezes release-intent metadata,
+  `release-context-<merge_sha>` contents, required release-note sections, and
+  runtime/CLI bundle names without depending on TypeScript CLI/server sources.
 - Mainline release uses a durable snapshot and supports backfill.
 - Published GitHub Releases must include human-readable release notes generated
   from the verified release snapshot and merged PR metadata.

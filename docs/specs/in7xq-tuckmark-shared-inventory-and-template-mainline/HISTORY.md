@@ -27,3 +27,8 @@ executed as actual copies instead of label-field data only.
 - Development data became an explicit, validated copy into a per-worktree
   temporary directory. Preview reuses an existing valid copy but never copies
   formal data implicitly.
+
+The CLI and DEVD replacement boundary is language-neutral. Rust owns the only
+production command and service implementations, while manifest and synthetic
+fixtures retain the existing directory, schema, recovery, archive, rendering,
+packet, and release behavior without a persisted schema migration.

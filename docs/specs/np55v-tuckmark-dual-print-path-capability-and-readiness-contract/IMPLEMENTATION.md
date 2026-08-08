@@ -27,3 +27,13 @@
 - Visual evidence should be refreshed against the updated dual-path UI copy.
 - Browser-direct restore behavior after hot reload still depends on what the
   current browser runtime exposes for Web Bluetooth device rehydration.
+
+## Compatibility mapping
+
+- Synthetic decoded-render and print-packet fixtures freeze artifact metadata,
+  raster rows, SVG output, packet grouping, order, and bytes.
+- Rust DEVD consumes the same service-api boundary as the sole production
+  service implementation. Browser-direct remains independently implemented and
+  gated in the Web runtime.
+- Contract checks parse fixture JSON directly and do not require TypeScript CLI
+  or server source files.

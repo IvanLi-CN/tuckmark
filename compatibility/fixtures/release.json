@@ -1,0 +1,20 @@
+{
+  "schema": "tuckmark.compatibility-fixture.release.v1",
+  "synthetic": true,
+  "releaseIntent": {
+    "merge_sha": "0123456789abcdef0123456789abcdef01234567",
+    "release_type": "minor",
+    "channel": "preview",
+    "pull_request": {
+      "number": 6500,
+      "title": "Synthetic compatibility release",
+      "url": "https://example.invalid/tuckmark/pull/6500"
+    }
+  },
+  "releaseContextArtifact": {
+    "name": "release-context-0123456789abcdef0123456789abcdef01234567",
+    "entries": ["release-context.json", "release-notes.md"]
+  },
+  "bundles": ["tuckmark-runtime-bundle.tgz", "tuckmark-cli-bundle.tgz"],
+  "releaseNotesSections": ["Included Change", "Release Metadata", "Bundles"]
+}

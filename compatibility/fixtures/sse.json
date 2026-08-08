@@ -1,0 +1,22 @@
+{
+  "schema": "tuckmark.compatibility-fixture.sse.v1",
+  "synthetic": true,
+  "request": {
+    "method": "GET",
+    "path": "/api/data/events",
+    "headers": { "accept": "text/event-stream" }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      "connection": "keep-alive"
+    },
+    "chunks": [
+      "retry: 3000\n\n",
+      "id: 8\nevent: data-revision\ndata: {\"revision\":8,\"domains\":[\"inventory\"],\"reason\":\"fixture-adjustment\"}\n\n",
+      ": keepalive\n\n"
+    ]
+  }
+}
