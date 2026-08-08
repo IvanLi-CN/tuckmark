@@ -542,6 +542,20 @@ impl AgentImportProposal {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentImportSession {
+    pub id: String,
+    pub state: String,
+    pub created_at: String,
+    pub expires_at: String,
+    pub proposal: AgentImportProposal,
+    #[serde(default)]
+    pub events: Vec<Value>,
+    #[serde(flatten, default)]
+    pub extra: ExtraFields,
+}
+
 pub fn validate_relative_path(path: &str) -> Result<(), ContractError> {
     let normalized = path.replace('\\', "/");
     if normalized.is_empty()

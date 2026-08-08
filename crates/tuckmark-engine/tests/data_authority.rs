@@ -1,10 +1,14 @@
-use std::{fs, sync::Arc};
+use std::{
+    fs,
+    sync::{Arc, Mutex},
+};
 
 use serde_json::json;
 use tempfile::tempdir;
+use tuckmark_contracts::AgentImportProposal;
 use tuckmark_engine::{
-    ArchiveImportMode, Clock, CommitRequest, DataAuthority, DataAuthorityError,
-    DataAuthorityOptions, JsonWrite, ProcessProbe,
+    AgentImportManager, ArchiveImportMode, Clock, CommitRequest, CreateAgentImportSession,
+    DataAuthority, DataAuthorityError, DataAuthorityOptions, JsonWrite, ProcessProbe,
 };
 
 struct FixedClock;
@@ -12,6 +16,20 @@ struct FixedClock;
 impl Clock for FixedClock {
     fn now(&self) -> String {
         "2026-01-02T03:04:05Z".into()
+    }
+}
+
+struct MutableClock(Mutex<String>);
+
+impl MutableClock {
+    fn set(&self, value: &str) {
+        *self.0.lock().unwrap() = value.into();
+    }
+}
+
+impl Clock for MutableClock {
+    fn now(&self) -> String {
+        self.0.lock().unwrap().clone()
     }
 }
 
@@ -340,4 +358,183 @@ fn authority_retains_the_newest_twenty_protection_archives() {
             .len(),
         20
     );
+}
+
+#[test]
+fn agent_import_confirmation_commits_new_and_restock_items_in_one_revision() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    authority
+        .commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![JsonWrite::new(
+                "inventory/materials/restock-target.json",
+                json!({
+                    "id": "restock-target",
+                    "fullName": "Restock Target",
+                    "currentQuantity": 4,
+                    "updatedAt": "2026-01-01T00:00:00Z",
+                    "labelBindings": []
+                }),
+            )],
+            deletes: vec![],
+            domains: vec!["inventory".into()],
+            reason: "seed-restock".into(),
+        })
+        .unwrap();
+    let manager = AgentImportManager::new(authority.clone());
+    let proposal: AgentImportProposal = serde_json::from_value(json!({
+        "schema": "tuckmark.agent-import.v1",
+        "sourceNote": "synthetic fixture",
+        "items": [
+            {
+                "id": "new-item",
+                "kind": "new",
+                "selected": true,
+                "quantity": 3,
+                "material": { "fullName": "New Imported Material" }
+            },
+            {
+                "id": "restock-item",
+                "kind": "restock",
+                "selected": true,
+                "quantity": 2,
+                "targetMaterialId": "restock-target",
+                "targetMaterialUpdatedAt": "2026-01-01T00:00:00Z",
+                "material": { "fullName": "Restock Target" }
+            }
+        ]
+    }))
+    .unwrap();
+    manager
+        .create_session(CreateAgentImportSession {
+            id: "session-atomic".into(),
+            secret: "synthetic-secret-at-least-sixteen".into(),
+            proposal,
+        })
+        .unwrap();
+
+    let completed = manager
+        .confirm("session-atomic", "synthetic-secret-at-least-sixteen")
+        .unwrap();
+
+    assert_eq!(completed.state, "completed");
+    assert_eq!(authority.revision().unwrap(), 2);
+    assert_eq!(
+        authority
+            .read_json("inventory/materials/restock-target.json")
+            .unwrap()
+            .unwrap()["currentQuantity"],
+        6
+    );
+    assert_eq!(
+        authority
+            .list_json_files("inventory/adjustments")
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn agent_import_confirmation_rejects_the_entire_batch_when_one_restock_is_invalid() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    let manager = AgentImportManager::new(authority.clone());
+    let proposal: AgentImportProposal = serde_json::from_value(json!({
+        "schema": "tuckmark.agent-import.v1",
+        "items": [
+            {
+                "id": "new-item",
+                "kind": "new",
+                "selected": true,
+                "quantity": 1,
+                "material": { "fullName": "Must Not Persist" }
+            },
+            {
+                "id": "invalid-restock",
+                "kind": "restock",
+                "selected": true,
+                "quantity": 1,
+                "targetMaterialId": "missing-target",
+                "material": { "fullName": "Missing Target" }
+            }
+        ]
+    }))
+    .unwrap();
+    manager
+        .create_session(CreateAgentImportSession {
+            id: "session-invalid".into(),
+            secret: "synthetic-secret-at-least-sixteen".into(),
+            proposal,
+        })
+        .unwrap();
+
+    assert!(
+        manager
+            .confirm("session-invalid", "synthetic-secret-at-least-sixteen")
+            .is_err()
+    );
+    assert_eq!(authority.revision().unwrap(), 0);
+    assert!(
+        authority
+            .list_json_files("inventory/materials")
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        authority
+            .list_json_files("inventory/adjustments")
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn agent_import_expires_sessions_and_returns_the_commit_event() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    let clock = Arc::new(MutableClock(Mutex::new("2026-01-02T03:04:05Z".into())));
+    let manager = AgentImportManager::with_clock(authority.clone(), clock.clone());
+    let proposal: AgentImportProposal = serde_json::from_value(json!({
+        "schema": "tuckmark.agent-import.v1",
+        "items": [{
+            "id": "new-material",
+            "kind": "new",
+            "selected": true,
+            "quantity": 1,
+            "material": { "fullName": "TTL material" }
+        }]
+    }))
+    .unwrap();
+    let secret = "synthetic-secret-at-least-sixteen";
+    let session = manager
+        .create_session(CreateAgentImportSession {
+            id: "session-event".into(),
+            secret: secret.into(),
+            proposal,
+        })
+        .unwrap();
+    assert_eq!(session.expires_at, "2026-01-02T03:34:05Z");
+
+    let confirmed = manager
+        .confirm_with_result("session-event", secret)
+        .unwrap();
+    assert_eq!(confirmed.event.unwrap().revision, 1);
+
+    clock.set("2026-01-02T04:00:00Z");
+    let expired_proposal: AgentImportProposal = serde_json::from_value(json!({
+        "schema": "tuckmark.agent-import.v1",
+        "items": []
+    }))
+    .unwrap();
+    manager
+        .create_session(CreateAgentImportSession {
+            id: "session-expired".into(),
+            secret: secret.into(),
+            proposal: expired_proposal,
+        })
+        .unwrap();
+    clock.set("2026-01-02T04:30:00Z");
+    assert!(manager.get_session("session-expired", secret).is_err());
 }
