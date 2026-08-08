@@ -517,7 +517,7 @@ function PendingDraftsDialog({
           <DialogDescription>
             {forceConfirmation
               ? "强制替换会放弃下列草稿及无响应标签尚未写入的数据。该操作不可撤销。"
-              : "切换目录或整库恢复会替换当前画布数据。请先保存为用户模板，或在画布中重置并放弃草稿。"}
+              : "切换目录或整库恢复会替换当前画布数据。请逐项前往画布：保存为用户模板，或重置并放弃草稿；全部处理完成后再重试。"}
           </DialogDescription>
         </DialogHeader>
         <ul className="grid gap-2 text-sm">
@@ -532,7 +532,7 @@ function PendingDraftsDialog({
               </div>
               {!forceConfirmation ? (
                 <Button asChild type="button" variant="outline" size="sm">
-                  <a href={getCanvasDraftPath(draft.source)}>打开画布</a>
+                  <a href={getCanvasDraftPath(draft.source)}>前往处理草稿</a>
                 </Button>
               ) : null}
             </li>

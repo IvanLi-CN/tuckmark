@@ -350,7 +350,7 @@ describe("SystemDataStorageCard", () => {
 
     expect(document.body.textContent).toContain("请先处理未保存草稿")
     const canvasLink = Array.from(document.querySelectorAll("a")).find((link) =>
-      link.textContent?.includes("打开画布")
+      link.textContent?.includes("前往处理草稿")
     )
     expect(canvasLink?.getAttribute("href")).toBe(
       "/canvas?source=user-template&templateId=power-module"
