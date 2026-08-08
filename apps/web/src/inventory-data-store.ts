@@ -13,7 +13,7 @@ import {
   sortInventoryAdjustmentsNewestFirst,
   sortInventoryMaterialsByName,
 } from "@tuckmark/inventory"
-
+import { getSharedCrossTabCoordinator } from "./cross-tab-coordinator.js"
 import {
   collectDirectoryFilesFromDirectoryHandle,
   loadConfiguredDataDirectoryHandle,
@@ -58,6 +58,10 @@ type InventoryPersistence =
   | {
       kind: "browser-local"
     }
+
+async function runInventoryAccess<T>(task: () => Promise<T>): Promise<T> {
+  return await getSharedCrossTabCoordinator().runRuntimeAccess(task)
+}
 
 function createId(prefix: string): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -250,7 +254,7 @@ function ensureMaterialUniqueness(
   }
 }
 
-export async function listInventoryMaterials(
+async function listInventoryMaterialsInternal(
   query = "",
   options: ListInventoryMaterialsOptions = {}
 ): Promise<InventoryMaterial[]> {
@@ -271,7 +275,7 @@ export async function listInventoryMaterials(
     .sort(sortInventoryMaterialsByName)
 }
 
-export async function listInventoryAdjustments(
+async function listInventoryAdjustmentsInternal(
   materialId?: string
 ): Promise<InventoryAdjustment[]> {
   if (isServerHttpDataSurface()) {
@@ -290,7 +294,7 @@ export async function listInventoryAdjustments(
     .sort(sortInventoryAdjustmentsNewestFirst)
 }
 
-export async function saveInventoryMaterial(
+async function saveInventoryMaterialInternal(
   args: InventoryMaterialSaveArgs
 ): Promise<InventoryMaterial> {
   if (isServerHttpDataSurface()) {
@@ -369,7 +373,7 @@ export async function saveInventoryMaterial(
   return material
 }
 
-export async function archiveInventoryMaterial(materialId: string): Promise<InventoryMaterial> {
+async function archiveInventoryMaterialInternal(materialId: string): Promise<InventoryMaterial> {
   if (isServerHttpDataSurface()) {
     return await devdDataClient.inventoryCommand<InventoryMaterial>("archive-material", {
       materialId,
@@ -416,7 +420,7 @@ export async function archiveInventoryMaterial(materialId: string): Promise<Inve
   return archived
 }
 
-export async function restoreInventoryMaterial(materialId: string): Promise<InventoryMaterial> {
+async function restoreInventoryMaterialInternal(materialId: string): Promise<InventoryMaterial> {
   if (isServerHttpDataSurface()) {
     return await devdDataClient.inventoryCommand<InventoryMaterial>("restore-material", {
       materialId,
@@ -463,7 +467,7 @@ export async function restoreInventoryMaterial(materialId: string): Promise<Inve
   return restored
 }
 
-export async function deleteInventoryMaterial(materialId: string): Promise<void> {
+async function deleteInventoryMaterialInternal(materialId: string): Promise<void> {
   if (isServerHttpDataSurface()) {
     await devdDataClient.inventoryCommand("delete-material", { materialId })
     return
@@ -495,7 +499,7 @@ export async function deleteInventoryMaterial(materialId: string): Promise<void>
   if (!material) {
     throw new Error("物料不存在。")
   }
-  const adjustments = await listInventoryAdjustments(materialId)
+  const adjustments = await listInventoryAdjustmentsInternal(materialId)
   ensureInventoryMaterialDeletionAllowed({ material, adjustments })
   const materialsDirectory = await resolveDirectoryHandleFromDirectoryHandle(
     persistence.handle,
@@ -504,7 +508,7 @@ export async function deleteInventoryMaterial(materialId: string): Promise<void>
   await removeEntryIfPresentFromDirectoryHandle(materialsDirectory, `${materialId}.json`)
 }
 
-export async function applyInventoryMaterialAdjustment(args: {
+async function applyInventoryMaterialAdjustmentInternal(args: {
   materialId: string
   input: InventoryAdjustmentInput
 }): Promise<{
@@ -561,12 +565,14 @@ export async function applyInventoryMaterialAdjustment(args: {
   return result
 }
 
-export async function readInventoryMaterial(materialId: string): Promise<InventoryMaterial | null> {
-  const materials = await listInventoryMaterials("", { includeArchived: true })
+async function readInventoryMaterialInternal(
+  materialId: string
+): Promise<InventoryMaterial | null> {
+  const materials = await listInventoryMaterialsInternal("", { includeArchived: true })
   return materials.find((material) => material.id === materialId) ?? null
 }
 
-export async function getInventoryDataDirectoryReady(): Promise<boolean> {
+async function getInventoryDataDirectoryReadyInternal(): Promise<boolean> {
   if (isServerHttpDataSurface()) {
     try {
       return (await devdDataClient.status()).health === "healthy"
@@ -583,4 +589,53 @@ export async function getInventoryDataDirectoryReady(): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+export async function listInventoryMaterials(
+  query = "",
+  options: ListInventoryMaterialsOptions = {}
+): Promise<InventoryMaterial[]> {
+  return await runInventoryAccess(async () => await listInventoryMaterialsInternal(query, options))
+}
+
+export async function listInventoryAdjustments(
+  materialId?: string
+): Promise<InventoryAdjustment[]> {
+  return await runInventoryAccess(async () => await listInventoryAdjustmentsInternal(materialId))
+}
+
+export async function saveInventoryMaterial(
+  args: InventoryMaterialSaveArgs
+): Promise<InventoryMaterial> {
+  return await runInventoryAccess(async () => await saveInventoryMaterialInternal(args))
+}
+
+export async function archiveInventoryMaterial(materialId: string): Promise<InventoryMaterial> {
+  return await runInventoryAccess(async () => await archiveInventoryMaterialInternal(materialId))
+}
+
+export async function restoreInventoryMaterial(materialId: string): Promise<InventoryMaterial> {
+  return await runInventoryAccess(async () => await restoreInventoryMaterialInternal(materialId))
+}
+
+export async function deleteInventoryMaterial(materialId: string): Promise<void> {
+  await runInventoryAccess(async () => await deleteInventoryMaterialInternal(materialId))
+}
+
+export async function applyInventoryMaterialAdjustment(args: {
+  materialId: string
+  input: InventoryAdjustmentInput
+}): Promise<{
+  material: InventoryMaterial
+  adjustment: InventoryAdjustment
+}> {
+  return await runInventoryAccess(async () => await applyInventoryMaterialAdjustmentInternal(args))
+}
+
+export async function readInventoryMaterial(materialId: string): Promise<InventoryMaterial | null> {
+  return await runInventoryAccess(async () => await readInventoryMaterialInternal(materialId))
+}
+
+export async function getInventoryDataDirectoryReady(): Promise<boolean> {
+  return await runInventoryAccess(async () => await getInventoryDataDirectoryReadyInternal())
 }

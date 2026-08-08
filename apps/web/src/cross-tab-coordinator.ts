@@ -4,6 +4,13 @@ type LeaseRecord = {
   updatedAt: string
 }
 
+type RuntimeReplacementRecord = {
+  operationId: string
+  tabId: string
+  expiresAt: string
+  updatedAt: string
+}
+
 export type CrossTabLeaseState = {
   role: "writer" | "follower" | "unsupported"
   currentTabId: string
@@ -11,11 +18,25 @@ export type CrossTabLeaseState = {
   leaseExpiresAt: string | null
 }
 
+export type RuntimeReplacementState = {
+  active: boolean
+  currentTabId: string
+  generation: number
+  operationId: string | null
+  ownerTabId: string | null
+}
+
 type LeaseListener = (state: CrossTabLeaseState) => void
+type RuntimeReplacementListener = (state: RuntimeReplacementState) => void
 
 const CHANNEL_NAME = "tuckmark.cross-tab-coordinator.v1"
 const LEASE_STORAGE_KEY = "tuckmark.runtime-writer-lease.v1"
+const RUNTIME_REPLACEMENT_STORAGE_KEY = "tuckmark.runtime-replacement.v1"
+const RUNTIME_GENERATION_STORAGE_KEY = "tuckmark.runtime-generation.v1"
+const RUNTIME_ACCESS_LOCK_NAME = "tuckmark.runtime-access.v1"
 const LEASE_TTL_MS = 15_000
+const RUNTIME_REPLACEMENT_TTL_MS = 60_000
+const RUNTIME_REPLACEMENT_HEARTBEAT_MS = 15_000
 const HEARTBEAT_INTERVAL_MS = 5_000
 
 function createTabId(): string {
@@ -52,9 +73,49 @@ function isLeaseExpired(record: LeaseRecord | null, now = Date.now()): boolean {
   return Date.parse(record.expiresAt) <= now
 }
 
+function parseRuntimeReplacementRecord(raw: string | null): RuntimeReplacementRecord | null {
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<RuntimeReplacementRecord>
+    if (
+      typeof parsed.operationId !== "string" ||
+      typeof parsed.tabId !== "string" ||
+      typeof parsed.expiresAt !== "string" ||
+      typeof parsed.updatedAt !== "string"
+    ) {
+      return null
+    }
+    return parsed as RuntimeReplacementRecord
+  } catch {
+    return null
+  }
+}
+
+function isRuntimeReplacementExpired(
+  record: RuntimeReplacementRecord | null,
+  now = Date.now()
+): boolean {
+  return !record || Date.parse(record.expiresAt) <= now
+}
+
+function parseRuntimeGeneration(raw: string | null): number {
+  const parsed = Number(raw)
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0
+}
+
+export class RuntimeDataSourceChangedError extends Error {
+  constructor() {
+    super("数据源已切换，请在最新数据集上重试。")
+    this.name = "RuntimeDataSourceChangedError"
+  }
+}
+
 export class CrossTabCoordinator {
   private readonly tabId = createTabId()
   private readonly listeners = new Set<LeaseListener>()
+  private readonly runtimeReplacementListeners = new Set<RuntimeReplacementListener>()
   private channel: BroadcastChannel | null = null
   private heartbeatTimer: number | null = null
   private started = false
@@ -63,6 +124,13 @@ export class CrossTabCoordinator {
     currentTabId: this.tabId,
     writerTabId: null,
     leaseExpiresAt: null,
+  }
+  private runtimeReplacementState: RuntimeReplacementState = {
+    active: false,
+    currentTabId: this.tabId,
+    generation: 0,
+    operationId: null,
+    ownerTabId: null,
   }
 
   start(): void {
@@ -84,12 +152,15 @@ export class CrossTabCoordinator {
       this.channel = new BroadcastChannel(CHANNEL_NAME)
       this.channel.addEventListener("message", () => {
         this.refreshState()
+        this.refreshRuntimeReplacementState()
       })
     }
     window.addEventListener("storage", this.handleStorageEvent)
     this.refreshState(true)
+    this.refreshRuntimeReplacementState()
     this.heartbeatTimer = window.setInterval(() => {
       this.refreshState(true)
+      this.refreshRuntimeReplacementState()
     }, HEARTBEAT_INTERVAL_MS)
   }
 
@@ -117,18 +188,103 @@ export class CrossTabCoordinator {
     }
   }
 
+  subscribeRuntimeReplacement(listener: RuntimeReplacementListener): () => void {
+    this.runtimeReplacementListeners.add(listener)
+    listener(this.runtimeReplacementState)
+    return () => {
+      this.runtimeReplacementListeners.delete(listener)
+    }
+  }
+
   getState(): CrossTabLeaseState {
     return this.state
   }
 
-  async runAsWriter<T>(task: () => Promise<T>): Promise<T> {
+  getRuntimeReplacementState(): RuntimeReplacementState {
+    return this.runtimeReplacementState
+  }
+
+  isRuntimeReplacementOwner(): boolean {
+    return (
+      this.runtimeReplacementState.active && this.runtimeReplacementState.ownerTabId === this.tabId
+    )
+  }
+
+  async runRuntimeAccess<T>(task: () => Promise<T>): Promise<T> {
+    this.refreshRuntimeReplacementState()
+    const before = this.runtimeReplacementState
+    if (before.active && !this.isRuntimeReplacementOwner()) {
+      throw new RuntimeDataSourceChangedError()
+    }
+    if (this.isRuntimeReplacementOwner()) {
+      return await task()
+    }
+    return await this.withRuntimeAccessLock("shared", async () => {
+      this.refreshRuntimeReplacementState()
+      const current = this.runtimeReplacementState
+      if (current.active || current.generation !== before.generation) {
+        throw new RuntimeDataSourceChangedError()
+      }
+      const result = await task()
+      this.refreshRuntimeReplacementState()
+      if (this.runtimeReplacementState.generation !== before.generation) {
+        throw new RuntimeDataSourceChangedError()
+      }
+      return result
+    })
+  }
+
+  async runExclusiveRuntimeReplacement<T>(task: () => Promise<T>): Promise<T> {
     this.refreshState(true)
     if (this.state.role !== "writer") {
       throw new Error("当前标签未持有数据写入租约，请先在系统页接管写入。")
     }
-    const result = await task()
-    this.broadcastState()
-    return result
+    return await this.withRuntimeAccessLock("exclusive", async () => {
+      this.refreshRuntimeReplacementState()
+      if (
+        this.runtimeReplacementState.active &&
+        this.runtimeReplacementState.ownerTabId !== this.tabId
+      ) {
+        throw new Error("另一标签正在替换数据集，请等待其完成。")
+      }
+
+      const record = this.writeRuntimeReplacement()
+      const replacementHeartbeat =
+        typeof window === "undefined"
+          ? null
+          : window.setInterval(() => {
+              this.renewRuntimeReplacement(record.operationId)
+            }, RUNTIME_REPLACEMENT_HEARTBEAT_MS)
+      this.refreshRuntimeReplacementState()
+      try {
+        const result = await task()
+        this.writeRuntimeGeneration(this.runtimeReplacementState.generation + 1)
+        return result
+      } finally {
+        if (replacementHeartbeat !== null) {
+          window.clearInterval(replacementHeartbeat)
+        }
+        this.clearRuntimeReplacement(record.operationId)
+        this.refreshRuntimeReplacementState()
+        this.broadcastState()
+      }
+    })
+  }
+
+  async runAsWriter<T>(task: () => Promise<T>): Promise<T> {
+    return await this.runRuntimeAccess(async () => {
+      this.refreshState(true)
+      this.refreshRuntimeReplacementState()
+      if (this.state.role !== "writer") {
+        throw new Error("当前标签未持有数据写入租约，请先在系统页接管写入。")
+      }
+      if (this.runtimeReplacementState.active && !this.isRuntimeReplacementOwner()) {
+        throw new Error("另一标签正在替换数据集，请等待其完成。")
+      }
+      const result = await task()
+      this.broadcastState()
+      return result
+    })
   }
 
   requestTakeover(): void {
@@ -140,10 +296,16 @@ export class CrossTabCoordinator {
   }
 
   private readonly handleStorageEvent = (event: StorageEvent) => {
-    if (event.key !== LEASE_STORAGE_KEY) {
+    if (event.key === LEASE_STORAGE_KEY) {
+      this.refreshState()
       return
     }
-    this.refreshState()
+    if (
+      event.key === RUNTIME_REPLACEMENT_STORAGE_KEY ||
+      event.key === RUNTIME_GENERATION_STORAGE_KEY
+    ) {
+      this.refreshRuntimeReplacementState()
+    }
   }
 
   private readLease(): LeaseRecord | null {
@@ -210,12 +372,110 @@ export class CrossTabCoordinator {
     })
   }
 
+  private readRuntimeReplacement(): RuntimeReplacementRecord | null {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return null
+    }
+    return parseRuntimeReplacementRecord(
+      window.localStorage.getItem(RUNTIME_REPLACEMENT_STORAGE_KEY)
+    )
+  }
+
+  private writeRuntimeReplacement(): RuntimeReplacementRecord {
+    const record: RuntimeReplacementRecord = {
+      operationId: createTabId(),
+      tabId: this.tabId,
+      updatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + RUNTIME_REPLACEMENT_TTL_MS).toISOString(),
+    }
+    window.localStorage.setItem(RUNTIME_REPLACEMENT_STORAGE_KEY, JSON.stringify(record))
+    this.broadcastState()
+    return record
+  }
+
+  private clearRuntimeReplacement(operationId: string): void {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return
+    }
+    const current = this.readRuntimeReplacement()
+    if (current?.operationId === operationId && current.tabId === this.tabId) {
+      window.localStorage.removeItem(RUNTIME_REPLACEMENT_STORAGE_KEY)
+    }
+  }
+
+  private renewRuntimeReplacement(operationId: string): void {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return
+    }
+    const current = this.readRuntimeReplacement()
+    if (current?.operationId !== operationId || current.tabId !== this.tabId) {
+      return
+    }
+    const updatedAt = new Date().toISOString()
+    window.localStorage.setItem(
+      RUNTIME_REPLACEMENT_STORAGE_KEY,
+      JSON.stringify({
+        ...current,
+        updatedAt,
+        expiresAt: new Date(Date.now() + RUNTIME_REPLACEMENT_TTL_MS).toISOString(),
+      } satisfies RuntimeReplacementRecord)
+    )
+  }
+
+  private writeRuntimeGeneration(next: number): void {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return
+    }
+    window.localStorage.setItem(RUNTIME_GENERATION_STORAGE_KEY, String(next))
+  }
+
+  private async withRuntimeAccessLock<T>(
+    mode: "shared" | "exclusive",
+    task: () => Promise<T>
+  ): Promise<T> {
+    if (typeof navigator === "undefined" || typeof navigator.locks?.request !== "function") {
+      return await task()
+    }
+    return await navigator.locks.request(RUNTIME_ACCESS_LOCK_NAME, { mode }, task)
+  }
+
+  private refreshRuntimeReplacementState(): void {
+    const supported = typeof window !== "undefined" && typeof window.localStorage !== "undefined"
+    const record = supported ? this.readRuntimeReplacement() : null
+    const activeRecord = isRuntimeReplacementExpired(record) ? null : record
+    const generation = supported
+      ? parseRuntimeGeneration(window.localStorage.getItem(RUNTIME_GENERATION_STORAGE_KEY))
+      : 0
+    this.setRuntimeReplacementState({
+      active: activeRecord !== null,
+      currentTabId: this.tabId,
+      generation,
+      operationId: activeRecord?.operationId ?? null,
+      ownerTabId: activeRecord?.tabId ?? null,
+    })
+  }
+
   private broadcastState(): void {
     this.channel?.postMessage({
-      type: "lease-updated",
+      type: "coordinator-updated",
       at: new Date().toISOString(),
       tabId: this.tabId,
     })
+  }
+
+  private setRuntimeReplacementState(next: RuntimeReplacementState): void {
+    const changed =
+      this.runtimeReplacementState.active !== next.active ||
+      this.runtimeReplacementState.generation !== next.generation ||
+      this.runtimeReplacementState.operationId !== next.operationId ||
+      this.runtimeReplacementState.ownerTabId !== next.ownerTabId
+    this.runtimeReplacementState = next
+    if (!changed) {
+      return
+    }
+    for (const listener of this.runtimeReplacementListeners) {
+      listener(next)
+    }
   }
 
   private setState(next: CrossTabLeaseState): void {

@@ -1485,6 +1485,32 @@
   z-index: 60;
 }
 
+.tm-runtime-replacement-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklab, var(--background) 78%, transparent);
+  padding: 1.5rem;
+}
+
+.tm-runtime-replacement-overlay__panel {
+  display: grid;
+  width: min(24rem, 100%);
+  gap: 0.4rem;
+  border: 1px solid var(--tm-chrome-border);
+  border-radius: 6px;
+  background: var(--tm-hero-surface);
+  box-shadow: var(--tm-hero-shadow);
+  padding: 1rem 1.125rem;
+}
+
+.tm-runtime-replacement-overlay__panel span {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
 .tm-route-loading {
   display: grid;
   align-content: start;

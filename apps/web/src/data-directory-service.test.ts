@@ -15,6 +15,7 @@ const handleStoreMocks = vi.hoisted(() => ({
 
 const runtimeStoreMocks = vi.hoisted(() => ({
   exportRuntimeSnapshot: vi.fn(),
+  rebindRuntimeStoreForDataDirectoryChange: vi.fn(),
   replaceRuntimeSnapshot: vi.fn(),
 }))
 
@@ -344,9 +345,13 @@ function readInventoryMaterialFromTree(tree: DirectoryEntries, materialId: strin
 }
 
 beforeEach(() => {
+  handleStoreMocks.clearStoredDataDirectoryHandle.mockReset()
   handleStoreMocks.loadStoredDataDirectoryHandle.mockReset()
+  handleStoreMocks.saveDataDirectoryHandle.mockReset()
   handleStoreMocks.supportsDirectoryHandles.mockReturnValue(true)
   runtimeStoreMocks.exportRuntimeSnapshot.mockReset()
+  runtimeStoreMocks.rebindRuntimeStoreForDataDirectoryChange.mockReset()
+  runtimeStoreMocks.rebindRuntimeStoreForDataDirectoryChange.mockResolvedValue(undefined)
   runtimeStoreMocks.replaceRuntimeSnapshot.mockReset()
   installLocalStorage(createMemoryStorage())
 })
@@ -474,6 +479,7 @@ describe("browser-local inventory archives", () => {
     await importRuntimeArchive({
       coordinator: {
         runAsWriter: async <T>(task: () => Promise<T>) => await task(),
+        runExclusiveRuntimeReplacement: async <T>(task: () => Promise<T>) => await task(),
       } as never,
       snapshot,
       inventorySnapshot: localInventorySnapshot,
@@ -849,6 +855,7 @@ describe("inventory directory preservation", () => {
 
   const coordinator = {
     runAsWriter: async <T>(task: () => Promise<T>) => await task(),
+    runExclusiveRuntimeReplacement: async <T>(task: () => Promise<T>) => await task(),
   } as never
 
   it("initializes a first attached directory with browser-local inventory", async () => {
@@ -864,6 +871,7 @@ describe("inventory directory preservation", () => {
     writeBrowserLocalInventorySnapshot(localInventorySnapshot)
 
     await attachDataDirectory({
+      coordinator,
       handle: createDirectoryHandle("Tuckmark", tree),
       mode: "overwrite-current",
     })
@@ -872,6 +880,41 @@ describe("inventory directory preservation", () => {
       id: "material-local",
       currentQuantity: 12,
     })
+    expect(handleStoreMocks.saveDataDirectoryHandle).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Tuckmark" })
+    )
+    expect(runtimeStoreMocks.rebindRuntimeStoreForDataDirectoryChange).toHaveBeenCalledTimes(1)
+  })
+
+  it("restores the previous directory binding when the new runtime store cannot bind", async () => {
+    const snapshot = createSnapshot({
+      templateIds: ["template-a"],
+      versionCount: 1,
+      workingCopyCount: 1,
+      updatedAt: "2026-07-17T07:00:00.000Z",
+    })
+    const previousTree: DirectoryEntries = {}
+    const candidateTree: DirectoryEntries = {}
+    const previousHandle = createDirectoryHandle("PreviousData", previousTree)
+    const candidateHandle = createDirectoryHandle("CandidateData", candidateTree)
+    runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(snapshot)
+    runtimeStoreMocks.rebindRuntimeStoreForDataDirectoryChange.mockRejectedValueOnce(
+      new Error("new directory unavailable")
+    )
+    handleStoreMocks.loadStoredDataDirectoryHandle.mockResolvedValue(previousHandle)
+
+    await expect(
+      attachDataDirectory({
+        coordinator,
+        handle: candidateHandle,
+        mode: "overwrite-current",
+      })
+    ).rejects.toThrow("new directory unavailable")
+
+    expect(handleStoreMocks.saveDataDirectoryHandle).toHaveBeenNthCalledWith(1, candidateHandle)
+    expect(handleStoreMocks.saveDataDirectoryHandle).toHaveBeenNthCalledWith(2, previousHandle)
+    expect(runtimeStoreMocks.rebindRuntimeStoreForDataDirectoryChange).toHaveBeenCalledTimes(2)
+    expect(candidateTree["manifest.json"]).toBeTypeOf("string")
   })
 
   it("preserves directory inventory during routine runtime synchronization", async () => {

@@ -6,6 +6,7 @@ import {
   createConfiguredHealthyDataDirectoryStatus,
   createDirectoryAttachChoiceDialog,
   createImportConfirmDialog,
+  createPendingDraftsDialog,
   createPermissionDeniedDataDirectoryStatus,
   createRestoreConfirmDialog,
   createUnconfiguredDataDirectoryStatus,
@@ -35,11 +36,13 @@ const meta = {
     onConfirmAttachment: () => undefined,
     onConfirmImport: () => undefined,
     onConfirmRestore: () => undefined,
+    onConfirmForcedReplacement: () => undefined,
     onCreateBackup: () => undefined,
     onExportArchive: () => undefined,
     onInspectImportArchive: () => undefined,
     onInspectRestoreBackup: () => undefined,
     onRequestPermission: () => undefined,
+    onOpenForceReplacementConfirmation: () => undefined,
     onSyncNow: () => undefined,
     onTakeOverWrites: () => undefined,
   },
@@ -95,6 +98,29 @@ export const RestoreConfirm: Story = {
       backups: [createBackupListDataDirectoryStatus().backups[0]],
     },
     dialog: createRestoreConfirmDialog(),
+  },
+}
+
+export const PendingDrafts: Story = {
+  args: {
+    dialog: createPendingDraftsDialog(),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body)
+    await expect(canvas.getByText("请先处理未保存草稿")).toBeVisible()
+    await expect(canvas.getAllByRole("link", { name: "打开画布" })).toHaveLength(2)
+    await expect(canvas.getByRole("button", { name: "管理员强制替换" })).toBeVisible()
+  },
+}
+
+export const ForceReplacementConfirmation: Story = {
+  parameters: {
+    viewport: {
+      defaultViewport: "data-replacement-mobile",
+    },
+  },
+  args: {
+    dialog: createPendingDraftsDialog({ forceConfirmation: true }),
   },
 }
 

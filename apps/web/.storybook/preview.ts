@@ -19,6 +19,13 @@ const preview: Preview = {
             height: "844px",
           },
         },
+        "data-replacement-mobile": {
+          name: "Data Replacement Mobile 393",
+          styles: {
+            width: "393px",
+            height: "852px",
+          },
+        },
         "template-single-outlet": {
           name: "Template Single Outlet 1100",
           styles: {

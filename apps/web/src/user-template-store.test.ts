@@ -4,15 +4,19 @@ import { beforeEach, describe, expect, it } from "vitest"
 
 import {
   createDraftFromPreset,
+  createDraftFromSystemTemplate,
   getPresetById,
+  getSystemTemplateById,
   toggleElementBinding,
 } from "./canvas-editor-model.js"
 import {
   archiveUserTemplate,
   clearTemplateAutosaves,
+  clearWorkingCopy,
   exportRuntimeSnapshot,
   getAutosaveIntervalMs,
   listArchivedUserTemplates,
+  listPendingRuntimeDrafts,
   listUserTemplates,
   loadRuntimeAppSettings,
   loadWorkingCopy,
@@ -79,6 +83,50 @@ describe("user-template-store", () => {
     })
     expect(workingCopy?.baseVersionId).toBe(secondSave.version.id)
     expect(workingCopy?.draft.fields[0]?.defaultValue).toBe("Dock A-17")
+  })
+
+  it("only reports working copies that differ from their saved or built-in baseline", async () => {
+    const saved = await saveUserTemplate({
+      name: "Draft Scan Label",
+      document: createDraftFromPreset(getPresetById("shipping-wide")),
+    })
+
+    expect(await listPendingRuntimeDrafts()).toEqual([])
+
+    const namedDraft = structuredClone(saved.workingCopy.draft)
+    namedDraft.name = "Draft Scan Label edited"
+    await replaceUserTemplateWorkingCopy({
+      source: { kind: "user-template", templateId: saved.template.id },
+      templateId: saved.template.id,
+      sourceVersionId: saved.version.id,
+      document: namedDraft,
+    })
+
+    const scratchDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    scratchDraft.name = "Shipping scratch edited"
+    await replaceUserTemplateWorkingCopy({
+      source: { kind: "scratch", presetId: "shipping-wide" },
+      document: scratchDraft,
+    })
+
+    const presetDraft = createDraftFromSystemTemplate(getSystemTemplateById("cable-tag"))
+    presetDraft.name = "Cable template edited"
+    await replaceUserTemplateWorkingCopy({
+      source: { kind: "preset-template", presetId: "cable-tag" },
+      document: presetDraft,
+    })
+
+    expect((await listPendingRuntimeDrafts()).map((draft) => draft.source.kind).sort()).toEqual([
+      "preset-template",
+      "scratch",
+      "user-template",
+    ])
+
+    await clearWorkingCopy({ kind: "user-template", templateId: saved.template.id })
+    await clearWorkingCopy({ kind: "scratch", presetId: "shipping-wide" })
+    await clearWorkingCopy({ kind: "preset-template", presetId: "cable-tag" })
+
+    expect(await listPendingRuntimeDrafts()).toEqual([])
   })
 
   it("persists and clears the suggested usage metadata", async () => {

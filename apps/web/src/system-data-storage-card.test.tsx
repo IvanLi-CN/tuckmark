@@ -85,11 +85,13 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof SystemDataSto
       onConfirmAttachment={() => undefined}
       onConfirmImport={() => undefined}
       onConfirmRestore={() => undefined}
+      onConfirmForcedReplacement={() => undefined}
       onCreateBackup={() => undefined}
       onExportArchive={() => undefined}
       onInspectImportArchive={() => undefined}
       onInspectRestoreBackup={() => undefined}
       onRequestPermission={() => undefined}
+      onOpenForceReplacementConfirmation={() => undefined}
       onSyncNow={() => undefined}
       onTakeOverWrites={() => undefined}
       {...overrides}
@@ -320,5 +322,66 @@ describe("SystemDataStorageCard", () => {
     expect(document.body.textContent).toContain("确认导入整库数据")
     expect(document.body.textContent).toContain("runtime-export.zip")
     expect(document.body.textContent).toContain("4 模板 / 12 版本 / 2 草稿 / 3 物料 / 9 流水")
+  })
+
+  it("requires a second administrator confirmation before forcing data replacement", async () => {
+    const openForceConfirmation = vi.fn()
+    const confirmForcedReplacement = vi.fn()
+    const pendingDraftDialog = {
+      kind: "drafts-required" as const,
+      drafts: [
+        {
+          label: "电源模块标签",
+          source: { kind: "user-template" as const, templateId: "power-module" },
+          sourceKey: "user:power-module",
+          updatedAt: "2026-08-08T10:00:00.000Z",
+        },
+      ],
+      operation: {
+        kind: "import" as const,
+        inspection: {} as never,
+      },
+    }
+
+    await renderCard({
+      dialog: pendingDraftDialog,
+      onOpenForceReplacementConfirmation: openForceConfirmation,
+    })
+
+    expect(document.body.textContent).toContain("请先处理未保存草稿")
+    const canvasLink = Array.from(document.querySelectorAll("a")).find((link) =>
+      link.textContent?.includes("打开画布")
+    )
+    expect(canvasLink?.getAttribute("href")).toBe(
+      "/canvas?source=user-template&templateId=power-module"
+    )
+    const forceButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("管理员强制替换")
+    )
+    if (!forceButton) {
+      throw new Error("Missing administrator force button")
+    }
+    await act(async () => {
+      forceButton.click()
+      await flush()
+    })
+    expect(openForceConfirmation).toHaveBeenCalledTimes(1)
+    expect(confirmForcedReplacement).not.toHaveBeenCalled()
+
+    await renderCard({
+      dialog: { ...pendingDraftDialog, kind: "force-replace" },
+      onConfirmForcedReplacement: confirmForcedReplacement,
+    })
+    const confirmButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("放弃草稿并替换")
+    )
+    if (!confirmButton) {
+      throw new Error("Missing force replacement confirmation button")
+    }
+    await act(async () => {
+      confirmButton.click()
+      await flush()
+    })
+    expect(confirmForcedReplacement).toHaveBeenCalledTimes(1)
   })
 })

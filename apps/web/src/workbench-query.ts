@@ -26,16 +26,22 @@ export function createWorkbenchQueryClient(): QueryClient {
   })
 }
 
-function getWorkbenchScopeKey(context: WorkbenchCacheScope) {
-  return ["workbench", context.surface, context.mode] as const
+function getWorkbenchScopeKey(context: WorkbenchCacheScope, runtimeDataGeneration = 0) {
+  return ["workbench", context.surface, context.mode, runtimeDataGeneration] as const
 }
 
-export function getUserTemplatesQueryKey(context: WorkbenchCacheScope) {
-  return [...getWorkbenchScopeKey(context), "user-templates"] as const
+export function getUserTemplatesQueryKey(context: WorkbenchCacheScope, runtimeDataGeneration = 0) {
+  return [...getWorkbenchScopeKey(context, runtimeDataGeneration), "user-templates"] as const
 }
 
-export function getArchivedUserTemplatesQueryKey(context: WorkbenchCacheScope) {
-  return [...getWorkbenchScopeKey(context), "archived-user-templates"] as const
+export function getArchivedUserTemplatesQueryKey(
+  context: WorkbenchCacheScope,
+  runtimeDataGeneration = 0
+) {
+  return [
+    ...getWorkbenchScopeKey(context, runtimeDataGeneration),
+    "archived-user-templates",
+  ] as const
 }
 
 function getCanvasRouteSourceKey(source: CanvasDraftSource) {
@@ -51,26 +57,30 @@ function getCanvasRouteSourceKey(source: CanvasDraftSource) {
 
 export function getCanvasRouteDataQueryKey(
   context: WorkbenchCacheScope,
-  source: CanvasDraftSource
+  source: CanvasDraftSource,
+  runtimeDataGeneration = 0
 ) {
   return [
-    ...getWorkbenchScopeKey(context),
+    ...getWorkbenchScopeKey(context, runtimeDataGeneration),
     "canvas-route",
     ...getCanvasRouteSourceKey(source),
   ] as const
 }
 
-export function userTemplatesQueryOptions(context: WorkbenchCacheScope) {
+export function userTemplatesQueryOptions(context: WorkbenchCacheScope, runtimeDataGeneration = 0) {
   return queryOptions({
-    queryKey: getUserTemplatesQueryKey(context),
+    queryKey: getUserTemplatesQueryKey(context, runtimeDataGeneration),
     queryFn: async (): Promise<UserTemplateSummary[]> => listUserTemplates(),
     placeholderData: (previous) => previous,
   })
 }
 
-export function archivedUserTemplatesQueryOptions(context: WorkbenchCacheScope) {
+export function archivedUserTemplatesQueryOptions(
+  context: WorkbenchCacheScope,
+  runtimeDataGeneration = 0
+) {
   return queryOptions({
-    queryKey: getArchivedUserTemplatesQueryKey(context),
+    queryKey: getArchivedUserTemplatesQueryKey(context, runtimeDataGeneration),
     queryFn: async (): Promise<UserTemplateSummary[]> => listArchivedUserTemplates(),
     placeholderData: (previous) => previous,
   })
@@ -78,10 +88,11 @@ export function archivedUserTemplatesQueryOptions(context: WorkbenchCacheScope) 
 
 export function canvasRouteDataQueryOptions(
   context: WorkbenchCacheScope,
-  source: CanvasDraftSource
+  source: CanvasDraftSource,
+  runtimeDataGeneration = 0
 ) {
   return queryOptions({
-    queryKey: getCanvasRouteDataQueryKey(context, source),
+    queryKey: getCanvasRouteDataQueryKey(context, source, runtimeDataGeneration),
     queryFn: async (): Promise<LoadedCanvasRouteData> => loadCanvasRouteData(source),
   })
 }

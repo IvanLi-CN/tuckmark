@@ -37,6 +37,7 @@ import type {
   RuntimeSnapshotSummary,
 } from "./data-directory-types.js"
 import { devdDataClient } from "./devd-data-client.js"
+import type { CanvasDraftSource } from "./types.js"
 import type { WorkbenchDataDirectoryDialogState } from "./workbench-controller.js"
 
 type DataStorageCardProps = {
@@ -48,13 +49,25 @@ type DataStorageCardProps = {
   onConfirmAttachment: (mode: "overwrite-current" | "import-existing") => void
   onConfirmImport: () => void
   onConfirmRestore: () => void
+  onConfirmForcedReplacement: () => void
   onCreateBackup: () => void
   onExportArchive: () => void
   onInspectImportArchive: (file: File) => void
   onInspectRestoreBackup: (entry: DataDirectoryBackupEntry) => void
   onRequestPermission: () => void
+  onOpenForceReplacementConfirmation: () => void
   onSyncNow: () => void
   onTakeOverWrites: () => void
+}
+
+function getCanvasDraftPath(source: CanvasDraftSource): string {
+  if (source.kind === "user-template") {
+    return `/canvas?source=user-template&templateId=${encodeURIComponent(source.templateId)}`
+  }
+  if (source.kind === "preset-template") {
+    return `/canvas?source=preset-template&templateId=${encodeURIComponent(source.presetId)}`
+  }
+  return `/canvas?presetId=${encodeURIComponent(source.presetId)}`
 }
 
 function formatTimestamp(value: string | null): string {
@@ -479,6 +492,71 @@ function ArchiveConfirmDialog({
   )
 }
 
+function PendingDraftsDialog({
+  dialog,
+  onCancel,
+  onForce,
+  onConfirmForce,
+}: {
+  dialog: WorkbenchDataDirectoryDialogState | null
+  onCancel: () => void
+  onForce: () => void
+  onConfirmForce: () => void
+}) {
+  if (!dialog || (dialog.kind !== "drafts-required" && dialog.kind !== "force-replace")) {
+    return null
+  }
+  const forceConfirmation = dialog.kind === "force-replace"
+  return (
+    <Dialog open onOpenChange={(next) => !next && onCancel()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {forceConfirmation ? "确认强制替换数据集" : "请先处理未保存草稿"}
+          </DialogTitle>
+          <DialogDescription>
+            {forceConfirmation
+              ? "强制替换会放弃下列草稿及无响应标签尚未写入的数据。该操作不可撤销。"
+              : "切换目录或整库恢复会替换当前画布数据。请先保存为用户模板，或在画布中重置并放弃草稿。"}
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="grid gap-2 text-sm">
+          {dialog.drafts.map((draft) => (
+            <li key={draft.sourceKey} className="tm-list-item gap-3">
+              <div className="grid min-w-0 gap-0.5">
+                <strong className="truncate">{draft.label}</strong>
+                <span className="text-xs text-muted-foreground">
+                  {draft.source.kind === "user-template" ? "用户模板草稿" : "画布草稿"} ·{" "}
+                  {formatTimestamp(draft.updatedAt)}
+                </span>
+              </div>
+              {!forceConfirmation ? (
+                <Button asChild type="button" variant="outline" size="sm">
+                  <a href={getCanvasDraftPath(draft.source)}>打开画布</a>
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+        <DialogFooter className="flex-wrap">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            取消
+          </Button>
+          {forceConfirmation ? (
+            <Button type="button" variant="destructive" onClick={onConfirmForce}>
+              放弃草稿并替换
+            </Button>
+          ) : (
+            <Button type="button" variant="destructive" onClick={onForce}>
+              管理员强制替换
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function SystemDataStorageCard({
   busy,
   dialog,
@@ -488,11 +566,13 @@ export function SystemDataStorageCard({
   onConfirmAttachment,
   onConfirmImport,
   onConfirmRestore,
+  onConfirmForcedReplacement,
   onCreateBackup,
   onExportArchive,
   onInspectImportArchive,
   onInspectRestoreBackup,
   onRequestPermission,
+  onOpenForceReplacementConfirmation,
   onSyncNow,
   onTakeOverWrites,
 }: DataStorageCardProps) {
@@ -715,6 +795,13 @@ export function SystemDataStorageCard({
         confirmLabel="恢复备份"
         onCancel={onCancelDialog}
         onConfirm={onConfirmRestore}
+      />
+
+      <PendingDraftsDialog
+        dialog={dialog}
+        onCancel={onCancelDialog}
+        onForce={onOpenForceReplacementConfirmation}
+        onConfirmForce={onConfirmForcedReplacement}
       />
     </>
   )

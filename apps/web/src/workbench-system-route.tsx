@@ -35,11 +35,13 @@ export default function WorkbenchSystemRoute({
           onConfirmAttachment={(mode) => void controller.confirmDataDirectoryAttachment(mode)}
           onConfirmImport={() => void controller.confirmImportDataArchive()}
           onConfirmRestore={() => void controller.confirmRestoreBackup()}
+          onConfirmForcedReplacement={() => void controller.confirmForcedDataReplacement()}
           onCreateBackup={() => void controller.createManualDataBackup()}
           onExportArchive={() => void controller.exportDataArchive()}
           onInspectImportArchive={(file) => void controller.inspectImportDataArchive(file)}
           onInspectRestoreBackup={(entry) => void controller.inspectRestoreBackup(entry)}
           onRequestPermission={() => void controller.requestDataDirectoryPermission()}
+          onOpenForceReplacementConfirmation={controller.openForceReplacementConfirmation}
           onSyncNow={() => void controller.syncDataDirectoryNow()}
           onTakeOverWrites={controller.takeOverDataDirectoryWrites}
         />

@@ -1,5 +1,12 @@
 import { stableStringify } from "../../../packages/core/src/web.js"
-import { listStoredDraftDocuments } from "./canvas-editor-model.js"
+import {
+  createDraftFromPreset,
+  createDraftFromSystemTemplate,
+  getPresetById,
+  getSystemTemplateById,
+  listStoredDraftDocuments,
+} from "./canvas-editor-model.js"
+import { getSharedCrossTabCoordinator } from "./cross-tab-coordinator.js"
 import { supportsDirectoryHandles } from "./data-directory-handle-store.js"
 import {
   loadConfiguredDataDirectoryHandle,
@@ -1444,6 +1451,12 @@ async function trimIndexedDbVersions(
 let legacyStorePromise: Promise<RuntimeStore> | undefined
 let storePromise: Promise<RuntimeStore> | undefined
 
+async function withRuntimeStore<T>(task: (store: RuntimeStore) => Promise<T>): Promise<T> {
+  return await getSharedCrossTabCoordinator().runRuntimeAccess(
+    async () => await task(await resolveStore())
+  )
+}
+
 async function migrateLegacyDraftsToRuntimeStore(store: RuntimeStore): Promise<void> {
   if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
     return
@@ -1545,32 +1558,27 @@ export function getAutosaveIntervalMs(): number {
 }
 
 export async function listUserTemplates(): Promise<UserTemplateSummary[]> {
-  const store = await resolveStore()
-  return store.listTemplates()
+  return await withRuntimeStore(async (store) => await store.listTemplates())
 }
 
 export async function listArchivedUserTemplates(): Promise<UserTemplateSummary[]> {
-  const store = await resolveStore()
-  return store.listArchivedTemplates()
+  return await withRuntimeStore(async (store) => await store.listArchivedTemplates())
 }
 
 export async function readUserTemplate(templateId: string): Promise<UserTemplateSummary | null> {
-  const store = await resolveStore()
-  return store.readTemplate(templateId)
+  return await withRuntimeStore(async (store) => await store.readTemplate(templateId))
 }
 
 export async function readUserTemplateHistory(
   templateId: string
 ): Promise<UserTemplateHistory | null> {
-  const store = await resolveStore()
-  return store.readHistory(templateId)
+  return await withRuntimeStore(async (store) => await store.readHistory(templateId))
 }
 
 export async function readUserTemplateVersion(
   versionId: string
 ): Promise<UserTemplateVersionSnapshot | null> {
-  const store = await resolveStore()
-  return store.readVersion(versionId)
+  return await withRuntimeStore(async (store) => await store.readVersion(versionId))
 }
 
 export async function saveUserTemplate(args: {
@@ -1580,8 +1588,7 @@ export async function saveUserTemplate(args: {
   templateId?: string
   sourceVersionId?: string
 }) {
-  const store = await resolveStore()
-  const result = await store.saveTemplate(args)
+  const result = await withRuntimeStore(async (store) => await store.saveTemplate(args))
   emitRuntimeStoreMutation("template-saved")
   return result
 }
@@ -1590,8 +1597,9 @@ export async function renameUserTemplate(
   templateId: string,
   name: string
 ): Promise<UserTemplateSummary | null> {
-  const store = await resolveStore()
-  const result = await store.renameTemplate(templateId, name)
+  const result = await withRuntimeStore(
+    async (store) => await store.renameTemplate(templateId, name)
+  )
   if (result) {
     emitRuntimeStoreMutation("template-renamed")
   }
@@ -1599,8 +1607,7 @@ export async function renameUserTemplate(
 }
 
 export async function archiveUserTemplate(templateId: string): Promise<UserTemplateSummary | null> {
-  const store = await resolveStore()
-  const result = await store.archiveTemplate(templateId)
+  const result = await withRuntimeStore(async (store) => await store.archiveTemplate(templateId))
   if (result) {
     emitRuntimeStoreMutation("template-archived")
   }
@@ -1608,8 +1615,7 @@ export async function archiveUserTemplate(templateId: string): Promise<UserTempl
 }
 
 export async function restoreUserTemplate(templateId: string): Promise<UserTemplateSummary | null> {
-  const store = await resolveStore()
-  const result = await store.restoreTemplate(templateId)
+  const result = await withRuntimeStore(async (store) => await store.restoreTemplate(templateId))
   if (result) {
     emitRuntimeStoreMutation("template-restored")
   }
@@ -1617,8 +1623,7 @@ export async function restoreUserTemplate(templateId: string): Promise<UserTempl
 }
 
 export async function purgeUserTemplate(templateId: string): Promise<void> {
-  const store = await resolveStore()
-  await store.purgeTemplate(templateId)
+  await withRuntimeStore(async (store) => await store.purgeTemplate(templateId))
   emitRuntimeStoreMutation("template-purged")
 }
 
@@ -1628,8 +1633,7 @@ export async function saveUserTemplateAutosave(args: {
   document: CanvasDraftDocument
   sourceVersionId?: string
 }) {
-  const store = await resolveStore()
-  const result = await store.saveAutosave(args)
+  const result = await withRuntimeStore(async (store) => await store.saveAutosave(args))
   emitRuntimeStoreMutation("autosave-saved")
   return result
 }
@@ -1640,8 +1644,7 @@ export async function replaceUserTemplateWorkingCopy(args: {
   document: CanvasDraftDocument
   sourceVersionId?: string
 }) {
-  const store = await resolveStore()
-  const result = await store.replaceWorkingCopy(args)
+  const result = await withRuntimeStore(async (store) => await store.replaceWorkingCopy(args))
   emitRuntimeStoreMutation("working-copy-replaced")
   return result
 }
@@ -1649,25 +1652,21 @@ export async function replaceUserTemplateWorkingCopy(args: {
 export async function loadWorkingCopy(
   source: CanvasDraftSource
 ): Promise<CanvasWorkingCopyIndexEntry | null> {
-  const store = await resolveStore()
-  return store.loadWorkingCopy(source)
+  return await withRuntimeStore(async (store) => await store.loadWorkingCopy(source))
 }
 
 export async function clearWorkingCopy(source: CanvasDraftSource): Promise<void> {
-  const store = await resolveStore()
-  await store.clearWorkingCopy(source)
+  await withRuntimeStore(async (store) => await store.clearWorkingCopy(source))
   emitRuntimeStoreMutation("working-copy-cleared")
 }
 
 export async function clearTemplateAutosaves(templateId: string): Promise<void> {
-  const store = await resolveStore()
-  await store.clearTemplateAutosaves(templateId)
+  await withRuntimeStore(async (store) => await store.clearTemplateAutosaves(templateId))
   emitRuntimeStoreMutation("template-autosaves-cleared")
 }
 
 export async function loadRuntimeAppSettings(): Promise<RuntimeStoreAppSettings> {
-  const store = await resolveStore()
-  return store.loadAppSettings()
+  return await withRuntimeStore(async (store) => await store.loadAppSettings())
 }
 
 export async function saveRuntimeAppSettings(
@@ -1677,20 +1676,71 @@ export async function saveRuntimeAppSettings(
         current: RuntimeStoreAppSettings
       ) => Partial<Omit<RuntimeStoreAppSettings, "version" | "updatedAt">>)
 ): Promise<RuntimeStoreAppSettings> {
-  const store = await resolveStore()
-  const result = await store.saveAppSettings(updater)
+  const result = await withRuntimeStore(async (store) => await store.saveAppSettings(updater))
   emitRuntimeStoreMutation("app-settings-saved")
   return result
 }
 
 export async function exportRuntimeSnapshot(): Promise<RuntimeStoreSnapshot> {
-  const store = await resolveStore()
-  return store.exportSnapshot()
+  return await withRuntimeStore(async (store) => await store.exportSnapshot())
 }
 
 export async function replaceRuntimeSnapshot(snapshot: RuntimeStoreSnapshot): Promise<void> {
+  await withRuntimeStore(async (store) => await store.replaceSnapshot(snapshot))
+  emitRuntimeStoreMutation("snapshot-replaced")
+}
+
+export type PendingRuntimeDraft = {
+  label: string
+  source: CanvasDraftSource
+  sourceKey: string
+  updatedAt: string
+}
+
+export async function listPendingRuntimeDrafts(): Promise<PendingRuntimeDraft[]> {
+  return await withRuntimeStore(async (store) => {
+    const snapshot = await store.exportSnapshot()
+    const templates = new Map(snapshot.templates.map((template) => [template.id, template]))
+    const versions = new Map(snapshot.versions.map((version) => [version.id, version]))
+    return snapshot.workingCopies.flatMap((entry) => {
+      let baseline: CanvasDraftDocument
+      let label: string
+      if (entry.source.kind === "user-template") {
+        const template = templates.get(entry.source.templateId)
+        const currentVersion = template ? versions.get(template.currentVersionId) : undefined
+        if (!template || !currentVersion) {
+          return []
+        }
+        baseline = currentVersion.document
+        label = template.name
+      } else if (entry.source.kind === "preset-template") {
+        const template = getSystemTemplateById(entry.source.presetId)
+        baseline = createDraftFromSystemTemplate(template)
+        label = template.name
+      } else {
+        const preset = getPresetById(entry.source.presetId)
+        baseline = createDraftFromPreset(preset)
+        label = preset.name
+      }
+      if (sameDocumentContent(entry.draft, baseline)) {
+        return []
+      }
+      return [
+        {
+          label,
+          source: entry.source,
+          sourceKey: entry.sourceKey,
+          updatedAt: entry.updatedAt,
+        },
+      ]
+    })
+  })
+}
+
+export async function rebindRuntimeStoreForDataDirectoryChange(): Promise<void> {
+  storePromise = undefined
   const store = await resolveStore()
-  await store.replaceSnapshot(snapshot)
+  await store.listTemplates()
   emitRuntimeStoreMutation("snapshot-replaced")
 }
 

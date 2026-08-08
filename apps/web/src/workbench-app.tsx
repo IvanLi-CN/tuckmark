@@ -100,6 +100,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./components/ui/sheet.js"
 import { Textarea } from "./components/ui/textarea.js"
 import { DataDirectoryNudgeToast } from "./data-directory-nudge-toast.js"
+import { DataReplacementOverlay } from "./data-replacement-overlay.js"
 import { buildInputFromTemplate, defaultDraftRenderOptions } from "./demo-data.js"
 import { FooterBuildMeta } from "./footer-build-meta.js"
 import { formatCanvasDimension } from "./lib/canvas-dimensions.js"
@@ -3211,11 +3212,13 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
           onConfirmAttachment={(mode) => void controller.confirmDataDirectoryAttachment(mode)}
           onConfirmImport={() => void controller.confirmImportDataArchive()}
           onConfirmRestore={() => void controller.confirmRestoreBackup()}
+          onConfirmForcedReplacement={() => void controller.confirmForcedDataReplacement()}
           onCreateBackup={() => void controller.createManualDataBackup()}
           onExportArchive={() => void controller.exportDataArchive()}
           onInspectImportArchive={(file) => void controller.inspectImportDataArchive(file)}
           onInspectRestoreBackup={(entry) => void controller.inspectRestoreBackup(entry)}
           onRequestPermission={() => void controller.requestDataDirectoryPermission()}
+          onOpenForceReplacementConfirmation={controller.openForceReplacementConfirmation}
           onSyncNow={() => void controller.syncDataDirectoryNow()}
           onTakeOverWrites={controller.takeOverDataDirectoryWrites}
         />
@@ -4756,9 +4759,13 @@ function WorkbenchCanvasRouteComponent() {
       canvasScenario
         ? null
         : (queryClient.getQueryData<LoadedCanvasRouteData>(
-            canvasRouteDataQueryOptions(controller.context, routeSource).queryKey
+            canvasRouteDataQueryOptions(
+              controller.context,
+              routeSource,
+              controller.runtimeDataGeneration
+            ).queryKey
           ) ?? null),
-    [canvasScenario, controller.context, queryClient, routeSource]
+    [canvasScenario, controller.context, controller.runtimeDataGeneration, queryClient, routeSource]
   )
   return (
     <React.Suspense fallback={<RouteLoadingPanel />}>
@@ -5067,6 +5074,7 @@ function WorkbenchAppInner({
         pwaUpdateSnapshot={pwaUpdateSnapshot}
         shellHidden={shellHidden}
       />
+      <DataReplacementOverlay active={controller.runtimeDataReplacementActive} />
       {shellHidden ? (
         <div className="tm-startup-overlay">
           <AppLaunchSplash
@@ -5136,6 +5144,7 @@ function WorkbenchAppStoryInner({
         pwaUpdateSnapshot={pwaUpdateSnapshot}
         shellHidden={false}
       />
+      <DataReplacementOverlay active={controller.runtimeDataReplacementActive} />
     </ThemeScope>
   )
 }

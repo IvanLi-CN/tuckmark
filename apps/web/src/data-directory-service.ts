@@ -37,7 +37,11 @@ import type {
   UserTemplateRecord,
   UserTemplateVersionSnapshot,
 } from "./types.js"
-import { exportRuntimeSnapshot, replaceRuntimeSnapshot } from "./user-template-store.js"
+import {
+  exportRuntimeSnapshot,
+  rebindRuntimeStoreForDataDirectoryChange,
+  replaceRuntimeSnapshot,
+} from "./user-template-store.js"
 
 const APP_SETTINGS_PATH = "settings/app-settings.json"
 const BACKUPS_DIR = "backups"
@@ -984,6 +988,7 @@ export async function pickDataDirectory(): Promise<{
 }
 
 export async function attachDataDirectory(args: {
+  coordinator: CrossTabCoordinator
   handle: FileSystemDirectoryHandle
   mode: "overwrite-current" | "import-existing"
 }): Promise<"mirrored-runtime" | "replaced-runtime"> {
@@ -991,28 +996,40 @@ export async function attachDataDirectory(args: {
   if (permission !== "granted") {
     throw new Error("未获得数据目录的读写权限。")
   }
-  const previousHandle = await loadConfiguredDataDirectoryHandle()
-  await saveDataDirectoryHandle(args.handle)
-
-  if (args.mode === "overwrite-current") {
+  return await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+    const previousHandle = await loadConfiguredDataDirectoryHandle()
     const snapshot = await exportRuntimeSnapshot()
     const inventorySnapshot = previousHandle
       ? await readInventorySnapshotFromDirectory(previousHandle)
       : readBrowserLocalInventorySnapshot()
-    await writeSnapshotToDirectory(
-      args.handle,
-      snapshot,
-      inventorySnapshot,
-      "runtime-sync",
-      "replace"
-    )
-    return "mirrored-runtime"
-  }
 
-  const snapshot = await readSnapshotFromDirectory(args.handle)
-  await replaceRuntimeSnapshot(snapshot)
-  rememberSyncSuccess(new Date().toISOString())
-  return "replaced-runtime"
+    if (args.mode === "import-existing") {
+      await readSnapshotFromDirectory(args.handle)
+    } else {
+      await writeSnapshotToDirectory(
+        args.handle,
+        snapshot,
+        inventorySnapshot,
+        "runtime-sync",
+        "replace"
+      )
+    }
+
+    try {
+      await saveDataDirectoryHandle(args.handle)
+      await rebindRuntimeStoreForDataDirectoryChange()
+      rememberSyncSuccess(new Date().toISOString())
+      return args.mode === "overwrite-current" ? "mirrored-runtime" : "replaced-runtime"
+    } catch (error) {
+      if (previousHandle) {
+        await saveDataDirectoryHandle(previousHandle)
+      } else {
+        await clearStoredDataDirectoryHandle()
+      }
+      await rebindRuntimeStoreForDataDirectoryChange().catch(() => undefined)
+      throw error
+    }
+  })
 }
 
 export async function detachDataDirectory(): Promise<void> {
@@ -1162,16 +1179,30 @@ export async function restoreConfiguredBackup(args: {
   if (permission !== "granted") {
     throw new Error("需要先授予数据目录读写权限。")
   }
-  await args.coordinator.runAsWriter(async () => {
-    await createProtectionBackup(handle)
-    await replaceRuntimeSnapshot(args.snapshot)
-    await writeSnapshotToDirectory(
-      handle,
-      args.snapshot,
-      args.inventorySnapshot,
-      "runtime-sync",
-      "replace"
-    )
+  await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+    const previousSnapshot = await exportRuntimeSnapshot()
+    const previousInventory = await readInventorySnapshotFromDirectory(handle)
+    try {
+      await createProtectionBackup(handle)
+      await replaceRuntimeSnapshot(args.snapshot)
+      await writeSnapshotToDirectory(
+        handle,
+        args.snapshot,
+        args.inventorySnapshot,
+        "runtime-sync",
+        "replace"
+      )
+    } catch (error) {
+      await replaceRuntimeSnapshot(previousSnapshot).catch(() => undefined)
+      await writeSnapshotToDirectory(
+        handle,
+        previousSnapshot,
+        previousInventory,
+        "runtime-sync",
+        "replace"
+      ).catch(() => undefined)
+      throw error
+    }
   })
 }
 
@@ -1196,22 +1227,46 @@ export async function importRuntimeArchive(args: {
     if (permission !== "granted") {
       throw new Error("需要先授予数据目录读写权限。")
     }
-    await args.coordinator.runAsWriter(async () => {
-      await createProtectionBackup(handle)
-      await replaceRuntimeSnapshot(args.snapshot)
-      await writeSnapshotToDirectory(
-        handle,
-        args.snapshot,
-        args.inventorySnapshot,
-        "runtime-sync",
-        "replace"
-      )
+    await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+      const previousSnapshot = await exportRuntimeSnapshot()
+      const previousInventory = await readInventorySnapshotFromDirectory(handle)
+      try {
+        await createProtectionBackup(handle)
+        await replaceRuntimeSnapshot(args.snapshot)
+        await writeSnapshotToDirectory(
+          handle,
+          args.snapshot,
+          args.inventorySnapshot,
+          "runtime-sync",
+          "replace"
+        )
+      } catch (error) {
+        await replaceRuntimeSnapshot(previousSnapshot).catch(() => undefined)
+        await writeSnapshotToDirectory(
+          handle,
+          previousSnapshot,
+          previousInventory,
+          "runtime-sync",
+          "replace"
+        ).catch(() => undefined)
+        throw error
+      }
     })
     return
   }
 
-  await replaceRuntimeSnapshot(args.snapshot)
-  writeBrowserLocalInventorySnapshot(args.inventorySnapshot)
+  await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+    const previousSnapshot = await exportRuntimeSnapshot()
+    const previousInventory = readBrowserLocalInventorySnapshot()
+    try {
+      await replaceRuntimeSnapshot(args.snapshot)
+      writeBrowserLocalInventorySnapshot(args.inventorySnapshot)
+    } catch (error) {
+      await replaceRuntimeSnapshot(previousSnapshot).catch(() => undefined)
+      writeBrowserLocalInventorySnapshot(previousInventory)
+      throw error
+    }
+  })
 }
 
 export async function exportRuntimeArchive(): Promise<{ fileName: string }> {

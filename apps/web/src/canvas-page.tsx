@@ -6335,9 +6335,10 @@ export function CanvasWorkspace({
   const queryClient = useQueryClient()
   const searchParams = useWorkbenchSearchParams()
   const routeSource = React.useMemo(() => resolveCanvasSource(searchParams), [searchParams])
+  const runtimeDataGeneration = controller.runtimeDataGeneration
   const routeDataQueryOptions = React.useMemo(
-    () => canvasRouteDataQueryOptions(controller.context, routeSource),
-    [controller.context, routeSource]
+    () => canvasRouteDataQueryOptions(controller.context, routeSource, runtimeDataGeneration),
+    [controller.context, routeSource, runtimeDataGeneration]
   )
   const initialPanel = React.useMemo(() => resolveInitialCanvasPanel(searchParams), [searchParams])
   const initialStatus = React.useMemo(() => resolveCanvasStatus(searchParams), [searchParams])
@@ -6353,10 +6354,10 @@ export function CanvasWorkspace({
     !controller.startupSyncReady
   const seededInitialLoadedRouteData = React.useMemo(
     () =>
-      initialLoadedRouteData ??
+      (runtimeDataGeneration === 0 ? initialLoadedRouteData : null) ??
       queryClient.getQueryData<LoadedCanvasRouteData>(routeDataQueryOptions.queryKey) ??
       null,
-    [initialLoadedRouteData, queryClient, routeDataQueryOptions]
+    [initialLoadedRouteData, queryClient, routeDataQueryOptions, runtimeDataGeneration]
   )
   const [state, setState] = React.useState<CanvasPageState>(() =>
     initialScenario
@@ -6392,7 +6393,7 @@ export function CanvasWorkspace({
   const [templateNameDialog, setTemplateNameDialog] =
     React.useState<TemplateNameDialogState | null>(null)
   const readOnly = state.readOnlyVersion !== null
-  const interactionLocked = readOnly || state.loading
+  const interactionLocked = readOnly || state.loading || controller.runtimeDataReplacementActive
   const asyncClipboardSupported = supportsAsyncClipboard()
   const [, setFontLoadGeneration] = React.useState(0)
   const stateRef = React.useRef(state)
