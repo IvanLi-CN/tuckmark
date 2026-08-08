@@ -339,7 +339,7 @@ describe("DetongerAdapter", () => {
   })
 
   it("times out hanging detonger print commands and writes a command log", async () => {
-    const printerId = "printer-hanging-command"
+    const printerId = `printer-hanging-command-${process.pid}-${Date.now()}`
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-detonger-"))
     cleanupPaths.push(root)
     const fakeDetongerPath = path.join(root, "fake-detonger.js")
@@ -373,13 +373,13 @@ describe("DetongerAdapter", () => {
         "  console.log(JSON.stringify({ status: 'ok' }));",
         "  process.exit(0);",
         "}",
-        "console.log('starting hang');",
+        "fs.writeSync(1, 'starting hang\\n');",
         "setInterval(() => {}, 1000);",
       ].join("\n"),
       "utf8"
     )
 
-    process.env.TUCKMARK_DETONGER_PRINT_TIMEOUT_MS = "200"
+    process.env.TUCKMARK_DETONGER_PRINT_TIMEOUT_MS = "1000"
 
     const adapter = new DetongerAdapter({
       detongerCommand: process.execPath,
@@ -389,7 +389,7 @@ describe("DetongerAdapter", () => {
     mockDetongerArgs(adapter, fakeDetongerPath)
 
     await expect(adapter.printArtifact(printerId, preview.artifact)).rejects.toThrow(
-      /timed out after 200ms/
+      /timed out after 1000ms/
     )
 
     const logPath = path.join(path.dirname(preview.artifact.pngPath), "print-command.log")
