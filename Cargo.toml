@@ -3,6 +3,7 @@ members = [
   "crates/tuckmark-contracts",
   "crates/tuckmark-engine",
 ]
+exclude = ["tools/detonger-preview-encoder"]
 resolver = "2"
 
 [workspace.package]
