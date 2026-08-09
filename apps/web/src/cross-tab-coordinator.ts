@@ -607,7 +607,9 @@ export class CrossTabCoordinator {
     return record
   }
 
-  private writeLegacyRuntimeAccessFallbackLock(record: LegacyRuntimeAccessFallbackLockRecord): void {
+  private writeLegacyRuntimeAccessFallbackLock(
+    record: LegacyRuntimeAccessFallbackLockRecord
+  ): void {
     window.localStorage.setItem(
       LEGACY_RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_KEY,
       JSON.stringify(record)
@@ -711,7 +713,10 @@ export class CrossTabCoordinator {
           window.localStorage.removeItem(this.getRuntimeAccessFallbackLockKey(record.operationId))
         }
         const legacyCurrent = this.readLegacyRuntimeAccessFallbackLock()
-        if (legacyCurrent?.operationId === record.operationId && legacyCurrent.tabId === this.tabId) {
+        if (
+          legacyCurrent?.operationId === record.operationId &&
+          legacyCurrent.tabId === this.tabId
+        ) {
           window.localStorage.removeItem(LEGACY_RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_KEY)
         }
         if (this.fallbackRuntimeAccessLock === heldLock) {

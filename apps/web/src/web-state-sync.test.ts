@@ -10,6 +10,7 @@ import {
   type SyncState,
 } from "../../../packages/core/src/web.js"
 import { createDraftFromPreset, getDraftStorageKey, getPresetById } from "./canvas-editor-model.js"
+import { setRuntimeDataMode } from "./runtime-data-mode.js"
 import {
   applySyncStateToBrowser,
   loadLocalSyncState,
@@ -18,7 +19,6 @@ import {
   recordTemplateUsageLocally,
   syncWebState,
 } from "./web-state-sync.js"
-import { setRuntimeDataMode } from "./runtime-data-mode.js"
 
 function installMemoryStorage(): Storage {
   const store = new Map<string, string>()

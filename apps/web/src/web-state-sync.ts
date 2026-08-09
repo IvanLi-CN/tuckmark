@@ -20,7 +20,6 @@ import {
   persistDraftDocumentToStorage,
 } from "./canvas-editor-model.js"
 import { isServerHttpDataSurface } from "./devd-data-client.js"
-import { isDemoRuntimeMode } from "./runtime-data-mode.js"
 import {
   emptyRecentActivityState,
   loadRecentActivity,
@@ -29,6 +28,7 @@ import {
   type RecentPrintEntry,
   type RecentTemplateEntry,
 } from "./lib/recent-activity.js"
+import { isDemoRuntimeMode } from "./runtime-data-mode.js"
 import type { CanvasDraftDocument } from "./types.js"
 
 const SYNC_STORAGE_KEY = "tuckmark.sync-state.v1"

@@ -58,10 +58,6 @@ import {
 } from "../../../packages/core/src/web.js"
 import { clearEphemeralCanvasDraft, recordEphemeralCanvasDraft } from "./canvas-draft-ephemeral.js"
 import {
-  getSharedCrossTabCoordinator,
-  RuntimeDataSourceChangedError,
-} from "./cross-tab-coordinator.js"
-import {
   bindElementToExistingField,
   buildStoryScenarioDocument,
   CANVAS_HISTORY_LIMIT,
@@ -142,6 +138,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./components/ui/tooltip.js"
+import {
+  getSharedCrossTabCoordinator,
+  RuntimeDataSourceChangedError,
+} from "./cross-tab-coordinator.js"
 import { defaultDraftRenderOptions } from "./demo-data.js"
 import { isServerHttpDataSurface } from "./devd-data-client.js"
 import { getDraftProcessingPath } from "./draft-processing-route.js"
