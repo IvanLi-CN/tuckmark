@@ -111,12 +111,3 @@ export const PermissionDenied: Story = {
     },
   },
 }
-
-export const DataReplacementInProgress: Story = {
-  args: {
-    storyStateOverrides: {
-      dataDirectoryStatus: createConfiguredHealthyDataDirectoryStatus(),
-      runtimeDataReplacementActive: true,
-    },
-  },
-}

@@ -33,3 +33,32 @@ test("browser-static root path defaults to runtime and supports explicit demo mo
   await expect(page.getByText("设备与打印路径")).toBeVisible()
   await expect(page.getByText("Service API", { exact: false }).first()).toBeVisible()
 })
+
+test("demo mode exposes draft processing through its formal restricted route", async ({ page }) => {
+  const processingPath =
+    "/canvas/draft-processing?source=preset-template&templateId=cable-tag&demo=true"
+  await page.goto(`/?__tuckmark_redirect__=${encodeURIComponent(processingPath)}`)
+
+  await expect(page).toHaveURL(processingPath)
+  await expect(page.getByRole("heading", { name: "草稿处理" })).toBeVisible()
+  await expect(page.getByText("系统模板：Cable Tag")).toBeVisible()
+  await expect(page.getByRole("button", { name: "返回草稿处理弹窗" })).toBeVisible()
+  await expect(page.getByRole("navigation", { name: "Main navigation" })).toHaveCount(0)
+  await expect(page.getByRole("link", { name: "GitHub" })).toHaveCount(0)
+})
+
+test("draft processing demo remains restricted on a compact viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 })
+  const processingPath =
+    "/canvas/draft-processing?source=preset-template&templateId=cable-tag&demo=true"
+  await page.goto(`/?__tuckmark_redirect__=${encodeURIComponent(processingPath)}`)
+
+  await expect(page.getByRole("heading", { name: "草稿处理" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "返回草稿处理弹窗" })).toBeVisible()
+  await expect(page.getByRole("navigation", { name: "Main navigation" })).toHaveCount(0)
+  expect(
+    await page
+      .locator("html")
+      .evaluate((documentElement) => documentElement.scrollWidth <= documentElement.clientWidth)
+  ).toBe(true)
+})

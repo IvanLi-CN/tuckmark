@@ -1,8 +1,10 @@
 import type { CanvasDraftSource } from "./types.js"
 
 export const DRAFT_PROCESSING_ROUTE_PATH = "/canvas/draft-processing"
+const SPA_REDIRECT_PARAM = "__tuckmark_redirect__"
 
 type DraftProcessingPathOptions = {
+  demo?: boolean
   panel?: "versions"
   status?: "saved" | "created"
 }
@@ -35,6 +37,9 @@ export function getDraftProcessingPath(
   if (options.status) {
     searchParams.set("status", options.status)
   }
+  if (options.demo) {
+    searchParams.set("demo", "true")
+  }
 
   return `${DRAFT_PROCESSING_ROUTE_PATH}?${searchParams.toString()}`
 }
@@ -43,6 +48,11 @@ export function openDraftProcessingWindow(source: CanvasDraftSource): void {
   if (typeof window === "undefined") {
     return
   }
-  const processingWindow = window.open(getDraftProcessingPath(source), "_blank")
+  const isDemo = new URLSearchParams(window.location.search).get("demo") === "true"
+  const processingPath = getDraftProcessingPath(source, { demo: isDemo })
+  const applicationRoot = window.location.pathname.replace(/\/system\/?$/u, "/")
+  const launchPath = new URL(applicationRoot, window.location.origin)
+  launchPath.searchParams.set(SPA_REDIRECT_PARAM, encodeURIComponent(processingPath))
+  const processingWindow = window.open(`${launchPath.pathname}${launchPath.search}`, "_blank")
   processingWindow?.focus()
 }
