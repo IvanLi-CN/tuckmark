@@ -2,6 +2,7 @@
 members = [
   "crates/tuckmark-contracts",
   "crates/tuckmark-engine",
+  "crates/tuckmark-cli",
 ]
 exclude = ["tools/detonger-preview-encoder"]
 resolver = "2"
