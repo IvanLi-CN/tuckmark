@@ -622,7 +622,7 @@
       import-confirm, restore-confirm, and permission-required states
     - first successful user-template save surfacing the one-shot directory
       setup prompt before the user navigates into `/system`
-  - `bun run --filter @tuckmark/cli typecheck` passed
+  - `cargo test --workspace --locked` passed for the native CLI/DEVD contract
   - `bun run --filter @tuckmark/core typecheck` passed
   - `bun run --filter @tuckmark/core test tests/renderer.test.ts` passed
   - browser verification passed for:

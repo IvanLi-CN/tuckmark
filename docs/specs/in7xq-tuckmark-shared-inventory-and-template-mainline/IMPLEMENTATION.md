@@ -64,14 +64,8 @@
   of current business data. `scripts/dev-preview.ts` reuses only a valid
   prepared copy, otherwise creates an empty disposable directory, and derives
   its default instance from the absolute worktree path.
-- `packages/cli/src/index.ts` exposes:
-  - DEVD-backed `config get-data-dir` and `config set-data-dir`
-  - named `TUCKMARK_DEVD_INSTANCE` IPC startup
-  - `template` lifecycle commands
-  - `inventory` command family
-  - legacy read-only `templates` compatibility listing
-- `crates/tuckmark-cli` provides a native Rust implementation of that CLI
-  contract without assuming DEVD ownership:
+- `crates/tuckmark-cli` exposes the frozen native CLI contract without assuming
+  DEVD ownership:
   - the complete Clap command tree preserves the frozen command and legacy
     migration surface
   - per-user named IPC uses the existing HTTP-shaped DEVD contract for runtime,
