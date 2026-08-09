@@ -7,6 +7,10 @@ import {
   recordEphemeralCanvasDraft,
 } from "./canvas-draft-ephemeral.js"
 import {
+  CanvasDraftGenerationChangedError,
+  getCanvasDraftGeneration,
+} from "./canvas-draft-generation.js"
+import {
   createDraftFromPreset,
   createDraftFromSystemTemplate,
   getPresetById,
@@ -20,6 +24,7 @@ import {
   clearWorkingCopy,
   exportRuntimeSnapshot,
   getAutosaveIntervalMs,
+  invalidateCanvasDraftGeneration,
   listArchivedUserTemplates,
   listPendingRuntimeDrafts,
   listUserTemplates,
@@ -159,6 +164,51 @@ describe("user-template-store", () => {
         sourceKey: "scratch:shipping-wide",
       }),
     ])
+  })
+
+  it("rejects a queued working-copy write after that canvas draft is reset", async () => {
+    const source = { kind: "scratch" as const, presetId: "shipping-wide" }
+    const staleGeneration = getCanvasDraftGeneration(source)
+    const staleDraft = createDraftFromPreset(getPresetById(source.presetId))
+    staleDraft.name = "Queued stale draft"
+
+    await clearWorkingCopy(source)
+
+    await expect(
+      replaceUserTemplateWorkingCopy(
+        { source, document: staleDraft },
+        { expectedGeneration: staleGeneration }
+      )
+    ).rejects.toBeInstanceOf(CanvasDraftGenerationChangedError)
+    await expect(loadWorkingCopy(source)).resolves.toBeNull()
+  })
+
+  it("rejects a queued template autosave after its draft is restored", async () => {
+    const saved = await saveUserTemplate({
+      name: "Autosave reset",
+      document: createDraftFromPreset(getPresetById("shipping-wide")),
+    })
+    const source = { kind: "user-template" as const, templateId: saved.template.id }
+    const staleGeneration = getCanvasDraftGeneration(source)
+    const staleDraft = structuredClone(saved.workingCopy.draft)
+    staleDraft.name = "Queued stale autosave"
+
+    await invalidateCanvasDraftGeneration(source)
+
+    await expect(
+      saveUserTemplateAutosave(
+        {
+          templateId: saved.template.id,
+          source,
+          document: staleDraft,
+          sourceVersionId: saved.version.id,
+        },
+        { expectedGeneration: staleGeneration }
+      )
+    ).rejects.toBeInstanceOf(CanvasDraftGenerationChangedError)
+    await expect(readUserTemplateHistory(saved.template.id)).resolves.toMatchObject({
+      autosaves: [],
+    })
   })
 
   it("does not report an unchanged generated canvas draft", async () => {

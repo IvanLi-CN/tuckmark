@@ -1,6 +1,11 @@
 import { stableStringify } from "../../../packages/core/src/web.js"
 import { clearEphemeralCanvasDraft, listEphemeralCanvasDrafts } from "./canvas-draft-ephemeral.js"
 import {
+  advanceCanvasDraftGeneration,
+  assertCanvasDraftGeneration,
+  resetCanvasDraftGenerationsForTest,
+} from "./canvas-draft-generation.js"
+import {
   createDraftFromPreset,
   createDraftFromSystemTemplate,
   getPresetById,
@@ -1694,24 +1699,41 @@ export async function purgeUserTemplate(templateId: string): Promise<void> {
   })
 }
 
-export async function saveUserTemplateAutosave(args: {
-  templateId?: string
-  source: CanvasDraftSource
-  document: CanvasDraftDocument
-  sourceVersionId?: string
-}) {
-  const result = await withRuntimeStore(async (store) => await store.saveAutosave(args))
+export async function saveUserTemplateAutosave(
+  args: {
+    templateId?: string
+    source: CanvasDraftSource
+    document: CanvasDraftDocument
+    sourceVersionId?: string
+  },
+  options?: { expectedGeneration?: number }
+) {
+  const result = await withRuntimeStore(async (store) => {
+    assertCanvasDraftGeneration(args.source, options?.expectedGeneration)
+    return await store.saveAutosave(args)
+  })
   emitRuntimeStoreMutation("autosave-saved", { source: args.source })
   return result
 }
 
-export async function replaceUserTemplateWorkingCopy(args: {
-  templateId?: string
-  source: CanvasDraftSource
-  document: CanvasDraftDocument
-  sourceVersionId?: string
-}) {
-  const result = await withRuntimeStore(async (store) => await store.replaceWorkingCopy(args))
+export async function replaceUserTemplateWorkingCopy(
+  args: {
+    templateId?: string
+    source: CanvasDraftSource
+    document: CanvasDraftDocument
+    sourceVersionId?: string
+  },
+  options?: {
+    expectedGeneration?: number
+    onReplaced?: () => void
+  }
+) {
+  const result = await withRuntimeStore(async (store) => {
+    assertCanvasDraftGeneration(args.source, options?.expectedGeneration)
+    const workingCopy = await store.replaceWorkingCopy(args)
+    options?.onReplaced?.()
+    return workingCopy
+  })
   emitRuntimeStoreMutation("working-copy-replaced", { source: args.source })
   return result
 }
@@ -1724,14 +1746,25 @@ export async function loadWorkingCopy(
 
 export async function clearWorkingCopy(
   source: CanvasDraftSource,
-  options?: { onCleared?: () => void }
+  options?: { onCleared?: (generation: number) => void }
 ): Promise<void> {
   await withRuntimeStore(async (store) => {
     await store.clearWorkingCopy(source)
-    options?.onCleared?.()
     clearEphemeralCanvasDraft(source)
+    const generation = advanceCanvasDraftGeneration(source)
+    options?.onCleared?.(generation)
   })
   emitRuntimeStoreMutation("working-copy-cleared", { source })
+}
+
+export async function invalidateCanvasDraftGeneration(source: CanvasDraftSource): Promise<number> {
+  let generation = 0
+  await withRuntimeStore(async () => {
+    clearEphemeralCanvasDraft(source)
+    generation = advanceCanvasDraftGeneration(source)
+  })
+  emitRuntimeStoreMutation("working-copy-cleared", { source })
+  return generation
 }
 
 export async function clearTemplateAutosaves(templateId: string): Promise<void> {
@@ -1900,6 +1933,7 @@ export async function resetUserTemplateStoreForTest(): Promise<void> {
   demoStorePromise = undefined
   storeGeneration = null
   legacyStorePromise = undefined
+  resetCanvasDraftGenerationsForTest()
 }
 
 export { createDefaultRuntimeAppSettings } from "./runtime-app-settings.js"

@@ -58,6 +58,10 @@ import {
 } from "../../../packages/core/src/web.js"
 import { clearEphemeralCanvasDraft, recordEphemeralCanvasDraft } from "./canvas-draft-ephemeral.js"
 import {
+  CanvasDraftGenerationChangedError,
+  getCanvasDraftGeneration,
+} from "./canvas-draft-generation.js"
+import {
   bindElementToExistingField,
   buildStoryScenarioDocument,
   CANVAS_HISTORY_LIMIT,
@@ -78,6 +82,7 @@ import {
   getSystemTemplateById,
   loadStoredDraftDocument,
   normalizeDraftDocument,
+  persistDraftDocument,
   renameDraftField,
   reorderDraftElements,
   toCanvasPrintSource,
@@ -142,6 +147,7 @@ import {
   RuntimeDataSourceChangedError,
 } from "./cross-tab-coordinator.js"
 import { defaultDraftRenderOptions } from "./demo-data.js"
+import { isServerHttpDataSurface } from "./devd-data-client.js"
 import { getDraftProcessingPath } from "./draft-processing-route.js"
 import {
   buildCanvasDimensionOptions,
@@ -179,6 +185,7 @@ import {
   clearTemplateAutosaves,
   clearWorkingCopy,
   getCanvasDraftSourceKey,
+  invalidateCanvasDraftGeneration,
   readUserTemplateHistory,
   replaceUserTemplateWorkingCopy,
   saveUserTemplate,
@@ -2173,12 +2180,16 @@ async function resetCanvasDraft(args: {
       ? createRestoredDraftFromVersion(currentVersion, state.routeSource.templateId)
       : cloneDraft(state.liveDraft)
 
-    await replaceUserTemplateWorkingCopy({
-      templateId: state.routeSource.templateId,
-      source: state.routeSource,
-      document: restoredDraft,
-      sourceVersionId: currentVersion?.id,
-    })
+    const generation = await invalidateCanvasDraftGeneration(state.routeSource)
+    await replaceUserTemplateWorkingCopy(
+      {
+        templateId: state.routeSource.templateId,
+        source: state.routeSource,
+        document: restoredDraft,
+        sourceVersionId: currentVersion?.id,
+      },
+      { expectedGeneration: generation }
+    )
     await clearTemplateAutosaves(state.routeSource.templateId)
     await controller.refreshUserTemplates()
 
@@ -2193,9 +2204,14 @@ async function resetCanvasDraft(args: {
 
   const presetId = state.routeSource.presetId
   await clearWorkingCopy(state.routeSource, {
-    // Remove the legacy local copy before broadcasting the working-copy clear.
-    // A different tab may reload as soon as it receives that event.
-    onCleared: () => clearStoredDraftDocument(presetId),
+    // Tombstone the synchronized scratch before broadcasting the clear. A stale
+    // canvas effect cannot pass the new generation and restore this legacy copy.
+    onCleared: (generation) => {
+      if (state.routeSource.kind === "scratch") {
+        controller.deleteCanvasDraft(presetId, generation)
+      }
+      clearStoredDraftDocument(presetId)
+    },
   })
   return resetDraft(state)
 }
@@ -6445,6 +6461,7 @@ export function CanvasWorkspace({
     sourceKey: string
     document: CanvasDraftDocument
   } | null>(null)
+  const draftGenerationRef = React.useRef(getCanvasDraftGeneration(routeSource))
   const interactionLockedRef = React.useRef(interactionLocked)
   const stageViewportSizeRef = React.useRef(stageViewportSize)
   const stagePointerRef = React.useRef<{ x: number; y: number } | null>(null)
@@ -6475,6 +6492,7 @@ export function CanvasWorkspace({
       setState((current) => (current.loading ? current : { ...current, loading: true }))
       void loadCanvasRouteData(routeSource)
         .then((loaded) => {
+          draftGenerationRef.current = getCanvasDraftGeneration(routeSource)
           controller.setDocumentRenderOptions({
             ...defaultDraftRenderOptions,
             ...loaded.draft.renderOptions,
@@ -6595,6 +6613,7 @@ export function CanvasWorkspace({
     }
 
     if (seededInitialLoadedRouteData) {
+      draftGenerationRef.current = getCanvasDraftGeneration(routeSource)
       loadedRuntimeDataGenerationRef.current = runtimeDataGeneration
       controller.setDocumentRenderOptions({
         ...defaultDraftRenderOptions,
@@ -6622,6 +6641,7 @@ export function CanvasWorkspace({
           ...defaultDraftRenderOptions,
           ...loaded.draft.renderOptions,
         })
+        draftGenerationRef.current = getCanvasDraftGeneration(routeSource)
         setState(
           createCanvasStateFromLoadedRouteData(loaded, {
             activePanel: initialPanel,
@@ -6695,6 +6715,7 @@ export function CanvasWorkspace({
   const autosaveRouteSource = state.routeSource
   const autosaveReadOnlyVersion = state.readOnlyVersion
   const autosaveVersionHistory = state.versionHistory
+  const autosaveDraftGeneration = draftGenerationRef.current
 
   React.useLayoutEffect(() => {
     if (
@@ -6769,11 +6790,22 @@ export function CanvasWorkspace({
     }
 
     if (shouldCreateAutosave && autosaveLiveDraft.templateId && shouldPersistWorkingCopy) {
-      void saveUserTemplateAutosave({
-        templateId: autosaveLiveDraft.templateId,
-        source: autosaveRouteSource,
-        document: autosaveDocument,
-        sourceVersionId: autosaveLiveDraft.baseVersionId,
+      void saveUserTemplateAutosave(
+        {
+          templateId: autosaveLiveDraft.templateId,
+          source: autosaveRouteSource,
+          document: autosaveDocument,
+          sourceVersionId: autosaveLiveDraft.baseVersionId,
+        },
+        { expectedGeneration: autosaveDraftGeneration }
+      ).catch((cause) => {
+        if (cause instanceof CanvasDraftGenerationChangedError) {
+          return
+        }
+        setState((current) => ({
+          ...current,
+          outputStatus: cause instanceof Error ? cause.message : "保存模板草稿失败。",
+        }))
       })
     }
 
@@ -6782,9 +6814,27 @@ export function CanvasWorkspace({
       !startupSyncPending &&
       shouldPersistWorkingCopy
     ) {
-      void replaceUserTemplateWorkingCopy({
-        source: autosaveRouteSource,
-        document: autosaveDocument,
+      void replaceUserTemplateWorkingCopy(
+        {
+          source: autosaveRouteSource,
+          document: autosaveDocument,
+        },
+        {
+          expectedGeneration: autosaveDraftGeneration,
+          onReplaced: () => {
+            if (!isServerHttpDataSurface()) {
+              persistDraftDocument(autosaveDocument)
+            }
+          },
+        }
+      ).catch((cause) => {
+        if (cause instanceof CanvasDraftGenerationChangedError) {
+          return
+        }
+        setState((current) => ({
+          ...current,
+          outputStatus: cause instanceof Error ? cause.message : "保存画布草稿失败。",
+        }))
       })
     }
   }, [
@@ -6799,6 +6849,39 @@ export function CanvasWorkspace({
     runtimeDataReloading,
     state.storageMode,
     startupSyncPending,
+    autosaveDraftGeneration,
+  ])
+
+  React.useEffect(() => {
+    if (
+      initialScenario ||
+      state.loading ||
+      startupSyncPending ||
+      state.routeSource.kind !== "scratch"
+    ) {
+      return
+    }
+    const expectedGeneration = draftGenerationRef.current
+    if (state.storageMode === "reset-pending") {
+      controller.deleteCanvasDraft(state.presetId, expectedGeneration)
+      return
+    }
+    controller.recordCanvasDraft(
+      state.presetId,
+      draftWithCurrentRenderOptions(state.liveDraft),
+      expectedGeneration
+    )
+  }, [
+    controller.deleteCanvasDraft,
+    controller.recordCanvasDraft,
+    draftWithCurrentRenderOptions,
+    initialScenario,
+    startupSyncPending,
+    state.liveDraft,
+    state.loading,
+    state.presetId,
+    state.routeSource.kind,
+    state.storageMode,
   ])
 
   React.useEffect(() => {
@@ -7033,16 +7116,22 @@ export function CanvasWorkspace({
       snapshot.readOnlyVersion,
       snapshot.templateId
     )
-    await replaceUserTemplateWorkingCopy({
-      templateId: snapshot.templateId,
-      source: { kind: "user-template", templateId: snapshot.templateId },
-      document: restoredDraft,
-      sourceVersionId: snapshot.readOnlyVersion.id,
-    })
+    const source = { kind: "user-template" as const, templateId: snapshot.templateId }
+    const generation = await invalidateCanvasDraftGeneration(source)
+    await replaceUserTemplateWorkingCopy(
+      {
+        templateId: snapshot.templateId,
+        source,
+        document: restoredDraft,
+        sourceVersionId: snapshot.readOnlyVersion.id,
+      },
+      { expectedGeneration: generation }
+    )
     await clearTemplateAutosaves(snapshot.templateId)
     await controller.refreshUserTemplates()
 
     const history = await readUserTemplateHistory(snapshot.templateId)
+    draftGenerationRef.current = generation
     setState(() =>
       createCanvasStateFromDraft(restoredDraft, {
         versionHistory: history ?? snapshot.versionHistory,
@@ -7159,6 +7248,7 @@ export function CanvasWorkspace({
       sourceKey: getCanvasDraftSourceKey(nextState.routeSource),
       document: draftWithCurrentRenderOptions(nextState.liveDraft),
     }
+    draftGenerationRef.current = getCanvasDraftGeneration(nextState.routeSource)
     setState(nextState)
   }, [controller, draftWithCurrentRenderOptions, state])
 

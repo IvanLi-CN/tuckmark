@@ -112,21 +112,21 @@ export async function loadCanvasRouteData(
   }
 
   if (source.kind === "preset-template") {
-    const workingCopy = await loadWorkingCopy(source)
-    if (workingCopy?.draft) {
-      return {
-        draft: {
-          ...workingCopy.draft,
-          source,
-        },
-        versionHistory: null,
-      }
-    }
     const legacyDraft = isServerHttpDataSurface() ? null : loadStoredDraftDocument(source.presetId)
     if (legacyDraft) {
       return {
         draft: {
           ...legacyDraft,
+          source,
+        },
+        versionHistory: null,
+      }
+    }
+    const workingCopy = await loadWorkingCopy(source)
+    if (workingCopy?.draft) {
+      return {
+        draft: {
+          ...workingCopy.draft,
           source,
         },
         versionHistory: null,
@@ -138,22 +138,22 @@ export async function loadCanvasRouteData(
     }
   }
 
-  const workingCopy = await loadWorkingCopy(source)
-  if (workingCopy?.draft) {
+  const legacyDraft = isServerHttpDataSurface() ? null : loadStoredDraftDocument(source.presetId)
+  if (legacyDraft) {
     return {
       draft: {
-        ...workingCopy.draft,
+        ...legacyDraft,
         source,
       },
       versionHistory: null,
     }
   }
 
-  const legacyDraft = isServerHttpDataSurface() ? null : loadStoredDraftDocument(source.presetId)
-  if (legacyDraft) {
+  const workingCopy = await loadWorkingCopy(source)
+  if (workingCopy?.draft) {
     return {
       draft: {
-        ...legacyDraft,
+        ...workingCopy.draft,
         source,
       },
       versionHistory: null,

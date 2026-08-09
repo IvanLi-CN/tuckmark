@@ -9,10 +9,15 @@ import {
   emptySyncState,
   type SyncState,
 } from "../../../packages/core/src/web.js"
+import {
+  advanceCanvasDraftGeneration,
+  getCanvasDraftGeneration,
+} from "./canvas-draft-generation.js"
 import { createDraftFromPreset, getDraftStorageKey, getPresetById } from "./canvas-editor-model.js"
 import { setRuntimeDataMode } from "./runtime-data-mode.js"
 import {
   applySyncStateToBrowser,
+  deleteCanvasDraftLocally,
   loadLocalSyncState,
   recordCanvasDraftLocally,
   recordRecentPrintLocally,
@@ -398,6 +403,21 @@ describe("web-state-sync", () => {
     expect(recorded.canvasDraftRecords[0]?.updatedAt).toBe(existing.updatedAt)
     expect(recorded.canvasDraftRecords[0]?.version).toBe(existing.version)
     expect(recorded.canvasDraftRecords[0]?.vectorClock).toEqual(existing.vectorClock)
+  })
+
+  it("keeps a reset tombstone when a stale canvas effect tries to record its old draft", () => {
+    const preset = getPresetById("shipping-wide")
+    const source = { kind: "scratch" as const, presetId: preset.id }
+    const draft = createDraftFromPreset(preset)
+    const staleGeneration = getCanvasDraftGeneration(source)
+
+    recordCanvasDraftLocally(preset.id, draft, staleGeneration)
+    const resetGeneration = advanceCanvasDraftGeneration(source)
+    const tombstoned = deleteCanvasDraftLocally(preset.id, resetGeneration)
+    const afterStaleWrite = recordCanvasDraftLocally(preset.id, draft, staleGeneration)
+
+    expect(tombstoned.canvasDraftRecords[0]?.deleted).toBe(true)
+    expect(afterStaleWrite.canvasDraftRecords[0]?.deleted).toBe(true)
   })
 
   it("ignores non-syncable preset ids when recording browser draft state", () => {

@@ -1429,15 +1429,19 @@ export function useWorkbenchController({
   )
 
   const recordCanvasDraft = React.useCallback(
-    (presetId: string, draft: Parameters<typeof recordCanvasDraftLocally>[1]) => {
-      const nextState = recordCanvasDraftLocally(presetId, draft)
+    (
+      presetId: string,
+      draft: Parameters<typeof recordCanvasDraftLocally>[1],
+      expectedGeneration?: number
+    ) => {
+      const nextState = recordCanvasDraftLocally(presetId, draft, expectedGeneration)
       setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
     },
     []
   )
 
-  const deleteCanvasDraft = React.useCallback((presetId: string) => {
-    const nextState = deleteCanvasDraftLocally(presetId)
+  const deleteCanvasDraft = React.useCallback((presetId: string, expectedGeneration?: number) => {
+    const nextState = deleteCanvasDraftLocally(presetId, expectedGeneration)
     setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
   }, [])
 

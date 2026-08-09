@@ -12,7 +12,7 @@ import {
   stableHash,
   stableStringify,
 } from "../../../packages/core/src/web.js"
-
+import { assertCanvasDraftGeneration } from "./canvas-draft-generation.js"
 import {
   CANVAS_PRESETS,
   clearStoredDraftDocument,
@@ -268,10 +268,16 @@ export function recordRecentPrintLocally(entry: Omit<RecentPrintEntry, "printedA
 
 export function recordCanvasDraftLocally(
   presetId: string,
-  draft: SharedCanvasDraftDocument
+  draft: SharedCanvasDraftDocument,
+  expectedGeneration?: number
 ): SyncState {
   const current = loadLocalSyncState()
   if (!SYNCABLE_PRESET_IDS.has(presetId)) {
+    return current
+  }
+  try {
+    assertCanvasDraftGeneration({ kind: "scratch", presetId }, expectedGeneration)
+  } catch {
     return current
   }
   const existing = current.canvasDraftRecords.find((record) => record.payload.presetId === presetId)
@@ -292,9 +298,14 @@ export function recordCanvasDraftLocally(
   })
 }
 
-export function deleteCanvasDraftLocally(presetId: string): SyncState {
+export function deleteCanvasDraftLocally(presetId: string, expectedGeneration?: number): SyncState {
   const current = loadLocalSyncState()
   if (!SYNCABLE_PRESET_IDS.has(presetId)) {
+    return current
+  }
+  try {
+    assertCanvasDraftGeneration({ kind: "scratch", presetId }, expectedGeneration)
+  } catch {
     return current
   }
   const existing = current.canvasDraftRecords.find((record) => record.payload.presetId === presetId)
