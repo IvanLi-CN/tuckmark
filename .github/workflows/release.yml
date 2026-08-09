@@ -100,6 +100,7 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.91.0
           targets: ${{ matrix.target }}
       - name: Build native binaries
         run: cargo build --locked --release --target ${{ matrix.target }} --bin tuckmark --bin tuckmark-devd
