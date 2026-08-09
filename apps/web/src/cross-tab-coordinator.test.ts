@@ -225,4 +225,40 @@ describe("CrossTabCoordinator runtime replacement", () => {
     await expect(staleRequest).rejects.toBeInstanceOf(RuntimeDataSourceChangedError)
     expect(staleRequestRan).toBe(false)
   })
+
+  it("rechecks writer ownership after an exclusive replacement waits for access", async () => {
+    installQueueingLocks()
+    const primary = new CrossTabCoordinator()
+    const secondary = new CrossTabCoordinator()
+    coordinators.push(primary, secondary)
+    primary.start()
+    secondary.start()
+
+    let releaseAccess: () => void = () => undefined
+    let accessEntered: () => void = () => undefined
+    const accessReady = new Promise<void>((resolve) => {
+      accessEntered = resolve
+    })
+    const accessGate = new Promise<void>((resolve) => {
+      releaseAccess = resolve
+    })
+    const access = secondary.runRuntimeAccess(async () => {
+      accessEntered()
+      await accessGate
+      return "accessed"
+    })
+    await accessReady
+
+    let replacementRan = false
+    const replacement = primary.runExclusiveRuntimeReplacement(async () => {
+      replacementRan = true
+      return "replaced"
+    })
+    secondary.requestTakeover()
+
+    releaseAccess()
+    await expect(access).resolves.toBe("accessed")
+    await expect(replacement).rejects.toThrow("当前标签未持有数据写入租约")
+    expect(replacementRan).toBe(false)
+  })
 })

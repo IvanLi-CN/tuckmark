@@ -100,7 +100,8 @@ test("system tab processes another tab's pending draft without returning to the 
   const systemPage = await context.newPage()
   await systemPage.goto("/templates?demo=true")
   await expect(systemPage.getByRole("heading", { name: "模板列表" })).toBeVisible()
-  await systemPage.goto("/system?demo=true")
+  await systemPage.getByRole("link", { name: "系统" }).click()
+  await expect(systemPage).toHaveURL("/system")
   await expect(systemPage.getByRole("button", { name: "接入演示目录" })).toBeVisible()
   const workingCopyPersisted = systemPage.evaluate(
     () =>

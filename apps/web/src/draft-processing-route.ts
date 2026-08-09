@@ -44,11 +44,14 @@ export function getDraftProcessingPath(
   return `${DRAFT_PROCESSING_ROUTE_PATH}?${searchParams.toString()}`
 }
 
-export function openDraftProcessingWindow(source: CanvasDraftSource): void {
+export function openDraftProcessingWindow(
+  source: CanvasDraftSource,
+  options: Pick<DraftProcessingPathOptions, "demo"> = {}
+): void {
   if (typeof window === "undefined") {
     return
   }
-  const isDemo = new URLSearchParams(window.location.search).get("demo") === "true"
+  const isDemo = options.demo ?? new URLSearchParams(window.location.search).get("demo") === "true"
   const processingPath = getDraftProcessingPath(source, { demo: isDemo })
   const applicationRoot = window.location.pathname.replace(/\/system\/?$/u, "/")
   const launchPath = new URL(applicationRoot, window.location.origin)

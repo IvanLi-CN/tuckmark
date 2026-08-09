@@ -291,6 +291,10 @@ export class CrossTabCoordinator {
       throw new Error("当前标签未持有数据写入租约，请先在系统页接管写入。")
     }
     return await this.withRuntimeAccessLock("exclusive", async () => {
+      this.refreshState(true)
+      if (this.state.role !== "writer") {
+        throw new Error("当前标签未持有数据写入租约，请先在系统页接管写入。")
+      }
       this.refreshRuntimeReplacementState()
       if (
         this.runtimeReplacementState.active &&

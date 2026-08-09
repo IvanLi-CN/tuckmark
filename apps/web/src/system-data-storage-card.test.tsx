@@ -470,4 +470,44 @@ describe("SystemDataStorageCard", () => {
     )
     expect(focus).toHaveBeenCalledTimes(1)
   })
+
+  it("preserves demo mode when opening draft processing after SPA navigation", async () => {
+    const focus = vi.fn()
+    const openWindow = vi.spyOn(window, "open").mockReturnValue({ focus } as unknown as Window)
+    window.history.replaceState({}, "", "/system")
+    const pendingDraftDialog = {
+      kind: "drafts-required" as const,
+      drafts: [
+        {
+          label: "Cable Tag",
+          source: { kind: "preset-template" as const, presetId: "cable-tag" },
+          sourceKey: "preset:cable-tag",
+          updatedAt: "2026-08-08T10:00:00.000Z",
+        },
+      ],
+      operation: {
+        kind: "import" as const,
+        inspection: {} as never,
+      },
+    }
+
+    await renderCard({ dialog: pendingDraftDialog, isDemo: true })
+
+    const processButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("去处理")
+    )
+    if (!processButton) {
+      throw new Error("Missing draft processing button")
+    }
+    await act(async () => {
+      processButton.click()
+      await flush()
+    })
+
+    const [launchPath] = openWindow.mock.calls[openWindow.mock.calls.length - 1] ?? []
+    const launchUrl = new URL(String(launchPath), window.location.origin)
+    expect(decodeURIComponent(launchUrl.searchParams.get("__tuckmark_redirect__") ?? "")).toBe(
+      "/canvas/draft-processing?source=preset-template&templateId=cable-tag&demo=true"
+    )
+  })
 })

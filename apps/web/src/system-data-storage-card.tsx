@@ -492,12 +492,14 @@ function ArchiveConfirmDialog({
 
 function PendingDraftsDialog({
   dialog,
+  isDemo,
   onCancel,
   onForce,
   onConfirmForce,
   onRetry,
 }: {
   dialog: WorkbenchDataDirectoryDialogState | null
+  isDemo: boolean
   onCancel: () => void
   onForce: () => void
   onConfirmForce: () => void
@@ -535,7 +537,7 @@ function PendingDraftsDialog({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => openDraftProcessingWindow(draft.source)}
+                  onClick={() => openDraftProcessingWindow(draft.source, { demo: isDemo })}
                 >
                   去处理
                 </Button>
@@ -835,6 +837,7 @@ export function SystemDataStorageCard({
 
       <PendingDraftsDialog
         dialog={dialog}
+        isDemo={isDemo}
         onCancel={onCancelDialog}
         onForce={onOpenForceReplacementConfirmation}
         onConfirmForce={onConfirmForcedReplacement}
