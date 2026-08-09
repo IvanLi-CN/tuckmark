@@ -815,6 +815,15 @@ fn resolve_path_within_root(
     }
 }
 
+fn relative_path_for_resolution(root: &Path, path: &Path) -> Result<String, DataAuthorityError> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| DataAuthorityError::InvalidPath(path.display().to_string()))?;
+    Ok(relative
+        .to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "/"))
+}
+
 fn journal_revision_matches_filename(path: &Path, revision: u64) -> bool {
     path.file_stem()
         .and_then(|name| name.to_str())
@@ -1246,17 +1255,14 @@ fn list_directories(root: &Path, directory: &Path) -> Result<Vec<PathBuf>, DataA
 }
 
 fn ensure_scan_directory_safe(root: &Path, directory: &Path) -> Result<(), DataAuthorityError> {
-    let relative = directory
-        .strip_prefix(root)
-        .map_err(|_| DataAuthorityError::InvalidPath(directory.display().to_string()))?;
-    let relative = relative.to_string_lossy();
+    let relative = relative_path_for_resolution(root, directory)?;
     let resolved = resolve_path_within_root(root, &relative)?;
     match fs::symlink_metadata(&resolved) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
-            Err(DataAuthorityError::InvalidPath(relative.into_owned()))
+            Err(DataAuthorityError::InvalidPath(relative.clone()))
         }
         Ok(metadata) if !metadata.is_dir() => {
-            Err(DataAuthorityError::InvalidPath(relative.into_owned()))
+            Err(DataAuthorityError::InvalidPath(relative.clone()))
         }
         Ok(_) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -2495,10 +2501,8 @@ fn count_working_copies(root: &Path) -> Result<u64, DataAuthorityError> {
 }
 
 fn is_regular_file_within_root(root: &Path, path: &Path) -> Result<bool, DataAuthorityError> {
-    let relative = path
-        .strip_prefix(root)
-        .map_err(|_| DataAuthorityError::InvalidPath(path.display().to_string()))?;
-    let resolved = resolve_path_within_root(root, &relative.to_string_lossy())?;
+    let relative = relative_path_for_resolution(root, path)?;
+    let resolved = resolve_path_within_root(root, &relative)?;
     match fs::symlink_metadata(resolved) {
         Ok(metadata) => Ok(metadata.file_type().is_file()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
