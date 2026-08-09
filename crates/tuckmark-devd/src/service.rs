@@ -235,6 +235,34 @@ impl NativeService {
         Ok(json!({ "artifact": artifact }))
     }
 
+    /// Validates a system-template print request without creating an artifact or opening a
+    /// printer connection. Inventory printing uses this before the transport gate so its
+    /// binding and template errors retain the existing HTTP/IPC contract.
+    pub fn validate_template_print(
+        &self,
+        template_id: &str,
+        input: &BTreeMap<String, String>,
+        options: &RenderOptions,
+    ) -> Result<(), NativeServiceError> {
+        let template = templates::find(template_id)?
+            .ok_or_else(|| NativeServiceError::UnknownTemplate(template_id.into()))?;
+        let _ = self.renderer.render_template(&template, input, options)?;
+        Ok(())
+    }
+
+    /// Validates and compiles a persisted user-template draft in memory. This is deliberately
+    /// separate from preview persistence and printer transport: an inventory print request
+    /// must resolve the authoritative document before it reaches the server-side print gate.
+    pub fn validate_canvas_draft_print(
+        &self,
+        draft: &Value,
+        input: &BTreeMap<String, String>,
+        options: &RenderOptions,
+    ) -> Result<(), NativeServiceError> {
+        let _ = self.renderer.render_canvas_draft(draft, input, options)?;
+        Ok(())
+    }
+
     pub fn list_artifacts(&self) -> Result<Vec<PreviewArtifact>, NativeServiceError> {
         Ok(self.artifacts.list_artifacts()?)
     }

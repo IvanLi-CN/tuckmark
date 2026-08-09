@@ -151,14 +151,22 @@ fn resolve_default_data_directory() -> PathBuf {
 }
 
 fn resolve_documents_directory() -> PathBuf {
-    let home = home_directory();
-    #[cfg(target_os = "linux")]
+    #[cfg(target_os = "windows")]
     {
-        if let Some(path) = linux_documents_directory(&home) {
-            return path;
-        }
+        windows_known_folder_documents().unwrap_or_else(|| home_directory().join("Documents"))
     }
-    home.join("Documents")
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = home_directory();
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(path) = linux_documents_directory(&home) {
+                return path;
+            }
+        }
+        home.join("Documents")
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -184,10 +192,10 @@ fn linux_documents_directory(home: &Path) -> Option<PathBuf> {
 }
 
 fn resolve_config_path() -> PathBuf {
-    let home = home_directory();
     #[cfg(target_os = "macos")]
     {
-        home.join("Library")
+        home_directory()
+            .join("Library")
             .join("Application Support")
             .join("Tuckmark")
             .join("devd.json")
@@ -197,12 +205,14 @@ fn resolve_config_path() -> PathBuf {
         env::var_os("APPDATA")
             .filter(|value| !value.is_empty())
             .map(PathBuf::from)
-            .unwrap_or_else(|| home.join("AppData").join("Roaming"))
+            .or_else(windows_known_folder_roaming_app_data)
+            .unwrap_or_else(|| home_directory().join("AppData").join("Roaming"))
             .join("Tuckmark")
             .join("devd.json")
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
+        let home = home_directory();
         env::var_os("XDG_CONFIG_HOME")
             .filter(|value| !value.is_empty())
             .map(PathBuf::from)
@@ -213,10 +223,72 @@ fn resolve_config_path() -> PathBuf {
 }
 
 fn home_directory() -> PathBuf {
-    env::var_os("HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
+    #[cfg(target_os = "windows")]
+    {
+        env::var_os("USERPROFILE")
+            .filter(|value| !value.is_empty())
+            .or_else(|| env::var_os("HOME").filter(|value| !value.is_empty()))
+            .map(PathBuf::from)
+            .unwrap_or_else(env::temp_dir)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        env::var_os("HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/"))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_known_folder_documents() -> Option<PathBuf> {
+    use windows_sys::Win32::UI::Shell::FOLDERID_Documents;
+
+    windows_known_folder(&FOLDERID_Documents)
+}
+
+#[cfg(target_os = "windows")]
+fn windows_known_folder_roaming_app_data() -> Option<PathBuf> {
+    use windows_sys::Win32::UI::Shell::FOLDERID_RoamingAppData;
+
+    windows_known_folder(&FOLDERID_RoamingAppData)
+}
+
+#[cfg(target_os = "windows")]
+fn windows_known_folder(folder: &windows_sys::core::GUID) -> Option<PathBuf> {
+    use std::{ffi::OsString, os::windows::ffi::OsStringExt, ptr, slice};
+
+    use windows_sys::Win32::{
+        Foundation::S_OK,
+        System::Com::CoTaskMemFree,
+        UI::Shell::{KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath},
+    };
+
+    unsafe {
+        let mut path = ptr::null_mut();
+        match SHGetKnownFolderPath(
+            folder,
+            KF_FLAG_DONT_VERIFY as u32,
+            ptr::null_mut(),
+            &mut path,
+        ) {
+            S_OK if !path.is_null() => {
+                let mut length = 0;
+                while *path.add(length) != 0 {
+                    length += 1;
+                }
+                let result =
+                    PathBuf::from(OsString::from_wide(slice::from_raw_parts(path, length)));
+                CoTaskMemFree(path.cast());
+                Some(result)
+            }
+            _ => {
+                CoTaskMemFree(path.cast());
+                None
+            }
+        }
+    }
 }
 
 fn read_saved_data_directory(config_path: &Path) -> Result<Option<PathBuf>, ConfigError> {

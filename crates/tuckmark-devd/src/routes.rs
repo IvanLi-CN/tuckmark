@@ -25,7 +25,9 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tokio::fs;
 use tokio_stream::wrappers::BroadcastStream;
-use tuckmark_contracts::{AgentImportItem, AgentImportProposal, AgentImportTemplate};
+use tuckmark_contracts::{
+    AgentImportItem, AgentImportProposal, AgentImportTemplate, RenderOptions,
+};
 use tuckmark_engine::{
     AgentImportError, AgentImportManager, CreateAgentImportSession,
     FulfillAgentImportTemplateInput, RequestAgentImportTemplateInput, UpdateAgentImportItem,
@@ -33,7 +35,7 @@ use tuckmark_engine::{
 
 use crate::{
     config::{ConfigError, DevdConfig},
-    data::{DataError, DataFacade},
+    data::{DataError, DataFacade, InventoryPrintSnapshot},
     service::{ArtifactAsset, NativeService, NativeServiceError},
 };
 
@@ -397,8 +399,57 @@ async fn inventory_print_binding(
     let args = args
         .as_object()
         .ok_or_else(|| ApiError::bad_request("Print binding arguments must be an object."))?;
+    let plan = resolve_inventory_print_plan(&snapshot, args)?;
+    validate_inventory_print_plan(&state.service, &plan)?;
+
+    // There is no native device adapter yet. Preserve the established server-side print gate
+    // after the complete request has been resolved, but never report a planned job as sent.
+    match state.service.print_transport_unavailable() {
+        Err(error) => Err(error.into()),
+        Ok(()) => Ok(Json(json!({
+            "revision": actual_revision,
+            "data": {
+                "material": plan.material,
+                "binding": plan.binding,
+                "copies": plan.copies,
+                "jobs": [],
+            },
+        }))),
+    }
+}
+
+#[derive(Debug)]
+struct InventoryPrintPlan {
+    material: Value,
+    binding: Value,
+    copies: u64,
+    source: InventoryPrintSource,
+}
+
+#[derive(Debug)]
+enum InventoryPrintSource {
+    SystemTemplate {
+        template_id: String,
+        input: BTreeMap<String, String>,
+        render_options: RenderOptions,
+    },
+    UserTemplate {
+        document: Value,
+        input: BTreeMap<String, String>,
+        render_options: RenderOptions,
+    },
+}
+
+fn resolve_inventory_print_plan(
+    snapshot: &InventoryPrintSnapshot,
+    args: &Map<String, Value>,
+) -> Result<InventoryPrintPlan, ApiError> {
     let material_id = required_value_string(args, "materialId")?;
     let binding_id = required_value_string(args, "bindingId")?;
+    let _printer_id = required_value_string(args, "printerId")?;
+    if args.contains_key("printerName") {
+        required_value_string(args, "printerName")?;
+    }
     let material = snapshot
         .materials
         .iter()
@@ -417,13 +468,226 @@ async fn inventory_print_binding(
                 .find(|binding| binding["id"].as_str() == Some(binding_id))
         })
         .ok_or_else(|| DataError::NotFound("Template binding was not found.".into()))?;
-    match state.service.print_transport_unavailable() {
-        Err(error) => Err(error.into()),
-        Ok(()) => Ok(Json(json!({
-            "revision": actual_revision,
-            "data": { "material": material, "binding": binding, "copies": 0, "jobs": [] },
-        }))),
+    let binding_object = binding
+        .as_object()
+        .ok_or_else(|| ApiError::bad_request("Template binding must be an object."))?;
+    let copies = inventory_print_copies(args, binding_object)?;
+    let input = inventory_template_input(material, binding_object)?;
+    let template_id = required_value_string(binding_object, "templateId")?.to_owned();
+    let source = match required_value_string(binding_object, "templateSource")? {
+        "system" => InventoryPrintSource::SystemTemplate {
+            template_id,
+            input,
+            render_options: inventory_render_options(None, args.get("renderOptions"))?,
+        },
+        "user-template" => {
+            let document = inventory_user_template_document(&snapshot.runtime, &template_id)?;
+            InventoryPrintSource::UserTemplate {
+                render_options: inventory_render_options(
+                    document.get("renderOptions"),
+                    args.get("renderOptions"),
+                )?,
+                document,
+                input,
+            }
+        }
+        _ => {
+            return Err(ApiError::bad_request(
+                "Template binding templateSource must be system or user-template.",
+            ));
+        }
+    };
+    Ok(InventoryPrintPlan {
+        material: material.clone(),
+        binding: binding.clone(),
+        copies,
+        source,
+    })
+}
+
+fn validate_inventory_print_plan(
+    service: &NativeService,
+    plan: &InventoryPrintPlan,
+) -> Result<(), ApiError> {
+    match &plan.source {
+        InventoryPrintSource::SystemTemplate {
+            template_id,
+            input,
+            render_options,
+        } => service.validate_template_print(template_id, input, render_options)?,
+        InventoryPrintSource::UserTemplate {
+            document,
+            input,
+            render_options,
+        } => service.validate_canvas_draft_print(document, input, render_options)?,
     }
+    Ok(())
+}
+
+fn inventory_print_copies(
+    args: &Map<String, Value>,
+    binding: &Map<String, Value>,
+) -> Result<u64, ApiError> {
+    let value = args
+        .get("quantity")
+        .or_else(|| binding.get("printQuantity"));
+    match value {
+        None => Ok(1),
+        Some(value) => value
+            .as_u64()
+            .filter(|value| *value > 0)
+            .ok_or_else(|| ApiError::bad_request("Print quantity must be a positive integer.")),
+    }
+}
+
+fn inventory_template_input(
+    material: &Value,
+    binding: &Map<String, Value>,
+) -> Result<BTreeMap<String, String>, ApiError> {
+    let material = material
+        .as_object()
+        .ok_or_else(|| ApiError::bad_request("Material must be an object."))?;
+    let full_name = required_value_string(material, "fullName")?.to_owned();
+    let current_quantity = inventory_current_quantity(material)?;
+    let mut input = BTreeMap::from([
+        ("fullName".into(), full_name.clone()),
+        ("name".into(), full_name.clone()),
+        ("model".into(), full_name),
+        (
+            "baseName".into(),
+            inventory_material_text(material, "baseName"),
+        ),
+        (
+            "variantName".into(),
+            inventory_material_text(material, "variantName"),
+        ),
+        (
+            "packageName".into(),
+            inventory_material_text(material, "packageName"),
+        ),
+        (
+            "package".into(),
+            inventory_material_text(material, "packageName"),
+        ),
+        (
+            "description".into(),
+            inventory_material_text(material, "description"),
+        ),
+        (
+            "remark".into(),
+            inventory_material_text(material, "description"),
+        ),
+        (
+            "deviceDetails".into(),
+            inventory_material_text(material, "deviceDetails"),
+        ),
+        (
+            "matrixCode".into(),
+            inventory_material_text(material, "matrixCode"),
+        ),
+        (
+            "packagingRemark".into(),
+            inventory_material_text(material, "packagingRemark"),
+        ),
+        ("quantity".into(), current_quantity.clone()),
+        ("currentQuantity".into(), current_quantity),
+    ]);
+    if let Some(overrides) = binding.get("fieldOverrides") {
+        let overrides = overrides
+            .as_object()
+            .ok_or_else(|| ApiError::bad_request("fieldOverrides must be an object."))?;
+        for (key, value) in overrides {
+            let value = value.as_str().ok_or_else(|| {
+                ApiError::bad_request(format!("fieldOverrides.{key} must be a string."))
+            })?;
+            input.insert(key.clone(), value.into());
+        }
+    }
+    Ok(input)
+}
+
+fn inventory_current_quantity(material: &Map<String, Value>) -> Result<String, ApiError> {
+    match material.get("currentQuantity") {
+        Some(value) if value.as_i64().is_some_and(|value| value >= 0) => {
+            Ok(value.as_i64().unwrap().to_string())
+        }
+        Some(value) if value.as_u64().is_some() => Ok(value.as_u64().unwrap().to_string()),
+        _ => Err(ApiError::bad_request(
+            "Material currentQuantity must be a non-negative integer.",
+        )),
+    }
+}
+
+fn inventory_material_text(material: &Map<String, Value>, key: &str) -> String {
+    material
+        .get(key)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .into()
+}
+
+fn inventory_user_template_document(runtime: &Value, template_id: &str) -> Result<Value, ApiError> {
+    let runtime = runtime
+        .as_object()
+        .ok_or_else(|| ApiError::bad_request("Runtime snapshot must be an object."))?;
+    let source_key = format!("user:{template_id}");
+    let working_document = runtime
+        .get("workingCopies")
+        .and_then(Value::as_array)
+        .and_then(|copies| {
+            copies.iter().find_map(|copy| {
+                (copy.get("sourceKey").and_then(Value::as_str) == Some(source_key.as_str()))
+                    .then(|| copy.get("draft"))
+                    .flatten()
+                    .filter(|document| !document.is_null())
+            })
+        });
+    let version_document = runtime
+        .get("templates")
+        .and_then(Value::as_array)
+        .and_then(|templates| {
+            templates
+                .iter()
+                .find(|template| template.get("id").and_then(Value::as_str) == Some(template_id))
+        })
+        .and_then(|template| template.get("currentVersionId").and_then(Value::as_str))
+        .and_then(|version_id| {
+            runtime
+                .get("versions")
+                .and_then(Value::as_array)
+                .and_then(|versions| {
+                    versions.iter().find(|version| {
+                        version.get("id").and_then(Value::as_str) == Some(version_id)
+                    })
+                })
+        })
+        .and_then(|version| version.get("document"))
+        .filter(|document| !document.is_null());
+    working_document
+        .or(version_document)
+        .cloned()
+        .ok_or_else(|| DataError::NotFound("User template document was not found.".into()).into())
+}
+
+fn inventory_render_options(
+    document_options: Option<&Value>,
+    request_options: Option<&Value>,
+) -> Result<RenderOptions, ApiError> {
+    let mut values = Map::new();
+    for value in [document_options, request_options].into_iter().flatten() {
+        let object = value
+            .as_object()
+            .ok_or_else(|| ApiError::bad_request("renderOptions must be an object."))?;
+        for (key, value) in object {
+            values.insert(key.clone(), value.clone());
+        }
+    }
+    let options = serde_json::from_value::<RenderOptions>(Value::Object(values))
+        .map_err(|error| ApiError::bad_request(format!("renderOptions is invalid: {error}")))?;
+    options
+        .validate()
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    Ok(options)
 }
 
 async fn data_archive(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {

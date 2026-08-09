@@ -813,8 +813,12 @@ fn apply_runtime_command(
                         .collect(),
                 ),
             );
-            if let Some(recommended_use) = document_recommended_use(&version) {
-                template.insert("recommendedUse".into(), Value::String(recommended_use));
+            if document_has_recommended_use(&version) {
+                if let Some(recommended_use) = document_recommended_use(&version) {
+                    template.insert("recommendedUse".into(), Value::String(recommended_use));
+                } else {
+                    template.remove("recommendedUse");
+                }
             }
             let template = Value::Object(template);
             match existing_index {
@@ -964,6 +968,7 @@ fn apply_runtime_command(
             upsert_by_key(&mut working_copies, "sourceKey", working_copy.clone());
             if command == "save-autosave"
                 && let Some(template_id) = template_id
+                && should_create_autosave(&versions, &template_id, &timestamp)
             {
                 let version_number = versions
                     .iter()
@@ -977,7 +982,7 @@ fn apply_runtime_command(
                     "templateId": template_id,
                     "version": version_number,
                     "kind": "autosave",
-                    "createdAt": now(),
+                    "createdAt": timestamp.clone(),
                     "label": "未保存草稿",
                     "sourceVersionId": args.get("sourceVersionId").cloned().unwrap_or(Value::Null),
                     "document": working_copy.get("draft").cloned().unwrap_or(Value::Null),
@@ -1334,6 +1339,29 @@ fn document_recommended_use(version: &Value) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
+}
+
+fn document_has_recommended_use(version: &Value) -> bool {
+    version
+        .pointer("/document")
+        .and_then(Value::as_object)
+        .is_some_and(|document| document.contains_key("recommendedUse"))
+}
+
+fn should_create_autosave(versions: &[Value], template_id: &str, timestamp: &str) -> bool {
+    let Ok(timestamp) = OffsetDateTime::parse(timestamp, &Rfc3339) else {
+        return true;
+    };
+    let latest = versions
+        .iter()
+        .filter(|version| {
+            string_field(version, "templateId") == template_id
+                && version.get("kind").and_then(Value::as_str) == Some("autosave")
+        })
+        .filter_map(|version| version.get("createdAt").and_then(Value::as_str))
+        .filter_map(|created_at| OffsetDateTime::parse(created_at, &Rfc3339).ok())
+        .max();
+    latest.is_none_or(|latest| timestamp - latest >= time::Duration::minutes(5))
 }
 
 fn upsert_by_key(values: &mut Vec<Value>, key: &str, value: Value) {

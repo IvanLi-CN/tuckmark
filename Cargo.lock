@@ -1929,6 +1929,7 @@ dependencies = [
  "tuckmark-contracts",
  "tuckmark-engine",
  "uuid",
+ "windows-sys",
 ]
 
 [[package]]

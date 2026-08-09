@@ -8,16 +8,21 @@ use axum::{
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tempfile::tempdir;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::UnixStream,
-    time::timeout,
-};
+#[cfg(any(unix, windows))]
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(unix)]
+use tokio::net::UnixStream;
+#[cfg(windows)]
+use tokio::net::windows::named_pipe::ClientOptions;
+use tokio::time::timeout;
 use tower::ServiceExt;
+#[cfg(unix)]
+use tuckmark_devd::ipc::bind_unix_ipc;
+#[cfg(windows)]
+use tuckmark_devd::ipc::bind_windows_ipc;
 use tuckmark_devd::{
     AppState,
     config::DevdConfig,
-    ipc::bind_unix_ipc,
     routes::{TransportContext, app_router_for_transport},
 };
 
@@ -159,7 +164,7 @@ async fn frozen_http_fixture_preserves_health_conflict_and_origin_boundaries() {
 }
 
 #[tokio::test]
-async fn sse_and_named_ipc_observe_the_same_committed_revision() {
+async fn sse_observes_the_committed_revision() {
     let (_directory, state) = test_state();
     let http = app_router_for_transport(state.clone(), TransportContext::Http);
     let sse = http
@@ -198,7 +203,16 @@ async fn sse_and_named_ipc_observe_the_same_committed_revision() {
     assert!(event.contains("id: 1\n"));
     assert!(event.contains("event: data-revision\n"));
     assert!(event.contains("\"revision\":1"));
+}
 
+#[cfg(unix)]
+#[tokio::test]
+async fn unix_named_ipc_observes_the_committed_revision() {
+    let (_directory, state) = test_state();
+    state
+        .data
+        .mutate_runtime("save-settings", 0, json!({ "patch": { "threshold": 151 } }))
+        .unwrap();
     let instance = format!("ticket-67-{}", std::process::id());
     let ipc = bind_unix_ipc(&instance).await.unwrap();
     let endpoint = ipc.endpoint().address.clone();
@@ -210,6 +224,37 @@ async fn sse_and_named_ipc_observe_the_same_committed_revision() {
             .unwrap();
     });
     let mut stream = UnixStream::connect(endpoint).await.unwrap();
+    stream
+        .write_all(
+            b"GET /api/data/status HTTP/1.1\r\nHost: localhost\r\nx-tuckmark-ipc: 1\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.unwrap();
+    server.abort();
+    assert!(response.starts_with("HTTP/1.1 200"));
+    assert!(response.contains("\"revision\":1"));
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_named_ipc_observes_the_committed_revision() {
+    let (_directory, state) = test_state();
+    state
+        .data
+        .mutate_runtime("save-settings", 0, json!({ "patch": { "threshold": 151 } }))
+        .unwrap();
+    let instance = format!("ticket-67-{}", std::process::id());
+    let ipc = bind_windows_ipc(&instance).unwrap();
+    let endpoint = ipc.endpoint().address.clone();
+    let ipc_router = app_router_for_transport(state, TransportContext::Ipc);
+    let server = tokio::spawn(async move {
+        axum::serve(ipc, ipc_router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let mut stream = ClientOptions::new().open(endpoint).unwrap();
     stream
         .write_all(
             b"GET /api/data/status HTTP/1.1\r\nHost: localhost\r\nx-tuckmark-ipc: 1\r\nConnection: close\r\n\r\n",
