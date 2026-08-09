@@ -410,9 +410,11 @@ describe("SystemDataStorageCard", () => {
       processButton.click()
       await flush()
     })
-    expect(openWindow).toHaveBeenCalledWith(
-      "/canvas/draft-processing?source=user-template&templateId=power-module",
-      "_blank"
+    const [launchPath, target] = openWindow.mock.calls[0] ?? []
+    const launchUrl = new URL(String(launchPath), window.location.origin)
+    expect(target).toBe("_blank")
+    expect(decodeURIComponent(launchUrl.searchParams.get("__tuckmark_redirect__") ?? "")).toBe(
+      "/canvas/draft-processing?source=user-template&templateId=power-module"
     )
     expect(focus).toHaveBeenCalledTimes(1)
   })
