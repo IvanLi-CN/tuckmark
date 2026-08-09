@@ -6716,6 +6716,7 @@ export function CanvasWorkspace({
   const autosaveReadOnlyVersion = state.readOnlyVersion
   const autosaveVersionHistory = state.versionHistory
   const autosaveDraftGeneration = draftGenerationRef.current
+  const autosaveRuntimeGeneration = runtimeDataGeneration
 
   React.useLayoutEffect(() => {
     if (
@@ -6730,14 +6731,24 @@ export function CanvasWorkspace({
     }
     void runtimeCoordinator
       .runRuntimeMutation(async () => {
-        recordEphemeralCanvasDraft({
-          source: autosaveRouteSource,
-          document: draftWithCurrentRenderOptions(autosaveLiveDraft),
-          updatedAt: new Date().toISOString(),
-        })
+        const replacementState = runtimeCoordinator.getRuntimeReplacementState()
+        if (replacementState.active || replacementState.generation !== autosaveRuntimeGeneration) {
+          throw new RuntimeDataSourceChangedError()
+        }
+        recordEphemeralCanvasDraft(
+          {
+            source: autosaveRouteSource,
+            document: draftWithCurrentRenderOptions(autosaveLiveDraft),
+            updatedAt: new Date().toISOString(),
+          },
+          { expectedGeneration: autosaveDraftGeneration }
+        )
       })
       .catch((cause) => {
-        if (cause instanceof RuntimeDataSourceChangedError) {
+        if (
+          cause instanceof RuntimeDataSourceChangedError ||
+          cause instanceof CanvasDraftGenerationChangedError
+        ) {
           return
         }
         setState((current) => ({
@@ -6755,6 +6766,8 @@ export function CanvasWorkspace({
     runtimeCoordinator,
     runtimeDataReloading,
     state.storageMode,
+    autosaveDraftGeneration,
+    autosaveRuntimeGeneration,
   ])
 
   React.useEffect(() => {
@@ -6797,9 +6810,15 @@ export function CanvasWorkspace({
           document: autosaveDocument,
           sourceVersionId: autosaveLiveDraft.baseVersionId,
         },
-        { expectedGeneration: autosaveDraftGeneration }
+        {
+          expectedGeneration: autosaveDraftGeneration,
+          expectedRuntimeGeneration: autosaveRuntimeGeneration,
+        }
       ).catch((cause) => {
-        if (cause instanceof CanvasDraftGenerationChangedError) {
+        if (
+          cause instanceof CanvasDraftGenerationChangedError ||
+          cause instanceof RuntimeDataSourceChangedError
+        ) {
           return
         }
         setState((current) => ({
@@ -6821,6 +6840,7 @@ export function CanvasWorkspace({
         },
         {
           expectedGeneration: autosaveDraftGeneration,
+          expectedRuntimeGeneration: autosaveRuntimeGeneration,
           onReplaced: () => {
             if (!isServerHttpDataSurface()) {
               persistDraftDocument(autosaveDocument)
@@ -6828,7 +6848,10 @@ export function CanvasWorkspace({
           },
         }
       ).catch((cause) => {
-        if (cause instanceof CanvasDraftGenerationChangedError) {
+        if (
+          cause instanceof CanvasDraftGenerationChangedError ||
+          cause instanceof RuntimeDataSourceChangedError
+        ) {
           return
         }
         setState((current) => ({
@@ -6850,6 +6873,7 @@ export function CanvasWorkspace({
     state.storageMode,
     startupSyncPending,
     autosaveDraftGeneration,
+    autosaveRuntimeGeneration,
   ])
 
   React.useEffect(() => {
@@ -6862,15 +6886,31 @@ export function CanvasWorkspace({
       return
     }
     const expectedGeneration = draftGenerationRef.current
-    if (state.storageMode === "reset-pending") {
-      controller.deleteCanvasDraft(state.presetId, expectedGeneration)
-      return
-    }
-    controller.recordCanvasDraft(
-      state.presetId,
-      draftWithCurrentRenderOptions(state.liveDraft),
-      expectedGeneration
-    )
+    void runtimeCoordinator
+      .runRuntimeMutation(async () => {
+        const replacementState = runtimeCoordinator.getRuntimeReplacementState()
+        if (replacementState.active || replacementState.generation !== autosaveRuntimeGeneration) {
+          throw new RuntimeDataSourceChangedError()
+        }
+        if (state.storageMode === "reset-pending") {
+          controller.deleteCanvasDraft(state.presetId, expectedGeneration)
+          return
+        }
+        controller.recordCanvasDraft(
+          state.presetId,
+          draftWithCurrentRenderOptions(state.liveDraft),
+          expectedGeneration
+        )
+      })
+      .catch((cause) => {
+        if (cause instanceof RuntimeDataSourceChangedError) {
+          return
+        }
+        setState((current) => ({
+          ...current,
+          outputStatus: cause instanceof Error ? cause.message : "同步画布草稿失败。",
+        }))
+      })
   }, [
     controller.deleteCanvasDraft,
     controller.recordCanvasDraft,
@@ -6882,6 +6922,8 @@ export function CanvasWorkspace({
     state.presetId,
     state.routeSource.kind,
     state.storageMode,
+    runtimeCoordinator,
+    autosaveRuntimeGeneration,
   ])
 
   React.useEffect(() => {

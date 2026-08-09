@@ -7,6 +7,7 @@ import {
   recordEphemeralCanvasDraft,
 } from "./canvas-draft-ephemeral.js"
 import {
+  advanceCanvasDraftGeneration,
   CanvasDraftGenerationChangedError,
   getCanvasDraftGeneration,
 } from "./canvas-draft-generation.js"
@@ -181,6 +182,22 @@ describe("user-template-store", () => {
       )
     ).rejects.toBeInstanceOf(CanvasDraftGenerationChangedError)
     await expect(loadWorkingCopy(source)).resolves.toBeNull()
+  })
+
+  it("rejects a queued ephemeral draft record after that canvas draft is reset", () => {
+    const source = { kind: "scratch" as const, presetId: "shipping-wide" }
+    const staleGeneration = getCanvasDraftGeneration(source)
+    const draft = createDraftFromPreset(getPresetById(source.presetId))
+
+    advanceCanvasDraftGeneration(source)
+
+    expect(() =>
+      recordEphemeralCanvasDraft(
+        { source, document: draft, updatedAt: "2026-08-09T12:00:00.000Z" },
+        { expectedGeneration: staleGeneration }
+      )
+    ).toThrow(CanvasDraftGenerationChangedError)
+    expect(listEphemeralCanvasDrafts()).toEqual([])
   })
 
   it("rejects a queued template autosave after its draft is restored", async () => {

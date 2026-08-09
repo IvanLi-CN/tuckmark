@@ -12,7 +12,10 @@ import {
   getSystemTemplateById,
   listStoredDraftDocuments,
 } from "./canvas-editor-model.js"
-import { getSharedCrossTabCoordinator } from "./cross-tab-coordinator.js"
+import {
+  getSharedCrossTabCoordinator,
+  RuntimeDataSourceChangedError,
+} from "./cross-tab-coordinator.js"
 import { supportsDirectoryHandles } from "./data-directory-handle-store.js"
 import {
   loadConfiguredDataDirectoryHandle,
@@ -27,7 +30,7 @@ import {
   requiresRuntimeAppSettingsMigration,
   withUpdatedRuntimeAppSettings,
 } from "./runtime-app-settings.js"
-import { isDemoRuntimeMode } from "./runtime-data-mode.js"
+import { isDemoRuntimeMode, setRuntimeDataMode } from "./runtime-data-mode.js"
 import type {
   RuntimeStore,
   RuntimeStoreAppSettings,
@@ -1488,6 +1491,16 @@ let storePromise: Promise<RuntimeStore> | undefined
 let demoStorePromise: Promise<RuntimeStore> | undefined
 let storeGeneration: number | null = null
 
+function assertRuntimeGeneration(expectedGeneration: number | undefined): void {
+  if (expectedGeneration === undefined) {
+    return
+  }
+  const replacementState = getSharedCrossTabCoordinator().getRuntimeReplacementState()
+  if (replacementState.active || replacementState.generation !== expectedGeneration) {
+    throw new RuntimeDataSourceChangedError()
+  }
+}
+
 async function withRuntimeStore<T>(task: (store: RuntimeStore) => Promise<T>): Promise<T> {
   const coordinator = getSharedCrossTabCoordinator()
   return await coordinator.runRuntimeMutation(async () => {
@@ -1706,10 +1719,11 @@ export async function saveUserTemplateAutosave(
     document: CanvasDraftDocument
     sourceVersionId?: string
   },
-  options?: { expectedGeneration?: number }
+  options?: { expectedGeneration?: number; expectedRuntimeGeneration?: number }
 ) {
   const result = await withRuntimeStore(async (store) => {
     assertCanvasDraftGeneration(args.source, options?.expectedGeneration)
+    assertRuntimeGeneration(options?.expectedRuntimeGeneration)
     return await store.saveAutosave(args)
   })
   emitRuntimeStoreMutation("autosave-saved", { source: args.source })
@@ -1725,11 +1739,13 @@ export async function replaceUserTemplateWorkingCopy(
   },
   options?: {
     expectedGeneration?: number
+    expectedRuntimeGeneration?: number
     onReplaced?: () => void
   }
 ) {
   const result = await withRuntimeStore(async (store) => {
     assertCanvasDraftGeneration(args.source, options?.expectedGeneration)
+    assertRuntimeGeneration(options?.expectedRuntimeGeneration)
     const workingCopy = await store.replaceWorkingCopy(args)
     options?.onReplaced?.()
     return workingCopy
@@ -1934,6 +1950,7 @@ export async function resetUserTemplateStoreForTest(): Promise<void> {
   storeGeneration = null
   legacyStorePromise = undefined
   resetCanvasDraftGenerationsForTest()
+  setRuntimeDataMode(null)
 }
 
 export { createDefaultRuntimeAppSettings } from "./runtime-app-settings.js"

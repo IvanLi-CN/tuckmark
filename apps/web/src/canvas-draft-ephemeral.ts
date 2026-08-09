@@ -1,3 +1,4 @@
+import { assertCanvasDraftGeneration } from "./canvas-draft-generation.js"
 import { isDemoRuntimeMode } from "./runtime-data-mode.js"
 import type { CanvasDraftDocument, CanvasDraftSource } from "./types.js"
 
@@ -56,7 +57,11 @@ function writeStoredDrafts(
   }
 }
 
-export function recordEphemeralCanvasDraft(draft: EphemeralCanvasDraft): void {
+export function recordEphemeralCanvasDraft(
+  draft: EphemeralCanvasDraft,
+  options?: { expectedGeneration?: number }
+): void {
+  assertCanvasDraftGeneration(draft.source, options?.expectedGeneration)
   const key = sourceKey(draft.source)
   if (isDemoRuntimeMode()) {
     const drafts = readStoredDrafts(DEMO_STORAGE_KEY, demoFallbackDrafts)
