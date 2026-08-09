@@ -1,18 +1,86 @@
 name: release
 
 on:
-  workflow_dispatch:
   workflow_run:
     workflows: ["ci-main"]
     types: [completed]
+  workflow_dispatch:
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  native:
+  prepare:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    name: Release Prepare
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: read
+    outputs:
+      skipped: ${{ steps.release-notes.outputs.skipped }}
+      merge_sha: ${{ steps.release-values.outputs.merge_sha }}
+      release_version: ${{ steps.release-values.outputs.release_version }}
+      context_artifact: ${{ steps.release-notes.outputs.artifact_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - id: snapshot
+        name: Select release snapshot
+        run: node .github/scripts/select-release-snapshot.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Restore release snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.snapshot.outputs.artifact_name }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.snapshot.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: work/release/inbox
+      - name: Normalize release snapshot
+        run: |
+          SNAPSHOT="$(find work/release/inbox -name release-intent.json -print -quit)"
+          test -n "$SNAPSHOT"
+          mkdir -p work/release
+          cp "$SNAPSHOT" work/release/release-intent.json
+      - name: Build release plan
+        run: node .github/scripts/release-plan.mjs
+      - id: release-notes
+        name: Render release notes and context
+        run: node .github/scripts/release-notes.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+      - name: Upload release context artifact
+        if: steps.release-notes.outputs.skipped != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.release-notes.outputs.artifact_name }}
+          path: |
+            work/release/release-context.json
+            work/release/release-notes.md
+      - id: release-values
+        name: Export release plan values
+        run: |
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs = require("node:fs")
+          const plan = JSON.parse(fs.readFileSync("work/release/release-plan.json", "utf8"))
+          console.log(`merge_sha=${plan.merge_sha}`)
+          console.log(`release_version=${plan.release_version}`)
+          NODE
+
+  native:
+    needs: prepare
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.skipped != 'true'
+    name: Native ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
@@ -23,9 +91,13 @@ jobs:
             target: x86_64-apple-darwin
     runs-on: ${{ matrix.runner }}
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.merge_sha }}
+          fetch-depth: 0
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -34,29 +106,30 @@ jobs:
       - name: Ad-hoc sign and package
         id: package
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
         run: |
-          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' crates/tuckmark-cli/Cargo.toml | head -1)"
+          version="${RELEASE_VERSION#v}"
           root="tuckmark-${version}-${{ matrix.target }}"
           mkdir -p "$root"
           cp "target/${{ matrix.target }}/release/tuckmark" "target/${{ matrix.target }}/release/tuckmark-devd" "$root/"
           codesign --force --sign - "$root/tuckmark" "$root/tuckmark-devd"
           tar -czf "${root}.tar.gz" "$root"
-          shasum -a 256 "${root}.tar.gz" > SHA256SUMS
           echo "archive=${root}.tar.gz" >> "$GITHUB_OUTPUT"
       - name: Artifact smoke test without JavaScript runtime
         run: bash scripts/test-native-release-artifact.sh "${{ steps.package.outputs.archive }}" ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.target }}
-          path: |
-            ${{ steps.package.outputs.archive }}
-            SHA256SUMS
+          path: ${{ steps.package.outputs.archive }}
 
   publish:
-    needs: native
-    if: github.event_name == 'workflow_dispatch'
+    needs: [prepare, native]
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.skipped != 'true'
+    name: Publish Release
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     steps:
       - uses: actions/download-artifact@v4
@@ -64,9 +137,28 @@ jobs:
           pattern: native-*
           merge-multiple: true
           path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.context_artifact }}
+          path: work/release
+      - name: Build release checksum manifest
+        run: shasum -a 256 "release"/*.tar.gz > release/SHA256SUMS
       - name: Publish native release archives
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="$(find release -name 'tuckmark-*.tar.gz' -print -quit | sed -E 's#release/tuckmark-([0-9.]+)-.*#\1#')"
-          gh release create "$version" release/*.tar.gz release/SHA256SUMS --title "$version" --generate-notes
+          context="work/release/release-context.json"
+          version="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).release_version' "$context")"
+          channel="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).channel_label' "$context")"
+          merge_sha="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).merge_sha' "$context")"
+          release_args=()
+          if [ "$channel" = "channel:preview" ]; then
+            release_args+=(--prerelease --latest=false)
+          fi
+          gh release create "$version" \
+            release/*.tar.gz release/SHA256SUMS \
+            --title "$version" \
+            --notes-file work/release/release-notes.md \
+            --target "$merge_sha" \
+            "${release_args[@]}"
+          gh workflow run pages.yml --ref main -f release_tag="$version"

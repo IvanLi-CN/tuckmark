@@ -285,13 +285,19 @@ describe("Native release workflow", () => {
     expect(releaseWorkflow).toContain("codesign --force --sign -")
     expect(releaseWorkflow).toContain("Artifact smoke test without JavaScript runtime")
     expect(releaseWorkflow).toContain("scripts/test-native-release-artifact.sh")
-    expect(releaseWorkflow).toContain(`shasum -a 256 "\${root}.tar.gz" > SHA256SUMS`)
+    expect(releaseWorkflow).toContain('shasum -a 256 "release"/*.tar.gz > release/SHA256SUMS')
   })
 
-  it("publishes both archives and their checksums only from an explicit release dispatch", () => {
-    expect(releaseWorkflow).toContain("if: github.event_name == 'workflow_dispatch'")
+  it("publishes from the durable release snapshot on both automatic and manual runs", () => {
+    expect(releaseWorkflow).toContain("release-intent.json")
+    expect(releaseWorkflow).toContain("release-context.json")
+    expect(releaseWorkflow).toContain("release-notes.md")
+    expect(releaseWorkflow).toContain("ref: ${{ needs.prepare.outputs.merge_sha }}")
+    expect(releaseWorkflow).toContain("needs.prepare.outputs.skipped != 'true'")
     expect(releaseWorkflow).toContain("release/*.tar.gz release/SHA256SUMS")
+    expect(releaseWorkflow).toContain("--notes-file work/release/release-notes.md")
     expect(releaseWorkflow).toContain("gh release create")
+    expect(releaseWorkflow).toContain("gh workflow run pages.yml --ref main -f release_tag=")
   })
 })
 

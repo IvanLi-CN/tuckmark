@@ -11,7 +11,7 @@ use thiserror::Error;
 use tuckmark_contracts::{
     ContractError, DataDirectoryManifest, DevdDataArchive, InventoryAdjustment, InventoryMaterial,
     InventorySnapshot, RuntimeSnapshot, TemplateRecord, TemplateVersion, WorkingCopyRecord,
-    canonical_json_bytes, normalize_legacy_value,
+    canonical_json_bytes, normalize_legacy_tree_value, normalize_legacy_value,
 };
 use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
 
@@ -268,27 +268,24 @@ impl DirectoryTreeArchive {
         let mut inventory = InventorySnapshot::default();
 
         for (path, value) in &self.entries {
+            let value = normalize_legacy_tree_value(value.clone());
             match classify_data_entry(path)? {
                 EntryKind::Settings => {}
                 EntryKind::Template => runtime
                     .templates
-                    .push(serde_json::from_value::<TemplateRecord>(value.clone())?),
+                    .push(serde_json::from_value::<TemplateRecord>(value)?),
                 EntryKind::Version => runtime
                     .versions
-                    .push(serde_json::from_value::<TemplateVersion>(value.clone())?),
-                EntryKind::WorkingCopy => {
-                    runtime
-                        .working_copies
-                        .push(serde_json::from_value::<WorkingCopyRecord>(value.clone())?)
-                }
+                    .push(serde_json::from_value::<TemplateVersion>(value)?),
+                EntryKind::WorkingCopy => runtime
+                    .working_copies
+                    .push(serde_json::from_value::<WorkingCopyRecord>(value)?),
                 EntryKind::Material => inventory
                     .materials
-                    .push(serde_json::from_value::<InventoryMaterial>(value.clone())?),
-                EntryKind::Adjustment => inventory.adjustments.push(serde_json::from_value::<
-                    InventoryAdjustment,
-                >(
-                    value.clone()
-                )?),
+                    .push(serde_json::from_value::<InventoryMaterial>(value)?),
+                EntryKind::Adjustment => inventory
+                    .adjustments
+                    .push(serde_json::from_value::<InventoryAdjustment>(value)?),
             }
         }
         runtime

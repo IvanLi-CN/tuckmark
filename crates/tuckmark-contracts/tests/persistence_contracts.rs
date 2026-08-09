@@ -235,8 +235,53 @@ fn legacy_recommended_uses_and_text_stretch_aliases_normalize_without_losing_beh
     assert_eq!(text["stretchYGrow"], false);
     assert_eq!(text["stretchYShrink"], false);
     assert_eq!(text["width"], 22.5);
+    assert_eq!(text["fontWeight"], "normal");
+    assert_eq!(text["align"], "left");
     assert_eq!(text["autoWrap"], true);
     assert_eq!(text["verticalText"], false);
+}
+
+#[test]
+fn legacy_multiline_text_uses_web_natural_height_defaults() {
+    let normalized = normalize_legacy_value(json!({
+        "schema": "tuckmark.data-archive.v1",
+        "exportedAt": "2026-01-02T03:04:05.000Z",
+        "runtime": {
+            "templates": [],
+            "versions": [{
+                "id": "version-1",
+                "templateId": "template-1",
+                "document": {
+                    "version": 1,
+                    "id": "template-1",
+                    "presetId": "template-1",
+                    "name": "Legacy",
+                    "source": {"kind": "user-template", "templateId": "template-1"},
+                    "width": 100,
+                    "height": 50,
+                    "fields": [],
+                    "elements": [{
+                        "id": "text-1",
+                        "meta": {"name": "Text", "visible": true, "locked": false},
+                        "kind": "text",
+                        "x": 0,
+                        "y": 0,
+                        "fontSize": 4,
+                        "value": "A\nB"
+                    }],
+                    "editor": {"gridEnabled": true, "snapEnabled": true}
+                }
+            }],
+            "workingCopies": []
+        },
+        "inventory": {"materials": [], "adjustments": []}
+    }))
+    .unwrap();
+
+    let text = &normalized["runtime"]["versions"][0]["document"]["elements"][0];
+    assert_eq!(text["fontWeight"], "normal");
+    assert_eq!(text["align"], "left");
+    assert_eq!(text["height"], 8.8);
 }
 
 #[test]

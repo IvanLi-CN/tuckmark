@@ -1725,6 +1725,8 @@ fn normalize_text_defaults(object: &mut serde_json::Map<String, Value>) {
     for field in [
         "width",
         "height",
+        "fontWeight",
+        "align",
         "fontFamily",
         "lineHeight",
         "justifyAlign",
@@ -1752,9 +1754,25 @@ fn normalize_text_defaults(object: &mut serde_json::Map<String, Value>) {
         .get("fontSize")
         .and_then(Value::as_f64)
         .unwrap_or(5.0);
+    let line_height = object
+        .get("lineHeight")
+        .and_then(Value::as_f64)
+        .unwrap_or(1.2)
+        .clamp(0.7, 4.0);
+    let line_count = object
+        .get("value")
+        .and_then(Value::as_str)
+        .map(|value| value.split('\n').count().max(1) as f64)
+        .unwrap_or(1.0);
     object
         .entry("height")
-        .or_insert_with(|| Value::from(font_size));
+        .or_insert_with(|| Value::from(font_size * (1.0 + (line_count - 1.0) * line_height)));
+    object
+        .entry("fontWeight")
+        .or_insert_with(|| Value::String("normal".into()));
+    object
+        .entry("align")
+        .or_insert_with(|| Value::String("left".into()));
     object
         .entry("fontFamily")
         .or_insert_with(|| Value::String("system-sans".into()));
