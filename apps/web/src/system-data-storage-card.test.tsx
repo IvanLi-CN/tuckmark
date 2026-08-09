@@ -92,6 +92,7 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof SystemDataSto
       onInspectRestoreBackup={() => undefined}
       onRequestPermission={() => undefined}
       onOpenForceReplacementConfirmation={() => undefined}
+      onRetryPendingDrafts={() => undefined}
       onSyncNow={() => undefined}
       onTakeOverWrites={() => undefined}
       {...overrides}
@@ -377,6 +378,42 @@ describe("SystemDataStorageCard", () => {
       await flush()
     })
     expect(confirmForcedReplacement).toHaveBeenCalledTimes(1)
+  })
+
+  it("rechecks pending drafts without forcing replacement", async () => {
+    const retryPendingDrafts = vi.fn()
+    const pendingDraftDialog = {
+      kind: "drafts-required" as const,
+      drafts: [
+        {
+          label: "电源模块标签",
+          source: { kind: "user-template" as const, templateId: "power-module" },
+          sourceKey: "user:power-module",
+          updatedAt: "2026-08-08T10:00:00.000Z",
+        },
+      ],
+      operation: {
+        kind: "import" as const,
+        inspection: {} as never,
+      },
+    }
+
+    await renderCard({
+      dialog: pendingDraftDialog,
+      onRetryPendingDrafts: retryPendingDrafts,
+    })
+
+    const retryButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("重新检查并继续")
+    )
+    if (!retryButton) {
+      throw new Error("Missing pending draft retry button")
+    }
+    await act(async () => {
+      retryButton.click()
+      await flush()
+    })
+    expect(retryPendingDrafts).toHaveBeenCalledTimes(1)
   })
 
   it("opens the matching draft in the restricted processing layout", async () => {

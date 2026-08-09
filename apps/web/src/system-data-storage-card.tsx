@@ -56,6 +56,7 @@ type DataStorageCardProps = {
   onInspectRestoreBackup: (entry: DataDirectoryBackupEntry) => void
   onRequestPermission: () => void
   onOpenForceReplacementConfirmation: () => void
+  onRetryPendingDrafts: () => void
   onSyncNow: () => void
   onTakeOverWrites: () => void
 }
@@ -487,11 +488,13 @@ function PendingDraftsDialog({
   onCancel,
   onForce,
   onConfirmForce,
+  onRetry,
 }: {
   dialog: WorkbenchDataDirectoryDialogState | null
   onCancel: () => void
   onForce: () => void
   onConfirmForce: () => void
+  onRetry: () => void
 }) {
   if (!dialog || (dialog.kind !== "drafts-required" && dialog.kind !== "force-replace")) {
     return null
@@ -542,9 +545,14 @@ function PendingDraftsDialog({
               放弃草稿并替换
             </Button>
           ) : (
-            <Button type="button" variant="destructive" onClick={onForce}>
-              管理员强制替换
-            </Button>
+            <>
+              <Button type="button" onClick={onRetry}>
+                重新检查并继续
+              </Button>
+              <Button type="button" variant="destructive" onClick={onForce}>
+                管理员强制替换
+              </Button>
+            </>
           )}
         </DialogFooter>
       </DialogContent>
@@ -568,6 +576,7 @@ export function SystemDataStorageCard({
   onInspectRestoreBackup,
   onRequestPermission,
   onOpenForceReplacementConfirmation,
+  onRetryPendingDrafts,
   onSyncNow,
   onTakeOverWrites,
 }: DataStorageCardProps) {
@@ -797,6 +806,7 @@ export function SystemDataStorageCard({
         onCancel={onCancelDialog}
         onForce={onOpenForceReplacementConfirmation}
         onConfirmForce={onConfirmForcedReplacement}
+        onRetry={onRetryPendingDrafts}
       />
     </>
   )

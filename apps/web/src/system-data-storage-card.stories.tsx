@@ -43,6 +43,7 @@ const meta = {
     onInspectRestoreBackup: () => undefined,
     onRequestPermission: () => undefined,
     onOpenForceReplacementConfirmation: () => undefined,
+    onRetryPendingDrafts: () => undefined,
     onSyncNow: () => undefined,
     onTakeOverWrites: () => undefined,
   },

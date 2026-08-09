@@ -1992,6 +1992,13 @@ export function useWorkbenchController({
     })
   }, [dataDirectoryDialog])
 
+  const retryPendingDataReplacement = React.useCallback(async () => {
+    if (dataDirectoryDialog?.kind !== "drafts-required") {
+      return
+    }
+    await beginDataReplacement(dataDirectoryDialog.operation)
+  }, [beginDataReplacement, dataDirectoryDialog])
+
   const confirmForcedDataReplacement = React.useCallback(async () => {
     if (dataDirectoryDialog?.kind !== "force-replace") {
       return
@@ -2039,6 +2046,7 @@ export function useWorkbenchController({
     inspectRestoreBackup,
     confirmRestoreBackup,
     openForceReplacementConfirmation,
+    retryPendingDataReplacement,
     confirmForcedDataReplacement,
     takeOverDataDirectoryWrites,
     directorySetupNudgeOpen,
