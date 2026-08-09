@@ -69,7 +69,7 @@ saved-version count, and stale revisions must be re-read rather than replayed.
 ## Focused Validation
 
 ```bash
-cargo test --workspace --locked
+bun run test:native:cli
 bun run --filter @tuckmark/inventory test
 bun run --filter @tuckmark/web test
 ```

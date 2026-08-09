@@ -21,7 +21,7 @@ Use this skill when working inside the Tuckmark repository source tree.
 - Preview: `cargo run --locked --package tuckmark-cli -- template-package preview --file <package.json>`
 - Generate packets: `cargo run --locked --package tuckmark-cli -- template-package packets --file <package.json>`
 - Print after explicit owner approval: `TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 cargo run --locked --package tuckmark-cli -- template-package print --printer <id> --file <package.json>`
-- Focused checks: `cargo test --workspace --locked`, `bun run --filter @tuckmark/core test`, and `bun run --filter @tuckmark/web test`
+- Focused checks: `bun run test:native:cli`, `bun run --filter @tuckmark/core test`, and `bun run --filter @tuckmark/web test`
 
 ## Package Shape
 

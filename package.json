@@ -31,6 +31,7 @@
     "setup": "bun run scripts/setup.ts",
     "test": "bun run test:native && bun run test:contracts && bun run test:packages && bun run test:dev-scripts && bun run test:web",
     "test:native": "cargo test --workspace --locked",
+    "test:native:cli": "cargo test --locked --package tuckmark-cli --package tuckmark-devd",
     "test:contracts": "node scripts/check-compatibility-contract.mjs",
     "test:dev-scripts": "vitest run scripts/*.test.ts",
     "test:e2e:web": "bun run --filter @tuckmark/web test:e2e",
