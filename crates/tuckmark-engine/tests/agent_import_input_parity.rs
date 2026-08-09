@@ -483,6 +483,33 @@ fn list_inventory_rejects_invalid_label_binding_shapes() {
 }
 
 #[test]
+fn list_inventory_rejects_quantities_outside_i64_range() {
+    let directory = tempdir().unwrap();
+    let materials = directory.path().join("inventory/materials");
+    std::fs::create_dir_all(&materials).unwrap();
+    std::fs::write(
+        materials.join("overflow-quantity-material.json"),
+        serde_json::to_vec(&json!({
+            "id": "overflow-quantity-material",
+            "fullName": "Overflow quantity material",
+            "currentQuantity": 9223372036854775808u64,
+            "createdAt": "2026-08-09T00:00:00Z",
+            "updatedAt": "2026-08-09T00:00:00Z",
+            "labelBindings": []
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+
+    assert!(
+        AgentImportManager::new(authority)
+            .list_inventory(None)
+            .is_err()
+    );
+}
+
+#[test]
 fn restock_treats_an_empty_archived_timestamp_as_active_and_writes_schema_output() {
     let directory = tempdir().unwrap();
     let authority = DataAuthority::open(directory.path()).unwrap();

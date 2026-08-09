@@ -1257,12 +1257,18 @@ fn non_negative_inventory_quantity(value: &Value) -> Result<i64, AgentImportErro
         .filter(|quantity| *quantity >= 0)
         .or_else(|| {
             value
+                .as_u64()
+                .filter(|quantity| *quantity <= i64::MAX as u64)
+                .map(|quantity| quantity as i64)
+        })
+        .or_else(|| {
+            value
                 .as_f64()
                 .filter(|quantity| {
                     quantity.is_finite()
                         && *quantity >= 0.0
                         && quantity.fract() == 0.0
-                        && *quantity <= i64::MAX as f64
+                        && *quantity < i64::MAX as f64
                 })
                 .map(|quantity| quantity as i64)
         })

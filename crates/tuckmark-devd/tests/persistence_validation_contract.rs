@@ -408,6 +408,15 @@ fn save_material_rejects_malformed_label_bindings_and_normalizes_binding_default
             "updatedAt": "2026-08-09T00:00:00.000Z"
         }]),
         json!([{
+            "id": "binding-overflow-quantity",
+            "templateSource": "system",
+            "templateId": "cable-tag",
+            "templateName": "Cable Tag",
+            "printQuantity": 18446744073709551616.0,
+            "createdAt": "2026-08-09T00:00:00.000Z",
+            "updatedAt": "2026-08-09T00:00:00.000Z"
+        }]),
+        json!([{
             "id": "binding-invalid-overrides",
             "templateSource": "system",
             "templateId": "cable-tag",
@@ -750,6 +759,17 @@ fn apply_adjustment_normalizes_inventory_input_defaults() {
             json!({
                 "materialId": material_id,
                 "input": { "kind": "in", "quantity": 1, "note": null }
+            }),
+        )
+        .is_err()
+    );
+    assert!(
+        data.mutate_inventory(
+            "apply-adjustment",
+            3,
+            json!({
+                "materialId": material_id,
+                "input": { "kind": "in", "quantity": 9223372036854775808u64 }
             }),
         )
         .is_err()

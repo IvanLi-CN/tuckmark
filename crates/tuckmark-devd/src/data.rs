@@ -1529,12 +1529,18 @@ fn json_i64(value: &Value, label: &str) -> Result<i64, DataError> {
         .as_i64()
         .or_else(|| {
             value
+                .as_u64()
+                .filter(|value| *value <= i64::MAX as u64)
+                .map(|value| value as i64)
+        })
+        .or_else(|| {
+            value
                 .as_f64()
                 .filter(|value| {
                     value.is_finite()
                         && value.fract() == 0.0
                         && *value >= i64::MIN as f64
-                        && *value <= i64::MAX as f64
+                        && *value < i64::MAX as f64
                 })
                 .map(|value| value as i64)
         })
@@ -1989,7 +1995,7 @@ fn positive_json_integer(value: &Value, label: &str) -> Result<u64, DataError> {
                     value.is_finite()
                         && *value > 0.0
                         && value.fract() == 0.0
-                        && *value <= u64::MAX as f64
+                        && *value < u64::MAX as f64
                 })
                 .map(|value| value as u64)
         })
@@ -2006,7 +2012,7 @@ fn non_negative_json_integer(value: &Value, label: &str) -> Result<u64, DataErro
                     value.is_finite()
                         && *value >= 0.0
                         && value.fract() == 0.0
-                        && *value <= u64::MAX as f64
+                        && *value < u64::MAX as f64
                 })
                 .map(|value| value as u64)
         })
