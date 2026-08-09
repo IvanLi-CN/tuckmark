@@ -19,6 +19,7 @@ import {
   confirmPendingPastePlacement,
   createCanvasStateFromDraft,
   createSelectionDragPreview,
+  isCanvasRuntimeDataReloading,
   isTransformerInteractionTarget,
   movePendingPasteToPoint,
   normalizeCanvasWheelDeltas,
@@ -3301,6 +3302,30 @@ describe("web workbench app", () => {
     expect(document.body.textContent).toContain("用户模板：Stable Template")
     const history = await readUserTemplateHistory(saved.template.id)
     expect(history?.autosaves).toHaveLength(0)
+  })
+
+  it("locks canvas interactions until the new runtime generation finishes loading", () => {
+    expect(
+      isCanvasRuntimeDataReloading({
+        loadedGeneration: 4,
+        runtimeDataGeneration: 5,
+        runtimeDataReplacementActive: false,
+      })
+    ).toBe(true)
+    expect(
+      isCanvasRuntimeDataReloading({
+        loadedGeneration: 5,
+        runtimeDataGeneration: 5,
+        runtimeDataReplacementActive: true,
+      })
+    ).toBe(true)
+    expect(
+      isCanvasRuntimeDataReloading({
+        loadedGeneration: 5,
+        runtimeDataGeneration: 5,
+        runtimeDataReplacementActive: false,
+      })
+    ).toBe(false)
   })
 
   it("does not persist user-template undo state into scratch draft storage", async () => {

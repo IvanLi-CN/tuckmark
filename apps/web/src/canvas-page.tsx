@@ -280,6 +280,18 @@ const TEXT_ALIGNMENT_OPTIONS: Array<{
   { align: "right", verticalAlign: "bottom", label: "右下" },
 ]
 
+export function isCanvasRuntimeDataReloading({
+  loadedGeneration,
+  runtimeDataGeneration,
+  runtimeDataReplacementActive,
+}: {
+  loadedGeneration: number
+  runtimeDataGeneration: number
+  runtimeDataReplacementActive: boolean
+}): boolean {
+  return runtimeDataReplacementActive || loadedGeneration !== runtimeDataGeneration
+}
+
 function resolveTextGridAlign(element: Extract<CanvasDraftElement, { kind: "text" }>) {
   if (element.align === "justify") {
     return element.justifyAlign ?? "left"
@@ -6396,8 +6408,14 @@ export function CanvasWorkspace({
   )
   const [templateNameDialog, setTemplateNameDialog] =
     React.useState<TemplateNameDialogState | null>(null)
+  const loadedRuntimeDataGenerationRef = React.useRef(runtimeDataGeneration)
+  const runtimeDataReloading = isCanvasRuntimeDataReloading({
+    loadedGeneration: loadedRuntimeDataGenerationRef.current,
+    runtimeDataGeneration,
+    runtimeDataReplacementActive: controller.runtimeDataReplacementActive,
+  })
   const readOnly = state.readOnlyVersion !== null
-  const interactionLocked = readOnly || state.loading || controller.runtimeDataReplacementActive
+  const interactionLocked = readOnly || state.loading || runtimeDataReloading
   const asyncClipboardSupported = supportsAsyncClipboard()
   const [, setFontLoadGeneration] = React.useState(0)
   const stateRef = React.useRef(state)
@@ -6478,6 +6496,15 @@ export function CanvasWorkspace({
   }, [draftWithCurrentRenderOptions, state.liveDraft, state.loading, state.routeSource])
 
   React.useEffect(() => {
+    if (loadedRuntimeDataGenerationRef.current === runtimeDataGeneration) {
+      return
+    }
+
+    persistenceBaselineRef.current = null
+    setState((current) => (current.loading ? current : { ...current, loading: true }))
+  }, [runtimeDataGeneration])
+
+  React.useEffect(() => {
     if (initialScenario) {
       return
     }
@@ -6486,6 +6513,7 @@ export function CanvasWorkspace({
     }
 
     if (seededInitialLoadedRouteData) {
+      loadedRuntimeDataGenerationRef.current = runtimeDataGeneration
       controller.setDocumentRenderOptions({
         ...defaultDraftRenderOptions,
         ...seededInitialLoadedRouteData.draft.renderOptions,
@@ -6520,6 +6548,7 @@ export function CanvasWorkspace({
             versionsOpen,
           })
         )
+        loadedRuntimeDataGenerationRef.current = runtimeDataGeneration
       } catch (cause) {
         if (cancelled) {
           return
@@ -6558,6 +6587,7 @@ export function CanvasWorkspace({
           ),
           storageMode: "reset-pending",
         })
+        loadedRuntimeDataGenerationRef.current = runtimeDataGeneration
       }
     })()
 
@@ -6574,6 +6604,7 @@ export function CanvasWorkspace({
     routeDataQueryOptions,
     seededInitialLoadedRouteData,
     startupSyncPending,
+    runtimeDataGeneration,
     versionsOpen,
   ])
 
@@ -6584,7 +6615,7 @@ export function CanvasWorkspace({
   const autosaveVersionHistory = state.versionHistory
 
   React.useEffect(() => {
-    if (initialScenario || autosaveLoading || readOnly) {
+    if (initialScenario || autosaveLoading || readOnly || runtimeDataReloading) {
       return
     }
 
@@ -6646,6 +6677,7 @@ export function CanvasWorkspace({
     draftWithCurrentRenderOptions,
     initialScenario,
     readOnly,
+    runtimeDataReloading,
     state.storageMode,
     startupSyncPending,
   ])
