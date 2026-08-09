@@ -1709,7 +1709,9 @@ fn normalize_legacy_tree(value: &mut Value) {
         }
         Value::Object(object) => {
             normalize_recommended_use(object);
-            if object.get("kind").and_then(Value::as_str) == Some("text") {
+            if object.get("kind").and_then(Value::as_str) == Some("text")
+                && object.contains_key("id")
+            {
                 normalize_stretch_aliases(object);
                 normalize_text_defaults(object);
             }
@@ -1722,6 +1724,7 @@ fn normalize_legacy_tree(value: &mut Value) {
 }
 
 fn normalize_text_defaults(object: &mut serde_json::Map<String, Value>) {
+    let has_explicit_height = object.get("height").is_some_and(|value| !value.is_null());
     for field in [
         "width",
         "height",
@@ -1759,14 +1762,15 @@ fn normalize_text_defaults(object: &mut serde_json::Map<String, Value>) {
         .and_then(Value::as_f64)
         .unwrap_or(1.2)
         .clamp(0.7, 4.0);
-    let line_count = object
-        .get("value")
-        .and_then(Value::as_str)
-        .map(|value| value.split('\n').count().max(1) as f64)
-        .unwrap_or(1.0);
+    let line_count = estimate_legacy_line_count(object, font_size);
     object
         .entry("height")
         .or_insert_with(|| Value::from(font_size * (1.0 + (line_count - 1.0) * line_height)));
+    if !has_explicit_height {
+        if let Some(y) = object.get("y").and_then(Value::as_f64) {
+            object.insert("y".into(), Value::from(y - font_size));
+        }
+    }
     object
         .entry("fontWeight")
         .or_insert_with(|| Value::String("normal".into()));
@@ -1799,6 +1803,42 @@ fn normalize_text_defaults(object: &mut serde_json::Map<String, Value>) {
         .entry("value")
         .or_insert_with(|| Value::String(String::new()));
     object.entry("rotation").or_insert(Value::from(0));
+}
+
+fn estimate_legacy_line_count(object: &serde_json::Map<String, Value>, font_size: f64) -> f64 {
+    let value = object
+        .get("value")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let auto_wrap = object
+        .get("autoWrap")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let width = object
+        .get("width")
+        .and_then(Value::as_f64)
+        .unwrap_or(22.5)
+        .max(0.0001);
+    let capacity = (width / (font_size.max(0.0001) * 0.6)).floor().max(1.0);
+    let mut line_count = 0.0;
+    for chunk in value.replace("\r\n", "\n").split('\n') {
+        if chunk.is_empty() || !auto_wrap {
+            line_count += 1.0;
+            continue;
+        }
+        let width_units = chunk
+            .chars()
+            .map(|character| if character.is_ascii() { 1.0 } else { 2.0 })
+            .sum::<f64>();
+        line_count += (width_units / capacity).ceil().max(1.0);
+    }
+    let line_count = line_count.max(1.0);
+    object
+        .get("maxLines")
+        .and_then(Value::as_u64)
+        .map_or(line_count, |max_lines| {
+            line_count.min(max_lines.max(1) as f64)
+        })
 }
 
 fn normalize_recommended_use(object: &mut serde_json::Map<String, Value>) {

@@ -198,6 +198,7 @@ fn legacy_recommended_uses_and_text_stretch_aliases_normalize_without_losing_beh
                 "document": {
                     "recommendedUses": ["parts"],
                     "elements": [{
+                        "id": "text-1",
                         "kind": "text",
                         "fontSize": 4,
                         "width": null,
@@ -205,6 +206,7 @@ fn legacy_recommended_uses_and_text_stretch_aliases_normalize_without_losing_beh
                         "lineHeight": 1.2,
                         "fontFamily": "system-sans",
                         "value": "legacy",
+                        "binding": {"fieldKey": "label", "kind": "text"},
                         "stretchX": true,
                         "stretchY": false
                     }]
@@ -237,6 +239,10 @@ fn legacy_recommended_uses_and_text_stretch_aliases_normalize_without_losing_beh
     assert_eq!(text["width"], 22.5);
     assert_eq!(text["fontWeight"], "normal");
     assert_eq!(text["align"], "left");
+    assert_eq!(
+        text["binding"],
+        json!({"fieldKey": "label", "kind": "text"})
+    );
     assert_eq!(text["autoWrap"], true);
     assert_eq!(text["verticalText"], false);
 }
@@ -281,6 +287,7 @@ fn legacy_multiline_text_uses_web_natural_height_defaults() {
     let text = &normalized["runtime"]["versions"][0]["document"]["elements"][0];
     assert_eq!(text["fontWeight"], "normal");
     assert_eq!(text["align"], "left");
+    assert_eq!(text["y"], -4.0);
     assert_eq!(text["height"], 8.8);
 }
 

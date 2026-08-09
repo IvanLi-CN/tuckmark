@@ -13,8 +13,8 @@ mkdir "$isolated_path"
 test "$(PATH="$isolated_path" command -v node || true)" = ""
 test "$(PATH="$isolated_path" command -v bun || true)" = ""
 test "$(PATH="$isolated_path" command -v npm || true)" = ""
-"$root/tuckmark" --help >/dev/null
-"$root/tuckmark-devd" --help >/dev/null
+PATH="$isolated_path" "$root/tuckmark" --help >/dev/null
+PATH="$isolated_path" "$root/tuckmark-devd" --help >/dev/null
 if command -v otool >/dev/null 2>&1; then
   ! otool -L "$root/tuckmark" "$root/tuckmark-devd" | grep -Eiq '(node|bun|npm|libnode)'
 fi

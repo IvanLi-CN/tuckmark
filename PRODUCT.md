@@ -121,7 +121,8 @@ This repository releases a single product line.
 - canonical release target: GitHub Releases
 - version model: one SemVer line for the whole product
 - channels: `stable` and `preview`
-- bundled artifacts: `runtime bundle` and `CLI bundle`
+- native macOS release archives containing the Rust `tuckmark` and
+  `tuckmark-devd` binaries, plus a combined `SHA256SUMS` manifest
 
 There is no `component:*` version line in this repository.
 

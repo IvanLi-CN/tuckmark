@@ -39,10 +39,10 @@ options, then compiles to the same canvas artifact path used by direct printing.
 
 Useful local source commands:
 
-- `bun tsx --tsconfig packages/cli/tsconfig.typecheck.json packages/cli/src/index.ts template-package validate --file <package.json>`
-- `bun tsx --tsconfig packages/cli/tsconfig.typecheck.json packages/cli/src/index.ts template-package preview --file <package.json>`
-- `bun tsx --tsconfig packages/cli/tsconfig.typecheck.json packages/cli/src/index.ts template-package packets --file <package.json>`
-- `TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 bun tsx --tsconfig packages/cli/tsconfig.typecheck.json packages/cli/src/index.ts template-package print --printer <name> --file <package.json>`
+- `cargo run --locked --package tuckmark-cli -- template-package validate --file <package.json>`
+- `cargo run --locked --package tuckmark-cli -- template-package preview --file <package.json>`
+- `cargo run --locked --package tuckmark-cli -- template-package packets --file <package.json>`
+- `TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 cargo run --locked --package tuckmark-cli -- template-package print --printer <name> --file <package.json>`
 
 The print command remains gated by `TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1` and
 the existing printer capability checks. High-cost agent practice scripts only
