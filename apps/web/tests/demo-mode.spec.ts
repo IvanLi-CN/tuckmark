@@ -11,7 +11,7 @@ test("browser-static root path defaults to runtime and supports explicit demo mo
     "href",
     "https://github.com/IvanLi-CN/tuckmark"
   )
-  await expect(page.getByText("build e499426")).toBeVisible()
+  await expect(page.getByText(/^build [a-f0-9]+$/)).toBeVisible()
   await expect(page.getByText("v0.1.0")).toHaveCount(0)
   await expect(page.getByRole("link", { name: "© 2026 Ivan Li" })).toHaveAttribute(
     "href",
@@ -139,8 +139,13 @@ test("system tab processes another tab's pending draft without returning to the 
   await processingPage.getByRole("button", { name: "重置草稿" }).click()
   await expect(processingPage.getByText("已重置为系统模板初始内容。")).toBeVisible()
   const processingClosed = processingPage.waitForEvent("close")
-  await processingPage.getByRole("button", { name: "返回草稿处理弹窗" }).click()
-  await processingClosed
+  await Promise.all([
+    processingClosed,
+    processingPage
+      .getByRole("button", { name: "返回草稿处理弹窗" })
+      .click()
+      .catch(() => undefined),
+  ])
 
   await systemPage.getByRole("button", { name: "重新检查并继续" }).click()
   await expect(systemPage.getByText("Demo data directory", { exact: true })).toBeVisible()
