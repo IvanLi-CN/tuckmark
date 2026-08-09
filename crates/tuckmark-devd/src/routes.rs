@@ -447,7 +447,10 @@ fn resolve_inventory_print_plan(
     let material_id = required_value_string(args, "materialId")?;
     let binding_id = required_value_string(args, "bindingId")?;
     let _printer_id = required_value_string(args, "printerId")?;
-    if args.contains_key("printerName") {
+    if args
+        .get("printerName")
+        .is_some_and(|value| !value.is_null())
+    {
         required_value_string(args, "printerName")?;
     }
     let material = snapshot
@@ -530,6 +533,7 @@ fn inventory_print_copies(
 ) -> Result<u64, ApiError> {
     let value = args
         .get("quantity")
+        .filter(|value| !value.is_null())
         .or_else(|| binding.get("printQuantity"));
     match value {
         None => Ok(1),

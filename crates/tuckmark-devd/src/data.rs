@@ -9,7 +9,9 @@ use serde_json::{Map, Value, json};
 use thiserror::Error;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::sync::broadcast;
-use tuckmark_contracts::{DevdDataArchive, JsonWrite, RevisionEvent};
+use tuckmark_contracts::{
+    DEVD_DATA_ARCHIVE_SCHEMA, DevdDataArchive, JsonWrite, RevisionEvent, normalize_legacy_value,
+};
 use tuckmark_engine::{ArchiveImportMode, DataAuthority, DataAuthorityError, DataAuthorityOptions};
 use uuid::Uuid;
 
@@ -715,6 +717,7 @@ fn apply_runtime_command(
             .get("snapshot")
             .cloned()
             .ok_or_else(|| DataError::Validation("snapshot is required.".into()))?;
+        let replacement = normalize_runtime_snapshot(replacement)?;
         validate_runtime_snapshot(&replacement)?;
         return Ok((replacement, Value::Null));
     }
@@ -739,8 +742,6 @@ fn apply_runtime_command(
                 .cloned()
                 .ok_or_else(|| DataError::Validation("document is required.".into()))?;
             let mut document = require_object(document, "document")?;
-            let width = positive_number(&document, "width")?;
-            let height = positive_number(&document, "height")?;
             let existing_index = templates
                 .iter()
                 .position(|template| string_field(template, "id") == template_id);
@@ -755,15 +756,24 @@ fn apply_runtime_command(
                 .unwrap_or(0)
                 + 1;
             let version_id = format!("user-template-version-{}", Uuid::new_v4());
+            let saved_source = json!({ "kind": "user-template", "templateId": template_id });
+            let has_explicit_recommended_use = document.contains_key("recommendedUse");
             document.insert("templateId".into(), Value::String(template_id.clone()));
-            document.insert(
-                "source".into(),
-                json!({ "kind": "user-template", "templateId": template_id }),
-            );
             document.remove("baseVersionId");
             document.insert("lastSavedAt".into(), Value::String(timestamp.clone()));
             document.insert("name".into(), Value::String(name.clone()));
+            let document = normalize_canvas_document(
+                Value::Object(document),
+                saved_source.clone(),
+                "custom",
+                "document",
+            )?;
+            let mut document = require_object(document, "document")?;
+            document.insert("source".into(), saved_source);
             let document = Value::Object(document);
+            let document_object = require_object(document.clone(), "document")?;
+            let width = positive_number(&document_object, "width")?;
+            let height = positive_number(&document_object, "height")?;
             let version = json!({
                 "id": version_id,
                 "templateId": template_id,
@@ -813,7 +823,7 @@ fn apply_runtime_command(
                         .collect(),
                 ),
             );
-            if document_has_recommended_use(&version) {
+            if has_explicit_recommended_use || document_has_recommended_use(&version) {
                 if let Some(recommended_use) = document_recommended_use(&version) {
                     template.insert("recommendedUse".into(), Value::String(recommended_use));
                 } else {
@@ -949,13 +959,21 @@ fn apply_runtime_command(
                 .ok_or_else(|| DataError::Validation("source is required.".into()))?;
             let source = require_object(source, "source")?;
             let source_key = source_key(&source)?;
+            let default_preset_id = source
+                .get("presetId")
+                .or_else(|| source.get("templateId"))
+                .and_then(Value::as_str)
+                .unwrap_or("custom");
             let document = args
                 .get("document")
                 .cloned()
                 .ok_or_else(|| DataError::Validation("document is required.".into()))?;
-            if !document.is_object() {
-                return Err(DataError::Validation("document must be an object.".into()));
-            }
+            let document = normalize_canvas_document(
+                document,
+                Value::Object(source.clone()),
+                default_preset_id,
+                "document",
+            )?;
             let template_id = optional_string(&args, "templateId");
             let working_copy = json!({
                 "sourceKey": source_key,
@@ -1125,18 +1143,12 @@ fn apply_inventory_command(
                 }
                 None => {}
             }
-            if let Some(bindings) = args.get("labelBindings") {
-                if !bindings.is_array() {
-                    return Err(DataError::Validation(
-                        "labelBindings must be an array.".into(),
-                    ));
-                }
-                material.insert("labelBindings".into(), bindings.clone());
-            } else {
-                material
-                    .entry("labelBindings")
-                    .or_insert_with(|| Value::Array(Vec::new()));
-            }
+            let bindings = args
+                .get("labelBindings")
+                .cloned()
+                .or_else(|| material.get("labelBindings").cloned())
+                .unwrap_or_else(|| Value::Array(Vec::new()));
+            material.insert("labelBindings".into(), normalize_label_bindings(bindings)?);
             material
                 .entry("currentQuantity")
                 .or_insert_with(|| json!(0));
@@ -1256,63 +1268,192 @@ fn apply_inventory_command(
     Ok((materials, adjustments, data))
 }
 
+fn runtime_validation_archive(runtime: Value) -> Value {
+    json!({
+        "schema": DEVD_DATA_ARCHIVE_SCHEMA,
+        "exportedAt": "1970-01-01T00:00:00.000Z",
+        "runtime": runtime,
+        "inventory": {
+            "materials": [],
+            "adjustments": []
+        }
+    })
+}
+
+fn normalize_runtime_snapshot(snapshot: Value) -> Result<Value, DataError> {
+    let normalized = normalize_legacy_value(runtime_validation_archive(snapshot))
+        .map_err(|error| DataError::Validation(format!("Runtime snapshot is invalid: {error}")))?;
+    normalized.get("runtime").cloned().ok_or_else(|| {
+        DataError::Validation("Runtime snapshot normalization did not return runtime data.".into())
+    })
+}
+
+fn normalize_canvas_document(
+    document: Value,
+    source: Value,
+    default_preset_id: &str,
+    label: &str,
+) -> Result<Value, DataError> {
+    let mut document = require_object(document, label)?;
+    document.entry("version").or_insert_with(|| json!(1));
+    document
+        .entry("presetId")
+        .or_insert_with(|| Value::String(default_preset_id.into()));
+    document
+        .entry("editor")
+        .or_insert_with(default_canvas_editor);
+    document.entry("source").or_insert(source);
+
+    let normalized = normalize_legacy_value(json!({
+        "schema": DEVD_DATA_ARCHIVE_SCHEMA,
+        "exportedAt": "1970-01-01T00:00:00.000Z",
+        "runtime": { "document": Value::Object(document) },
+        "inventory": { "materials": [], "adjustments": [] }
+    }))
+    .map_err(|error| DataError::Validation(format!("{label} is invalid: {error}")))?;
+    let document = normalized
+        .pointer("/runtime/document")
+        .cloned()
+        .ok_or_else(|| {
+            DataError::Validation(format!("{label} normalization did not return data."))
+        })?;
+    validate_canvas_document(&document, label)?;
+    Ok(document)
+}
+
+fn default_canvas_editor() -> Value {
+    json!({
+        "gridEnabled": true,
+        "gridSize": 1,
+        "snapEnabled": true,
+        "snapStep": 1
+    })
+}
+
+fn validate_canvas_document(document: &Value, label: &str) -> Result<(), DataError> {
+    let archive: DevdDataArchive = serde_json::from_value(json!({
+        "schema": DEVD_DATA_ARCHIVE_SCHEMA,
+        "exportedAt": "1970-01-01T00:00:00.000Z",
+        "runtime": {
+            "schema": RUNTIME_SCHEMA,
+            "exportedAt": "1970-01-01T00:00:00.000Z",
+            "snapshotUpdatedAt": null,
+            "settings": {},
+            "templates": [{
+                "id": "validation-template",
+                "name": "Validation template",
+                "description": "",
+                "width": document.get("width").cloned().unwrap_or(Value::Null),
+                "height": document.get("height").cloned().unwrap_or(Value::Null),
+                "createdAt": "1970-01-01T00:00:00.000Z",
+                "updatedAt": "1970-01-01T00:00:00.000Z",
+                "currentVersionId": "validation-version",
+                "fieldOrder": []
+            }],
+            "versions": [{
+                "id": "validation-version",
+                "templateId": "validation-template",
+                "version": 1,
+                "kind": "saved",
+                "createdAt": "1970-01-01T00:00:00.000Z",
+                "label": "Validation",
+                "document": document
+            }],
+            "workingCopies": []
+        },
+        "inventory": { "materials": [], "adjustments": [] }
+    }))
+    .map_err(|error| DataError::Validation(format!("{label} is invalid: {error}")))?;
+    archive
+        .validate()
+        .map_err(|error| DataError::Validation(format!("{label} is invalid: {error}")))
+}
+
 fn validate_runtime_snapshot(snapshot: &Value) -> Result<(), DataError> {
-    let object = snapshot
-        .as_object()
-        .ok_or_else(|| DataError::Validation("snapshot must be an object.".into()))?;
-    for key in ["templates", "versions", "workingCopies"] {
-        if !object.get(key).is_some_and(Value::is_array) {
-            return Err(DataError::Validation(format!(
-                "snapshot.{key} must be an array."
-            )));
-        }
-    }
-    if !object.get("settings").is_some_and(Value::is_object) {
-        return Err(DataError::Validation(
-            "snapshot.settings must be an object.".into(),
-        ));
-    }
-    let mut template_ids = BTreeSet::new();
-    for template in value_array(snapshot, "templates")? {
-        let object = require_object(template, "Template")?;
-        let id = required_string(&object, "id")?;
-        if !safe_segment(&id) || !template_ids.insert(id) {
+    let archive: DevdDataArchive =
+        serde_json::from_value(runtime_validation_archive(snapshot.clone())).map_err(|error| {
+            DataError::Validation(format!("Runtime snapshot is invalid: {error}"))
+        })?;
+    archive
+        .validate()
+        .map_err(|error| DataError::Validation(format!("Runtime snapshot is invalid: {error}")))
+}
+
+fn normalize_label_bindings(value: Value) -> Result<Value, DataError> {
+    let bindings = value
+        .as_array()
+        .ok_or_else(|| DataError::Validation("labelBindings must be an array.".into()))?;
+    let mut normalized = Vec::with_capacity(bindings.len());
+    for binding in bindings {
+        let mut binding = require_object(binding.clone(), "Label binding")?;
+        required_nonempty_string(&binding, "id", "Label binding")?;
+        let template_source =
+            required_nonempty_string(&binding, "templateSource", "Label binding")?;
+        if !matches!(template_source, "system" | "user-template") {
             return Err(DataError::Validation(
-                "Runtime snapshot contains duplicate or invalid template identifiers.".into(),
+                "Label binding templateSource is invalid.".into(),
             ));
         }
-    }
-    let mut version_ids = BTreeSet::new();
-    let mut template_versions = BTreeSet::new();
-    for version in value_array(snapshot, "versions")? {
-        let object = require_object(version, "Template version")?;
-        let id = required_string(&object, "id")?;
-        let template_id = required_string(&object, "templateId")?;
-        let number = object
-            .get("version")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| DataError::Validation("Template version number is required.".into()))?;
-        if !safe_segment(&id)
-            || !safe_segment(&template_id)
-            || !version_ids.insert(id)
-            || !template_versions.insert((template_id, number))
-        {
+        required_nonempty_string(&binding, "templateId", "Label binding")?;
+        required_nonempty_string(&binding, "templateName", "Label binding")?;
+        required_nonempty_string(&binding, "createdAt", "Label binding")?;
+        required_nonempty_string(&binding, "updatedAt", "Label binding")?;
+
+        let print_quantity = match binding.get("printQuantity") {
+            Some(value) => positive_json_integer(value, "Label binding printQuantity")?,
+            None => 1,
+        };
+        binding.insert("printQuantity".into(), json!(print_quantity));
+
+        let field_overrides = binding
+            .get("fieldOverrides")
+            .cloned()
+            .unwrap_or_else(|| Value::Object(Map::new()));
+        let field_overrides = field_overrides.as_object().ok_or_else(|| {
+            DataError::Validation("Label binding fieldOverrides must be an object.".into())
+        })?;
+        if field_overrides.values().any(|value| !value.is_string()) {
             return Err(DataError::Validation(
-                "Runtime snapshot contains duplicate or invalid version identifiers.".into(),
+                "Label binding fieldOverrides values must be strings.".into(),
             ));
         }
+        binding.insert(
+            "fieldOverrides".into(),
+            Value::Object(field_overrides.clone()),
+        );
+        normalized.push(Value::Object(binding));
     }
-    let mut source_keys = BTreeSet::new();
-    for working_copy in value_array(snapshot, "workingCopies")? {
-        let object = require_object(working_copy, "Working copy")?;
-        let source_key = required_string(&object, "sourceKey")?;
-        if !source_keys.insert(source_key) {
-            return Err(DataError::Validation(
-                "Runtime snapshot contains duplicate working-copy keys.".into(),
-            ));
-        }
-    }
-    Ok(())
+    Ok(Value::Array(normalized))
+}
+
+fn required_nonempty_string<'a>(
+    object: &'a Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<&'a str, DataError> {
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| DataError::Validation(format!("{label} {key} is required.")))
+}
+
+fn positive_json_integer(value: &Value, label: &str) -> Result<u64, DataError> {
+    value
+        .as_u64()
+        .filter(|value| *value > 0)
+        .or_else(|| {
+            value
+                .as_f64()
+                .filter(|value| {
+                    value.is_finite()
+                        && *value > 0.0
+                        && value.fract() == 0.0
+                        && *value <= u64::MAX as f64
+                })
+                .map(|value| value as u64)
+        })
+        .ok_or_else(|| DataError::Validation(format!("{label} must be a positive integer.")))
 }
 
 fn positive_number(object: &Map<String, Value>, key: &str) -> Result<f64, DataError> {

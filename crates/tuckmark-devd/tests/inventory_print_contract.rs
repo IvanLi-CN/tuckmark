@@ -87,12 +87,12 @@ fn print_payload(revision: u64, material_id: &str, binding_id: &str) -> Value {
 }
 
 #[tokio::test]
-async fn inventory_print_validates_default_and_override_quantities_before_the_transport_gate() {
+async fn inventory_print_uses_binding_default_and_override_quantities_before_the_transport_gate() {
     let (_directory, state) = test_state();
-    let (material_id, revision) = save_material(&state, system_binding(json!({}), 0));
+    let (material_id, revision) = save_material(&state, system_binding(json!({}), 2));
     let app = app_router_for_transport(state, TransportContext::Http);
 
-    let invalid_default = app
+    let default_quantity = app
         .clone()
         .oneshot(json_request(
             "/api/data/inventory/print-binding",
@@ -100,10 +100,10 @@ async fn inventory_print_validates_default_and_override_quantities_before_the_tr
         ))
         .await
         .unwrap();
-    assert_eq!(invalid_default.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(default_quantity.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
-        response_json(invalid_default).await["error"],
-        "Print quantity must be a positive integer."
+        response_json(default_quantity).await["error"],
+        "Server-side printer control is disabled. Set TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 to enable it."
     );
 
     let mut overridden = print_payload(revision, &material_id, "binding-system");
@@ -118,6 +118,26 @@ async fn inventory_print_validates_default_and_override_quantities_before_the_tr
     assert_eq!(transport.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
         response_json(transport).await["error"],
+        "Server-side printer control is disabled. Set TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 to enable it."
+    );
+}
+
+#[tokio::test]
+async fn inventory_print_treats_cli_null_optionals_as_omitted() {
+    let (_directory, state) = test_state();
+    let (material_id, revision) = save_material(&state, system_binding(json!({}), 2));
+    let app = app_router_for_transport(state, TransportContext::Http);
+    let mut payload = print_payload(revision, &material_id, "binding-system");
+    payload["args"]["printerName"] = Value::Null;
+    payload["args"]["quantity"] = Value::Null;
+
+    let response = app
+        .oneshot(json_request("/api/data/inventory/print-binding", payload))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(response).await["error"],
         "Server-side printer control is disabled. Set TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 to enable it."
     );
 }
