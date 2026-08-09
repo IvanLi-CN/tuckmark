@@ -3208,6 +3208,7 @@ function SystemPage({ controller }: { controller: ReturnType<typeof useWorkbench
         <SystemDataStorageCard
           busy={controller.dataDirectoryBusy}
           dialog={controller.dataDirectoryDialog}
+          isDemo={controller.context.mode === "demo"}
           status={controller.dataDirectoryStatus}
           onCancelDialog={controller.cancelDataDirectoryDialog}
           onChooseDirectory={() => void controller.chooseDataDirectory()}

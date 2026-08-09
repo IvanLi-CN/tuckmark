@@ -134,6 +134,21 @@ describe("SystemDataStorageCard", () => {
     ])
   })
 
+  it("labels demo directory operations as in-memory simulations", async () => {
+    await renderCard({ isDemo: true })
+
+    expect(document.body.textContent).toContain("演示数据目录与备份")
+    expect(document.body.textContent).toContain("不会请求系统目录权限，也不会写入本机文件")
+    expect(document.body.textContent).not.toContain("本地数据目录与备份")
+    expectStandardActionButtons(getActionToolbar("浏览器数据维护操作"), [
+      "接入演示目录",
+      "模拟同步",
+      "生成演示备份",
+      "模拟导出 ZIP",
+      "导入 ZIP 到演示数据",
+    ])
+  })
+
   it("shows a follower warning when another tab owns the write lease", async () => {
     await renderCard({
       status: {

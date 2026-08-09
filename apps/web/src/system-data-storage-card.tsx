@@ -43,6 +43,7 @@ import type { WorkbenchDataDirectoryDialogState } from "./workbench-controller.j
 type DataStorageCardProps = {
   busy: string | null
   dialog: WorkbenchDataDirectoryDialogState | null
+  isDemo?: boolean
   status: DataDirectoryStatus
   onCancelDialog: () => void
   onChooseDirectory: () => void
@@ -108,10 +109,10 @@ function summarizeManifestCounts(counts: DataDirectoryManifestV1["counts"]): str
   ].join(" / ")
 }
 
-function getHealthBadge(status: DataDirectoryStatus) {
+function getHealthBadge(status: DataDirectoryStatus, isDemo: boolean) {
   switch (status.health) {
     case "healthy":
-      return <Badge variant="secondary">主存储正常</Badge>
+      return <Badge variant="secondary">{isDemo ? "演示数据正常" : "主存储正常"}</Badge>
     case "permission-required":
       return <Badge variant="outline">等待授权</Badge>
     case "unconfigured":
@@ -191,7 +192,7 @@ function DevdDataStorageCard({ status }: { status: DataDirectoryStatus }) {
         <CardHeader className="gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle as="h2">DEVD 数据存储</CardTitle>
-            {getHealthBadge(status)}
+            {getHealthBadge(status, false)}
           </div>
           <div className="text-sm text-muted-foreground">
             模板、草稿、库存与应用设置由本机 DEVD 统一持久化。当前页面不会请求浏览器目录权限。
@@ -363,11 +364,13 @@ function getLeaseAlert(status: DataDirectoryStatus, onTakeOverWrites: () => void
 
 function DataDirectoryAttachmentDialog({
   inspection,
+  isDemo,
   open,
   onCancel,
   onConfirm,
 }: {
   inspection: DataDirectoryAttachmentInspection | null
+  isDemo: boolean
   open: boolean
   onCancel: () => void
   onConfirm: (mode: "overwrite-current" | "import-existing") => void
@@ -381,13 +384,17 @@ function DataDirectoryAttachmentDialog({
     <Dialog open={open} onOpenChange={(next) => !next && onCancel()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isExisting ? "发现已有数据目录" : "确认接入数据目录"}</DialogTitle>
+          <DialogTitle>
+            {isDemo ? "发现演示数据目录" : isExisting ? "发现已有数据目录" : "确认接入数据目录"}
+          </DialogTitle>
           <DialogDescription>
-            {isExisting
-              ? `目录“${inspection.handleName}”里已经存在 Tuckmark 数据。请选择导入目录数据，或用当前浏览器数据覆盖它。`
-              : inspection.entryCount > 0
-                ? `目录“${inspection.handleName}”不是空目录，但还没有 Tuckmark manifest。确认后会把当前浏览器数据写入这个目录。`
-                : `目录“${inspection.handleName}”当前为空。确认后会把当前浏览器数据写入这个目录。`}
+            {isDemo
+              ? "这是内存中的演示数据目录。接入、同步、备份和整库替换均不会读取或写入本机目录。"
+              : isExisting
+                ? `目录“${inspection.handleName}”里已经存在 Tuckmark 数据。请选择导入目录数据，或用当前浏览器数据覆盖它。`
+                : inspection.entryCount > 0
+                  ? `目录“${inspection.handleName}”不是空目录，但还没有 Tuckmark manifest。确认后会把当前浏览器数据写入这个目录。`
+                  : `目录“${inspection.handleName}”当前为空。确认后会把当前浏览器数据写入这个目录。`}
           </DialogDescription>
         </DialogHeader>
         {isExisting ? (
@@ -409,10 +416,10 @@ function DataDirectoryAttachmentDialog({
           {isExisting ? (
             <>
               <Button type="button" variant="outline" onClick={() => onConfirm("import-existing")}>
-                导入目录数据
+                {isDemo ? "导入演示数据" : "导入目录数据"}
               </Button>
               <Button type="button" onClick={() => onConfirm("overwrite-current")}>
-                用当前数据覆盖
+                {isDemo ? "用当前数据覆盖演示内容" : "用当前数据覆盖"}
               </Button>
             </>
           ) : (
@@ -563,6 +570,7 @@ function PendingDraftsDialog({
 export function SystemDataStorageCard({
   busy,
   dialog,
+  isDemo = false,
   status,
   onCancelDialog,
   onChooseDirectory,
@@ -591,13 +599,15 @@ export function SystemDataStorageCard({
       <Card className="tm-panel">
         <CardHeader className="gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardTitle as="h2">本地数据目录与备份</CardTitle>
-            {getHealthBadge(status)}
+            <CardTitle as="h2">{isDemo ? "演示数据目录与备份" : "本地数据目录与备份"}</CardTitle>
+            {getHealthBadge(status, isDemo)}
           </div>
           <div className="text-sm text-muted-foreground">
-            {status.supported
-              ? "已授权目录会作为统一数据目录，承载模板与库存 JSON 数据树，并支持迁移、备份恢复与 ZIP 导入导出。"
-              : "当前环境不支持目录句柄与本地数据目录接入。应用仍可继续使用浏览器内存储，但目录绑定、备份恢复与整库导入导出已禁用。"}
+            {isDemo
+              ? "演示目录、同步和备份均为内存模拟，不会请求系统目录权限，也不会写入本机文件。"
+              : status.supported
+                ? "已授权目录会作为统一数据目录，承载模板与库存 JSON 数据树，并支持迁移、备份恢复与 ZIP 导入导出。"
+                : "当前环境不支持目录句柄与本地数据目录接入。应用仍可继续使用浏览器内存储，但目录绑定、备份恢复与整库导入导出已禁用。"}
           </div>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -616,9 +626,11 @@ export function SystemDataStorageCard({
           {status.health === "healthy" ? (
             <Alert>
               <CheckCircle2 className="mt-0.5 size-4" />
-              <AlertTitle>本地数据目录可用</AlertTitle>
+              <AlertTitle>{isDemo ? "演示数据目录可用" : "本地数据目录可用"}</AlertTitle>
               <AlertDescription>
-                当前数据目录可读写，最近一次目录写入时间为 {formatTimestamp(status.lastSyncAt)}。
+                {isDemo
+                  ? `演示数据保存在内存中，最近一次模拟同步时间为 ${formatTimestamp(status.lastSyncAt)}。`
+                  : `当前数据目录可读写，最近一次目录写入时间为 ${formatTimestamp(status.lastSyncAt)}。`}
               </AlertDescription>
             </Alert>
           ) : null}
@@ -633,24 +645,24 @@ export function SystemDataStorageCard({
 
           <div className="grid gap-3 text-sm text-muted-foreground">
             <div className="tm-list-item">
-              <span>目录状态</span>
+              <span>{isDemo ? "演示目录状态" : "目录状态"}</span>
               <strong>{status.directoryName ?? "未配置"}</strong>
             </div>
             <div className="tm-list-item">
-              <span>权限</span>
-              <strong>{status.permissionState}</strong>
+              <span>{isDemo ? "存储方式" : "权限"}</span>
+              <strong>{isDemo ? "内存模拟" : status.permissionState}</strong>
             </div>
             <div className="tm-list-item">
               <span>当前数据集</span>
               <strong>{summarizeSnapshot(status.runtimeSummary)}</strong>
             </div>
             <div className="tm-list-item">
-              <span>最近同步</span>
+              <span>{isDemo ? "最近模拟同步" : "最近同步"}</span>
               <strong>{formatTimestamp(status.lastSyncAt)}</strong>
             </div>
             {status.manifest ? (
               <div className="tm-list-item">
-                <span>目录主链快照</span>
+                <span>{isDemo ? "演示快照" : "目录主链快照"}</span>
                 <strong>{summarizeManifestCounts(status.manifest.counts)}</strong>
               </div>
             ) : null}
@@ -663,7 +675,15 @@ export function SystemDataStorageCard({
           >
             <ActionButton
               type="button"
-              name={status.configured ? "更换目录" : "授权目录"}
+              name={
+                isDemo
+                  ? status.configured
+                    ? "切换演示目录"
+                    : "接入演示目录"
+                  : status.configured
+                    ? "更换目录"
+                    : "授权目录"
+              }
               icon={FolderOpen}
               mode="icon-text"
               size="sm"
@@ -671,19 +691,21 @@ export function SystemDataStorageCard({
               onClick={onChooseDirectory}
               disabled={!status.supported}
             />
+            {!isDemo ? (
+              <ActionButton
+                type="button"
+                name="重新请求权限"
+                icon={ShieldCheck}
+                mode="icon-text"
+                size="sm"
+                variant="outline"
+                onClick={onRequestPermission}
+                disabled={!status.configured || !status.supported}
+              />
+            ) : null}
             <ActionButton
               type="button"
-              name="重新请求权限"
-              icon={ShieldCheck}
-              mode="icon-text"
-              size="sm"
-              variant="outline"
-              onClick={onRequestPermission}
-              disabled={!status.configured || !status.supported}
-            />
-            <ActionButton
-              type="button"
-              name="立即同步"
+              name={isDemo ? "模拟同步" : "立即同步"}
               icon={RefreshCcw}
               mode="icon-text"
               size="sm"
@@ -694,7 +716,7 @@ export function SystemDataStorageCard({
             />
             <ActionButton
               type="button"
-              name="立即备份"
+              name={isDemo ? "生成演示备份" : "立即备份"}
               icon={Archive}
               mode="icon-text"
               size="sm"
@@ -704,7 +726,7 @@ export function SystemDataStorageCard({
             />
             <ActionButton
               type="button"
-              name="导出 ZIP 数据"
+              name={isDemo ? "模拟导出 ZIP" : "导出 ZIP 数据"}
               icon={Download}
               mode="icon-text"
               size="sm"
@@ -713,7 +735,7 @@ export function SystemDataStorageCard({
             />
             <ActionButton
               type="button"
-              name="导入 ZIP 数据"
+              name={isDemo ? "导入 ZIP 到演示数据" : "导入 ZIP 数据"}
               icon={Upload}
               mode="icon-text"
               size="sm"
@@ -736,11 +758,12 @@ export function SystemDataStorageCard({
           </div>
 
           <div className="grid gap-2">
-            <div className="text-sm font-medium">固定位置备份</div>
+            <div className="text-sm font-medium">{isDemo ? "演示备份" : "固定位置备份"}</div>
             {status.backups.length === 0 ? (
               <div className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
-                还没有备份文件。手动备份会写入目录下的
-                `backups/manual/`，恢复或导入前的保护快照会写入 `backups/protection/`。
+                {isDemo
+                  ? "还没有演示备份。演示备份只保存在当前页面内存中，不会生成本机文件。"
+                  : "还没有备份文件。手动备份会写入目录下的 `backups/manual/`，恢复或导入前的保护快照会写入 `backups/protection/`。"}
               </div>
             ) : (
               <div className="grid gap-2">
@@ -752,7 +775,7 @@ export function SystemDataStorageCard({
                     <div className="grid gap-1">
                       <div className="font-medium text-foreground">{entry.name}</div>
                       <div className="text-muted-foreground">
-                        {entry.kind === "manual" ? "手动备份" : "保护快照"} ·{" "}
+                        {isDemo ? "演示备份" : entry.kind === "manual" ? "手动备份" : "保护快照"} ·{" "}
                         {formatTimestamp(entry.modifiedAt)} · {formatBytes(entry.size)}
                       </div>
                     </div>
@@ -777,6 +800,7 @@ export function SystemDataStorageCard({
       <DataDirectoryAttachmentDialog
         open={dialog?.kind === "attach-choice"}
         inspection={dialog?.kind === "attach-choice" ? dialog.inspection : null}
+        isDemo={isDemo}
         onCancel={onCancelDialog}
         onConfirm={onConfirmAttachment}
       />
@@ -784,7 +808,11 @@ export function SystemDataStorageCard({
       <ArchiveConfirmDialog
         open={dialog?.kind === "import-confirm"}
         title="确认导入整库数据"
-        description="导入会用 ZIP 中的数据替换当前浏览器数据集；如果已配置数据目录，会先自动写入一份保护快照。"
+        description={
+          isDemo
+            ? "导入会用 ZIP 中的数据替换当前演示数据集；全部结果仅保存在内存中。"
+            : "导入会用 ZIP 中的数据替换当前浏览器数据集；如果已配置数据目录，会先自动写入一份保护快照。"
+        }
         inspection={dialog}
         confirmLabel="开始导入"
         onCancel={onCancelDialog}
@@ -794,7 +822,11 @@ export function SystemDataStorageCard({
       <ArchiveConfirmDialog
         open={dialog?.kind === "restore-confirm"}
         title="确认恢复备份"
-        description="恢复会整库替换当前浏览器数据，并在执行前先写入一份保护快照。"
+        description={
+          isDemo
+            ? "恢复会整库替换当前演示数据；全部结果仅保存在内存中。"
+            : "恢复会整库替换当前浏览器数据，并在执行前先写入一份保护快照。"
+        }
         inspection={dialog}
         confirmLabel="恢复备份"
         onCancel={onCancelDialog}

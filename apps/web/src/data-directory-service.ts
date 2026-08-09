@@ -60,6 +60,7 @@ export const TUCKMARK_DATA_ARCHIVE_SCHEMA = "tuckmark.data-archive.v1"
 const MANIFEST_SCHEMA = "tuckmark.data-dir-manifest.v1"
 const PROTECTION_BACKUP_LIMIT = 20
 const STATUS_STORAGE_KEY = "tuckmark.data-directory-status.v1"
+const DEMO_DATA_DIRECTORY_NAME = "Demo data directory"
 
 type PersistedStatus = {
   lastSyncAt: string | null
@@ -69,6 +70,22 @@ type PersistedStatus = {
 type ManagedDirectoryState = {
   snapshot: RuntimeStoreSnapshot
   inventorySnapshot: InventoryDirectorySnapshot
+}
+
+type DemoDataDirectoryBackup = {
+  entry: DataDirectoryBackupEntry
+  snapshot: RuntimeStoreSnapshot
+  inventorySnapshot: InventoryDirectorySnapshot
+}
+
+const demoDataDirectoryState: {
+  configured: boolean
+  lastSyncAt: string | null
+  backups: DemoDataDirectoryBackup[]
+} = {
+  configured: false,
+  lastSyncAt: null,
+  backups: [],
 }
 
 export type TuckmarkDataArchive = {
@@ -83,6 +100,13 @@ export type DataArchiveInspection = {
   snapshot: RuntimeStoreSnapshot
   inventorySnapshot: InventoryDirectorySnapshot
   summary: RuntimeSnapshotSummary
+}
+
+function isDemoDataDirectoryMode(): boolean {
+  if (typeof window === "undefined") {
+    return false
+  }
+  return new URLSearchParams(window.location.search).get("demo") === "true"
 }
 
 function getBackupDirectoryPath(kind: "manual" | "protection") {
@@ -167,6 +191,46 @@ function toRuntimeSummary(
     workingCopies: snapshot.workingCopies.length,
     materials: normalizedInventory.materials.length,
     adjustments: normalizedInventory.adjustments.length,
+  }
+}
+
+function createDemoManifest(summary: RuntimeSnapshotSummary): DataDirectoryManifestV1 {
+  const generatedAt = new Date().toISOString()
+  return {
+    schema: MANIFEST_SCHEMA,
+    generatedAt,
+    snapshotUpdatedAt: summary.snapshotUpdatedAt,
+    source: "runtime-sync",
+    files: {
+      settings: APP_SETTINGS_PATH,
+      templatesDir: TEMPLATES_DIR,
+      draftsDir: DRAFTS_DIR,
+      inventoryDir: INVENTORY_DIR,
+      backupsDir: BACKUPS_DIR,
+    },
+    counts: {
+      templates: summary.templates,
+      versions: summary.versions,
+      workingCopies: summary.workingCopies,
+      materials: summary.materials,
+      adjustments: summary.adjustments,
+    },
+  }
+}
+
+function createDemoAttachmentInspection(): DataDirectoryAttachmentInspection {
+  return {
+    kind: "existing",
+    handleName: DEMO_DATA_DIRECTORY_NAME,
+    manifest: createDemoManifest({
+      exportedAt: "demo",
+      snapshotUpdatedAt: null,
+      templates: 2,
+      versions: 5,
+      workingCopies: 1,
+      materials: 2,
+      adjustments: 3,
+    }),
   }
 }
 
@@ -917,6 +981,9 @@ async function createProtectionBackup(handle: FileSystemDirectoryHandle): Promis
 }
 
 export async function loadConfiguredDataDirectoryHandle(): Promise<FileSystemDirectoryHandle | null> {
+  if (isDemoDataDirectoryMode()) {
+    return null
+  }
   if (!supportsDirectoryHandles()) {
     return null
   }
@@ -926,6 +993,9 @@ export async function loadConfiguredDataDirectoryHandle(): Promise<FileSystemDir
 export async function readRuntimeSnapshotFromDirectoryHandle(
   handle: FileSystemDirectoryHandle
 ): Promise<RuntimeStoreSnapshot> {
+  if (isDemoDataDirectoryMode()) {
+    throw new Error("Demo mode does not access local data directories.")
+  }
   return await readSnapshotFromDirectory(handle)
 }
 
@@ -934,11 +1004,17 @@ export async function writeRuntimeSnapshotToDirectoryHandle(
   snapshot: RuntimeStoreSnapshot,
   source: "runtime-sync" | "backup-archive" = "runtime-sync"
 ): Promise<DataDirectoryManifestV1> {
+  if (isDemoDataDirectoryMode()) {
+    throw new Error("Demo mode does not access local data directories.")
+  }
   const inventorySnapshot = await readInventorySnapshotFromDirectory(handle)
   return await writeSnapshotToDirectory(handle, snapshot, inventorySnapshot, source, "preserve")
 }
 
 export function supportsDataDirectoryFeatures(): boolean {
+  if (isDemoDataDirectoryMode()) {
+    return true
+  }
   if (isServerHttpDataSurface()) {
     return false
   }
@@ -946,12 +1022,18 @@ export function supportsDataDirectoryFeatures(): boolean {
 }
 
 export async function hasConfiguredDataDirectory(): Promise<boolean> {
+  if (isDemoDataDirectoryMode()) {
+    return demoDataDirectoryState.configured
+  }
   return (await loadConfiguredDataDirectoryHandle()) !== null
 }
 
 export async function inspectPickedDataDirectory(
   handle: FileSystemDirectoryHandle
 ): Promise<DataDirectoryAttachmentInspection> {
+  if (isDemoDataDirectoryMode()) {
+    return createDemoAttachmentInspection()
+  }
   const permission = await ensureReadWritePermission(handle, true)
   if (permission !== "granted") {
     throw new Error("未获得数据目录的读写权限。")
@@ -976,6 +1058,12 @@ export async function pickDataDirectory(): Promise<{
   handle: FileSystemDirectoryHandle
   inspection: DataDirectoryAttachmentInspection
 }> {
+  if (isDemoDataDirectoryMode()) {
+    return {
+      handle: {} as FileSystemDirectoryHandle,
+      inspection: createDemoAttachmentInspection(),
+    }
+  }
   if (typeof window === "undefined" || typeof window.showDirectoryPicker !== "function") {
     throw new Error("当前环境不支持目录选择。")
   }
@@ -992,6 +1080,13 @@ export async function attachDataDirectory(args: {
   handle: FileSystemDirectoryHandle
   mode: "overwrite-current" | "import-existing"
 }): Promise<"mirrored-runtime" | "replaced-runtime"> {
+  if (isDemoDataDirectoryMode()) {
+    return await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+      demoDataDirectoryState.configured = true
+      demoDataDirectoryState.lastSyncAt = new Date().toISOString()
+      return args.mode === "overwrite-current" ? "mirrored-runtime" : "replaced-runtime"
+    })
+  }
   const permission = await ensureReadWritePermission(args.handle, true)
   if (permission !== "granted") {
     throw new Error("未获得数据目录的读写权限。")
@@ -1033,12 +1128,21 @@ export async function attachDataDirectory(args: {
 }
 
 export async function detachDataDirectory(): Promise<void> {
+  if (isDemoDataDirectoryMode()) {
+    demoDataDirectoryState.configured = false
+    demoDataDirectoryState.lastSyncAt = null
+    demoDataDirectoryState.backups = []
+    return
+  }
   await clearStoredDataDirectoryHandle()
 }
 
 export async function restoreRuntimeFromConfiguredDirectoryIfNeeded(): Promise<
   "restored" | "skipped"
 > {
+  if (isDemoDataDirectoryMode()) {
+    return "skipped"
+  }
   if (isServerHttpDataSurface()) {
     return "skipped"
   }
@@ -1065,6 +1169,12 @@ export async function restoreRuntimeFromConfiguredDirectoryIfNeeded(): Promise<
 }
 
 export async function requestConfiguredDirectoryPermission(requestIfNeeded = true): Promise<void> {
+  if (isDemoDataDirectoryMode()) {
+    if (!demoDataDirectoryState.configured) {
+      throw new Error("尚未配置演示数据目录。")
+    }
+    return
+  }
   const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     throw new Error("尚未配置数据目录。")
@@ -1079,6 +1189,15 @@ export async function syncConfiguredDataDirectory(args: {
   coordinator: CrossTabCoordinator
   requestIfNeeded?: boolean
 }): Promise<void> {
+  if (isDemoDataDirectoryMode()) {
+    if (!demoDataDirectoryState.configured) {
+      throw new Error("尚未配置演示数据目录。")
+    }
+    await args.coordinator.runAsWriter(async () => {
+      demoDataDirectoryState.lastSyncAt = new Date().toISOString()
+    })
+    return
+  }
   const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     throw new Error("尚未配置数据目录。")
@@ -1097,6 +1216,28 @@ export async function syncConfiguredDataDirectory(args: {
 export async function createManualBackup(args: {
   coordinator: CrossTabCoordinator
 }): Promise<DataDirectoryBackupEntry> {
+  if (isDemoDataDirectoryMode()) {
+    if (!demoDataDirectoryState.configured) {
+      throw new Error("尚未配置演示数据目录。")
+    }
+    return await args.coordinator.runAsWriter(async () => {
+      const createdAt = new Date().toISOString()
+      const entry: DataDirectoryBackupEntry = {
+        kind: "manual",
+        name: createArchiveName("demo-backup"),
+        path: `${MANUAL_BACKUPS_DIR}/demo-backup.zip`,
+        modifiedAt: createdAt,
+        size: 0,
+      }
+      demoDataDirectoryState.backups.unshift({
+        entry,
+        snapshot: await exportRuntimeSnapshot(),
+        inventorySnapshot: readBrowserLocalInventorySnapshot(),
+      })
+      demoDataDirectoryState.lastSyncAt = createdAt
+      return entry
+    })
+  }
   const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     throw new Error("尚未配置数据目录。")
@@ -1116,6 +1257,9 @@ export async function createManualBackup(args: {
 export async function listBackupEntries(
   handle: FileSystemDirectoryHandle
 ): Promise<DataDirectoryBackupEntry[]> {
+  if (isDemoDataDirectoryMode()) {
+    return demoDataDirectoryState.backups.map((backup) => backup.entry)
+  }
   const entries: DataDirectoryBackupEntry[] = []
   for (const kind of ["manual", "protection"] as const) {
     let directory: FileSystemDirectoryHandle
@@ -1147,6 +1291,18 @@ export async function listBackupEntries(
 export async function inspectConfiguredBackup(
   entry: DataDirectoryBackupEntry
 ): Promise<DataArchiveInspection> {
+  if (isDemoDataDirectoryMode()) {
+    const backup = demoDataDirectoryState.backups.find((item) => item.entry.path === entry.path)
+    if (!backup) {
+      throw new Error("找不到演示备份。")
+    }
+    return {
+      label: backup.entry.name,
+      snapshot: backup.snapshot,
+      inventorySnapshot: backup.inventorySnapshot,
+      summary: toRuntimeSummary(backup.snapshot, backup.inventorySnapshot),
+    }
+  }
   const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     throw new Error("尚未配置数据目录。")
@@ -1171,6 +1327,17 @@ export async function restoreConfiguredBackup(args: {
   snapshot: RuntimeStoreSnapshot
   inventorySnapshot: InventoryDirectorySnapshot
 }): Promise<void> {
+  if (isDemoDataDirectoryMode()) {
+    if (!demoDataDirectoryState.configured) {
+      throw new Error("尚未配置演示数据目录。")
+    }
+    await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+      await replaceRuntimeSnapshot(args.snapshot)
+      writeBrowserLocalInventorySnapshot(args.inventorySnapshot)
+      demoDataDirectoryState.lastSyncAt = new Date().toISOString()
+    })
+    return
+  }
   const handle = await loadConfiguredDataDirectoryHandle()
   if (!handle) {
     throw new Error("尚未配置数据目录。")
@@ -1221,6 +1388,14 @@ export async function importRuntimeArchive(args: {
   snapshot: RuntimeStoreSnapshot
   inventorySnapshot: InventoryDirectorySnapshot
 }): Promise<void> {
+  if (isDemoDataDirectoryMode()) {
+    await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+      await replaceRuntimeSnapshot(args.snapshot)
+      writeBrowserLocalInventorySnapshot(args.inventorySnapshot)
+      demoDataDirectoryState.lastSyncAt = new Date().toISOString()
+    })
+    return
+  }
   const handle = await loadConfiguredDataDirectoryHandle()
   if (handle) {
     const permission = await ensureReadWritePermission(handle, true)
@@ -1270,6 +1445,9 @@ export async function importRuntimeArchive(args: {
 }
 
 export async function exportRuntimeArchive(): Promise<{ fileName: string }> {
+  if (isDemoDataDirectoryMode()) {
+    return { fileName: "tuckmark-demo-export.zip" }
+  }
   const snapshot = await exportRuntimeSnapshot()
   const handle = await loadConfiguredDataDirectoryHandle()
   const inventorySnapshot = handle
@@ -1312,6 +1490,25 @@ function resolveHealth(args: {
 export async function getDataDirectoryStatus(
   leaseState?: CrossTabLeaseState
 ): Promise<DataDirectoryStatus> {
+  if (isDemoDataDirectoryMode()) {
+    const snapshot = await exportRuntimeSnapshot()
+    const runtimeSummary = toRuntimeSummary(snapshot, readBrowserLocalInventorySnapshot())
+    const configured = demoDataDirectoryState.configured
+    return {
+      supported: true,
+      configured,
+      directoryName: configured ? DEMO_DATA_DIRECTORY_NAME : null,
+      permissionState: configured ? "granted" : "unconfigured",
+      health: configured ? "healthy" : "unconfigured",
+      manifest: configured ? createDemoManifest(runtimeSummary) : null,
+      lastSyncAt: demoDataDirectoryState.lastSyncAt,
+      lastError: null,
+      backups: demoDataDirectoryState.backups.map((backup) => backup.entry),
+      leaseRole: leaseState?.role ?? "writer",
+      leaseExpiresAt: leaseState?.leaseExpiresAt ?? null,
+      runtimeSummary,
+    }
+  }
   if (isServerHttpDataSurface()) {
     const now = new Date().toISOString()
     let status: Awaited<ReturnType<typeof devdDataClient.status>>
@@ -1456,6 +1653,9 @@ export async function getDataDirectoryStatus(
 }
 
 export async function tryBackgroundMirrorSync(coordinator: CrossTabCoordinator): Promise<void> {
+  if (isDemoDataDirectoryMode()) {
+    return
+  }
   if (isServerHttpDataSurface()) {
     return
   }

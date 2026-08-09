@@ -47,6 +47,24 @@ test("demo mode exposes draft processing through its formal restricted route", a
   await expect(page.getByRole("link", { name: "GitHub" })).toHaveCount(0)
 })
 
+test("demo mode uses a virtual data directory instead of the native picker", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "showDirectoryPicker", {
+      configurable: true,
+      value: () => {
+        throw new Error("Demo mode must not open the native directory picker.")
+      },
+    })
+  })
+
+  await page.goto("/system?demo=true")
+  await page.getByRole("button", { name: "接入演示目录" }).click()
+
+  await expect(page.getByRole("heading", { name: "发现演示数据目录" })).toBeVisible()
+  await expect(page.getByText("不会读取或写入本机目录", { exact: false })).toBeVisible()
+  await expect(page.getByRole("button", { name: "导入演示数据" })).toBeVisible()
+})
+
 test("draft processing demo remains restricted on a compact viewport", async ({ page }) => {
   await page.setViewportSize({ width: 393, height: 852 })
   const processingPath =

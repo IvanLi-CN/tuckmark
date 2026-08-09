@@ -24,9 +24,14 @@ vi.mock("./user-template-store.js", () => runtimeStoreMocks)
 
 import {
   attachDataDirectory,
+  createManualBackup,
+  detachDataDirectory,
   exportRuntimeArchive,
+  getDataDirectoryStatus,
   importRuntimeArchive,
   inspectImportArchiveFile,
+  listBackupEntries,
+  pickDataDirectory,
   restoreRuntimeFromConfiguredDirectoryIfNeeded,
   syncConfiguredDataDirectory,
 } from "./data-directory-service.js"
@@ -354,6 +359,110 @@ beforeEach(() => {
   runtimeStoreMocks.rebindRuntimeStoreForDataDirectoryChange.mockResolvedValue(undefined)
   runtimeStoreMocks.replaceRuntimeSnapshot.mockReset()
   installLocalStorage(createMemoryStorage())
+  window.history.replaceState({}, "", "/")
+})
+
+describe("demo data directory isolation", () => {
+  it("never opens the native directory picker in demo mode", async () => {
+    window.history.replaceState({}, "", "/system?demo=true")
+    const nativePicker = vi.fn(async () => {
+      throw new Error("The real directory picker must not run in demo mode.")
+    })
+    Object.defineProperty(window, "showDirectoryPicker", {
+      configurable: true,
+      value: nativePicker,
+    })
+
+    await expect(pickDataDirectory()).resolves.toMatchObject({
+      inspection: {
+        kind: "existing",
+        handleName: "Demo data directory",
+      },
+    })
+    expect(nativePicker).not.toHaveBeenCalled()
+    expect(handleStoreMocks.loadStoredDataDirectoryHandle).not.toHaveBeenCalled()
+    expect(handleStoreMocks.saveDataDirectoryHandle).not.toHaveBeenCalled()
+  })
+
+  it("keeps attachment and status entirely in memory in demo mode", async () => {
+    window.history.replaceState({}, "", "/system?demo=true")
+    const snapshot = createSnapshot({
+      templateIds: ["demo-template"],
+      versionCount: 1,
+      workingCopyCount: 1,
+      updatedAt: "2026-08-09T08:00:00.000Z",
+    })
+    runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(snapshot)
+    const coordinator = {
+      runExclusiveRuntimeReplacement: async <T>(task: () => Promise<T>) => await task(),
+    }
+
+    await expect(
+      attachDataDirectory({
+        coordinator: coordinator as never,
+        handle: {
+          get name() {
+            throw new Error("Demo mode must not inspect a real directory handle.")
+          },
+        } as unknown as FileSystemDirectoryHandle,
+        mode: "import-existing",
+      })
+    ).resolves.toBe("replaced-runtime")
+
+    await expect(getDataDirectoryStatus()).resolves.toMatchObject({
+      configured: true,
+      directoryName: "Demo data directory",
+      health: "healthy",
+    })
+    expect(handleStoreMocks.loadStoredDataDirectoryHandle).not.toHaveBeenCalled()
+    expect(handleStoreMocks.saveDataDirectoryHandle).not.toHaveBeenCalled()
+    expect(runtimeStoreMocks.rebindRuntimeStoreForDataDirectoryChange).not.toHaveBeenCalled()
+  })
+
+  it("keeps backups and archive replacement out of directory storage in demo mode", async () => {
+    window.history.replaceState({}, "", "/system?demo=true")
+    await detachDataDirectory()
+    const snapshot = createSnapshot({
+      templateIds: ["demo-template"],
+      versionCount: 1,
+      workingCopyCount: 0,
+      updatedAt: "2026-08-09T08:00:00.000Z",
+    })
+    runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(snapshot)
+    const coordinator = {
+      runAsWriter: async <T>(task: () => Promise<T>) => await task(),
+      runExclusiveRuntimeReplacement: async <T>(task: () => Promise<T>) => await task(),
+    }
+
+    await attachDataDirectory({
+      coordinator: coordinator as never,
+      handle: {} as FileSystemDirectoryHandle,
+      mode: "import-existing",
+    })
+    await expect(createManualBackup({ coordinator: coordinator as never })).resolves.toMatchObject({
+      kind: "manual",
+      path: "backups/manual/demo-backup.zip",
+    })
+    await expect(
+      listBackupEntries({
+        get name() {
+          throw new Error("Demo mode must not inspect a real backup directory.")
+        },
+      } as unknown as FileSystemDirectoryHandle)
+    ).resolves.toHaveLength(1)
+    await expect(exportRuntimeArchive()).resolves.toEqual({ fileName: "tuckmark-demo-export.zip" })
+    await expect(
+      importRuntimeArchive({
+        coordinator: coordinator as never,
+        snapshot,
+        inventorySnapshot: readBrowserLocalInventorySnapshot(),
+      })
+    ).resolves.toBeUndefined()
+
+    expect(handleStoreMocks.loadStoredDataDirectoryHandle).not.toHaveBeenCalled()
+    expect(handleStoreMocks.saveDataDirectoryHandle).not.toHaveBeenCalled()
+    expect(runtimeStoreMocks.rebindRuntimeStoreForDataDirectoryChange).not.toHaveBeenCalled()
+  })
 })
 
 describe("restoreRuntimeFromConfiguredDirectoryIfNeeded", () => {
