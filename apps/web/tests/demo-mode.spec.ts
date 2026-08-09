@@ -65,6 +65,67 @@ test("demo mode uses a virtual data directory instead of the native picker", asy
   await expect(page.getByRole("button", { name: "导入演示数据" })).toBeVisible()
 })
 
+test("system tab processes another tab's pending draft without returning to the canvas tab", async ({
+  page: canvasPage,
+  context,
+}) => {
+  await canvasPage.goto("/canvas?source=preset-template&templateId=cable-tag&demo=true")
+  await expect(canvasPage.getByText("系统模板：Cable Tag")).toBeVisible()
+  const canvasLayers = canvasPage.locator(".tm-layer-list--inspector .tm-choice--layer")
+  await expect(canvasLayers).toHaveCount(5)
+
+  const systemPage = await context.newPage()
+  await systemPage.goto("/templates?demo=true")
+  await expect(systemPage.getByRole("heading", { name: "模板列表" })).toBeVisible()
+  await systemPage.goto("/system?demo=true")
+  await expect(systemPage.getByRole("button", { name: "接入演示目录" })).toBeVisible()
+  const workingCopyPersisted = systemPage.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const channel = new BroadcastChannel("tuckmark.runtime-store-events.v1")
+        channel.addEventListener("message", (event) => {
+          if (event.data?.reason !== "working-copy-replaced") {
+            return
+          }
+          channel.close()
+          resolve()
+        })
+      })
+  )
+
+  await canvasPage.locator(".tm-quick-tools").getByRole("button", { name: "文本" }).click()
+  await expect(canvasLayers).toHaveCount(6)
+  await workingCopyPersisted
+
+  await systemPage.getByRole("button", { name: "接管写入" }).click()
+  await systemPage.getByRole("button", { name: "接入演示目录" }).click()
+  await systemPage.getByRole("button", { name: "导入演示数据" }).click()
+
+  await expect(systemPage.getByRole("heading", { name: "请先处理未保存草稿" })).toBeVisible()
+  await expect(systemPage.getByText("Cable Tag")).toBeVisible()
+
+  const processingPagePromise = systemPage.waitForEvent("popup")
+  await systemPage.getByRole("button", { name: "去处理" }).click()
+  const processingPage = await processingPagePromise
+  await expect(processingPage).toHaveURL(
+    /\/canvas\/draft-processing\?source=preset-template&templateId=cable-tag&demo=true/
+  )
+  await expect(processingPage.getByRole("navigation", { name: "Main navigation" })).toHaveCount(0)
+
+  await processingPage.getByRole("button", { name: "重置草稿" }).click()
+  await expect(processingPage.getByText("已重置为系统模板初始内容。")).toBeVisible()
+  const processingClosed = processingPage.waitForEvent("close")
+  await processingPage.getByRole("button", { name: "返回草稿处理弹窗" }).click()
+  await processingClosed
+
+  await systemPage.getByRole("button", { name: "重新检查并继续" }).click()
+  await expect(systemPage.getByText("Demo data directory", { exact: true })).toBeVisible()
+  await expect(systemPage.getByRole("heading", { name: "请先处理未保存草稿" })).toHaveCount(0)
+  await expect(canvasPage).toHaveURL(
+    /\/canvas\?source=preset-template&templateId=cable-tag&demo=true/
+  )
+})
+
 test("draft processing demo remains restricted on a compact viewport", async ({ page }) => {
   await page.setViewportSize({ width: 393, height: 852 })
   const processingPath =

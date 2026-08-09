@@ -171,6 +171,7 @@ import type {
 import {
   clearTemplateAutosaves,
   clearWorkingCopy,
+  getCanvasDraftSourceKey,
   readUserTemplateHistory,
   replaceUserTemplateWorkingCopy,
   saveUserTemplate,
@@ -6400,6 +6401,10 @@ export function CanvasWorkspace({
   const asyncClipboardSupported = supportsAsyncClipboard()
   const [, setFontLoadGeneration] = React.useState(0)
   const stateRef = React.useRef(state)
+  const persistenceBaselineRef = React.useRef<{
+    sourceKey: string
+    document: CanvasDraftDocument
+  } | null>(null)
   const interactionLockedRef = React.useRef(interactionLocked)
   const stageViewportSizeRef = React.useRef(stageViewportSize)
   const stagePointerRef = React.useRef<{ x: number; y: number } | null>(null)
@@ -6457,6 +6462,20 @@ export function CanvasWorkspace({
     }),
     [controller.documentRenderOptions]
   )
+
+  React.useEffect(() => {
+    if (state.loading) {
+      return
+    }
+    const sourceKey = getCanvasDraftSourceKey(state.routeSource)
+    if (persistenceBaselineRef.current?.sourceKey === sourceKey) {
+      return
+    }
+    persistenceBaselineRef.current = {
+      sourceKey,
+      document: draftWithCurrentRenderOptions(state.liveDraft),
+    }
+  }, [draftWithCurrentRenderOptions, state.liveDraft, state.loading, state.routeSource])
 
   React.useEffect(() => {
     if (initialScenario) {
@@ -6570,6 +6589,13 @@ export function CanvasWorkspace({
     }
 
     const autosaveDocument = draftWithCurrentRenderOptions(autosaveLiveDraft)
+    const persistenceBaseline = persistenceBaselineRef.current
+    if (
+      persistenceBaseline?.sourceKey === getCanvasDraftSourceKey(autosaveRouteSource) &&
+      sameDraftContent(autosaveDocument, persistenceBaseline.document)
+    ) {
+      return
+    }
     const autosaveBaseline = getAutosaveBaselineDraft({
       liveDraft: autosaveLiveDraft,
       readOnlyVersion: autosaveReadOnlyVersion,
@@ -6580,12 +6606,16 @@ export function CanvasWorkspace({
       autosaveRouteSource.kind !== "user-template" ||
       !autosaveBaseline ||
       !sameDraftContent(autosaveDocument, autosaveBaseline)
+    const shouldPersistWorkingCopy = state.storageMode !== "reset-pending"
 
-    if (
-      shouldCreateAutosave &&
-      autosaveLiveDraft.templateId &&
-      state.storageMode !== "reset-pending"
-    ) {
+    if (shouldPersistWorkingCopy) {
+      persistenceBaselineRef.current = {
+        sourceKey: getCanvasDraftSourceKey(autosaveRouteSource),
+        document: autosaveDocument,
+      }
+    }
+
+    if (shouldCreateAutosave && autosaveLiveDraft.templateId && shouldPersistWorkingCopy) {
       void saveUserTemplateAutosave({
         templateId: autosaveLiveDraft.templateId,
         source: autosaveRouteSource,
@@ -6597,7 +6627,7 @@ export function CanvasWorkspace({
     if (
       (autosaveRouteSource.kind === "scratch" || autosaveRouteSource.kind === "preset-template") &&
       !startupSyncPending &&
-      state.storageMode !== "reset-pending"
+      shouldPersistWorkingCopy
     ) {
       void replaceUserTemplateWorkingCopy({
         source: autosaveRouteSource,
@@ -6998,8 +7028,12 @@ export function CanvasWorkspace({
       state,
       controller,
     })
+    persistenceBaselineRef.current = {
+      sourceKey: getCanvasDraftSourceKey(nextState.routeSource),
+      document: draftWithCurrentRenderOptions(nextState.liveDraft),
+    }
     setState(nextState)
-  }, [controller, state])
+  }, [controller, draftWithCurrentRenderOptions, state])
 
   const handleCopyToClipboard = React.useCallback(async () => {
     if (!asyncClipboardSupported) {
