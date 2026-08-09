@@ -148,6 +148,7 @@ test("system tab processes another tab's pending draft without returning to the 
   await expect(canvasPage).toHaveURL(
     /\/canvas\?source=preset-template&templateId=cable-tag&demo=true/
   )
+  await expect(canvasLayers).toHaveCount(5)
 })
 
 test("draft processing demo remains restricted on a compact viewport", async ({ page }) => {

@@ -58,6 +58,10 @@ import {
 } from "../../../packages/core/src/web.js"
 import { clearEphemeralCanvasDraft, recordEphemeralCanvasDraft } from "./canvas-draft-ephemeral.js"
 import {
+  getSharedCrossTabCoordinator,
+  RuntimeDataSourceChangedError,
+} from "./cross-tab-coordinator.js"
+import {
   bindElementToExistingField,
   buildStoryScenarioDocument,
   CANVAS_HISTORY_LIMIT,
@@ -6363,6 +6367,7 @@ export function CanvasWorkspace({
 }: CanvasPageProps) {
   const navigate = useWorkbenchNavigate()
   const queryClient = useQueryClient()
+  const runtimeCoordinator = React.useMemo(() => getSharedCrossTabCoordinator(), [])
   const runtimeEventTabId = React.useMemo(() => getRuntimeStoreEventTabId(), [])
   const searchParams = useWorkbenchSearchParams()
   const routeSource = React.useMemo(() => resolveCanvasSource(searchParams), [searchParams])
@@ -6466,6 +6471,7 @@ export function CanvasWorkspace({
       }
       remoteDraftReloadingRef.current = true
       clearEphemeralCanvasDraft(routeSource)
+      setState((current) => (current.loading ? current : { ...current, loading: true }))
       void loadCanvasRouteData(routeSource)
         .then((loaded) => {
           controller.setDocumentRenderOptions({
@@ -6676,15 +6682,28 @@ export function CanvasWorkspace({
       autosaveLoading ||
       readOnly ||
       remoteDraftReloadingRef.current ||
+      runtimeDataReloading ||
       state.storageMode === "reset-pending"
     ) {
       return
     }
-    recordEphemeralCanvasDraft({
-      source: autosaveRouteSource,
-      document: draftWithCurrentRenderOptions(autosaveLiveDraft),
-      updatedAt: new Date().toISOString(),
-    })
+    void runtimeCoordinator
+      .runRuntimeMutation(async () => {
+        recordEphemeralCanvasDraft({
+          source: autosaveRouteSource,
+          document: draftWithCurrentRenderOptions(autosaveLiveDraft),
+          updatedAt: new Date().toISOString(),
+        })
+      })
+      .catch((cause) => {
+        if (cause instanceof RuntimeDataSourceChangedError) {
+          return
+        }
+        setState((current) => ({
+          ...current,
+          outputStatus: cause instanceof Error ? cause.message : "记录画布草稿失败。",
+        }))
+      })
   }, [
     autosaveLiveDraft,
     autosaveLoading,
@@ -6692,6 +6711,8 @@ export function CanvasWorkspace({
     draftWithCurrentRenderOptions,
     initialScenario,
     readOnly,
+    runtimeCoordinator,
+    runtimeDataReloading,
     state.storageMode,
   ])
 

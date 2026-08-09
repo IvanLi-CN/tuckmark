@@ -15,8 +15,10 @@ import {
   loadLocalSyncState,
   recordCanvasDraftLocally,
   recordRecentPrintLocally,
+  recordTemplateUsageLocally,
   syncWebState,
 } from "./web-state-sync.js"
+import { setRuntimeDataMode } from "./runtime-data-mode.js"
 
 function installMemoryStorage(): Storage {
   const store = new Map<string, string>()
@@ -69,6 +71,38 @@ describe("web-state-sync", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs()
+    setRuntimeDataMode(null)
+  })
+
+  it("keeps runtime sync and activity records unchanged in demo mode", () => {
+    window.localStorage.setItem("tuckmark.sync-state.v1", '{"runtime":true}')
+    window.localStorage.setItem("tuckmark.recent-activity.v1", '{"runtime":true}')
+    setRuntimeDataMode("demo")
+
+    const templateState = recordTemplateUsageLocally({
+      id: "demo-template",
+      name: "Demo template",
+      description: "Demo-only activity",
+    })
+    const printState = recordRecentPrintLocally({
+      id: "demo-print",
+      title: "Demo print",
+      kind: "canvas",
+      printerName: "Demo printer",
+    })
+    applySyncStateToBrowser(printState, ["shipping-wide"])
+
+    expect(templateState.templateUsageRecords).toHaveLength(1)
+    expect(window.localStorage.getItem("tuckmark.sync-state.v1")).toBe('{"runtime":true}')
+    expect(window.localStorage.getItem("tuckmark.recent-activity.v1")).toBe('{"runtime":true}')
+    expect(readJson("tuckmark.demo.sync-state.v1")).toMatchObject({
+      templateUsageRecords: [expect.anything()],
+      recentPrintRecords: [expect.anything()],
+    })
+    expect(readJson("tuckmark.demo.recent-activity.v1")).toMatchObject({
+      templates: [expect.objectContaining({ id: "demo-template" })],
+      prints: [expect.objectContaining({ id: "demo-print" })],
+    })
   })
 
   it("does not read or write browser sync state in server-http mode", () => {

@@ -20,6 +20,7 @@ import {
   persistDraftDocumentToStorage,
 } from "./canvas-editor-model.js"
 import { isServerHttpDataSurface } from "./devd-data-client.js"
+import { isDemoRuntimeMode } from "./runtime-data-mode.js"
 import {
   emptyRecentActivityState,
   loadRecentActivity,
@@ -31,8 +32,13 @@ import {
 import type { CanvasDraftDocument } from "./types.js"
 
 const SYNC_STORAGE_KEY = "tuckmark.sync-state.v1"
+const DEMO_SYNC_STORAGE_KEY = "tuckmark.demo.sync-state.v1"
 const MAX_ITEMS = 6
 const SYNCABLE_PRESET_IDS = new Set(CANVAS_PRESETS.map((preset) => preset.id))
+
+function getSyncStorageKey(): string {
+  return isDemoRuntimeMode() ? DEMO_SYNC_STORAGE_KEY : SYNC_STORAGE_KEY
+}
 
 export type SyncApiClient = {
   getSyncState(): Promise<SyncState>
@@ -217,7 +223,7 @@ export function loadLocalSyncState(): SyncState {
 
   let stored = emptySyncState()
   try {
-    const raw = window.localStorage.getItem(SYNC_STORAGE_KEY)
+    const raw = window.localStorage.getItem(getSyncStorageKey())
     stored = raw ? parseSyncState(JSON.parse(raw)) : emptySyncState()
   } catch {
     stored = emptySyncState()
@@ -234,7 +240,7 @@ export function persistLocalSyncState(state: SyncState): SyncState {
   if (isServerHttpDataSurface() || !canUseStorage()) {
     return state
   }
-  window.localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(state))
+  window.localStorage.setItem(getSyncStorageKey(), JSON.stringify(state))
   return state
 }
 

@@ -1,3 +1,5 @@
+import { isDemoRuntimeMode } from "../runtime-data-mode.js"
+
 export type RecentTemplateEntry = {
   id: string
   name: string
@@ -19,7 +21,12 @@ export type RecentActivityState = {
 }
 
 const STORAGE_KEY = "tuckmark.recent-activity.v1"
+const DEMO_STORAGE_KEY = "tuckmark.demo.recent-activity.v1"
 const MAX_ITEMS = 6
+
+function getStorageKey(): string {
+  return isDemoRuntimeMode() ? DEMO_STORAGE_KEY : STORAGE_KEY
+}
 
 function emptyState(): RecentActivityState {
   return {
@@ -53,7 +60,7 @@ export function loadRecentActivity(): RecentActivityState {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = window.localStorage.getItem(getStorageKey())
     if (!raw) {
       return emptyState()
     }
@@ -73,7 +80,7 @@ function writeRecentActivity(next: RecentActivityState): RecentActivityState {
     return next
   }
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  window.localStorage.setItem(getStorageKey(), JSON.stringify(next))
   return next
 }
 
