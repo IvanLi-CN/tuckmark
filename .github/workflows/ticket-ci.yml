@@ -30,3 +30,24 @@ jobs:
         run: node scripts/check-compatibility-contract.mjs
       - name: Run Rust unit and golden tests
         run: cargo test --workspace --locked
+
+  cli-black-box-parity:
+    name: cli-black-box-parity
+    runs-on: ubuntu-latest
+    env:
+      CARGO_HTTP_MULTIPLEXING: "false"
+      CARGO_NET_RETRY: "5"
+      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0
+      - name: Install native preview dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libdbus-1-dev fonts-noto-cjk
+      - name: Run CLI black-box parity
+        run: cargo test -p tuckmark-cli --test black_box_parity --locked

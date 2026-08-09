@@ -73,10 +73,23 @@
   - `template` lifecycle commands
   - `inventory` command family
   - legacy read-only `templates` compatibility listing
+- `crates/tuckmark-cli` provides a native Rust implementation of that CLI
+  contract without assuming DEVD ownership:
+  - the complete Clap command tree preserves the frozen command and legacy
+    migration surface
+  - per-user named IPC uses the existing HTTP-shaped DEVD contract for runtime,
+    inventory, configuration, and Agent Import calls
+  - Agent Import writes owner-only credentials, can open the confirmation URL,
+    polls events, and fulfills approved events without printing the secret
+  - template-package preview and packet generation use `tuckmark-engine`
+    locally; printer dispatch remains explicitly gated
 
 ## Validation
 
 - `bun run check` at the repository root
+- `cargo test --workspace --locked`, including the Rust CLI black-box parity
+  suite for frozen output, named IPC, Agent Import credential handling, and
+  local template-package preview/packet generation
 - `bun x playwright test tests/inventory-print-preview.spec.ts` in `apps/web`
   with the preview server lease injected through `TUCKMARK_E2E_PORT`; it
   creates a material, binds a template, changes the manual quantity to `2`,
