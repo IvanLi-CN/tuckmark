@@ -1,0 +1,67 @@
+use serde_json::{Value, json};
+use tuckmark_contracts::TemplateDefinition;
+
+/// The native daemon owns the same two preset templates as the Web runtime.
+/// Keeping the catalogue here avoids a runtime dependency on the TypeScript server.
+pub fn catalog() -> Result<Vec<TemplateDefinition>, serde_json::Error> {
+    catalog_values()?
+        .into_iter()
+        .map(serde_json::from_value)
+        .collect()
+}
+
+pub fn catalog_values() -> Result<Vec<Value>, serde_json::Error> {
+    Ok(vec![
+        json!({
+            "id": "shipping-compact",
+            "name": "Compact Shipping Label",
+            "description": "A compact shipping label with recipient and order metadata.",
+            "width": 384,
+            "height": 224,
+            "tags": ["shipping", "preset"],
+            "recommendedUse": "shipping",
+            "fields": [
+                {"key":"recipient","label":"Recipient","required":true,"multiline":false},
+                {"key":"address","label":"Address","required":true,"multiline":true},
+                {"key":"orderId","label":"Order ID","required":true,"multiline":false},
+                {"key":"note","label":"Note","required":false,"multiline":true}
+            ],
+            "elements": [
+                {"kind":"rect","x":8,"y":8,"width":368,"height":208,"strokeWidth":2,"fill":"white","stroke":"#111111","radius":8,"rotation":0},
+                {"kind":"text","key":"__title","value":"SHIP TO","x":18,"y":28,"fontSize":18,"fontWeight":"bold","align":"left","rotation":0},
+                {"kind":"text","key":"recipient","x":18,"y":62,"fontSize":26,"fontWeight":"bold","align":"left","rotation":0},
+                {"kind":"text","key":"address","x":18,"y":96,"fontSize":18,"fontWeight":"normal","align":"left","maxLines":3,"rotation":0},
+                {"kind":"line","x1":18,"y1":166,"x2":366,"y2":166,"strokeWidth":2,"stroke":"#111111"},
+                {"kind":"text","key":"__order_label","value":"ORDER","x":18,"y":192,"fontSize":14,"fontWeight":"bold","align":"left","rotation":0},
+                {"kind":"text","key":"orderId","x":90,"y":192,"fontSize":14,"fontWeight":"normal","align":"left","rotation":0},
+                {"kind":"barcode","key":"orderId","x":224,"y":22,"width":130,"height":46,"format":"CODE128","showValue":false,"rotation":0},
+                {"kind":"text","key":"note","x":220,"y":192,"fontSize":14,"fontWeight":"normal","align":"right","width":140,"rotation":0}
+            ]
+        }),
+        json!({
+            "id": "cable-tag",
+            "name": "Cable Tag",
+            "description": "A simple equipment/cable label for direct organization.",
+            "width": 384,
+            "height": 160,
+            "tags": ["ops", "preset"],
+            "recommendedUse": "electronics and cable labeling",
+            "fields": [
+                {"key":"name","label":"Name","required":true,"multiline":false},
+                {"key":"port","label":"Port","required":false,"multiline":false},
+                {"key":"location","label":"Location","required":false,"multiline":false}
+            ],
+            "elements": [
+                {"kind":"rect","x":6,"y":6,"width":372,"height":148,"strokeWidth":2,"fill":"white","stroke":"#111111","radius":12,"rotation":0},
+                {"kind":"text","key":"name","x":20,"y":56,"fontSize":34,"fontWeight":"bold","align":"left","rotation":0},
+                {"kind":"text","key":"port","x":20,"y":104,"fontSize":20,"fontWeight":"normal","align":"left","rotation":0},
+                {"kind":"text","key":"location","x":200,"y":104,"width":160,"fontSize":20,"fontWeight":"normal","align":"right","rotation":0},
+                {"kind":"qr","key":"name","x":282,"y":24,"size":72,"errorCorrectionLevel":"M","rotation":0}
+            ]
+        }),
+    ])
+}
+
+pub fn find(id: &str) -> Result<Option<TemplateDefinition>, serde_json::Error> {
+    catalog().map(|templates| templates.into_iter().find(|template| template.id == id))
+}

@@ -8,8 +8,10 @@ mod print;
 mod render;
 
 pub use agent_import::{
-    AgentImportCatalog, AgentImportError, AgentImportManager, CreateAgentImportSession,
-    SessionCommitResult,
+    AgentImportCatalog, AgentImportCatalogResponse, AgentImportError, AgentImportManager,
+    AgentImportRestockTarget, AgentImportTemplateInputEvent, CreateAgentImportSession,
+    FulfillAgentImportTemplateInput, RequestAgentImportTemplateInput, SessionCommitResult,
+    UpdateAgentImportItem,
 };
 pub use archive_codec::{
     ArchiveCodecError, ArchiveZipInput, DirectoryTreeArchive, decode_archive_zip,
