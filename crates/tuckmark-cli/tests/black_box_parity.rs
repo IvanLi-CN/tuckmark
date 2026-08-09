@@ -385,4 +385,32 @@ fn template_package_uses_contract_defaults_and_identifier_rules() {
         invalid.stderr,
         b"Invalid user template package identifier.\n"
     );
+
+    let invalid_field = runtime.path().join("invalid-field.package.json");
+    fs::write(
+        &invalid_field,
+        r##"{
+  "schema": "tuckmark.user-template-package.v1",
+  "id": "valid-package",
+  "name": "Invalid Field Package",
+  "canvas": { "width": 64, "height": 32 },
+  "fields": [{ "key": "1field", "label": "Field" }],
+  "elements": [{ "kind": "text", "key": "1field", "x": 2, "y": 2, "fontSize": 12 }]
+}"##,
+    )
+    .expect("write invalid field package");
+    let invalid_field = run(
+        runtime.path(),
+        &[
+            "template-package",
+            "validate",
+            "--file",
+            invalid_field.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(invalid_field.status.code(), Some(1));
+    assert_eq!(
+        invalid_field.stderr,
+        b"User template package field is invalid.\n"
+    );
 }

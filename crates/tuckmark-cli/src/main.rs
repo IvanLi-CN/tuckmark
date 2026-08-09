@@ -1284,7 +1284,7 @@ fn validate_template_package(package: &TemplatePackage) -> Result<()> {
     }
     let mut keys = BTreeSet::new();
     for field in &package.fields {
-        if !valid_identifier(&field.key) || field.label.trim().is_empty() {
+        if !valid_field_identifier(&field.key) || field.label.trim().is_empty() {
             return Err(CliError::Message(
                 "User template package field is invalid.".into(),
             ));
@@ -2142,6 +2142,14 @@ fn valid_identifier(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+fn valid_field_identifier(value: &str) -> bool {
+    valid_identifier(value)
+        && value
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphabetic())
 }
 
 fn empty_object() -> Value {
