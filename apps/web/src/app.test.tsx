@@ -19,6 +19,7 @@ import {
   confirmPendingPastePlacement,
   createCanvasStateFromDraft,
   createSelectionDragPreview,
+  isCanvasRuntimeDataReloading,
   isTransformerInteractionTarget,
   movePendingPasteToPoint,
   normalizeCanvasWheelDeltas,
@@ -32,6 +33,7 @@ import {
   startClipboardPastePlacement,
   zoomViewportAtPointer,
 } from "./canvas-page.js"
+import { RuntimeDataSourceChangedError } from "./cross-tab-coordinator.js"
 import { buildInputFromTemplate, fallbackTemplates } from "./demo-data.js"
 import { CANVAS_DOTS_PER_MILLIMETER } from "./lib/canvas-units.js"
 import { loadRecentActivity } from "./lib/recent-activity.js"
@@ -177,6 +179,7 @@ const originalFetch = globalThis.fetch
 const originalIndexedDb = globalThis.indexedDB
 const originalMatchMedia = window.matchMedia
 const originalNavigatorClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard")
+const originalNavigatorLocks = Object.getOwnPropertyDescriptor(navigator, "locks")
 const originalClipboardItem = globalThis.ClipboardItem
 const originalSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureContext")
 const originalHistoryPushState = window.history.pushState
@@ -1110,6 +1113,16 @@ beforeEach(async () => {
     value: true,
     configurable: true,
   })
+  Object.defineProperty(navigator, "locks", {
+    value: {
+      request: async (
+        _name: string,
+        _options: unknown,
+        callback: () => Promise<unknown>
+      ): Promise<unknown> => await callback(),
+    },
+    configurable: true,
+  })
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
   browserPrinterMocks.isBrowserPrintSupported.mockReturnValue(true)
@@ -1162,6 +1175,11 @@ afterEach(async () => {
     Object.defineProperty(navigator, "clipboard", originalNavigatorClipboard)
   } else {
     Reflect.deleteProperty(navigator, "clipboard")
+  }
+  if (originalNavigatorLocks) {
+    Object.defineProperty(navigator, "locks", originalNavigatorLocks)
+  } else {
+    Reflect.deleteProperty(navigator, "locks")
   }
   if (originalClipboardItem) {
     Object.defineProperty(globalThis, "ClipboardItem", {
@@ -1221,6 +1239,51 @@ describe("web workbench app", () => {
     const rightsLink = document.querySelector<HTMLAnchorElement>('a[href="https://ivanli.cc/"]')
     expect(githubLink?.textContent).toBe("GitHub")
     expect(rightsLink?.textContent).toBe("© 2026 Ivan Li")
+  })
+
+  it("renders draft processing without the ordinary workbench exit paths", async () => {
+    await renderWorkbenchApp(
+      browserRuntimeContext,
+      "wide-default",
+      "/canvas/draft-processing?presetId=shipping-wide"
+    )
+
+    expect(document.body.textContent).toContain("草稿处理")
+    expect(document.body.textContent).toContain("标签编辑台")
+    expect(document.querySelector('[aria-label="Main navigation"]')).toBeNull()
+    expect(document.querySelector(".tm-footer")).toBeNull()
+    expect(document.querySelectorAll("a")).toHaveLength(0)
+    expect(document.querySelector('button[aria-label="返回草稿处理弹窗"]')?.textContent).toContain(
+      "返回"
+    )
+  })
+
+  it("keeps saved drafts inside the restricted processing route", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const saved = await saveUserTemplate({
+      name: "Draft Processing Template",
+      document: {
+        ...baseDraft,
+        name: "Draft Processing Template",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+
+    await renderApp(
+      browserRuntimeContext,
+      undefined,
+      `/canvas/draft-processing?source=user-template&templateId=${saved.template.id}`
+    )
+    await flush(8)
+
+    await act(async () => {
+      queryButton("保存").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await flush(12)
+    })
+
+    expect(window.location.pathname).toBe("/canvas/draft-processing")
+    expect(window.location.search).toContain(`templateId=${saved.template.id}`)
+    expect(document.querySelector('[aria-label="Main navigation"]')).toBeNull()
   })
 
   it("keeps the runtime shell hidden while the startup overlay is still active", async () => {
@@ -3258,6 +3321,30 @@ describe("web workbench app", () => {
     expect(history?.autosaves).toHaveLength(0)
   })
 
+  it("locks canvas interactions until the new runtime generation finishes loading", () => {
+    expect(
+      isCanvasRuntimeDataReloading({
+        loadedGeneration: 4,
+        runtimeDataGeneration: 5,
+        runtimeDataReplacementActive: false,
+      })
+    ).toBe(true)
+    expect(
+      isCanvasRuntimeDataReloading({
+        loadedGeneration: 5,
+        runtimeDataGeneration: 5,
+        runtimeDataReplacementActive: true,
+      })
+    ).toBe(true)
+    expect(
+      isCanvasRuntimeDataReloading({
+        loadedGeneration: 5,
+        runtimeDataGeneration: 5,
+        runtimeDataReplacementActive: false,
+      })
+    ).toBe(false)
+  })
+
   it("does not persist user-template undo state into scratch draft storage", async () => {
     const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
     const saved = await saveUserTemplate({
@@ -3625,6 +3712,59 @@ describe("web workbench app", () => {
       templateId: firstSave.template.id,
     })
     expect(workingCopyAfterReopen?.draft.name).toBe("Restore Target")
+  })
+
+  it("safely ignores version restore when data replacement has started", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const firstSave = await saveUserTemplate({
+      name: "Fenced Restore",
+      document: {
+        ...baseDraft,
+        name: "Fenced Restore",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+    const secondDraft = structuredClone(firstSave.workingCopy.draft)
+    secondDraft.name = "Fenced Restore v2"
+    await saveUserTemplate({
+      name: secondDraft.name,
+      templateId: firstSave.template.id,
+      sourceVersionId: firstSave.version.id,
+      document: secondDraft,
+    })
+    const invalidateSpy = vi
+      .spyOn(userTemplateStoreModule, "invalidateCanvasDraftGeneration")
+      .mockRejectedValueOnce(new RuntimeDataSourceChangedError())
+
+    try {
+      await renderApp(
+        browserRuntimeContext,
+        undefined,
+        `/canvas?source=user-template&templateId=${firstSave.template.id}&panel=versions`
+      )
+      await flush(8)
+
+      await act(async () => {
+        const savedVersionButton = Array.from(
+          document.querySelectorAll(".tm-version-list__item")
+        ).find((item) => item.textContent?.includes(firstSave.version.label)) as
+          | HTMLButtonElement
+          | undefined
+        savedVersionButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await flush(8)
+      })
+
+      await act(async () => {
+        queryButton("恢复").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await flush(8)
+      })
+
+      await expect(
+        loadWorkingCopy({ kind: "user-template", templateId: firstSave.template.id })
+      ).resolves.toMatchObject({ draft: { name: "Fenced Restore v2" } })
+    } finally {
+      invalidateSpy.mockRestore()
+    }
   })
 
   it("blocks routed canvas interactions until the requested preset-template draft loads", async () => {

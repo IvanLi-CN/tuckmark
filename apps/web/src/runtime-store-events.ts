@@ -1,3 +1,5 @@
+import type { CanvasDraftSource } from "./types.js"
+
 export type RuntimeStoreMutationReason =
   | "template-saved"
   | "template-renamed"
@@ -15,6 +17,7 @@ export type RuntimeStoreMutationEvent = {
   at: string
   originTabId: string
   reason: RuntimeStoreMutationReason
+  source?: CanvasDraftSource
 }
 
 type MutationListener = (event: RuntimeStoreMutationEvent) => void
@@ -54,12 +57,14 @@ export function getRuntimeStoreEventTabId(): string {
 }
 
 export function emitRuntimeStoreMutation(
-  reason: RuntimeStoreMutationReason
+  reason: RuntimeStoreMutationReason,
+  options?: { source?: CanvasDraftSource }
 ): RuntimeStoreMutationEvent {
   const payload: RuntimeStoreMutationEvent = {
     at: new Date().toISOString(),
     originTabId: TAB_ID,
     reason,
+    source: options?.source,
   }
   for (const listener of listeners) {
     listener(payload)

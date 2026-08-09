@@ -12,7 +12,7 @@ import {
   stableHash,
   stableStringify,
 } from "../../../packages/core/src/web.js"
-
+import { assertCanvasDraftGeneration } from "./canvas-draft-generation.js"
 import {
   CANVAS_PRESETS,
   clearStoredDraftDocument,
@@ -28,11 +28,17 @@ import {
   type RecentPrintEntry,
   type RecentTemplateEntry,
 } from "./lib/recent-activity.js"
+import { isDemoRuntimeMode } from "./runtime-data-mode.js"
 import type { CanvasDraftDocument } from "./types.js"
 
 const SYNC_STORAGE_KEY = "tuckmark.sync-state.v1"
+const DEMO_SYNC_STORAGE_KEY = "tuckmark.demo.sync-state.v1"
 const MAX_ITEMS = 6
 const SYNCABLE_PRESET_IDS = new Set(CANVAS_PRESETS.map((preset) => preset.id))
+
+function getSyncStorageKey(): string {
+  return isDemoRuntimeMode() ? DEMO_SYNC_STORAGE_KEY : SYNC_STORAGE_KEY
+}
 
 export type SyncApiClient = {
   getSyncState(): Promise<SyncState>
@@ -217,7 +223,7 @@ export function loadLocalSyncState(): SyncState {
 
   let stored = emptySyncState()
   try {
-    const raw = window.localStorage.getItem(SYNC_STORAGE_KEY)
+    const raw = window.localStorage.getItem(getSyncStorageKey())
     stored = raw ? parseSyncState(JSON.parse(raw)) : emptySyncState()
   } catch {
     stored = emptySyncState()
@@ -234,7 +240,7 @@ export function persistLocalSyncState(state: SyncState): SyncState {
   if (isServerHttpDataSurface() || !canUseStorage()) {
     return state
   }
-  window.localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(state))
+  window.localStorage.setItem(getSyncStorageKey(), JSON.stringify(state))
   return state
 }
 
@@ -262,10 +268,16 @@ export function recordRecentPrintLocally(entry: Omit<RecentPrintEntry, "printedA
 
 export function recordCanvasDraftLocally(
   presetId: string,
-  draft: SharedCanvasDraftDocument
+  draft: SharedCanvasDraftDocument,
+  expectedGeneration?: number
 ): SyncState {
   const current = loadLocalSyncState()
   if (!SYNCABLE_PRESET_IDS.has(presetId)) {
+    return current
+  }
+  try {
+    assertCanvasDraftGeneration({ kind: "scratch", presetId }, expectedGeneration)
+  } catch {
     return current
   }
   const existing = current.canvasDraftRecords.find((record) => record.payload.presetId === presetId)
@@ -286,9 +298,14 @@ export function recordCanvasDraftLocally(
   })
 }
 
-export function deleteCanvasDraftLocally(presetId: string): SyncState {
+export function deleteCanvasDraftLocally(presetId: string, expectedGeneration?: number): SyncState {
   const current = loadLocalSyncState()
   if (!SYNCABLE_PRESET_IDS.has(presetId)) {
+    return current
+  }
+  try {
+    assertCanvasDraftGeneration({ kind: "scratch", presetId }, expectedGeneration)
+  } catch {
     return current
   }
   const existing = current.canvasDraftRecords.find((record) => record.payload.presetId === presetId)

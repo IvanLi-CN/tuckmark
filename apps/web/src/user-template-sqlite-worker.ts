@@ -999,8 +999,9 @@ async function dispatchRequest(request: WorkerRequest): Promise<unknown> {
   }
 }
 
-globalThis.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
-  const request = event.data
+type WorkerResponseSender = (response: WorkerResponse) => void
+
+function handleRequest(request: WorkerRequest, sendResponse: WorkerResponseSender) {
   void dispatchRequest(request)
     .then((result) => {
       const response: WorkerResponse = {
@@ -1008,7 +1009,7 @@ globalThis.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
         ok: true,
         result,
       }
-      globalThis.postMessage(response)
+      sendResponse(response)
     })
     .catch((error: unknown) => {
       const response: WorkerResponse = {
@@ -1016,6 +1017,22 @@ globalThis.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
       }
-      globalThis.postMessage(response)
+      sendResponse(response)
     })
+}
+
+globalThis.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
+  handleRequest(event.data, (response) => globalThis.postMessage(response))
+})
+
+const sharedWorkerEventTarget = globalThis as unknown as EventTarget
+
+sharedWorkerEventTarget.addEventListener("connect", (event) => {
+  const connection = event as MessageEvent
+  for (const port of connection.ports) {
+    port.addEventListener("message", (messageEvent: MessageEvent<WorkerRequest>) => {
+      handleRequest(messageEvent.data, (response) => port.postMessage(response))
+    })
+    port.start()
+  }
 })

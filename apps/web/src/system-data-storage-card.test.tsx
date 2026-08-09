@@ -85,11 +85,14 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof SystemDataSto
       onConfirmAttachment={() => undefined}
       onConfirmImport={() => undefined}
       onConfirmRestore={() => undefined}
+      onConfirmForcedReplacement={() => undefined}
       onCreateBackup={() => undefined}
       onExportArchive={() => undefined}
       onInspectImportArchive={() => undefined}
       onInspectRestoreBackup={() => undefined}
       onRequestPermission={() => undefined}
+      onOpenForceReplacementConfirmation={() => undefined}
+      onRetryPendingDrafts={() => undefined}
       onSyncNow={() => undefined}
       onTakeOverWrites={() => undefined}
       {...overrides}
@@ -128,6 +131,21 @@ describe("SystemDataStorageCard", () => {
       "立即备份",
       "导出 ZIP 数据",
       "导入 ZIP 数据",
+    ])
+  })
+
+  it("labels demo directory operations as in-memory simulations", async () => {
+    await renderCard({ isDemo: true })
+
+    expect(document.body.textContent).toContain("演示数据目录与备份")
+    expect(document.body.textContent).toContain("不会请求系统目录权限，也不会写入本机文件")
+    expect(document.body.textContent).not.toContain("本地数据目录与备份")
+    expectStandardActionButtons(getActionToolbar("浏览器数据维护操作"), [
+      "接入演示目录",
+      "模拟同步",
+      "生成演示备份",
+      "模拟导出 ZIP",
+      "导入 ZIP 到演示数据",
     ])
   })
 
@@ -320,5 +338,176 @@ describe("SystemDataStorageCard", () => {
     expect(document.body.textContent).toContain("确认导入整库数据")
     expect(document.body.textContent).toContain("runtime-export.zip")
     expect(document.body.textContent).toContain("4 模板 / 12 版本 / 2 草稿 / 3 物料 / 9 流水")
+  })
+
+  it("requires a second administrator confirmation before forcing data replacement", async () => {
+    const openForceConfirmation = vi.fn()
+    const confirmForcedReplacement = vi.fn()
+    const pendingDraftDialog = {
+      kind: "drafts-required" as const,
+      drafts: [
+        {
+          label: "电源模块标签",
+          source: { kind: "user-template" as const, templateId: "power-module" },
+          sourceKey: "user:power-module",
+          updatedAt: "2026-08-08T10:00:00.000Z",
+        },
+      ],
+      operation: {
+        kind: "import" as const,
+        inspection: {} as never,
+      },
+    }
+
+    await renderCard({
+      dialog: pendingDraftDialog,
+      onOpenForceReplacementConfirmation: openForceConfirmation,
+    })
+
+    expect(document.body.textContent).toContain("请先处理未保存草稿")
+    const forceButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("管理员强制替换")
+    )
+    if (!forceButton) {
+      throw new Error("Missing administrator force button")
+    }
+    await act(async () => {
+      forceButton.click()
+      await flush()
+    })
+    expect(openForceConfirmation).toHaveBeenCalledTimes(1)
+    expect(confirmForcedReplacement).not.toHaveBeenCalled()
+
+    await renderCard({
+      dialog: { ...pendingDraftDialog, kind: "force-replace" },
+      onConfirmForcedReplacement: confirmForcedReplacement,
+    })
+    const confirmButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("放弃草稿并替换")
+    )
+    if (!confirmButton) {
+      throw new Error("Missing force replacement confirmation button")
+    }
+    await act(async () => {
+      confirmButton.click()
+      await flush()
+    })
+    expect(confirmForcedReplacement).toHaveBeenCalledTimes(1)
+  })
+
+  it("rechecks pending drafts without forcing replacement", async () => {
+    const retryPendingDrafts = vi.fn()
+    const pendingDraftDialog = {
+      kind: "drafts-required" as const,
+      drafts: [
+        {
+          label: "电源模块标签",
+          source: { kind: "user-template" as const, templateId: "power-module" },
+          sourceKey: "user:power-module",
+          updatedAt: "2026-08-08T10:00:00.000Z",
+        },
+      ],
+      operation: {
+        kind: "import" as const,
+        inspection: {} as never,
+      },
+    }
+
+    await renderCard({
+      dialog: pendingDraftDialog,
+      onRetryPendingDrafts: retryPendingDrafts,
+    })
+
+    const retryButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("重新检查并继续")
+    )
+    if (!retryButton) {
+      throw new Error("Missing pending draft retry button")
+    }
+    await act(async () => {
+      retryButton.click()
+      await flush()
+    })
+    expect(retryPendingDrafts).toHaveBeenCalledTimes(1)
+  })
+
+  it("opens the matching draft in the restricted processing layout", async () => {
+    const focus = vi.fn()
+    const openWindow = vi.spyOn(window, "open").mockReturnValue({ focus } as unknown as Window)
+    const pendingDraftDialog = {
+      kind: "drafts-required" as const,
+      drafts: [
+        {
+          label: "电源模块标签",
+          source: { kind: "user-template" as const, templateId: "power-module" },
+          sourceKey: "user:power-module",
+          updatedAt: "2026-08-08T10:00:00.000Z",
+        },
+      ],
+      operation: {
+        kind: "import" as const,
+        inspection: {} as never,
+      },
+    }
+
+    await renderCard({ dialog: pendingDraftDialog })
+
+    const processButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("去处理")
+    )
+    if (!processButton) {
+      throw new Error("Missing draft processing button")
+    }
+    await act(async () => {
+      processButton.click()
+      await flush()
+    })
+    const [launchPath, target] = openWindow.mock.calls[0] ?? []
+    const launchUrl = new URL(String(launchPath), window.location.origin)
+    expect(target).toBe("_blank")
+    expect(decodeURIComponent(launchUrl.searchParams.get("__tuckmark_redirect__") ?? "")).toBe(
+      "/canvas/draft-processing?source=user-template&templateId=power-module"
+    )
+    expect(focus).toHaveBeenCalledTimes(1)
+  })
+
+  it("preserves demo mode when opening draft processing after SPA navigation", async () => {
+    const focus = vi.fn()
+    const openWindow = vi.spyOn(window, "open").mockReturnValue({ focus } as unknown as Window)
+    window.history.replaceState({}, "", "/system")
+    const pendingDraftDialog = {
+      kind: "drafts-required" as const,
+      drafts: [
+        {
+          label: "Cable Tag",
+          source: { kind: "preset-template" as const, presetId: "cable-tag" },
+          sourceKey: "preset:cable-tag",
+          updatedAt: "2026-08-08T10:00:00.000Z",
+        },
+      ],
+      operation: {
+        kind: "import" as const,
+        inspection: {} as never,
+      },
+    }
+
+    await renderCard({ dialog: pendingDraftDialog, isDemo: true })
+
+    const processButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("去处理")
+    )
+    if (!processButton) {
+      throw new Error("Missing draft processing button")
+    }
+    await act(async () => {
+      processButton.click()
+      await flush()
+    })
+
+    const [launchPath] = openWindow.mock.calls[openWindow.mock.calls.length - 1] ?? []
+    const launchUrl = new URL(String(launchPath), window.location.origin)
+    expect(decodeURIComponent(launchUrl.searchParams.get("__tuckmark_redirect__") ?? "")).toBe(
+      "/canvas/draft-processing?source=preset-template&templateId=cable-tag&demo=true"
+    )
   })
 })

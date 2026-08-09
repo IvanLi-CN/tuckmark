@@ -33,6 +33,7 @@ import {
   requestConfiguredDirectoryPermission,
   restoreConfiguredBackup,
   restoreRuntimeFromConfiguredDirectoryIfNeeded,
+  setDataDirectoryRuntimeMode,
   supportsDataDirectoryFeatures,
   syncConfiguredDataDirectory,
   tryBackgroundMirrorSync,
@@ -83,8 +84,11 @@ import type {
 } from "./types.js"
 import {
   archiveUserTemplate,
+  listPendingRuntimeDrafts,
   loadRuntimeAppSettings,
+  type PendingRuntimeDraft,
   purgeUserTemplate,
+  rebindRuntimeStoreForDataDirectoryChange,
   renameUserTemplate,
   restoreUserTemplate,
   saveRuntimeAppSettings,
@@ -141,6 +145,32 @@ type DataDirectoryDialogState =
       entry: DataDirectoryBackupEntry
       inspection: DataArchiveInspection
     }
+  | {
+      kind: "drafts-required"
+      drafts: PendingRuntimeDraft[]
+      operation: DataReplacementOperation
+    }
+  | {
+      kind: "force-replace"
+      drafts: PendingRuntimeDraft[]
+      operation: DataReplacementOperation
+    }
+
+export type DataReplacementOperation =
+  | {
+      kind: "attach"
+      handle: FileSystemDirectoryHandle
+      mode: "overwrite-current" | "import-existing"
+    }
+  | {
+      kind: "import"
+      inspection: DataArchiveInspection
+    }
+  | {
+      kind: "restore"
+      entry: DataDirectoryBackupEntry
+      inspection: DataArchiveInspection
+    }
 
 export type WorkbenchDataDirectoryDialogState = DataDirectoryDialogState
 export type WorkbenchDeviceDrawerFeedback = {
@@ -163,6 +193,7 @@ export type WorkbenchStoryStateOverrides = {
     materials: InventoryMaterial[]
     adjustments: InventoryAdjustment[]
   }
+  runtimeDataReplacementActive?: boolean
   showTextBoundingBoxes?: boolean
 }
 
@@ -392,13 +423,26 @@ export function useWorkbenchController({
       providedContext ?? resolveAppContext(import.meta.env as Record<string, string | undefined>),
     [providedContext]
   )
+  setDataDirectoryRuntimeMode(context.mode)
   const client = React.useMemo(
     () => providedClient ?? createApiClient(context),
     [context, providedClient]
   )
   const queryClient = useQueryClient()
-  const userTemplatesQuery = useQuery(userTemplatesQueryOptions(context))
-  const archivedUserTemplatesQuery = useQuery(archivedUserTemplatesQueryOptions(context))
+  const coordinator = React.useMemo(() => getSharedCrossTabCoordinator(), [])
+  const runtimeEventTabId = React.useMemo(() => getRuntimeStoreEventTabId(), [])
+  const [runtimeDataGeneration, setRuntimeDataGeneration] = React.useState(
+    () => coordinator.getRuntimeReplacementState().generation
+  )
+  const [runtimeDataReplacementActive, setRuntimeDataReplacementActive] = React.useState(
+    () =>
+      storyStateOverrides?.runtimeDataReplacementActive ??
+      coordinator.getRuntimeReplacementState().active
+  )
+  const userTemplatesQuery = useQuery(userTemplatesQueryOptions(context, runtimeDataGeneration))
+  const archivedUserTemplatesQuery = useQuery(
+    archivedUserTemplatesQueryOptions(context, runtimeDataGeneration)
+  )
 
   const [templates, setTemplates] = React.useState<Template[]>(fallbackTemplates)
   const [printers, setPrinters] = React.useState<Printer[]>([])
@@ -465,8 +509,6 @@ export function useWorkbenchController({
   )
   const [startupCompletedStepIds, setStartupCompletedStepIds] = React.useState<StartupStepId[]>([])
   const dataDirectorySyncTimerRef = React.useRef<number | null>(null)
-  const coordinator = React.useMemo(() => getSharedCrossTabCoordinator(), [])
-  const runtimeEventTabId = React.useMemo(() => getRuntimeStoreEventTabId(), [])
   const startupSplash = React.useMemo(
     () =>
       buildStartupSplashState({
@@ -560,6 +602,9 @@ export function useWorkbenchController({
     }
     if ("showTextBoundingBoxes" in storyStateOverrides) {
       setShowTextBoundingBoxes(Boolean(storyStateOverrides.showTextBoundingBoxes))
+    }
+    if ("runtimeDataReplacementActive" in storyStateOverrides) {
+      setRuntimeDataReplacementActive(Boolean(storyStateOverrides.runtimeDataReplacementActive))
     }
   }, [storyStateOverrides])
 
@@ -805,20 +850,20 @@ export function useWorkbenchController({
   )
 
   const refreshUserTemplates = React.useCallback(async () => {
-    const queryOptions = userTemplatesQueryOptions(context)
+    const queryOptions = userTemplatesQueryOptions(context, runtimeDataGeneration)
     return queryClient.fetchQuery({
       ...queryOptions,
       staleTime: 0,
     })
-  }, [context, queryClient])
+  }, [context, queryClient, runtimeDataGeneration])
 
   const refreshArchivedUserTemplates = React.useCallback(async () => {
-    const queryOptions = archivedUserTemplatesQueryOptions(context)
+    const queryOptions = archivedUserTemplatesQueryOptions(context, runtimeDataGeneration)
     return queryClient.fetchQuery({
       ...queryOptions,
       staleTime: 0,
     })
-  }, [context, queryClient])
+  }, [context, queryClient, runtimeDataGeneration])
 
   const archiveTemplateMutation = useMutation({
     mutationFn: archiveUserTemplate,
@@ -878,6 +923,40 @@ export function useWorkbenchController({
     }
     return settings
   }, [storyStateOverrides])
+
+  React.useEffect(() => {
+    if ("runtimeDataReplacementActive" in (storyStateOverrides ?? {})) {
+      setRuntimeDataReplacementActive(Boolean(storyStateOverrides?.runtimeDataReplacementActive))
+      return
+    }
+    return coordinator.subscribeRuntimeReplacement((state) => {
+      setRuntimeDataReplacementActive(state.active)
+      setRuntimeDataGeneration(state.generation)
+    })
+  }, [coordinator, storyStateOverrides])
+
+  const previousRuntimeDataGenerationRef = React.useRef(runtimeDataGeneration)
+  React.useEffect(() => {
+    if (previousRuntimeDataGenerationRef.current === runtimeDataGeneration) {
+      return
+    }
+    previousRuntimeDataGenerationRef.current = runtimeDataGeneration
+    void (async () => {
+      await rebindRuntimeStoreForDataDirectoryChange()
+      await Promise.all([
+        refreshUserTemplates(),
+        refreshArchivedUserTemplates(),
+        refreshRenderOptionsFromStore(),
+        refreshDataDirectoryStatus(),
+      ])
+    })()
+  }, [
+    refreshArchivedUserTemplates,
+    refreshDataDirectoryStatus,
+    refreshRenderOptionsFromStore,
+    refreshUserTemplates,
+    runtimeDataGeneration,
+  ])
 
   const runDataDirectoryTask = React.useCallback(
     async <T,>(key: string, task: () => Promise<T>): Promise<T | undefined> => {
@@ -988,7 +1067,7 @@ export function useWorkbenchController({
 
     void (async () => {
       try {
-        const restoreTask = restoreRuntimeFromConfiguredDirectoryIfNeeded()
+        const restoreTask = restoreRuntimeFromConfiguredDirectoryIfNeeded({ coordinator })
           .then(async (result) => {
             if (result === "restored" && !cancelled) {
               await Promise.allSettled([
@@ -1056,6 +1135,7 @@ export function useWorkbenchController({
       cancelled = true
     }
   }, [
+    coordinator,
     context.mode,
     refreshDataDirectoryStatus,
     refreshArchivedUserTemplates,
@@ -1067,12 +1147,14 @@ export function useWorkbenchController({
 
   React.useEffect(() => {
     const unsubscribe = subscribeRuntimeStoreMutations((event) => {
-      if (event.originTabId !== runtimeEventTabId) {
+      if (event.reason === "snapshot-replaced" || event.originTabId !== runtimeEventTabId) {
         void refreshUserTemplates()
         void refreshArchivedUserTemplates()
         void refreshRenderOptionsFromStore()
       }
-      scheduleDataDirectorySync(event.reason)
+      if (event.reason !== "snapshot-replaced") {
+        scheduleDataDirectorySync(event.reason)
+      }
       void refreshDataDirectoryStatus()
     })
     return () => {
@@ -1347,15 +1429,19 @@ export function useWorkbenchController({
   )
 
   const recordCanvasDraft = React.useCallback(
-    (presetId: string, draft: Parameters<typeof recordCanvasDraftLocally>[1]) => {
-      const nextState = recordCanvasDraftLocally(presetId, draft)
+    (
+      presetId: string,
+      draft: Parameters<typeof recordCanvasDraftLocally>[1],
+      expectedGeneration?: number
+    ) => {
+      const nextState = recordCanvasDraftLocally(presetId, draft, expectedGeneration)
       setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
     },
     []
   )
 
-  const deleteCanvasDraft = React.useCallback((presetId: string) => {
-    const nextState = deleteCanvasDraftLocally(presetId)
+  const deleteCanvasDraft = React.useCallback((presetId: string, expectedGeneration?: number) => {
+    const nextState = deleteCanvasDraftLocally(presetId, expectedGeneration)
     setRecentActivity(applySyncStateToBrowser(nextState, [...SYNC_PRESET_IDS]))
   }, [])
 
@@ -1756,29 +1842,108 @@ export function useWorkbenchController({
     setDataDirectoryDialog(null)
   }, [])
 
+  const performDataReplacement = React.useCallback(
+    async (operation: DataReplacementOperation, options?: { discardDrafts?: boolean }) => {
+      if (operation.kind === "attach") {
+        return await attachDataDirectory({
+          coordinator,
+          handle: operation.handle,
+          mode: operation.mode,
+          discardDrafts: options?.discardDrafts,
+        })
+      }
+      if (operation.kind === "import") {
+        await importRuntimeArchive({
+          coordinator,
+          snapshot: operation.inspection.snapshot,
+          inventorySnapshot: operation.inspection.inventorySnapshot,
+          discardDrafts: options?.discardDrafts,
+        })
+        return "replaced-runtime" as const
+      }
+      await restoreConfiguredBackup({
+        coordinator,
+        entry: operation.entry,
+        snapshot: operation.inspection.snapshot,
+        inventorySnapshot: operation.inspection.inventorySnapshot,
+        discardDrafts: options?.discardDrafts,
+      })
+      return "replaced-runtime" as const
+    },
+    [coordinator]
+  )
+
+  const completeDataReplacement = React.useCallback(async () => {
+    await refreshDataDirectoryStatus()
+    setDataDirectoryDialog(null)
+    setDirectorySetupNudgeOpen(false)
+  }, [refreshDataDirectoryStatus])
+
+  const executeDataReplacement = React.useCallback(
+    async (operation: DataReplacementOperation, options?: { discardDrafts?: boolean }) => {
+      const result = await runDataDirectoryTask(
+        "replace-runtime-data",
+        async () => await performDataReplacement(operation, options)
+      )
+      if (!result) {
+        return false
+      }
+      await completeDataReplacement()
+      return true
+    },
+    [completeDataReplacement, performDataReplacement, runDataDirectoryTask]
+  )
+
+  const beginDataReplacement = React.useCallback(
+    async (operation: DataReplacementOperation) => {
+      const outcome = await runDataDirectoryTask("replace-runtime-data", async () => {
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 100)
+        })
+        const settledDrafts = await listPendingRuntimeDrafts()
+        if (settledDrafts.length > 0) {
+          return { drafts: settledDrafts }
+        }
+        return await coordinator.runExclusiveRuntimeReplacement(
+          async () => {
+            const drafts = await listPendingRuntimeDrafts()
+            if (drafts.length > 0) {
+              return { drafts }
+            }
+            await performDataReplacement(operation)
+            return { drafts: [] as PendingRuntimeDraft[] }
+          },
+          { didReplace: (result) => result.drafts.length === 0 }
+        )
+      })
+      if (!outcome) {
+        return
+      }
+      if (outcome.drafts.length > 0) {
+        setDataDirectoryDialog({
+          kind: "drafts-required",
+          drafts: outcome.drafts,
+          operation,
+        })
+        return
+      }
+      await completeDataReplacement()
+    },
+    [completeDataReplacement, coordinator, performDataReplacement, runDataDirectoryTask]
+  )
+
   const confirmDataDirectoryAttachment = React.useCallback(
     async (mode: "overwrite-current" | "import-existing") => {
       if (dataDirectoryDialog?.kind !== "attach-choice") {
         return
       }
-      const result = await runDataDirectoryTask("attach-data-directory", async () => {
-        const outcome = await attachDataDirectory({
-          handle: dataDirectoryDialog.handle,
-          mode,
-        })
-        await refreshDataDirectoryStatus()
-        return outcome
+      await beginDataReplacement({
+        kind: "attach",
+        handle: dataDirectoryDialog.handle,
+        mode,
       })
-      if (!result) {
-        return
-      }
-      setDataDirectoryDialog(null)
-      setDirectorySetupNudgeOpen(false)
-      if (result === "replaced-runtime" && typeof window !== "undefined") {
-        window.location.reload()
-      }
     },
-    [dataDirectoryDialog, refreshDataDirectoryStatus, runDataDirectoryTask]
+    [beginDataReplacement, dataDirectoryDialog]
   )
 
   const requestDataDirectoryPermission = React.useCallback(async () => {
@@ -1830,23 +1995,11 @@ export function useWorkbenchController({
     if (dataDirectoryDialog?.kind !== "import-confirm") {
       return
     }
-    const result = await runDataDirectoryTask("import-runtime-archive", async () => {
-      await importRuntimeArchive({
-        coordinator,
-        snapshot: dataDirectoryDialog.inspection.snapshot,
-        inventorySnapshot: dataDirectoryDialog.inspection.inventorySnapshot,
-      })
-      await refreshDataDirectoryStatus()
-      return true
+    await beginDataReplacement({
+      kind: "import",
+      inspection: dataDirectoryDialog.inspection,
     })
-    if (!result) {
-      return
-    }
-    setDataDirectoryDialog(null)
-    if (typeof window !== "undefined") {
-      window.location.reload()
-    }
-  }, [coordinator, dataDirectoryDialog, refreshDataDirectoryStatus, runDataDirectoryTask])
+  }, [beginDataReplacement, dataDirectoryDialog])
 
   const inspectRestoreBackup = React.useCallback(
     async (entry: DataDirectoryBackupEntry) => {
@@ -1866,24 +2019,37 @@ export function useWorkbenchController({
     if (dataDirectoryDialog?.kind !== "restore-confirm") {
       return
     }
-    const result = await runDataDirectoryTask("restore-backup", async () => {
-      await restoreConfiguredBackup({
-        coordinator,
-        entry: dataDirectoryDialog.entry,
-        snapshot: dataDirectoryDialog.inspection.snapshot,
-        inventorySnapshot: dataDirectoryDialog.inspection.inventorySnapshot,
-      })
-      await refreshDataDirectoryStatus()
-      return true
+    await beginDataReplacement({
+      kind: "restore",
+      entry: dataDirectoryDialog.entry,
+      inspection: dataDirectoryDialog.inspection,
     })
-    if (!result) {
+  }, [beginDataReplacement, dataDirectoryDialog])
+
+  const openForceReplacementConfirmation = React.useCallback(() => {
+    if (dataDirectoryDialog?.kind !== "drafts-required") {
       return
     }
-    setDataDirectoryDialog(null)
-    if (typeof window !== "undefined") {
-      window.location.reload()
+    setDataDirectoryDialog({
+      kind: "force-replace",
+      drafts: dataDirectoryDialog.drafts,
+      operation: dataDirectoryDialog.operation,
+    })
+  }, [dataDirectoryDialog])
+
+  const retryPendingDataReplacement = React.useCallback(async () => {
+    if (dataDirectoryDialog?.kind !== "drafts-required") {
+      return
     }
-  }, [coordinator, dataDirectoryDialog, refreshDataDirectoryStatus, runDataDirectoryTask])
+    await beginDataReplacement(dataDirectoryDialog.operation)
+  }, [beginDataReplacement, dataDirectoryDialog])
+
+  const confirmForcedDataReplacement = React.useCallback(async () => {
+    if (dataDirectoryDialog?.kind !== "force-replace") {
+      return
+    }
+    await executeDataReplacement(dataDirectoryDialog.operation, { discardDrafts: true })
+  }, [dataDirectoryDialog, executeDataReplacement])
 
   const takeOverDataDirectoryWrites = React.useCallback(() => {
     coordinator.requestTakeover()
@@ -1924,6 +2090,9 @@ export function useWorkbenchController({
     confirmImportDataArchive,
     inspectRestoreBackup,
     confirmRestoreBackup,
+    openForceReplacementConfirmation,
+    retryPendingDataReplacement,
+    confirmForcedDataReplacement,
     takeOverDataDirectoryWrites,
     directorySetupNudgeOpen,
     dismissDirectorySetupNudge,
@@ -1952,6 +2121,8 @@ export function useWorkbenchController({
     showTextBoundingBoxes,
     refreshDataDirectoryStatus,
     refreshArchivedUserTemplates,
+    runtimeDataGeneration,
+    runtimeDataReplacementActive,
     resetDeviceDrawerState,
     restoreArchivedTemplate,
     selectedPrinter,

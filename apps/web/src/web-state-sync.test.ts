@@ -9,12 +9,19 @@ import {
   emptySyncState,
   type SyncState,
 } from "../../../packages/core/src/web.js"
+import {
+  advanceCanvasDraftGeneration,
+  getCanvasDraftGeneration,
+} from "./canvas-draft-generation.js"
 import { createDraftFromPreset, getDraftStorageKey, getPresetById } from "./canvas-editor-model.js"
+import { setRuntimeDataMode } from "./runtime-data-mode.js"
 import {
   applySyncStateToBrowser,
+  deleteCanvasDraftLocally,
   loadLocalSyncState,
   recordCanvasDraftLocally,
   recordRecentPrintLocally,
+  recordTemplateUsageLocally,
   syncWebState,
 } from "./web-state-sync.js"
 
@@ -69,6 +76,38 @@ describe("web-state-sync", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs()
+    setRuntimeDataMode(null)
+  })
+
+  it("keeps runtime sync and activity records unchanged in demo mode", () => {
+    window.localStorage.setItem("tuckmark.sync-state.v1", '{"runtime":true}')
+    window.localStorage.setItem("tuckmark.recent-activity.v1", '{"runtime":true}')
+    setRuntimeDataMode("demo")
+
+    const templateState = recordTemplateUsageLocally({
+      id: "demo-template",
+      name: "Demo template",
+      description: "Demo-only activity",
+    })
+    const printState = recordRecentPrintLocally({
+      id: "demo-print",
+      title: "Demo print",
+      kind: "canvas",
+      printerName: "Demo printer",
+    })
+    applySyncStateToBrowser(printState, ["shipping-wide"])
+
+    expect(templateState.templateUsageRecords).toHaveLength(1)
+    expect(window.localStorage.getItem("tuckmark.sync-state.v1")).toBe('{"runtime":true}')
+    expect(window.localStorage.getItem("tuckmark.recent-activity.v1")).toBe('{"runtime":true}')
+    expect(readJson("tuckmark.demo.sync-state.v1")).toMatchObject({
+      templateUsageRecords: [expect.anything()],
+      recentPrintRecords: [expect.anything()],
+    })
+    expect(readJson("tuckmark.demo.recent-activity.v1")).toMatchObject({
+      templates: [expect.objectContaining({ id: "demo-template" })],
+      prints: [expect.objectContaining({ id: "demo-print" })],
+    })
   })
 
   it("does not read or write browser sync state in server-http mode", () => {
@@ -364,6 +403,21 @@ describe("web-state-sync", () => {
     expect(recorded.canvasDraftRecords[0]?.updatedAt).toBe(existing.updatedAt)
     expect(recorded.canvasDraftRecords[0]?.version).toBe(existing.version)
     expect(recorded.canvasDraftRecords[0]?.vectorClock).toEqual(existing.vectorClock)
+  })
+
+  it("keeps a reset tombstone when a stale canvas effect tries to record its old draft", () => {
+    const preset = getPresetById("shipping-wide")
+    const source = { kind: "scratch" as const, presetId: preset.id }
+    const draft = createDraftFromPreset(preset)
+    const staleGeneration = getCanvasDraftGeneration(source)
+
+    recordCanvasDraftLocally(preset.id, draft, staleGeneration)
+    const resetGeneration = advanceCanvasDraftGeneration(source)
+    const tombstoned = deleteCanvasDraftLocally(preset.id, resetGeneration)
+    const afterStaleWrite = recordCanvasDraftLocally(preset.id, draft, staleGeneration)
+
+    expect(tombstoned.canvasDraftRecords[0]?.deleted).toBe(true)
+    expect(afterStaleWrite.canvasDraftRecords[0]?.deleted).toBe(true)
   })
 
   it("ignores non-syncable preset ids when recording browser draft state", () => {

@@ -220,3 +220,38 @@ export function createRestoreConfirmDialog(): WorkbenchDataDirectoryDialogState 
     }),
   }
 }
+
+export function createPendingDraftsDialog(
+  args: { forceConfirmation?: boolean } = {}
+): WorkbenchDataDirectoryDialogState {
+  const operation = {
+    kind: "import" as const,
+    inspection: createArchiveInspection(STORY_EXPORT_LABEL, {
+      exportedAt: STORY_TIMESTAMP,
+      snapshotUpdatedAt: STORY_TIMESTAMP,
+      templates: 5,
+      versions: 18,
+      workingCopies: 3,
+      materials: 7,
+      adjustments: 21,
+    }),
+  }
+  return {
+    kind: args.forceConfirmation ? "force-replace" : "drafts-required",
+    operation,
+    drafts: [
+      {
+        label: "电源模块标签",
+        source: { kind: "user-template", templateId: "power-module" },
+        sourceKey: "user:power-module",
+        updatedAt: STORY_TIMESTAMP,
+      },
+      {
+        label: "线缆标签",
+        source: { kind: "preset-template", presetId: "cable-tag" },
+        sourceKey: "preset:cable-tag",
+        updatedAt: STORY_TIMESTAMP,
+      },
+    ],
+  }
+}

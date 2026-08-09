@@ -49,7 +49,7 @@ type WorkerResponse =
 
 function canUseSqliteRuntimeStore(): boolean {
   return (
-    typeof Worker !== "undefined" &&
+    typeof SharedWorker !== "undefined" &&
     typeof window !== "undefined" &&
     typeof window.isSecureContext === "boolean" &&
     window.isSecureContext
@@ -57,7 +57,7 @@ function canUseSqliteRuntimeStore(): boolean {
 }
 
 class SqliteRuntimeStoreClient implements RuntimeStore {
-  private worker: Worker | null = null
+  private worker: MessagePort | null = null
   private readyPromise: Promise<void> | null = null
   private nextRequestId = 1
   private pending = new Map<
@@ -68,11 +68,27 @@ class SqliteRuntimeStoreClient implements RuntimeStore {
     }
   >()
 
+  private rejectPending(reason?: unknown) {
+    for (const [id, entry] of this.pending) {
+      this.pending.delete(id)
+      entry.reject(reason)
+    }
+  }
+
   private ensureWorker() {
     if (!this.worker) {
-      this.worker = new Worker(new URL("./user-template-sqlite-worker.ts", import.meta.url), {
-        type: "module",
+      const sharedWorker = new SharedWorker(
+        new URL("./user-template-sqlite-worker.ts", import.meta.url),
+        {
+          name: "tuckmark-runtime-store",
+          type: "module",
+        }
+      )
+      sharedWorker.addEventListener("error", (event) => {
+        this.rejectPending(event.error ?? new Error(event.message))
       })
+      this.worker = sharedWorker.port
+      this.worker.start()
       this.worker.addEventListener("message", (event: MessageEvent<WorkerResponse>) => {
         const response = event.data
         const entry = this.pending.get(response.id)
@@ -86,11 +102,8 @@ class SqliteRuntimeStoreClient implements RuntimeStore {
         }
         entry.reject(new Error(response.error))
       })
-      this.worker.addEventListener("error", (event) => {
-        for (const [id, entry] of this.pending) {
-          this.pending.delete(id)
-          entry.reject(event.error ?? new Error(event.message))
-        }
+      this.worker.addEventListener("messageerror", (event) => {
+        this.rejectPending(event)
       })
     }
     return this.worker
@@ -113,7 +126,7 @@ class SqliteRuntimeStoreClient implements RuntimeStore {
   private requestRaw<T extends keyof WorkerMethodMap>(
     method: T,
     args: WorkerMethodMap[T],
-    worker = this.ensureWorker()
+    worker: MessagePort = this.ensureWorker()
   ) {
     this.nextRequestId += 1
     const id = this.nextRequestId

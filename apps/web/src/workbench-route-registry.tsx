@@ -1,5 +1,7 @@
 import React from "react"
 
+import { isDraftProcessingPath } from "./draft-processing-route.js"
+
 type DeferredWorkbenchRouteModule = {
   default: React.ComponentType<any>
 }
@@ -110,7 +112,7 @@ export function normalizeWorkbenchRoutePath(
   if (normalized.endsWith("/templates")) {
     return "/templates"
   }
-  if (normalized.endsWith("/canvas")) {
+  if (normalized.endsWith("/canvas") || isDraftProcessingPath(normalized)) {
     return "/canvas"
   }
   if (normalized === "/inventory" || normalized.startsWith("/inventory/")) {

@@ -1,18 +1,37 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it } from "vitest"
-
+import {
+  clearEphemeralCanvasDrafts,
+  listEphemeralCanvasDrafts,
+  recordEphemeralCanvasDraft,
+} from "./canvas-draft-ephemeral.js"
+import {
+  advanceCanvasDraftGeneration,
+  CanvasDraftGenerationChangedError,
+  getCanvasDraftGeneration,
+} from "./canvas-draft-generation.js"
 import {
   createDraftFromPreset,
+  createDraftFromSystemTemplate,
   getPresetById,
+  getSystemTemplateById,
   toggleElementBinding,
 } from "./canvas-editor-model.js"
 import {
+  getSharedCrossTabCoordinator,
+  RuntimeDataSourceChangedError,
+} from "./cross-tab-coordinator.js"
+import { setDataDirectoryRuntimeMode } from "./data-directory-service.js"
+import {
   archiveUserTemplate,
   clearTemplateAutosaves,
+  clearWorkingCopy,
   exportRuntimeSnapshot,
   getAutosaveIntervalMs,
+  invalidateCanvasDraftGeneration,
   listArchivedUserTemplates,
+  listPendingRuntimeDrafts,
   listUserTemplates,
   loadRuntimeAppSettings,
   loadWorkingCopy,
@@ -31,6 +50,8 @@ import {
 
 describe("user-template-store", () => {
   beforeEach(async () => {
+    setDataDirectoryRuntimeMode(null)
+    clearEphemeralCanvasDrafts()
     await resetUserTemplateStoreForTest()
   })
 
@@ -79,6 +100,222 @@ describe("user-template-store", () => {
     })
     expect(workingCopy?.baseVersionId).toBe(secondSave.version.id)
     expect(workingCopy?.draft.fields[0]?.defaultValue).toBe("Dock A-17")
+  })
+
+  it("only reports working copies that differ from their saved or built-in baseline", async () => {
+    const saved = await saveUserTemplate({
+      name: "Draft Scan Label",
+      document: createDraftFromPreset(getPresetById("shipping-wide")),
+    })
+
+    expect(await listPendingRuntimeDrafts()).toEqual([])
+
+    const namedDraft = structuredClone(saved.workingCopy.draft)
+    namedDraft.name = "Draft Scan Label edited"
+    await saveUserTemplateAutosave({
+      source: { kind: "user-template", templateId: saved.template.id },
+      templateId: saved.template.id,
+      sourceVersionId: saved.version.id,
+      document: namedDraft,
+    })
+
+    const scratchDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    scratchDraft.name = "Shipping scratch edited"
+    await replaceUserTemplateWorkingCopy({
+      source: { kind: "scratch", presetId: "shipping-wide" },
+      document: scratchDraft,
+    })
+
+    const presetDraft = createDraftFromSystemTemplate(getSystemTemplateById("cable-tag"))
+    presetDraft.name = "Cable template edited"
+    await replaceUserTemplateWorkingCopy({
+      source: { kind: "preset-template", presetId: "cable-tag" },
+      document: presetDraft,
+    })
+
+    expect((await listPendingRuntimeDrafts()).map((draft) => draft.source.kind).sort()).toEqual([
+      "preset-template",
+      "scratch",
+      "user-template",
+    ])
+
+    await clearWorkingCopy({ kind: "user-template", templateId: saved.template.id })
+    expect((await listPendingRuntimeDrafts()).map((draft) => draft.source.kind).sort()).toEqual([
+      "preset-template",
+      "scratch",
+      "user-template",
+    ])
+    await clearTemplateAutosaves(saved.template.id)
+    await clearWorkingCopy({ kind: "scratch", presetId: "shipping-wide" })
+    await clearWorkingCopy({ kind: "preset-template", presetId: "cable-tag" })
+
+    expect(await listPendingRuntimeDrafts()).toEqual([])
+  })
+
+  it("reports a changed canvas draft before its autosave reaches the runtime store", async () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    draft.width += 1
+    recordEphemeralCanvasDraft({
+      source: { kind: "scratch", presetId: "shipping-wide" },
+      document: draft,
+      updatedAt: "2026-08-09T12:00:00.000Z",
+    })
+
+    expect(listEphemeralCanvasDrafts()).toHaveLength(1)
+
+    await expect(listPendingRuntimeDrafts()).resolves.toEqual([
+      expect.objectContaining({
+        source: { kind: "scratch", presetId: "shipping-wide" },
+        sourceKey: "scratch:shipping-wide",
+      }),
+    ])
+  })
+
+  it("rejects a queued working-copy write after that canvas draft is reset", async () => {
+    const source = { kind: "scratch" as const, presetId: "shipping-wide" }
+    const staleGeneration = getCanvasDraftGeneration(source)
+    const staleDraft = createDraftFromPreset(getPresetById(source.presetId))
+    staleDraft.name = "Queued stale draft"
+
+    await clearWorkingCopy(source)
+
+    await expect(
+      replaceUserTemplateWorkingCopy(
+        { source, document: staleDraft },
+        { expectedGeneration: staleGeneration }
+      )
+    ).rejects.toBeInstanceOf(CanvasDraftGenerationChangedError)
+    await expect(loadWorkingCopy(source)).resolves.toBeNull()
+  })
+
+  it("rejects a queued ephemeral draft record after that canvas draft is reset", () => {
+    const source = { kind: "scratch" as const, presetId: "shipping-wide" }
+    const staleGeneration = getCanvasDraftGeneration(source)
+    const draft = createDraftFromPreset(getPresetById(source.presetId))
+
+    advanceCanvasDraftGeneration(source)
+
+    expect(() =>
+      recordEphemeralCanvasDraft(
+        { source, document: draft, updatedAt: "2026-08-09T12:00:00.000Z" },
+        { expectedGeneration: staleGeneration }
+      )
+    ).toThrow(CanvasDraftGenerationChangedError)
+    expect(listEphemeralCanvasDrafts()).toEqual([])
+  })
+
+  it("rejects a queued template autosave after its draft is restored", async () => {
+    const saved = await saveUserTemplate({
+      name: "Autosave reset",
+      document: createDraftFromPreset(getPresetById("shipping-wide")),
+    })
+    const source = { kind: "user-template" as const, templateId: saved.template.id }
+    const staleGeneration = getCanvasDraftGeneration(source)
+    const staleDraft = structuredClone(saved.workingCopy.draft)
+    staleDraft.name = "Queued stale autosave"
+
+    await invalidateCanvasDraftGeneration(source)
+
+    await expect(
+      saveUserTemplateAutosave(
+        {
+          templateId: saved.template.id,
+          source,
+          document: staleDraft,
+          sourceVersionId: saved.version.id,
+        },
+        { expectedGeneration: staleGeneration }
+      )
+    ).rejects.toBeInstanceOf(CanvasDraftGenerationChangedError)
+    await expect(readUserTemplateHistory(saved.template.id)).resolves.toMatchObject({
+      autosaves: [],
+    })
+  })
+
+  it("does not clear autosaves after the runtime data source changes", async () => {
+    const originalStorage = window.localStorage
+    const entries = new Map<string, string>()
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        get length() {
+          return entries.size
+        },
+        clear: () => entries.clear(),
+        getItem: (key: string) => entries.get(key) ?? null,
+        key: (index: number) => Array.from(entries.keys())[index] ?? null,
+        removeItem: (key: string) => entries.delete(key),
+        setItem: (key: string, value: string) => entries.set(key, value),
+      },
+    })
+
+    try {
+      const saved = await saveUserTemplate({
+        name: "Runtime generation guard",
+        document: createDraftFromPreset(getPresetById("shipping-wide")),
+      })
+      const source = { kind: "user-template" as const, templateId: saved.template.id }
+      const autosave = structuredClone(saved.workingCopy.draft)
+      autosave.name = "Runtime generation guard draft"
+      await saveUserTemplateAutosave({
+        templateId: saved.template.id,
+        source,
+        document: autosave,
+        sourceVersionId: saved.version.id,
+      })
+
+      const coordinator = getSharedCrossTabCoordinator()
+      coordinator.start()
+      const staleRuntimeGeneration = coordinator.getRuntimeReplacementState().generation
+      window.localStorage.setItem(
+        "tuckmark.runtime-generation.v1",
+        String(staleRuntimeGeneration + 1)
+      )
+      window.dispatchEvent(new StorageEvent("storage", { key: "tuckmark.runtime-generation.v1" }))
+
+      await expect(
+        clearTemplateAutosaves(saved.template.id, {
+          expectedRuntimeGeneration: staleRuntimeGeneration,
+        })
+      ).rejects.toBeInstanceOf(RuntimeDataSourceChangedError)
+      await expect(readUserTemplateHistory(saved.template.id)).resolves.toMatchObject({
+        autosaves: [expect.objectContaining({ id: expect.any(String) })],
+      })
+    } finally {
+      Object.defineProperty(window, "localStorage", {
+        configurable: true,
+        value: originalStorage,
+      })
+    }
+  })
+
+  it("does not report an unchanged generated canvas draft", async () => {
+    const draft = createDraftFromSystemTemplate(getSystemTemplateById("cable-tag"))
+    draft.renderOptions = { paperType: "continuous", threshold: 150 }
+    const serializedDraft = JSON.parse(JSON.stringify(draft))
+    await replaceUserTemplateWorkingCopy({
+      source: { kind: "preset-template", presetId: "cable-tag" },
+      document: serializedDraft,
+    })
+    recordEphemeralCanvasDraft({
+      source: { kind: "preset-template", presetId: "cable-tag" },
+      document: serializedDraft,
+      updatedAt: "2026-08-09T12:00:00.000Z",
+    })
+
+    await expect(listPendingRuntimeDrafts()).resolves.toEqual([])
+  })
+
+  it("keeps demo templates out of the runtime store", async () => {
+    setDataDirectoryRuntimeMode("demo")
+    await saveUserTemplate({
+      name: "Demo-only template",
+      document: createDraftFromPreset(getPresetById("ops-tag")),
+    })
+    expect(await listUserTemplates()).toHaveLength(1)
+
+    setDataDirectoryRuntimeMode(null)
+    expect(await listUserTemplates()).toEqual([])
   })
 
   it("persists and clears the suggested usage metadata", async () => {

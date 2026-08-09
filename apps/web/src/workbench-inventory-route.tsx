@@ -194,6 +194,8 @@ export default function WorkbenchInventoryRoute({
   onRouteChunkReady?: () => void
 }) {
   const storyState = controller.inventoryStoryState
+  const runtimeDataGeneration = controller.runtimeDataGeneration
+  const runtimeDataGenerationRef = React.useRef(runtimeDataGeneration)
   const startupReady = storyState ? true : controller.startupSyncReady
   const navigate = useWorkbenchNavigate()
   const isDetailRoute = typeof materialId === "string" && materialId.length > 0
@@ -267,6 +269,7 @@ export default function WorkbenchInventoryRoute({
 
   const refresh = React.useCallback(
     async (query = search) => {
+      const requestedGeneration = runtimeDataGenerationRef.current
       if (!startupReady) {
         setLoading(true)
         return
@@ -286,17 +289,26 @@ export default function WorkbenchInventoryRoute({
         const nextMaterials = await listInventoryMaterials(isDetailRoute ? "" : query, {
           includeArchived: isDetailRoute ? true : showArchived,
         })
+        if (requestedGeneration !== runtimeDataGenerationRef.current) {
+          return
+        }
         setMaterials(nextMaterials)
       } catch (cause) {
+        if (requestedGeneration !== runtimeDataGenerationRef.current) {
+          return
+        }
         setError(cause instanceof Error ? cause.message : String(cause))
       } finally {
-        setLoading(false)
+        if (requestedGeneration === runtimeDataGenerationRef.current) {
+          setLoading(false)
+        }
       }
     },
     [isDetailRoute, search, selectedMaterialId, showArchived, startupReady, storyState]
   )
 
   const refreshAdjustments = React.useCallback(async () => {
+    const requestedGeneration = runtimeDataGenerationRef.current
     if (storyState) {
       setAdjustments(
         selectedMaterialId
@@ -310,8 +322,15 @@ export default function WorkbenchInventoryRoute({
       return
     }
     try {
-      setAdjustments(await listInventoryAdjustments(selectedMaterialId))
+      const nextAdjustments = await listInventoryAdjustments(selectedMaterialId)
+      if (requestedGeneration !== runtimeDataGenerationRef.current) {
+        return
+      }
+      setAdjustments(nextAdjustments)
     } catch (cause) {
+      if (requestedGeneration !== runtimeDataGenerationRef.current) {
+        return
+      }
       setError(cause instanceof Error ? cause.message : String(cause))
     }
   }, [selectedMaterialId, startupReady, storyState])
@@ -321,8 +340,9 @@ export default function WorkbenchInventoryRoute({
   }, [onRouteChunkReady])
 
   React.useEffect(() => {
+    runtimeDataGenerationRef.current = runtimeDataGeneration
     void refresh()
-  }, [refresh])
+  }, [refresh, runtimeDataGeneration])
 
   React.useEffect(() => {
     if (controller.context?.surface !== "server-http") return
@@ -338,8 +358,9 @@ export default function WorkbenchInventoryRoute({
   }, [controller.context?.surface, refresh, refreshAdjustments, search])
 
   React.useEffect(() => {
+    runtimeDataGenerationRef.current = runtimeDataGeneration
     void refreshAdjustments()
-  }, [refreshAdjustments])
+  }, [refreshAdjustments, runtimeDataGeneration])
 
   React.useEffect(() => {
     if (!selectedMaterial) {

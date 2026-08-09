@@ -4,6 +4,27 @@ type LeaseRecord = {
   updatedAt: string
 }
 
+type RuntimeReplacementRecord = {
+  operationId: string
+  tabId: string
+  expiresAt: string
+  updatedAt: string
+}
+
+type RuntimeAccessFallbackLockRecord = {
+  operationId: string
+  tabId: string
+  choosing: boolean
+  ticket: number
+  expiresAt: string
+}
+
+type LegacyRuntimeAccessFallbackLockRecord = {
+  operationId: string
+  tabId: string
+  expiresAt: string
+}
+
 export type CrossTabLeaseState = {
   role: "writer" | "follower" | "unsupported"
   currentTabId: string
@@ -11,11 +32,29 @@ export type CrossTabLeaseState = {
   leaseExpiresAt: string | null
 }
 
+export type RuntimeReplacementState = {
+  active: boolean
+  currentTabId: string
+  generation: number
+  operationId: string | null
+  ownerTabId: string | null
+}
+
 type LeaseListener = (state: CrossTabLeaseState) => void
+type RuntimeReplacementListener = (state: RuntimeReplacementState) => void
 
 const CHANNEL_NAME = "tuckmark.cross-tab-coordinator.v1"
 const LEASE_STORAGE_KEY = "tuckmark.runtime-writer-lease.v1"
+const RUNTIME_REPLACEMENT_STORAGE_KEY = "tuckmark.runtime-replacement.v1"
+const RUNTIME_GENERATION_STORAGE_KEY = "tuckmark.runtime-generation.v1"
+const RUNTIME_ACCESS_LOCK_NAME = "tuckmark.runtime-access.v1"
+const LEGACY_RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_KEY = "tuckmark.runtime-access-fallback.v1"
+const RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_PREFIX = "tuckmark.runtime-access-fallback.v2:"
 const LEASE_TTL_MS = 15_000
+const RUNTIME_REPLACEMENT_TTL_MS = 60_000
+const RUNTIME_REPLACEMENT_HEARTBEAT_MS = 15_000
+const RUNTIME_ACCESS_FALLBACK_LOCK_TTL_MS = 60_000
+const RUNTIME_ACCESS_FALLBACK_LOCK_RETRY_MS = 4
 const HEARTBEAT_INTERVAL_MS = 5_000
 
 function createTabId(): string {
@@ -52,9 +91,115 @@ function isLeaseExpired(record: LeaseRecord | null, now = Date.now()): boolean {
   return Date.parse(record.expiresAt) <= now
 }
 
+function parseRuntimeReplacementRecord(raw: string | null): RuntimeReplacementRecord | null {
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<RuntimeReplacementRecord>
+    if (
+      typeof parsed.operationId !== "string" ||
+      typeof parsed.tabId !== "string" ||
+      typeof parsed.expiresAt !== "string" ||
+      typeof parsed.updatedAt !== "string"
+    ) {
+      return null
+    }
+    return parsed as RuntimeReplacementRecord
+  } catch {
+    return null
+  }
+}
+
+function isRuntimeReplacementExpired(
+  record: RuntimeReplacementRecord | null,
+  now = Date.now()
+): boolean {
+  return !record || Date.parse(record.expiresAt) <= now
+}
+
+function parseRuntimeAccessFallbackLockRecord(
+  raw: string | null
+): RuntimeAccessFallbackLockRecord | null {
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<RuntimeAccessFallbackLockRecord>
+    if (
+      typeof parsed.operationId !== "string" ||
+      typeof parsed.tabId !== "string" ||
+      typeof parsed.choosing !== "boolean" ||
+      typeof parsed.ticket !== "number" ||
+      !Number.isSafeInteger(parsed.ticket) ||
+      parsed.ticket < 0 ||
+      typeof parsed.expiresAt !== "string"
+    ) {
+      return null
+    }
+    return parsed as RuntimeAccessFallbackLockRecord
+  } catch {
+    return null
+  }
+}
+
+function parseLegacyRuntimeAccessFallbackLockRecord(
+  raw: string | null
+): LegacyRuntimeAccessFallbackLockRecord | null {
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<LegacyRuntimeAccessFallbackLockRecord>
+    if (
+      typeof parsed.operationId !== "string" ||
+      typeof parsed.tabId !== "string" ||
+      typeof parsed.expiresAt !== "string"
+    ) {
+      return null
+    }
+    return parsed as LegacyRuntimeAccessFallbackLockRecord
+  } catch {
+    return null
+  }
+}
+
+function isRuntimeAccessFallbackLockExpired(
+  record: Pick<RuntimeAccessFallbackLockRecord, "expiresAt"> | null,
+  now = Date.now()
+): boolean {
+  return !record || Date.parse(record.expiresAt) <= now
+}
+
+function compareRuntimeAccessFallbackLocks(
+  left: RuntimeAccessFallbackLockRecord,
+  right: RuntimeAccessFallbackLockRecord
+): number {
+  return left.ticket - right.ticket || left.operationId.localeCompare(right.operationId)
+}
+
+function waitForFallbackLockRetry(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, RUNTIME_ACCESS_FALLBACK_LOCK_RETRY_MS)
+  })
+}
+
+function parseRuntimeGeneration(raw: string | null): number {
+  const parsed = Number(raw)
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0
+}
+
+export class RuntimeDataSourceChangedError extends Error {
+  constructor() {
+    super("数据源已切换，请在最新数据集上重试。")
+    this.name = "RuntimeDataSourceChangedError"
+  }
+}
+
 export class CrossTabCoordinator {
   private readonly tabId = createTabId()
   private readonly listeners = new Set<LeaseListener>()
+  private readonly runtimeReplacementListeners = new Set<RuntimeReplacementListener>()
   private channel: BroadcastChannel | null = null
   private heartbeatTimer: number | null = null
   private started = false
@@ -64,6 +209,18 @@ export class CrossTabCoordinator {
     writerTabId: null,
     leaseExpiresAt: null,
   }
+  private runtimeReplacementState: RuntimeReplacementState = {
+    active: false,
+    currentTabId: this.tabId,
+    generation: 0,
+    operationId: null,
+    ownerTabId: null,
+  }
+  private fallbackRuntimeAccessLock: {
+    record: RuntimeAccessFallbackLockRecord
+    depth: number
+    heartbeat: number
+  } | null = null
 
   start(): void {
     if (this.started) {
@@ -84,12 +241,15 @@ export class CrossTabCoordinator {
       this.channel = new BroadcastChannel(CHANNEL_NAME)
       this.channel.addEventListener("message", () => {
         this.refreshState()
+        this.refreshRuntimeReplacementState()
       })
     }
     window.addEventListener("storage", this.handleStorageEvent)
     this.refreshState(true)
+    this.refreshRuntimeReplacementState()
     this.heartbeatTimer = window.setInterval(() => {
       this.refreshState(true)
+      this.refreshRuntimeReplacementState()
     }, HEARTBEAT_INTERVAL_MS)
   }
 
@@ -117,18 +277,123 @@ export class CrossTabCoordinator {
     }
   }
 
+  subscribeRuntimeReplacement(listener: RuntimeReplacementListener): () => void {
+    this.runtimeReplacementListeners.add(listener)
+    listener(this.runtimeReplacementState)
+    return () => {
+      this.runtimeReplacementListeners.delete(listener)
+    }
+  }
+
   getState(): CrossTabLeaseState {
     return this.state
   }
 
-  async runAsWriter<T>(task: () => Promise<T>): Promise<T> {
+  getRuntimeReplacementState(): RuntimeReplacementState {
+    return this.runtimeReplacementState
+  }
+
+  isRuntimeReplacementOwner(): boolean {
+    return (
+      this.runtimeReplacementState.active && this.runtimeReplacementState.ownerTabId === this.tabId
+    )
+  }
+
+  async runRuntimeAccess<T>(task: () => Promise<T>): Promise<T> {
+    return await this.runRuntimeTask("shared", task)
+  }
+
+  async runRuntimeMutation<T>(task: () => Promise<T>): Promise<T> {
+    return await this.runRuntimeTask("exclusive", task)
+  }
+
+  private async runRuntimeTask<T>(
+    mode: "shared" | "exclusive",
+    task: () => Promise<T>
+  ): Promise<T> {
+    this.refreshRuntimeReplacementState()
+    const before = this.runtimeReplacementState
+    if (before.active && !this.isRuntimeReplacementOwner()) {
+      throw new RuntimeDataSourceChangedError()
+    }
+    if (this.isRuntimeReplacementOwner()) {
+      return await task()
+    }
+    return await this.withRuntimeAccessLock(mode, async () => {
+      this.refreshRuntimeReplacementState()
+      const current = this.runtimeReplacementState
+      if (current.active || current.generation !== before.generation) {
+        throw new RuntimeDataSourceChangedError()
+      }
+      const result = await task()
+      this.refreshRuntimeReplacementState()
+      if (this.runtimeReplacementState.generation !== before.generation) {
+        throw new RuntimeDataSourceChangedError()
+      }
+      return result
+    })
+  }
+
+  async runExclusiveRuntimeReplacement<T>(
+    task: () => Promise<T>,
+    options?: { didReplace?: (result: T) => boolean }
+  ): Promise<T> {
     this.refreshState(true)
     if (this.state.role !== "writer") {
       throw new Error("当前标签未持有数据写入租约，请先在系统页接管写入。")
     }
-    const result = await task()
-    this.broadcastState()
-    return result
+    return await this.withRuntimeAccessLock("exclusive", async () => {
+      this.refreshState(true)
+      if (this.state.role !== "writer") {
+        throw new Error("当前标签未持有数据写入租约，请先在系统页接管写入。")
+      }
+      this.refreshRuntimeReplacementState()
+      if (
+        this.runtimeReplacementState.active &&
+        this.runtimeReplacementState.ownerTabId !== this.tabId
+      ) {
+        throw new Error("另一标签正在替换数据集，请等待其完成。")
+      }
+
+      const record = this.writeRuntimeReplacement()
+      const replacementHeartbeat =
+        typeof window === "undefined"
+          ? null
+          : window.setInterval(() => {
+              this.renewRuntimeReplacement(record.operationId)
+            }, RUNTIME_REPLACEMENT_HEARTBEAT_MS)
+      this.refreshRuntimeReplacementState()
+      try {
+        const result = await task()
+        if (options?.didReplace?.(result) ?? true) {
+          this.writeRuntimeGeneration(this.runtimeReplacementState.generation + 1)
+        }
+        return result
+      } finally {
+        if (replacementHeartbeat !== null) {
+          window.clearInterval(replacementHeartbeat)
+        }
+        this.clearRuntimeReplacement(record.operationId)
+        this.refreshRuntimeReplacementState()
+        this.broadcastState()
+      }
+    })
+  }
+
+  async runAsWriter<T>(task: () => Promise<T>): Promise<T> {
+    return await this.runRuntimeMutation(async () => {
+      this.refreshState(true)
+      this.refreshRuntimeReplacementState()
+      if (this.state.role !== "writer") {
+        throw new Error("当前标签未持有数据写入租约，请先在系统页接管写入。")
+      }
+      if (this.runtimeReplacementState.active && !this.isRuntimeReplacementOwner()) {
+        throw new Error("另一标签正在替换数据集，请等待其完成。")
+      }
+      const result = await task()
+      this.broadcastState()
+      return result
+    })
   }
 
   requestTakeover(): void {
@@ -140,10 +405,16 @@ export class CrossTabCoordinator {
   }
 
   private readonly handleStorageEvent = (event: StorageEvent) => {
-    if (event.key !== LEASE_STORAGE_KEY) {
+    if (event.key === LEASE_STORAGE_KEY) {
+      this.refreshState()
       return
     }
-    this.refreshState()
+    if (
+      event.key === RUNTIME_REPLACEMENT_STORAGE_KEY ||
+      event.key === RUNTIME_GENERATION_STORAGE_KEY
+    ) {
+      this.refreshRuntimeReplacementState()
+    }
   }
 
   private readLease(): LeaseRecord | null {
@@ -210,12 +481,289 @@ export class CrossTabCoordinator {
     })
   }
 
+  private readRuntimeReplacement(): RuntimeReplacementRecord | null {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return null
+    }
+    return parseRuntimeReplacementRecord(
+      window.localStorage.getItem(RUNTIME_REPLACEMENT_STORAGE_KEY)
+    )
+  }
+
+  private writeRuntimeReplacement(): RuntimeReplacementRecord {
+    const record: RuntimeReplacementRecord = {
+      operationId: createTabId(),
+      tabId: this.tabId,
+      updatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + RUNTIME_REPLACEMENT_TTL_MS).toISOString(),
+    }
+    window.localStorage.setItem(RUNTIME_REPLACEMENT_STORAGE_KEY, JSON.stringify(record))
+    this.broadcastState()
+    return record
+  }
+
+  private clearRuntimeReplacement(operationId: string): void {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return
+    }
+    const current = this.readRuntimeReplacement()
+    if (current?.operationId === operationId && current.tabId === this.tabId) {
+      window.localStorage.removeItem(RUNTIME_REPLACEMENT_STORAGE_KEY)
+    }
+  }
+
+  private renewRuntimeReplacement(operationId: string): void {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return
+    }
+    const current = this.readRuntimeReplacement()
+    if (current?.operationId !== operationId || current.tabId !== this.tabId) {
+      return
+    }
+    const updatedAt = new Date().toISOString()
+    window.localStorage.setItem(
+      RUNTIME_REPLACEMENT_STORAGE_KEY,
+      JSON.stringify({
+        ...current,
+        updatedAt,
+        expiresAt: new Date(Date.now() + RUNTIME_REPLACEMENT_TTL_MS).toISOString(),
+      } satisfies RuntimeReplacementRecord)
+    )
+  }
+
+  private writeRuntimeGeneration(next: number): void {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return
+    }
+    window.localStorage.setItem(RUNTIME_GENERATION_STORAGE_KEY, String(next))
+  }
+
+  private async withRuntimeAccessLock<T>(
+    mode: "shared" | "exclusive",
+    task: () => Promise<T>
+  ): Promise<T> {
+    if (typeof navigator === "undefined" || typeof navigator.locks?.request !== "function") {
+      return await this.withRuntimeAccessFallbackLock(task)
+    }
+    return await navigator.locks.request(RUNTIME_ACCESS_LOCK_NAME, { mode }, task)
+  }
+
+  private getRuntimeAccessFallbackLockKey(operationId: string): string {
+    return `${RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_PREFIX}${operationId}`
+  }
+
+  private readRuntimeAccessFallbackLock(
+    operationId: string
+  ): RuntimeAccessFallbackLockRecord | null {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return null
+    }
+    return parseRuntimeAccessFallbackLockRecord(
+      window.localStorage.getItem(this.getRuntimeAccessFallbackLockKey(operationId))
+    )
+  }
+
+  private writeRuntimeAccessFallbackLock(record: RuntimeAccessFallbackLockRecord): void {
+    window.localStorage.setItem(
+      this.getRuntimeAccessFallbackLockKey(record.operationId),
+      JSON.stringify(record)
+    )
+  }
+
+  private listRuntimeAccessFallbackLocks(): RuntimeAccessFallbackLockRecord[] {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return []
+    }
+    const records: RuntimeAccessFallbackLockRecord[] = []
+    const expiredKeys: string[] = []
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index)
+      if (!key?.startsWith(RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_PREFIX)) {
+        continue
+      }
+      const record = parseRuntimeAccessFallbackLockRecord(window.localStorage.getItem(key))
+      if (!record || isRuntimeAccessFallbackLockExpired(record)) {
+        expiredKeys.push(key)
+        continue
+      }
+      records.push(record)
+    }
+    for (const key of expiredKeys) {
+      window.localStorage.removeItem(key)
+    }
+    return records
+  }
+
+  private readLegacyRuntimeAccessFallbackLock(): LegacyRuntimeAccessFallbackLockRecord | null {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return null
+    }
+    const record = parseLegacyRuntimeAccessFallbackLockRecord(
+      window.localStorage.getItem(LEGACY_RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_KEY)
+    )
+    if (record && isRuntimeAccessFallbackLockExpired(record)) {
+      window.localStorage.removeItem(LEGACY_RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_KEY)
+      return null
+    }
+    return record
+  }
+
+  private writeLegacyRuntimeAccessFallbackLock(
+    record: LegacyRuntimeAccessFallbackLockRecord
+  ): void {
+    window.localStorage.setItem(
+      LEGACY_RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_KEY,
+      JSON.stringify(record)
+    )
+  }
+
+  private async withRuntimeAccessFallbackLock<T>(task: () => Promise<T>): Promise<T> {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return await task()
+    }
+
+    if (this.fallbackRuntimeAccessLock) {
+      this.fallbackRuntimeAccessLock.depth += 1
+      try {
+        return await task()
+      } finally {
+        this.fallbackRuntimeAccessLock.depth -= 1
+      }
+    }
+
+    const operationId = createTabId()
+    let record: RuntimeAccessFallbackLockRecord = {
+      operationId,
+      tabId: this.tabId,
+      choosing: true,
+      ticket: 0,
+      expiresAt: new Date(Date.now() + RUNTIME_ACCESS_FALLBACK_LOCK_TTL_MS).toISOString(),
+    }
+    this.writeRuntimeAccessFallbackLock(record)
+    const highestTicket = this.listRuntimeAccessFallbackLocks().reduce(
+      (highest, current) => Math.max(highest, current.ticket),
+      0
+    )
+    record = {
+      ...record,
+      choosing: false,
+      ticket: highestTicket + 1,
+    }
+    this.writeRuntimeAccessFallbackLock(record)
+
+    while (true) {
+      const blockers = this.listRuntimeAccessFallbackLocks().some(
+        (current) =>
+          current.operationId !== operationId &&
+          (current.choosing || compareRuntimeAccessFallbackLocks(current, record) < 0)
+      )
+      if (!blockers) {
+        break
+      }
+      await waitForFallbackLockRetry()
+    }
+
+    const legacyRecord: LegacyRuntimeAccessFallbackLockRecord = {
+      operationId,
+      tabId: this.tabId,
+      expiresAt: record.expiresAt,
+    }
+    while (true) {
+      const current = this.readLegacyRuntimeAccessFallbackLock()
+      if (current && (current.operationId !== operationId || current.tabId !== this.tabId)) {
+        await waitForFallbackLockRetry()
+        continue
+      }
+      this.writeLegacyRuntimeAccessFallbackLock(legacyRecord)
+      await waitForFallbackLockRetry()
+      const confirmed = this.readLegacyRuntimeAccessFallbackLock()
+      if (confirmed?.operationId === operationId && confirmed.tabId === this.tabId) {
+        break
+      }
+    }
+
+    const heldLock = {
+      record,
+      depth: 1,
+      heartbeat: window.setInterval(() => {
+        const current = this.readRuntimeAccessFallbackLock(record.operationId)
+        const legacyCurrent = this.readLegacyRuntimeAccessFallbackLock()
+        if (
+          current?.operationId !== record.operationId ||
+          current.tabId !== this.tabId ||
+          legacyCurrent?.operationId !== record.operationId ||
+          legacyCurrent.tabId !== this.tabId
+        ) {
+          return
+        }
+        const expiresAt = new Date(Date.now() + RUNTIME_ACCESS_FALLBACK_LOCK_TTL_MS).toISOString()
+        this.writeRuntimeAccessFallbackLock({ ...current, expiresAt })
+        this.writeLegacyRuntimeAccessFallbackLock({ ...legacyCurrent, expiresAt })
+      }, RUNTIME_ACCESS_FALLBACK_LOCK_TTL_MS / 2),
+    }
+    this.fallbackRuntimeAccessLock = heldLock
+
+    try {
+      return await task()
+    } finally {
+      heldLock.depth -= 1
+      if (heldLock.depth === 0) {
+        window.clearInterval(heldLock.heartbeat)
+        const current = this.readRuntimeAccessFallbackLock(record.operationId)
+        if (current?.operationId === record.operationId && current.tabId === this.tabId) {
+          window.localStorage.removeItem(this.getRuntimeAccessFallbackLockKey(record.operationId))
+        }
+        const legacyCurrent = this.readLegacyRuntimeAccessFallbackLock()
+        if (
+          legacyCurrent?.operationId === record.operationId &&
+          legacyCurrent.tabId === this.tabId
+        ) {
+          window.localStorage.removeItem(LEGACY_RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_KEY)
+        }
+        if (this.fallbackRuntimeAccessLock === heldLock) {
+          this.fallbackRuntimeAccessLock = null
+        }
+      }
+    }
+  }
+
+  private refreshRuntimeReplacementState(): void {
+    const supported = typeof window !== "undefined" && typeof window.localStorage !== "undefined"
+    const record = supported ? this.readRuntimeReplacement() : null
+    const activeRecord = isRuntimeReplacementExpired(record) ? null : record
+    const generation = supported
+      ? parseRuntimeGeneration(window.localStorage.getItem(RUNTIME_GENERATION_STORAGE_KEY))
+      : 0
+    this.setRuntimeReplacementState({
+      active: activeRecord !== null,
+      currentTabId: this.tabId,
+      generation,
+      operationId: activeRecord?.operationId ?? null,
+      ownerTabId: activeRecord?.tabId ?? null,
+    })
+  }
+
   private broadcastState(): void {
     this.channel?.postMessage({
-      type: "lease-updated",
+      type: "coordinator-updated",
       at: new Date().toISOString(),
       tabId: this.tabId,
     })
+  }
+
+  private setRuntimeReplacementState(next: RuntimeReplacementState): void {
+    const changed =
+      this.runtimeReplacementState.active !== next.active ||
+      this.runtimeReplacementState.generation !== next.generation ||
+      this.runtimeReplacementState.operationId !== next.operationId ||
+      this.runtimeReplacementState.ownerTabId !== next.ownerTabId
+    this.runtimeReplacementState = next
+    if (!changed) {
+      return
+    }
+    for (const listener of this.runtimeReplacementListeners) {
+      listener(next)
+    }
   }
 
   private setState(next: CrossTabLeaseState): void {

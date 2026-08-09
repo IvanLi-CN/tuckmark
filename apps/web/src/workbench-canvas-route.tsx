@@ -9,16 +9,19 @@ export async function preloadCanvasRouteNavigation(pathname: string): Promise<vo
 
 export default function WorkbenchCanvasRoute({
   controller,
+  draftProcessing,
   initialScenario,
   initialLoadedRouteData,
 }: {
   controller: WorkbenchController
+  draftProcessing?: boolean
   initialScenario?: CanvasStoryScenario
   initialLoadedRouteData?: LoadedCanvasRouteData
 }) {
   return (
     <CanvasWorkspace
       controller={controller}
+      draftProcessing={draftProcessing}
       initialScenario={initialScenario}
       initialLoadedRouteData={initialLoadedRouteData}
     />
