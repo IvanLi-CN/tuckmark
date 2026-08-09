@@ -130,6 +130,7 @@ function parseRuntimeAccessFallbackLockRecord(
       typeof parsed.operationId !== "string" ||
       typeof parsed.tabId !== "string" ||
       typeof parsed.choosing !== "boolean" ||
+      typeof parsed.ticket !== "number" ||
       !Number.isSafeInteger(parsed.ticket) ||
       parsed.ticket < 0 ||
       typeof parsed.expiresAt !== "string"
