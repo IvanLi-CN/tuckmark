@@ -1495,6 +1495,19 @@ fn normalize_inventory_adjustment(value: Value) -> Result<Value, DataError> {
             ));
         }
     }
+    adjustment.retain(|key, _| {
+        matches!(
+            key.as_str(),
+            "id" | "materialId"
+                | "kind"
+                | "quantityDelta"
+                | "targetQuantity"
+                | "quantityAfter"
+                | "note"
+                | "actor"
+                | "createdAt"
+        )
+    });
     Ok(Value::Object(adjustment))
 }
 

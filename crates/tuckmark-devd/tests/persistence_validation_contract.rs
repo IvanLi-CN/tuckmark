@@ -144,6 +144,7 @@ fn sparse_legacy_archive() -> Value {
                 "quantityDelta": 2,
                 "targetQuantity": null,
                 "quantityAfter": 2,
+                "legacyExtra": true,
                 "createdAt": "2026-08-09T00:00:01.000Z"
             }]
         }
@@ -602,6 +603,7 @@ fn legacy_inventory_reads_apply_schema_defaults_before_returning_data() {
             "quantityAfter": 2,
             "note": null,
             "actor": null,
+            "legacyExtra": true,
             "createdAt": "2026-08-09T00:00:01.000Z"
         })
         .to_string(),
@@ -634,6 +636,7 @@ fn legacy_inventory_reads_apply_schema_defaults_before_returning_data() {
     let adjustment = &adjustments["data"][0];
     assert_eq!(adjustment["note"], "");
     assert_eq!(adjustment["actor"], "unknown");
+    assert!(adjustment.get("legacyExtra").is_none());
 }
 
 #[test]
@@ -687,6 +690,11 @@ fn archive_endpoints_share_canonical_parse_transform_and_hash() {
     assert_eq!(
         data_archive["inventory"]["adjustments"][0]["actor"],
         "unknown"
+    );
+    assert!(
+        data_archive["inventory"]["adjustments"][0]
+            .get("legacyExtra")
+            .is_none()
     );
     assert!(data.inspect_archive(data_archive.clone()).is_ok());
 
