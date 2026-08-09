@@ -1783,8 +1783,14 @@ export async function invalidateCanvasDraftGeneration(source: CanvasDraftSource)
   return generation
 }
 
-export async function clearTemplateAutosaves(templateId: string): Promise<void> {
-  await withRuntimeStore(async (store) => await store.clearTemplateAutosaves(templateId))
+export async function clearTemplateAutosaves(
+  templateId: string,
+  options?: { expectedRuntimeGeneration?: number }
+): Promise<void> {
+  await withRuntimeStore(async (store) => {
+    assertRuntimeGeneration(options?.expectedRuntimeGeneration)
+    await store.clearTemplateAutosaves(templateId)
+  })
   emitRuntimeStoreMutation("template-autosaves-cleared", {
     source: { kind: "user-template", templateId },
   })

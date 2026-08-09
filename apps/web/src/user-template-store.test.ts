@@ -18,6 +18,10 @@ import {
   getSystemTemplateById,
   toggleElementBinding,
 } from "./canvas-editor-model.js"
+import {
+  getSharedCrossTabCoordinator,
+  RuntimeDataSourceChangedError,
+} from "./cross-tab-coordinator.js"
 import { setDataDirectoryRuntimeMode } from "./data-directory-service.js"
 import {
   archiveUserTemplate,
@@ -226,6 +230,63 @@ describe("user-template-store", () => {
     await expect(readUserTemplateHistory(saved.template.id)).resolves.toMatchObject({
       autosaves: [],
     })
+  })
+
+  it("does not clear autosaves after the runtime data source changes", async () => {
+    const originalStorage = window.localStorage
+    const entries = new Map<string, string>()
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        get length() {
+          return entries.size
+        },
+        clear: () => entries.clear(),
+        getItem: (key: string) => entries.get(key) ?? null,
+        key: (index: number) => Array.from(entries.keys())[index] ?? null,
+        removeItem: (key: string) => entries.delete(key),
+        setItem: (key: string, value: string) => entries.set(key, value),
+      },
+    })
+
+    try {
+      const saved = await saveUserTemplate({
+        name: "Runtime generation guard",
+        document: createDraftFromPreset(getPresetById("shipping-wide")),
+      })
+      const source = { kind: "user-template" as const, templateId: saved.template.id }
+      const autosave = structuredClone(saved.workingCopy.draft)
+      autosave.name = "Runtime generation guard draft"
+      await saveUserTemplateAutosave({
+        templateId: saved.template.id,
+        source,
+        document: autosave,
+        sourceVersionId: saved.version.id,
+      })
+
+      const coordinator = getSharedCrossTabCoordinator()
+      coordinator.start()
+      const staleRuntimeGeneration = coordinator.getRuntimeReplacementState().generation
+      window.localStorage.setItem(
+        "tuckmark.runtime-generation.v1",
+        String(staleRuntimeGeneration + 1)
+      )
+      window.dispatchEvent(new StorageEvent("storage", { key: "tuckmark.runtime-generation.v1" }))
+
+      await expect(
+        clearTemplateAutosaves(saved.template.id, {
+          expectedRuntimeGeneration: staleRuntimeGeneration,
+        })
+      ).rejects.toBeInstanceOf(RuntimeDataSourceChangedError)
+      await expect(readUserTemplateHistory(saved.template.id)).resolves.toMatchObject({
+        autosaves: [expect.objectContaining({ id: expect.any(String) })],
+      })
+    } finally {
+      Object.defineProperty(window, "localStorage", {
+        configurable: true,
+        value: originalStorage,
+      })
+    }
   })
 
   it("does not report an unchanged generated canvas draft", async () => {

@@ -2169,6 +2169,7 @@ async function resetCanvasDraft(args: {
   controller: WorkbenchController
 }): Promise<CanvasPageState> {
   const { state, controller } = args
+  const runtimeGeneration = controller.runtimeDataGeneration
 
   if (state.routeSource.kind === "user-template") {
     const currentVersion =
@@ -2188,9 +2189,14 @@ async function resetCanvasDraft(args: {
         document: restoredDraft,
         sourceVersionId: currentVersion?.id,
       },
-      { expectedGeneration: generation }
+      {
+        expectedGeneration: generation,
+        expectedRuntimeGeneration: runtimeGeneration,
+      }
     )
-    await clearTemplateAutosaves(state.routeSource.templateId)
+    await clearTemplateAutosaves(state.routeSource.templateId, {
+      expectedRuntimeGeneration: runtimeGeneration,
+    })
     await controller.refreshUserTemplates()
 
     const history = await readUserTemplateHistory(state.routeSource.templateId)
@@ -7159,30 +7165,52 @@ export function CanvasWorkspace({
       snapshot.templateId
     )
     const source = { kind: "user-template" as const, templateId: snapshot.templateId }
+    const expectedRuntimeGeneration = runtimeDataGeneration
     const generation = await invalidateCanvasDraftGeneration(source)
-    await replaceUserTemplateWorkingCopy(
-      {
-        templateId: snapshot.templateId,
-        source,
-        document: restoredDraft,
-        sourceVersionId: snapshot.readOnlyVersion.id,
-      },
-      { expectedGeneration: generation }
-    )
-    await clearTemplateAutosaves(snapshot.templateId)
-    await controller.refreshUserTemplates()
-
-    const history = await readUserTemplateHistory(snapshot.templateId)
-    draftGenerationRef.current = generation
-    setState(() =>
-      createCanvasStateFromDraft(restoredDraft, {
-        versionHistory: history ?? snapshot.versionHistory,
-        focus: "center-right",
-        versionsOpen: true,
-        outputStatus: `已从 ${snapshot.readOnlyVersion.label} 恢复到当前草稿。`,
+    try {
+      await replaceUserTemplateWorkingCopy(
+        {
+          templateId: snapshot.templateId,
+          source,
+          document: restoredDraft,
+          sourceVersionId: snapshot.readOnlyVersion.id,
+        },
+        {
+          expectedGeneration: generation,
+          expectedRuntimeGeneration,
+        }
+      )
+      await clearTemplateAutosaves(snapshot.templateId, {
+        expectedRuntimeGeneration,
       })
-    )
-  }, [controller, state.liveDraft.templateId, state.readOnlyVersion, state.versionHistory])
+      await controller.refreshUserTemplates()
+
+      const history = await readUserTemplateHistory(snapshot.templateId)
+      draftGenerationRef.current = generation
+      setState(() =>
+        createCanvasStateFromDraft(restoredDraft, {
+          versionHistory: history ?? snapshot.versionHistory,
+          focus: "center-right",
+          versionsOpen: true,
+          outputStatus: `已从 ${snapshot.readOnlyVersion.label} 恢复到当前草稿。`,
+        })
+      )
+    } catch (cause) {
+      if (cause instanceof RuntimeDataSourceChangedError) {
+        return
+      }
+      setState((current) => ({
+        ...current,
+        outputStatus: cause instanceof Error ? cause.message : "恢复模板版本失败。",
+      }))
+    }
+  }, [
+    controller,
+    runtimeDataGeneration,
+    state.liveDraft.templateId,
+    state.readOnlyVersion,
+    state.versionHistory,
+  ])
 
   const saveNamedTemplate = React.useCallback(
     async (mode: "save" | "save-as", nextName: string) => {
@@ -7282,16 +7310,26 @@ export function CanvasWorkspace({
   )
 
   const handleResetDraft = React.useCallback(async () => {
-    const nextState = await resetCanvasDraft({
-      state,
-      controller,
-    })
-    persistenceBaselineRef.current = {
-      sourceKey: getCanvasDraftSourceKey(nextState.routeSource),
-      document: draftWithCurrentRenderOptions(nextState.liveDraft),
+    try {
+      const nextState = await resetCanvasDraft({
+        state,
+        controller,
+      })
+      persistenceBaselineRef.current = {
+        sourceKey: getCanvasDraftSourceKey(nextState.routeSource),
+        document: draftWithCurrentRenderOptions(nextState.liveDraft),
+      }
+      draftGenerationRef.current = getCanvasDraftGeneration(nextState.routeSource)
+      setState(nextState)
+    } catch (cause) {
+      if (cause instanceof RuntimeDataSourceChangedError) {
+        return
+      }
+      setState((current) => ({
+        ...current,
+        outputStatus: cause instanceof Error ? cause.message : "重置画布草稿失败。",
+      }))
     }
-    draftGenerationRef.current = getCanvasDraftGeneration(nextState.routeSource)
-    setState(nextState)
   }, [controller, draftWithCurrentRenderOptions, state])
 
   const handleCopyToClipboard = React.useCallback(async () => {
