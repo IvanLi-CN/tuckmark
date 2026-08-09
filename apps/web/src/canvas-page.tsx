@@ -2126,7 +2126,6 @@ function isMajorGridCoordinate(coordinate: number): boolean {
 
 function resetDraft(state: CanvasPageState): CanvasPageState {
   if (state.routeSource.kind === "preset-template") {
-    clearStoredDraftDocument(state.routeSource.presetId)
     return {
       ...createCanvasStateFromDraft(
         createDraftFromSystemTemplate(getSystemTemplateById(state.routeSource.presetId))
@@ -2149,7 +2148,6 @@ function resetDraft(state: CanvasPageState): CanvasPageState {
     }
   }
 
-  clearStoredDraftDocument(state.presetId)
   return {
     ...createCanvasStateFromDraft(
       createDraftFromPreset(getPresetById(state.routeSource.presetId)),
@@ -2195,6 +2193,9 @@ async function resetCanvasDraft(args: {
     }
   }
 
+  // Remove the legacy local copy before broadcasting the working-copy clear.
+  // A different tab may reload as soon as it receives that event.
+  clearStoredDraftDocument(state.routeSource.presetId)
   await clearWorkingCopy(state.routeSource)
   return resetDraft(state)
 }
