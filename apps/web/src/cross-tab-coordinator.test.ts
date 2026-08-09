@@ -177,6 +177,43 @@ describe("CrossTabCoordinator runtime replacement", () => {
     expect(replacementRan).toBe(true)
   })
 
+  it("serializes ordinary runtime mutations behind another tab's mutation", async () => {
+    installQueueingLocks()
+    const primary = new CrossTabCoordinator()
+    const secondary = new CrossTabCoordinator()
+    coordinators.push(primary, secondary)
+    primary.start()
+    secondary.start()
+
+    let releaseMutation: () => void = () => undefined
+    let mutationEntered: () => void = () => undefined
+    const mutationReady = new Promise<void>((resolve) => {
+      mutationEntered = resolve
+    })
+    const mutationGate = new Promise<void>((resolve) => {
+      releaseMutation = resolve
+    })
+    const initialMutation = secondary.runRuntimeMutation(async () => {
+      mutationEntered()
+      await mutationGate
+      return "first mutation"
+    })
+    await mutationReady
+
+    let secondMutationRan = false
+    const secondMutation = primary.runRuntimeMutation(async () => {
+      secondMutationRan = true
+      return "second mutation"
+    })
+    await new Promise((resolve) => window.setTimeout(resolve, 40))
+    expect(secondMutationRan).toBe(false)
+
+    releaseMutation()
+    await expect(initialMutation).resolves.toBe("first mutation")
+    await expect(secondMutation).resolves.toBe("second mutation")
+    expect(secondMutationRan).toBe(true)
+  })
+
   it("allows nested fallback access in the same coordinator", async () => {
     const coordinator = new CrossTabCoordinator()
     coordinators.push(coordinator)

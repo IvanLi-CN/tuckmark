@@ -56,6 +56,7 @@ import {
   type TextMeasureFunction,
   type TextVerticalAlign,
 } from "../../../packages/core/src/web.js"
+import { clearEphemeralCanvasDraft, recordEphemeralCanvasDraft } from "./canvas-draft-ephemeral.js"
 import {
   bindElementToExistingField,
   buildStoryScenarioDocument,
@@ -161,6 +162,10 @@ import { preloadCanvasTextFonts } from "./lib/text-fonts.js"
 import { cn } from "./lib/utils.js"
 import { pickDocumentRenderOptions } from "./output-settings.js"
 import { OutputSettingsControls, PositionedPreview } from "./output-settings-ui.js"
+import {
+  getRuntimeStoreEventTabId,
+  subscribeRuntimeStoreMutations,
+} from "./runtime-store-events.js"
 import type {
   CanvasDraftDocument,
   CanvasDraftElement,
@@ -2792,6 +2797,15 @@ function resolveLoadedCanvasStatus(source: CanvasDraftSource, initialStatus: str
     return "已载入系统模板副本，可保存为本地模板。"
   }
   return ""
+}
+
+function isSameCanvasDraftSource(left: CanvasDraftSource, right: CanvasDraftSource): boolean {
+  if (left.kind !== right.kind) {
+    return false
+  }
+  return left.kind === "user-template"
+    ? right.kind === "user-template" && left.templateId === right.templateId
+    : right.kind !== "user-template" && left.presetId === right.presetId
 }
 
 function createCanvasStateFromLoadedRouteData(
@@ -6349,6 +6363,7 @@ export function CanvasWorkspace({
 }: CanvasPageProps) {
   const navigate = useWorkbenchNavigate()
   const queryClient = useQueryClient()
+  const runtimeEventTabId = React.useMemo(() => getRuntimeStoreEventTabId(), [])
   const searchParams = useWorkbenchSearchParams()
   const routeSource = React.useMemo(() => resolveCanvasSource(searchParams), [searchParams])
   const runtimeDataGeneration = controller.runtimeDataGeneration
@@ -6419,6 +6434,7 @@ export function CanvasWorkspace({
   const asyncClipboardSupported = supportsAsyncClipboard()
   const [, setFontLoadGeneration] = React.useState(0)
   const stateRef = React.useRef(state)
+  const remoteDraftReloadingRef = React.useRef(false)
   const persistenceBaselineRef = React.useRef<{
     sourceKey: string
     document: CanvasDraftDocument
@@ -6437,6 +6453,46 @@ export function CanvasWorkspace({
   React.useEffect(() => {
     stateRef.current = state
   }, [state])
+
+  React.useEffect(() => {
+    return subscribeRuntimeStoreMutations((event) => {
+      if (
+        event.originTabId === runtimeEventTabId ||
+        event.reason === "snapshot-replaced" ||
+        !event.source ||
+        !isSameCanvasDraftSource(event.source, routeSource)
+      ) {
+        return
+      }
+      remoteDraftReloadingRef.current = true
+      clearEphemeralCanvasDraft(routeSource)
+      void loadCanvasRouteData(routeSource)
+        .then((loaded) => {
+          controller.setDocumentRenderOptions({
+            ...defaultDraftRenderOptions,
+            ...loaded.draft.renderOptions,
+          })
+          setState((current) =>
+            createCanvasStateFromLoadedRouteData(loaded, {
+              activePanel: current.activePanel,
+              initialStatus: "",
+              routeSource,
+              versionsOpen: current.versionsOpen,
+            })
+          )
+        })
+        .catch((cause) => {
+          setState((current) => ({
+            ...current,
+            outputStatus: cause instanceof Error ? cause.message : "加载画布失败。",
+            storageMode: "reset-pending",
+          }))
+        })
+        .finally(() => {
+          remoteDraftReloadingRef.current = false
+        })
+    })
+  }, [controller, routeSource, runtimeEventTabId])
 
   React.useEffect(() => {
     interactionLockedRef.current = interactionLocked
@@ -6613,6 +6669,31 @@ export function CanvasWorkspace({
   const autosaveRouteSource = state.routeSource
   const autosaveReadOnlyVersion = state.readOnlyVersion
   const autosaveVersionHistory = state.versionHistory
+
+  React.useLayoutEffect(() => {
+    if (
+      initialScenario ||
+      autosaveLoading ||
+      readOnly ||
+      remoteDraftReloadingRef.current ||
+      state.storageMode === "reset-pending"
+    ) {
+      return
+    }
+    recordEphemeralCanvasDraft({
+      source: autosaveRouteSource,
+      document: draftWithCurrentRenderOptions(autosaveLiveDraft),
+      updatedAt: new Date().toISOString(),
+    })
+  }, [
+    autosaveLiveDraft,
+    autosaveLoading,
+    autosaveRouteSource,
+    draftWithCurrentRenderOptions,
+    initialScenario,
+    readOnly,
+    state.storageMode,
+  ])
 
   React.useEffect(() => {
     if (initialScenario || autosaveLoading || readOnly || runtimeDataReloading) {

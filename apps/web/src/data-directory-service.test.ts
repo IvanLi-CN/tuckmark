@@ -23,6 +23,17 @@ vi.mock("./data-directory-handle-store.js", () => handleStoreMocks)
 vi.mock("./user-template-store.js", () => runtimeStoreMocks)
 
 import {
+  clearEphemeralCanvasDrafts,
+  listEphemeralCanvasDrafts,
+  recordEphemeralCanvasDraft,
+} from "./canvas-draft-ephemeral.js"
+import {
+  createDraftFromPreset,
+  getPresetById,
+  loadStoredDraftDocument,
+  persistDraftDocument,
+} from "./canvas-editor-model.js"
+import {
   attachDataDirectory,
   createManualBackup,
   detachDataDirectory,
@@ -436,6 +447,7 @@ describe("demo data directory isolation", () => {
   })
 
   it("keeps backups and archive replacement out of directory storage in demo mode", async () => {
+    setDataDirectoryRuntimeMode("demo")
     window.history.replaceState({}, "", "/system?demo=true")
     await detachDataDirectory()
     const snapshot = createSnapshot({
@@ -445,6 +457,11 @@ describe("demo data directory isolation", () => {
       updatedAt: "2026-08-09T08:00:00.000Z",
     })
     runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(snapshot)
+    window.localStorage.setItem(
+      "tuckmark.inventory-snapshot.v1",
+      JSON.stringify({ materials: [{ id: "runtime-material" }], adjustments: [] })
+    )
+    const persistentInventoryBefore = window.localStorage.getItem("tuckmark.inventory-snapshot.v1")
     const coordinator = {
       isRuntimeReplacementOwner: () => false,
       runAsWriter: async <T>(task: () => Promise<T>) => await task(),
@@ -479,10 +496,21 @@ describe("demo data directory isolation", () => {
     expect(handleStoreMocks.loadStoredDataDirectoryHandle).not.toHaveBeenCalled()
     expect(handleStoreMocks.saveDataDirectoryHandle).not.toHaveBeenCalled()
     expect(runtimeStoreMocks.rebindRuntimeStoreForDataDirectoryChange).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem("tuckmark.inventory-snapshot.v1")).toBe(
+      persistentInventoryBefore
+    )
   })
 })
 
 describe("restoreRuntimeFromConfiguredDirectoryIfNeeded", () => {
+  const coordinator = {
+    isRuntimeReplacementOwner: () => false,
+    runExclusiveRuntimeReplacement: async <T>(
+      task: () => Promise<T>,
+      _options?: { didReplace?: (result: T) => boolean }
+    ) => await task(),
+  }
+
   it("restores the configured directory snapshot when it is newer than the runtime store", async () => {
     const runtimeSnapshot = createSnapshot({
       templateIds: ["template-a"],
@@ -501,7 +529,9 @@ describe("restoreRuntimeFromConfiguredDirectoryIfNeeded", () => {
       createDirectoryHandle("Tuckmark", snapshotToDirectoryTree(directorySnapshot))
     )
 
-    const result = await restoreRuntimeFromConfiguredDirectoryIfNeeded()
+    const result = await restoreRuntimeFromConfiguredDirectoryIfNeeded({
+      coordinator: coordinator as never,
+    })
 
     expect(result).toBe("restored")
     expect(runtimeStoreMocks.replaceRuntimeSnapshot).toHaveBeenCalledTimes(1)
@@ -532,7 +562,9 @@ describe("restoreRuntimeFromConfiguredDirectoryIfNeeded", () => {
       createDirectoryHandle("Tuckmark", snapshotToDirectoryTree(directorySnapshot))
     )
 
-    const result = await restoreRuntimeFromConfiguredDirectoryIfNeeded()
+    const result = await restoreRuntimeFromConfiguredDirectoryIfNeeded({
+      coordinator: coordinator as never,
+    })
 
     expect(result).toBe("restored")
     expect(runtimeStoreMocks.replaceRuntimeSnapshot).toHaveBeenCalledTimes(1)
@@ -556,7 +588,9 @@ describe("restoreRuntimeFromConfiguredDirectoryIfNeeded", () => {
       createDirectoryHandle("Tuckmark", snapshotToDirectoryTree(directorySnapshot))
     )
 
-    const result = await restoreRuntimeFromConfiguredDirectoryIfNeeded()
+    const result = await restoreRuntimeFromConfiguredDirectoryIfNeeded({
+      coordinator: coordinator as never,
+    })
 
     expect(result).toBe("skipped")
     expect(runtimeStoreMocks.replaceRuntimeSnapshot).not.toHaveBeenCalled()
@@ -614,6 +648,40 @@ describe("browser-local inventory archives", () => {
 
     expect(runtimeStoreMocks.replaceRuntimeSnapshot).toHaveBeenCalledWith(snapshot)
     expect(readBrowserLocalInventorySnapshot()).toMatchObject(localInventorySnapshot)
+  })
+
+  it("discards legacy and immediate canvas drafts during a forced archive replacement", async () => {
+    handleStoreMocks.loadStoredDataDirectoryHandle.mockResolvedValue(null)
+    const draft = {
+      ...createDraftFromPreset(getPresetById("shipping-wide")),
+      width: 241,
+    }
+    persistDraftDocument(draft)
+    recordEphemeralCanvasDraft({
+      source: draft.source,
+      document: draft,
+      updatedAt: "2026-08-09T08:00:00.000Z",
+    })
+    const snapshot = createSnapshot({
+      templateIds: [],
+      versionCount: 0,
+      workingCopyCount: 0,
+      updatedAt: "2026-08-09T08:00:00.000Z",
+    })
+
+    await importRuntimeArchive({
+      coordinator: {
+        isRuntimeReplacementOwner: () => false,
+        runExclusiveRuntimeReplacement: async <T>(task: () => Promise<T>) => await task(),
+      } as never,
+      snapshot,
+      inventorySnapshot: { materials: [], adjustments: [] },
+      discardDrafts: true,
+    })
+
+    expect(loadStoredDraftDocument(draft.presetId)).toBeNull()
+    expect(listEphemeralCanvasDrafts()).toEqual([])
+    clearEphemeralCanvasDrafts()
   })
 
   it("exports a complete legacy directory ZIP that v0.9.2 can import", async () => {

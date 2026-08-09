@@ -29,6 +29,7 @@ import {
   normalizeCanvasDraftDocumentUnits,
   scaleTemplateElementGeometry,
 } from "./lib/canvas-units.js"
+import { isDemoRuntimeMode } from "./runtime-data-mode.js"
 import type {
   CanvasDocumentPreset,
   CanvasDraftDocument,
@@ -81,6 +82,7 @@ export const DEFAULT_CANVAS_TEXT_FONT_SIZE_MILLIMETERS = 5
 
 const DRAFT_STORAGE_VERSION = 1
 const DRAFT_STORAGE_PREFIX = `tuckmark:canvas-draft:v${DRAFT_STORAGE_VERSION}:`
+const DEMO_DRAFT_STORAGE_PREFIX = `tuckmark.demo:canvas-draft:v${DRAFT_STORAGE_VERSION}:`
 const MONO_FILL = "none"
 const MONO_STROKE = "#111111"
 const MONO_SOLID_FILL = "#111111"
@@ -1212,7 +1214,7 @@ export function updateBoundElementValue(
 }
 
 export function getDraftStorageKey(presetId: string): string {
-  return `${DRAFT_STORAGE_PREFIX}${presetId}`
+  return `${isDemoRuntimeMode() ? DEMO_DRAFT_STORAGE_PREFIX : DRAFT_STORAGE_PREFIX}${presetId}`
 }
 
 export function loadStoredDraftDocument(presetId: string): CanvasDraftDocument | null {
@@ -1254,12 +1256,13 @@ export function listStoredDraftDocuments(): Array<{
     presetId: string
     draft: CanvasDraftDocument
   }> = []
+  const storagePrefix = isDemoRuntimeMode() ? DEMO_DRAFT_STORAGE_PREFIX : DRAFT_STORAGE_PREFIX
   for (let index = 0; index < window.localStorage.length; index += 1) {
     const key = window.localStorage.key(index)
-    if (!key?.startsWith(DRAFT_STORAGE_PREFIX)) {
+    if (!key?.startsWith(storagePrefix)) {
       continue
     }
-    const presetId = key.slice(DRAFT_STORAGE_PREFIX.length)
+    const presetId = key.slice(storagePrefix.length)
     const draft = loadStoredDraftDocument(presetId)
     if (!draft) {
       continue
@@ -1286,6 +1289,12 @@ export function clearStoredDraftDocument(presetId: string): void {
   }
 
   window.localStorage.removeItem(getDraftStorageKey(presetId))
+}
+
+export function clearStoredDraftDocuments(): void {
+  for (const { presetId } of listStoredDraftDocuments()) {
+    clearStoredDraftDocument(presetId)
+  }
 }
 
 export function persistDraftDocumentToStorage(

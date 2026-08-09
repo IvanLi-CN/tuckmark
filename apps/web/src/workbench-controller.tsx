@@ -1067,7 +1067,7 @@ export function useWorkbenchController({
 
     void (async () => {
       try {
-        const restoreTask = restoreRuntimeFromConfiguredDirectoryIfNeeded()
+        const restoreTask = restoreRuntimeFromConfiguredDirectoryIfNeeded({ coordinator })
           .then(async (result) => {
             if (result === "restored" && !cancelled) {
               await Promise.allSettled([
@@ -1135,6 +1135,7 @@ export function useWorkbenchController({
       cancelled = true
     }
   }, [
+    coordinator,
     context.mode,
     refreshDataDirectoryStatus,
     refreshArchivedUserTemplates,
@@ -1838,12 +1839,13 @@ export function useWorkbenchController({
   }, [])
 
   const performDataReplacement = React.useCallback(
-    async (operation: DataReplacementOperation) => {
+    async (operation: DataReplacementOperation, options?: { discardDrafts?: boolean }) => {
       if (operation.kind === "attach") {
         return await attachDataDirectory({
           coordinator,
           handle: operation.handle,
           mode: operation.mode,
+          discardDrafts: options?.discardDrafts,
         })
       }
       if (operation.kind === "import") {
@@ -1851,6 +1853,7 @@ export function useWorkbenchController({
           coordinator,
           snapshot: operation.inspection.snapshot,
           inventorySnapshot: operation.inspection.inventorySnapshot,
+          discardDrafts: options?.discardDrafts,
         })
         return "replaced-runtime" as const
       }
@@ -1859,6 +1862,7 @@ export function useWorkbenchController({
         entry: operation.entry,
         snapshot: operation.inspection.snapshot,
         inventorySnapshot: operation.inspection.inventorySnapshot,
+        discardDrafts: options?.discardDrafts,
       })
       return "replaced-runtime" as const
     },
@@ -1872,10 +1876,10 @@ export function useWorkbenchController({
   }, [refreshDataDirectoryStatus])
 
   const executeDataReplacement = React.useCallback(
-    async (operation: DataReplacementOperation) => {
+    async (operation: DataReplacementOperation, options?: { discardDrafts?: boolean }) => {
       const result = await runDataDirectoryTask(
         "replace-runtime-data",
-        async () => await performDataReplacement(operation)
+        async () => await performDataReplacement(operation, options)
       )
       if (!result) {
         return false
@@ -1888,6 +1892,18 @@ export function useWorkbenchController({
 
   const beginDataReplacement = React.useCallback(
     async (operation: DataReplacementOperation) => {
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 100)
+      })
+      const settledDrafts = await listPendingRuntimeDrafts()
+      if (settledDrafts.length > 0) {
+        setDataDirectoryDialog({
+          kind: "drafts-required",
+          drafts: settledDrafts,
+          operation,
+        })
+        return
+      }
       const outcome = await runDataDirectoryTask(
         "replace-runtime-data",
         async () =>
@@ -2035,7 +2051,7 @@ export function useWorkbenchController({
     if (dataDirectoryDialog?.kind !== "force-replace") {
       return
     }
-    await executeDataReplacement(dataDirectoryDialog.operation)
+    await executeDataReplacement(dataDirectoryDialog.operation, { discardDrafts: true })
   }, [dataDirectoryDialog, executeDataReplacement])
 
   const takeOverDataDirectoryWrites = React.useCallback(() => {

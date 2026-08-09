@@ -1,4 +1,5 @@
 import { stableStringify } from "../../../packages/core/src/web.js"
+import { clearEphemeralCanvasDraft, listEphemeralCanvasDrafts } from "./canvas-draft-ephemeral.js"
 import {
   createDraftFromPreset,
   createDraftFromSystemTemplate,
@@ -21,6 +22,7 @@ import {
   requiresRuntimeAppSettingsMigration,
   withUpdatedRuntimeAppSettings,
 } from "./runtime-app-settings.js"
+import { isDemoRuntimeMode } from "./runtime-data-mode.js"
 import type {
   RuntimeStore,
   RuntimeStoreAppSettings,
@@ -43,6 +45,7 @@ import {
 } from "./user-template-sqlite-store.js"
 
 const DB_NAME = "tuckmark-user-template-store"
+const DEMO_DB_NAME = "tuckmark-demo-user-template-store"
 const DB_VERSION = 2
 const TEMPLATE_STORE = "templates"
 const VERSION_STORE = "versions"
@@ -109,7 +112,10 @@ function getNextSavedVersionNumber(versions: Iterable<UserTemplateVersionSnapsho
 }
 
 function toComparableDraft(draft: CanvasDraftDocument) {
-  return {
+  const canonicalElementIds = new Map(
+    draft.elements.map((element, index) => [element.id, `element:${index}`])
+  )
+  return omitUndefinedValues({
     ...draft,
     id: undefined,
     presetId: undefined,
@@ -117,7 +123,27 @@ function toComparableDraft(draft: CanvasDraftDocument) {
     templateId: undefined,
     baseVersionId: undefined,
     lastSavedAt: undefined,
+    renderOptions: undefined,
+    elements: draft.elements.map(({ id: _id, ...element }) => element),
+    fields: draft.fields.map((field) => ({
+      ...field,
+      bindings: field.bindings.map((binding) => canonicalElementIds.get(binding) ?? binding),
+    })),
+  })
+}
+
+function omitUndefinedValues(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => omitUndefinedValues(item))
   }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [key, omitUndefinedValues(item)])
+    )
+  }
+  return value
 }
 
 function sameDocumentContent(left: CanvasDraftDocument, right: CanvasDraftDocument): boolean {
@@ -817,10 +843,14 @@ class DirectoryUserTemplateStore extends MemoryUserTemplateStore {
 class IndexedDbUserTemplateStore extends MemoryUserTemplateStore {
   private dbPromise: Promise<IDBDatabase> | null = null
 
+  constructor(private readonly databaseName = DB_NAME) {
+    super()
+  }
+
   private open(): Promise<IDBDatabase> {
     if (!this.dbPromise) {
       this.dbPromise = new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION)
+        const request = indexedDB.open(this.databaseName, DB_VERSION)
         request.onupgradeneeded = () => {
           const db = request.result
           if (!hasStore(db, TEMPLATE_STORE)) {
@@ -1450,11 +1480,21 @@ async function trimIndexedDbVersions(
 
 let legacyStorePromise: Promise<RuntimeStore> | undefined
 let storePromise: Promise<RuntimeStore> | undefined
+let demoStorePromise: Promise<RuntimeStore> | undefined
+let storeGeneration: number | null = null
 
 async function withRuntimeStore<T>(task: (store: RuntimeStore) => Promise<T>): Promise<T> {
-  return await getSharedCrossTabCoordinator().runRuntimeAccess(
-    async () => await task(await resolveStore())
-  )
+  const coordinator = getSharedCrossTabCoordinator()
+  return await coordinator.runRuntimeMutation(async () => {
+    if (!isDemoRuntimeMode()) {
+      const generation = coordinator.getRuntimeReplacementState().generation
+      if (storeGeneration !== generation) {
+        storePromise = undefined
+        storeGeneration = generation
+      }
+    }
+    return await task(await resolveStore())
+  })
 }
 
 async function migrateLegacyDraftsToRuntimeStore(store: RuntimeStore): Promise<void> {
@@ -1515,6 +1555,23 @@ async function resolveConfiguredDirectoryStore(): Promise<RuntimeStore | null> {
 }
 
 async function resolveStore() {
+  if (isDemoRuntimeMode()) {
+    if (!demoStorePromise) {
+      demoStorePromise = (async () => {
+        if (!isIndexedDbAvailable()) {
+          return new MemoryUserTemplateStore()
+        }
+        try {
+          const store = new IndexedDbUserTemplateStore(DEMO_DB_NAME)
+          await store.listTemplates()
+          return store
+        } catch {
+          return new MemoryUserTemplateStore()
+        }
+      })()
+    }
+    return await demoStorePromise
+  }
   if (!storePromise) {
     storePromise = (async () => {
       if (isServerHttpDataSurface()) {
@@ -1589,7 +1646,9 @@ export async function saveUserTemplate(args: {
   sourceVersionId?: string
 }) {
   const result = await withRuntimeStore(async (store) => await store.saveTemplate(args))
-  emitRuntimeStoreMutation("template-saved")
+  emitRuntimeStoreMutation("template-saved", {
+    source: { kind: "user-template", templateId: result.template.id },
+  })
   return result
 }
 
@@ -1601,7 +1660,9 @@ export async function renameUserTemplate(
     async (store) => await store.renameTemplate(templateId, name)
   )
   if (result) {
-    emitRuntimeStoreMutation("template-renamed")
+    emitRuntimeStoreMutation("template-renamed", {
+      source: { kind: "user-template", templateId },
+    })
   }
   return result
 }
@@ -1609,7 +1670,9 @@ export async function renameUserTemplate(
 export async function archiveUserTemplate(templateId: string): Promise<UserTemplateSummary | null> {
   const result = await withRuntimeStore(async (store) => await store.archiveTemplate(templateId))
   if (result) {
-    emitRuntimeStoreMutation("template-archived")
+    emitRuntimeStoreMutation("template-archived", {
+      source: { kind: "user-template", templateId },
+    })
   }
   return result
 }
@@ -1617,14 +1680,18 @@ export async function archiveUserTemplate(templateId: string): Promise<UserTempl
 export async function restoreUserTemplate(templateId: string): Promise<UserTemplateSummary | null> {
   const result = await withRuntimeStore(async (store) => await store.restoreTemplate(templateId))
   if (result) {
-    emitRuntimeStoreMutation("template-restored")
+    emitRuntimeStoreMutation("template-restored", {
+      source: { kind: "user-template", templateId },
+    })
   }
   return result
 }
 
 export async function purgeUserTemplate(templateId: string): Promise<void> {
   await withRuntimeStore(async (store) => await store.purgeTemplate(templateId))
-  emitRuntimeStoreMutation("template-purged")
+  emitRuntimeStoreMutation("template-purged", {
+    source: { kind: "user-template", templateId },
+  })
 }
 
 export async function saveUserTemplateAutosave(args: {
@@ -1634,7 +1701,7 @@ export async function saveUserTemplateAutosave(args: {
   sourceVersionId?: string
 }) {
   const result = await withRuntimeStore(async (store) => await store.saveAutosave(args))
-  emitRuntimeStoreMutation("autosave-saved")
+  emitRuntimeStoreMutation("autosave-saved", { source: args.source })
   return result
 }
 
@@ -1645,7 +1712,7 @@ export async function replaceUserTemplateWorkingCopy(args: {
   sourceVersionId?: string
 }) {
   const result = await withRuntimeStore(async (store) => await store.replaceWorkingCopy(args))
-  emitRuntimeStoreMutation("working-copy-replaced")
+  emitRuntimeStoreMutation("working-copy-replaced", { source: args.source })
   return result
 }
 
@@ -1657,12 +1724,15 @@ export async function loadWorkingCopy(
 
 export async function clearWorkingCopy(source: CanvasDraftSource): Promise<void> {
   await withRuntimeStore(async (store) => await store.clearWorkingCopy(source))
-  emitRuntimeStoreMutation("working-copy-cleared")
+  clearEphemeralCanvasDraft(source)
+  emitRuntimeStoreMutation("working-copy-cleared", { source })
 }
 
 export async function clearTemplateAutosaves(templateId: string): Promise<void> {
   await withRuntimeStore(async (store) => await store.clearTemplateAutosaves(templateId))
-  emitRuntimeStoreMutation("template-autosaves-cleared")
+  emitRuntimeStoreMutation("template-autosaves-cleared", {
+    source: { kind: "user-template", templateId },
+  })
 }
 
 export async function loadRuntimeAppSettings(): Promise<RuntimeStoreAppSettings> {
@@ -1770,6 +1840,36 @@ export async function listPendingRuntimeDrafts(): Promise<PendingRuntimeDraft[]>
         })
       })
 
+    listEphemeralCanvasDrafts().forEach((entry) => {
+      let baseline: CanvasDraftDocument
+      let label: string
+      if (entry.source.kind === "user-template") {
+        const userTemplate = getUserTemplateBaseline(entry.source.templateId)
+        if (!userTemplate) {
+          return
+        }
+        baseline = userTemplate.baseline
+        label = userTemplate.label
+      } else if (entry.source.kind === "preset-template") {
+        const template = getSystemTemplateById(entry.source.presetId)
+        baseline = createDraftFromSystemTemplate(template)
+        label = template.name
+      } else {
+        const preset = getPresetById(entry.source.presetId)
+        baseline = createDraftFromPreset(preset)
+        label = preset.name
+      }
+      if (sameDocumentContent(entry.document, baseline)) {
+        return
+      }
+      recordDraft({
+        label,
+        source: entry.source,
+        sourceKey: createSourceKey(entry.source),
+        updatedAt: entry.updatedAt,
+      })
+    })
+
     return Array.from(drafts.values()).sort((left, right) =>
       right.updatedAt.localeCompare(left.updatedAt)
     )
@@ -1778,6 +1878,7 @@ export async function listPendingRuntimeDrafts(): Promise<PendingRuntimeDraft[]>
 
 export async function rebindRuntimeStoreForDataDirectoryChange(): Promise<void> {
   storePromise = undefined
+  storeGeneration = getSharedCrossTabCoordinator().getRuntimeReplacementState().generation
   const store = await resolveStore()
   await store.listTemplates()
   emitRuntimeStoreMutation("snapshot-replaced")
@@ -1786,7 +1887,12 @@ export async function rebindRuntimeStoreForDataDirectoryChange(): Promise<void> 
 export async function resetUserTemplateStoreForTest(): Promise<void> {
   const store = await resolveStore()
   await store.resetForTest()
+  if (demoStorePromise) {
+    await (await demoStorePromise).resetForTest()
+  }
   storePromise = undefined
+  demoStorePromise = undefined
+  storeGeneration = null
   legacyStorePromise = undefined
 }
 

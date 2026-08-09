@@ -60,7 +60,7 @@ type InventoryPersistence =
     }
 
 async function runInventoryAccess<T>(task: () => Promise<T>): Promise<T> {
-  return await getSharedCrossTabCoordinator().runRuntimeAccess(task)
+  return await getSharedCrossTabCoordinator().runRuntimeMutation(task)
 }
 
 function createId(prefix: string): string {

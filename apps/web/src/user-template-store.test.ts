@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it } from "vitest"
-
+import {
+  clearEphemeralCanvasDrafts,
+  listEphemeralCanvasDrafts,
+  recordEphemeralCanvasDraft,
+} from "./canvas-draft-ephemeral.js"
 import {
   createDraftFromPreset,
   createDraftFromSystemTemplate,
@@ -9,6 +13,7 @@ import {
   getSystemTemplateById,
   toggleElementBinding,
 } from "./canvas-editor-model.js"
+import { setDataDirectoryRuntimeMode } from "./data-directory-service.js"
 import {
   archiveUserTemplate,
   clearTemplateAutosaves,
@@ -35,6 +40,8 @@ import {
 
 describe("user-template-store", () => {
   beforeEach(async () => {
+    setDataDirectoryRuntimeMode(null)
+    clearEphemeralCanvasDrafts()
     await resetUserTemplateStoreForTest()
   })
 
@@ -133,6 +140,54 @@ describe("user-template-store", () => {
     await clearWorkingCopy({ kind: "preset-template", presetId: "cable-tag" })
 
     expect(await listPendingRuntimeDrafts()).toEqual([])
+  })
+
+  it("reports a changed canvas draft before its autosave reaches the runtime store", async () => {
+    const draft = createDraftFromPreset(getPresetById("shipping-wide"))
+    draft.width += 1
+    recordEphemeralCanvasDraft({
+      source: { kind: "scratch", presetId: "shipping-wide" },
+      document: draft,
+      updatedAt: "2026-08-09T12:00:00.000Z",
+    })
+
+    expect(listEphemeralCanvasDrafts()).toHaveLength(1)
+
+    await expect(listPendingRuntimeDrafts()).resolves.toEqual([
+      expect.objectContaining({
+        source: { kind: "scratch", presetId: "shipping-wide" },
+        sourceKey: "scratch:shipping-wide",
+      }),
+    ])
+  })
+
+  it("does not report an unchanged generated canvas draft", async () => {
+    const draft = createDraftFromSystemTemplate(getSystemTemplateById("cable-tag"))
+    draft.renderOptions = { paperType: "continuous", threshold: 150 }
+    const serializedDraft = JSON.parse(JSON.stringify(draft))
+    await replaceUserTemplateWorkingCopy({
+      source: { kind: "preset-template", presetId: "cable-tag" },
+      document: serializedDraft,
+    })
+    recordEphemeralCanvasDraft({
+      source: { kind: "preset-template", presetId: "cable-tag" },
+      document: serializedDraft,
+      updatedAt: "2026-08-09T12:00:00.000Z",
+    })
+
+    await expect(listPendingRuntimeDrafts()).resolves.toEqual([])
+  })
+
+  it("keeps demo templates out of the runtime store", async () => {
+    setDataDirectoryRuntimeMode("demo")
+    await saveUserTemplate({
+      name: "Demo-only template",
+      document: createDraftFromPreset(getPresetById("ops-tag")),
+    })
+    expect(await listUserTemplates()).toHaveLength(1)
+
+    setDataDirectoryRuntimeMode(null)
+    expect(await listUserTemplates()).toEqual([])
   })
 
   it("persists and clears the suggested usage metadata", async () => {

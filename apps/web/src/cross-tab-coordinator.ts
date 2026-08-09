@@ -259,6 +259,17 @@ export class CrossTabCoordinator {
   }
 
   async runRuntimeAccess<T>(task: () => Promise<T>): Promise<T> {
+    return await this.runRuntimeTask("shared", task)
+  }
+
+  async runRuntimeMutation<T>(task: () => Promise<T>): Promise<T> {
+    return await this.runRuntimeTask("exclusive", task)
+  }
+
+  private async runRuntimeTask<T>(
+    mode: "shared" | "exclusive",
+    task: () => Promise<T>
+  ): Promise<T> {
     this.refreshRuntimeReplacementState()
     const before = this.runtimeReplacementState
     if (before.active && !this.isRuntimeReplacementOwner()) {
@@ -267,7 +278,7 @@ export class CrossTabCoordinator {
     if (this.isRuntimeReplacementOwner()) {
       return await task()
     }
-    return await this.withRuntimeAccessLock("shared", async () => {
+    return await this.withRuntimeAccessLock(mode, async () => {
       this.refreshRuntimeReplacementState()
       const current = this.runtimeReplacementState
       if (current.active || current.generation !== before.generation) {
@@ -329,7 +340,7 @@ export class CrossTabCoordinator {
   }
 
   async runAsWriter<T>(task: () => Promise<T>): Promise<T> {
-    return await this.runRuntimeAccess(async () => {
+    return await this.runRuntimeMutation(async () => {
       this.refreshState(true)
       this.refreshRuntimeReplacementState()
       if (this.state.role !== "writer") {

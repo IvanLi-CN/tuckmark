@@ -8,7 +8,8 @@ import {
   sortInventoryMaterialsByName,
 } from "@tuckmark/inventory"
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate"
-
+import { clearEphemeralCanvasDrafts } from "./canvas-draft-ephemeral.js"
+import { clearStoredDraftDocuments } from "./canvas-editor-model.js"
 import type { CrossTabCoordinator, CrossTabLeaseState } from "./cross-tab-coordinator.js"
 import {
   clearStoredDataDirectoryHandle,
@@ -31,6 +32,7 @@ import {
   writeBrowserLocalInventorySnapshot,
 } from "./inventory-browser-storage.js"
 import { normalizeRuntimeAppSettings } from "./runtime-app-settings.js"
+import { getRuntimeDataMode, isDemoRuntimeMode, setRuntimeDataMode } from "./runtime-data-mode.js"
 import type { RuntimeStoreSnapshot } from "./runtime-store-contract.js"
 import type {
   AppMode,
@@ -62,16 +64,16 @@ const MANIFEST_SCHEMA = "tuckmark.data-dir-manifest.v1"
 const PROTECTION_BACKUP_LIMIT = 20
 const STATUS_STORAGE_KEY = "tuckmark.data-directory-status.v1"
 const DEMO_DATA_DIRECTORY_NAME = "Demo data directory"
-let dataDirectoryRuntimeMode: AppMode | null = null
 
 async function runRuntimeReplacement<T>(
   coordinator: CrossTabCoordinator,
-  task: () => Promise<T>
+  task: () => Promise<T>,
+  didReplace?: (result: T) => boolean
 ): Promise<T> {
   if (coordinator.isRuntimeReplacementOwner()) {
     return await task()
   }
-  return await coordinator.runExclusiveRuntimeReplacement(task)
+  return await coordinator.runExclusiveRuntimeReplacement(task, { didReplace })
 }
 
 type PersistedStatus = {
@@ -115,17 +117,22 @@ export type DataArchiveInspection = {
 }
 
 export function setDataDirectoryRuntimeMode(mode: AppMode | null): void {
-  dataDirectoryRuntimeMode = mode
+  setRuntimeDataMode(mode)
 }
 
 function isDemoDataDirectoryMode(): boolean {
-  if (dataDirectoryRuntimeMode !== null) {
-    return dataDirectoryRuntimeMode === "demo"
+  if (getRuntimeDataMode() !== null) {
+    return isDemoRuntimeMode()
   }
-  if (typeof window === "undefined") {
-    return false
-  }
-  return new URLSearchParams(window.location.search).get("demo") === "true"
+  return (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("demo") === "true"
+  )
+}
+
+function discardLocalRuntimeDrafts(): void {
+  clearEphemeralCanvasDrafts()
+  clearStoredDraftDocuments()
 }
 
 function getBackupDirectoryPath(kind: "manual" | "protection") {
@@ -1098,9 +1105,13 @@ export async function attachDataDirectory(args: {
   coordinator: CrossTabCoordinator
   handle: FileSystemDirectoryHandle
   mode: "overwrite-current" | "import-existing"
+  discardDrafts?: boolean
 }): Promise<"mirrored-runtime" | "replaced-runtime"> {
   if (isDemoDataDirectoryMode()) {
     return await runRuntimeReplacement(args.coordinator, async () => {
+      if (args.discardDrafts) {
+        discardLocalRuntimeDrafts()
+      }
       demoDataDirectoryState.configured = true
       demoDataDirectoryState.lastSyncAt = new Date().toISOString()
       return args.mode === "overwrite-current" ? "mirrored-runtime" : "replaced-runtime"
@@ -1111,6 +1122,9 @@ export async function attachDataDirectory(args: {
     throw new Error("未获得数据目录的读写权限。")
   }
   return await runRuntimeReplacement(args.coordinator, async () => {
+    if (args.discardDrafts) {
+      discardLocalRuntimeDrafts()
+    }
     const previousHandle = await loadConfiguredDataDirectoryHandle()
     const snapshot = await exportRuntimeSnapshot()
     const inventorySnapshot = previousHandle
@@ -1156,9 +1170,9 @@ export async function detachDataDirectory(): Promise<void> {
   await clearStoredDataDirectoryHandle()
 }
 
-export async function restoreRuntimeFromConfiguredDirectoryIfNeeded(): Promise<
-  "restored" | "skipped"
-> {
+export async function restoreRuntimeFromConfiguredDirectoryIfNeeded(args: {
+  coordinator: CrossTabCoordinator
+}): Promise<"restored" | "skipped"> {
   if (isDemoDataDirectoryMode()) {
     return "skipped"
   }
@@ -1177,14 +1191,22 @@ export async function restoreRuntimeFromConfiguredDirectoryIfNeeded(): Promise<
   if (!manifest) {
     return "skipped"
   }
-  const runtimeSnapshot = await exportRuntimeSnapshot()
-  const runtimeSummary = toRuntimeSummary(runtimeSnapshot)
-  if (!shouldRestoreRuntimeFromDirectoryManifest({ manifest, runtimeSnapshot, runtimeSummary })) {
-    return "skipped"
-  }
   const directorySnapshot = await readSnapshotFromDirectory(handle)
-  await replaceRuntimeSnapshot(directorySnapshot)
-  return "restored"
+  return await runRuntimeReplacement(
+    args.coordinator,
+    async () => {
+      const runtimeSnapshot = await exportRuntimeSnapshot()
+      const runtimeSummary = toRuntimeSummary(runtimeSnapshot)
+      if (
+        !shouldRestoreRuntimeFromDirectoryManifest({ manifest, runtimeSnapshot, runtimeSummary })
+      ) {
+        return "skipped" as const
+      }
+      await replaceRuntimeSnapshot(directorySnapshot)
+      return "restored" as const
+    },
+    (result) => result === "restored"
+  )
 }
 
 export async function requestConfiguredDirectoryPermission(requestIfNeeded = true): Promise<void> {
@@ -1345,12 +1367,16 @@ export async function restoreConfiguredBackup(args: {
   entry: DataDirectoryBackupEntry
   snapshot: RuntimeStoreSnapshot
   inventorySnapshot: InventoryDirectorySnapshot
+  discardDrafts?: boolean
 }): Promise<void> {
   if (isDemoDataDirectoryMode()) {
     if (!demoDataDirectoryState.configured) {
       throw new Error("尚未配置演示数据目录。")
     }
     await runRuntimeReplacement(args.coordinator, async () => {
+      if (args.discardDrafts) {
+        discardLocalRuntimeDrafts()
+      }
       await replaceRuntimeSnapshot(args.snapshot)
       writeBrowserLocalInventorySnapshot(args.inventorySnapshot)
       demoDataDirectoryState.lastSyncAt = new Date().toISOString()
@@ -1366,6 +1392,9 @@ export async function restoreConfiguredBackup(args: {
     throw new Error("需要先授予数据目录读写权限。")
   }
   await runRuntimeReplacement(args.coordinator, async () => {
+    if (args.discardDrafts) {
+      discardLocalRuntimeDrafts()
+    }
     const previousSnapshot = await exportRuntimeSnapshot()
     const previousInventory = await readInventorySnapshotFromDirectory(handle)
     try {
@@ -1406,9 +1435,13 @@ export async function importRuntimeArchive(args: {
   coordinator: CrossTabCoordinator
   snapshot: RuntimeStoreSnapshot
   inventorySnapshot: InventoryDirectorySnapshot
+  discardDrafts?: boolean
 }): Promise<void> {
   if (isDemoDataDirectoryMode()) {
     await runRuntimeReplacement(args.coordinator, async () => {
+      if (args.discardDrafts) {
+        discardLocalRuntimeDrafts()
+      }
       await replaceRuntimeSnapshot(args.snapshot)
       writeBrowserLocalInventorySnapshot(args.inventorySnapshot)
       demoDataDirectoryState.lastSyncAt = new Date().toISOString()
@@ -1422,6 +1455,9 @@ export async function importRuntimeArchive(args: {
       throw new Error("需要先授予数据目录读写权限。")
     }
     await runRuntimeReplacement(args.coordinator, async () => {
+      if (args.discardDrafts) {
+        discardLocalRuntimeDrafts()
+      }
       const previousSnapshot = await exportRuntimeSnapshot()
       const previousInventory = await readInventorySnapshotFromDirectory(handle)
       try {
@@ -1450,6 +1486,9 @@ export async function importRuntimeArchive(args: {
   }
 
   await runRuntimeReplacement(args.coordinator, async () => {
+    if (args.discardDrafts) {
+      discardLocalRuntimeDrafts()
+    }
     const previousSnapshot = await exportRuntimeSnapshot()
     const previousInventory = readBrowserLocalInventorySnapshot()
     try {
