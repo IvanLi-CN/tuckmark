@@ -7166,8 +7166,8 @@ export function CanvasWorkspace({
     )
     const source = { kind: "user-template" as const, templateId: snapshot.templateId }
     const expectedRuntimeGeneration = runtimeDataGeneration
-    const generation = await invalidateCanvasDraftGeneration(source)
     try {
+      const generation = await invalidateCanvasDraftGeneration(source)
       await replaceUserTemplateWorkingCopy(
         {
           templateId: snapshot.templateId,

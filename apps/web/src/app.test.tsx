@@ -33,6 +33,7 @@ import {
   startClipboardPastePlacement,
   zoomViewportAtPointer,
 } from "./canvas-page.js"
+import { RuntimeDataSourceChangedError } from "./cross-tab-coordinator.js"
 import { buildInputFromTemplate, fallbackTemplates } from "./demo-data.js"
 import { CANVAS_DOTS_PER_MILLIMETER } from "./lib/canvas-units.js"
 import { loadRecentActivity } from "./lib/recent-activity.js"
@@ -3711,6 +3712,59 @@ describe("web workbench app", () => {
       templateId: firstSave.template.id,
     })
     expect(workingCopyAfterReopen?.draft.name).toBe("Restore Target")
+  })
+
+  it("safely ignores version restore when data replacement has started", async () => {
+    const baseDraft = createDraftFromPreset(getPresetById("shipping-wide"))
+    const firstSave = await saveUserTemplate({
+      name: "Fenced Restore",
+      document: {
+        ...baseDraft,
+        name: "Fenced Restore",
+        source: { kind: "user-template", templateId: "seed-will-be-replaced" },
+      },
+    })
+    const secondDraft = structuredClone(firstSave.workingCopy.draft)
+    secondDraft.name = "Fenced Restore v2"
+    await saveUserTemplate({
+      name: secondDraft.name,
+      templateId: firstSave.template.id,
+      sourceVersionId: firstSave.version.id,
+      document: secondDraft,
+    })
+    const invalidateSpy = vi
+      .spyOn(userTemplateStoreModule, "invalidateCanvasDraftGeneration")
+      .mockRejectedValueOnce(new RuntimeDataSourceChangedError())
+
+    try {
+      await renderApp(
+        browserRuntimeContext,
+        undefined,
+        `/canvas?source=user-template&templateId=${firstSave.template.id}&panel=versions`
+      )
+      await flush(8)
+
+      await act(async () => {
+        const savedVersionButton = Array.from(
+          document.querySelectorAll(".tm-version-list__item")
+        ).find((item) => item.textContent?.includes(firstSave.version.label)) as
+          | HTMLButtonElement
+          | undefined
+        savedVersionButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await flush(8)
+      })
+
+      await act(async () => {
+        queryButton("恢复").dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await flush(8)
+      })
+
+      await expect(
+        loadWorkingCopy({ kind: "user-template", templateId: firstSave.template.id })
+      ).resolves.toMatchObject({ draft: { name: "Fenced Restore v2" } })
+    } finally {
+      invalidateSpy.mockRestore()
+    }
   })
 
   it("blocks routed canvas interactions until the requested preset-template draft loads", async () => {
