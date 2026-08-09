@@ -277,7 +277,7 @@ describe("Native release workflow", () => {
     expect(releaseWorkflow).toContain("target: aarch64-apple-darwin")
     expect(releaseWorkflow).toContain("target: x86_64-apple-darwin")
     expect(releaseWorkflow).toContain(
-      "cargo build --locked --release --target ${{ matrix.target }} --bin tuckmark --bin tuckmark-devd"
+      `cargo build --locked --release --target \${{ matrix.target }} --bin tuckmark --bin tuckmark-devd`
     )
   })
 
@@ -285,7 +285,7 @@ describe("Native release workflow", () => {
     expect(releaseWorkflow).toContain("codesign --force --sign -")
     expect(releaseWorkflow).toContain("Artifact smoke test without JavaScript runtime")
     expect(releaseWorkflow).toContain("scripts/test-native-release-artifact.sh")
-    expect(releaseWorkflow).toContain('shasum -a 256 "${root}.tar.gz" > SHA256SUMS')
+    expect(releaseWorkflow).toContain(`shasum -a 256 "\${root}.tar.gz" > SHA256SUMS`)
   })
 
   it("publishes both archives and their checksums only from an explicit release dispatch", () => {
