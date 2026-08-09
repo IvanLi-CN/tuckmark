@@ -62,6 +62,16 @@ const PROTECTION_BACKUP_LIMIT = 20
 const STATUS_STORAGE_KEY = "tuckmark.data-directory-status.v1"
 const DEMO_DATA_DIRECTORY_NAME = "Demo data directory"
 
+async function runRuntimeReplacement<T>(
+  coordinator: CrossTabCoordinator,
+  task: () => Promise<T>
+): Promise<T> {
+  if (coordinator.isRuntimeReplacementOwner()) {
+    return await task()
+  }
+  return await coordinator.runExclusiveRuntimeReplacement(task)
+}
+
 type PersistedStatus = {
   lastSyncAt: string | null
   lastError: string | null
@@ -1081,7 +1091,7 @@ export async function attachDataDirectory(args: {
   mode: "overwrite-current" | "import-existing"
 }): Promise<"mirrored-runtime" | "replaced-runtime"> {
   if (isDemoDataDirectoryMode()) {
-    return await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+    return await runRuntimeReplacement(args.coordinator, async () => {
       demoDataDirectoryState.configured = true
       demoDataDirectoryState.lastSyncAt = new Date().toISOString()
       return args.mode === "overwrite-current" ? "mirrored-runtime" : "replaced-runtime"
@@ -1091,7 +1101,7 @@ export async function attachDataDirectory(args: {
   if (permission !== "granted") {
     throw new Error("未获得数据目录的读写权限。")
   }
-  return await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+  return await runRuntimeReplacement(args.coordinator, async () => {
     const previousHandle = await loadConfiguredDataDirectoryHandle()
     const snapshot = await exportRuntimeSnapshot()
     const inventorySnapshot = previousHandle
@@ -1331,7 +1341,7 @@ export async function restoreConfiguredBackup(args: {
     if (!demoDataDirectoryState.configured) {
       throw new Error("尚未配置演示数据目录。")
     }
-    await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+    await runRuntimeReplacement(args.coordinator, async () => {
       await replaceRuntimeSnapshot(args.snapshot)
       writeBrowserLocalInventorySnapshot(args.inventorySnapshot)
       demoDataDirectoryState.lastSyncAt = new Date().toISOString()
@@ -1346,7 +1356,7 @@ export async function restoreConfiguredBackup(args: {
   if (permission !== "granted") {
     throw new Error("需要先授予数据目录读写权限。")
   }
-  await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+  await runRuntimeReplacement(args.coordinator, async () => {
     const previousSnapshot = await exportRuntimeSnapshot()
     const previousInventory = await readInventorySnapshotFromDirectory(handle)
     try {
@@ -1389,7 +1399,7 @@ export async function importRuntimeArchive(args: {
   inventorySnapshot: InventoryDirectorySnapshot
 }): Promise<void> {
   if (isDemoDataDirectoryMode()) {
-    await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+    await runRuntimeReplacement(args.coordinator, async () => {
       await replaceRuntimeSnapshot(args.snapshot)
       writeBrowserLocalInventorySnapshot(args.inventorySnapshot)
       demoDataDirectoryState.lastSyncAt = new Date().toISOString()
@@ -1402,7 +1412,7 @@ export async function importRuntimeArchive(args: {
     if (permission !== "granted") {
       throw new Error("需要先授予数据目录读写权限。")
     }
-    await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+    await runRuntimeReplacement(args.coordinator, async () => {
       const previousSnapshot = await exportRuntimeSnapshot()
       const previousInventory = await readInventorySnapshotFromDirectory(handle)
       try {
@@ -1430,7 +1440,7 @@ export async function importRuntimeArchive(args: {
     return
   }
 
-  await args.coordinator.runExclusiveRuntimeReplacement(async () => {
+  await runRuntimeReplacement(args.coordinator, async () => {
     const previousSnapshot = await exportRuntimeSnapshot()
     const previousInventory = readBrowserLocalInventorySnapshot()
     try {

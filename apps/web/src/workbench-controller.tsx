@@ -87,6 +87,7 @@ import {
   loadRuntimeAppSettings,
   type PendingRuntimeDraft,
   purgeUserTemplate,
+  rebindRuntimeStoreForDataDirectoryChange,
   renameUserTemplate,
   restoreUserTemplate,
   saveRuntimeAppSettings,
@@ -938,12 +939,15 @@ export function useWorkbenchController({
       return
     }
     previousRuntimeDataGenerationRef.current = runtimeDataGeneration
-    void Promise.all([
-      refreshUserTemplates(),
-      refreshArchivedUserTemplates(),
-      refreshRenderOptionsFromStore(),
-      refreshDataDirectoryStatus(),
-    ])
+    void (async () => {
+      await rebindRuntimeStoreForDataDirectoryChange()
+      await Promise.all([
+        refreshUserTemplates(),
+        refreshArchivedUserTemplates(),
+        refreshRenderOptionsFromStore(),
+        refreshDataDirectoryStatus(),
+      ])
+    })()
   }, [
     refreshArchivedUserTemplates,
     refreshDataDirectoryStatus,
@@ -1831,60 +1835,86 @@ export function useWorkbenchController({
     setDataDirectoryDialog(null)
   }, [])
 
-  const executeDataReplacement = React.useCallback(
+  const performDataReplacement = React.useCallback(
     async (operation: DataReplacementOperation) => {
-      const result = await runDataDirectoryTask("replace-runtime-data", async () => {
-        if (operation.kind === "attach") {
-          return await attachDataDirectory({
-            coordinator,
-            handle: operation.handle,
-            mode: operation.mode,
-          })
-        }
-        if (operation.kind === "import") {
-          await importRuntimeArchive({
-            coordinator,
-            snapshot: operation.inspection.snapshot,
-            inventorySnapshot: operation.inspection.inventorySnapshot,
-          })
-          return "replaced-runtime" as const
-        }
-        await restoreConfiguredBackup({
+      if (operation.kind === "attach") {
+        return await attachDataDirectory({
           coordinator,
-          entry: operation.entry,
+          handle: operation.handle,
+          mode: operation.mode,
+        })
+      }
+      if (operation.kind === "import") {
+        await importRuntimeArchive({
+          coordinator,
           snapshot: operation.inspection.snapshot,
           inventorySnapshot: operation.inspection.inventorySnapshot,
         })
         return "replaced-runtime" as const
+      }
+      await restoreConfiguredBackup({
+        coordinator,
+        entry: operation.entry,
+        snapshot: operation.inspection.snapshot,
+        inventorySnapshot: operation.inspection.inventorySnapshot,
       })
+      return "replaced-runtime" as const
+    },
+    [coordinator]
+  )
+
+  const completeDataReplacement = React.useCallback(async () => {
+    await refreshDataDirectoryStatus()
+    setDataDirectoryDialog(null)
+    setDirectorySetupNudgeOpen(false)
+  }, [refreshDataDirectoryStatus])
+
+  const executeDataReplacement = React.useCallback(
+    async (operation: DataReplacementOperation) => {
+      const result = await runDataDirectoryTask(
+        "replace-runtime-data",
+        async () => await performDataReplacement(operation)
+      )
       if (!result) {
         return false
       }
-      await refreshDataDirectoryStatus()
-      setDataDirectoryDialog(null)
-      setDirectorySetupNudgeOpen(false)
+      await completeDataReplacement()
       return true
     },
-    [coordinator, refreshDataDirectoryStatus, runDataDirectoryTask]
+    [completeDataReplacement, performDataReplacement, runDataDirectoryTask]
   )
 
   const beginDataReplacement = React.useCallback(
     async (operation: DataReplacementOperation) => {
-      const drafts = await runDataDirectoryTask("check-unsaved-drafts", listPendingRuntimeDrafts)
-      if (!drafts) {
+      const outcome = await runDataDirectoryTask(
+        "replace-runtime-data",
+        async () =>
+          await coordinator.runExclusiveRuntimeReplacement(
+            async () => {
+              const drafts = await listPendingRuntimeDrafts()
+              if (drafts.length > 0) {
+                return { drafts }
+              }
+              await performDataReplacement(operation)
+              return { drafts: [] as PendingRuntimeDraft[] }
+            },
+            { didReplace: (result) => result.drafts.length === 0 }
+          )
+      )
+      if (!outcome) {
         return
       }
-      if (drafts.length > 0) {
+      if (outcome.drafts.length > 0) {
         setDataDirectoryDialog({
           kind: "drafts-required",
-          drafts,
+          drafts: outcome.drafts,
           operation,
         })
         return
       }
-      await executeDataReplacement(operation)
+      await completeDataReplacement()
     },
-    [executeDataReplacement, runDataDirectoryTask]
+    [completeDataReplacement, coordinator, performDataReplacement, runDataDirectoryTask]
   )
 
   const confirmDataDirectoryAttachment = React.useCallback(

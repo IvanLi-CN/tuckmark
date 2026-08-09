@@ -95,7 +95,7 @@ describe("user-template-store", () => {
 
     const namedDraft = structuredClone(saved.workingCopy.draft)
     namedDraft.name = "Draft Scan Label edited"
-    await replaceUserTemplateWorkingCopy({
+    await saveUserTemplateAutosave({
       source: { kind: "user-template", templateId: saved.template.id },
       templateId: saved.template.id,
       sourceVersionId: saved.version.id,
@@ -123,6 +123,12 @@ describe("user-template-store", () => {
     ])
 
     await clearWorkingCopy({ kind: "user-template", templateId: saved.template.id })
+    expect((await listPendingRuntimeDrafts()).map((draft) => draft.source.kind).sort()).toEqual([
+      "preset-template",
+      "scratch",
+      "user-template",
+    ])
+    await clearTemplateAutosaves(saved.template.id)
     await clearWorkingCopy({ kind: "scratch", presetId: "shipping-wide" })
     await clearWorkingCopy({ kind: "preset-template", presetId: "cable-tag" })
 

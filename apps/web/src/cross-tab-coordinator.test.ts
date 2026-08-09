@@ -117,6 +117,30 @@ describe("CrossTabCoordinator runtime replacement", () => {
     })
   })
 
+  it("releases a draft-check lock without advancing the data generation", async () => {
+    const primary = new CrossTabCoordinator()
+    const secondary = new CrossTabCoordinator()
+    coordinators.push(primary, secondary)
+    primary.start()
+    secondary.start()
+
+    const result = await primary.runExclusiveRuntimeReplacement(
+      async () => ({ drafts: ["pending"] }),
+      { didReplace: (outcome) => outcome.drafts.length === 0 }
+    )
+
+    window.dispatchEvent(new StorageEvent("storage", { key: replacementStorageKey }))
+    expect(result.drafts).toEqual(["pending"])
+    expect(primary.getRuntimeReplacementState()).toMatchObject({
+      active: false,
+      generation: 0,
+    })
+    expect(secondary.getRuntimeReplacementState()).toMatchObject({
+      active: false,
+      generation: 0,
+    })
+  })
+
   it("cancels an older queued runtime request after a replacement changes generation", async () => {
     installQueueingLocks()
     const primary = new CrossTabCoordinator()

@@ -394,6 +394,7 @@ describe("demo data directory isolation", () => {
     })
     runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(snapshot)
     const coordinator = {
+      isRuntimeReplacementOwner: () => false,
       runExclusiveRuntimeReplacement: async <T>(task: () => Promise<T>) => await task(),
     }
 
@@ -430,6 +431,7 @@ describe("demo data directory isolation", () => {
     })
     runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(snapshot)
     const coordinator = {
+      isRuntimeReplacementOwner: () => false,
       runAsWriter: async <T>(task: () => Promise<T>) => await task(),
       runExclusiveRuntimeReplacement: async <T>(task: () => Promise<T>) => await task(),
     }
@@ -587,6 +589,7 @@ describe("browser-local inventory archives", () => {
 
     await importRuntimeArchive({
       coordinator: {
+        isRuntimeReplacementOwner: () => false,
         runAsWriter: async <T>(task: () => Promise<T>) => await task(),
         runExclusiveRuntimeReplacement: async <T>(task: () => Promise<T>) => await task(),
       } as never,
@@ -963,6 +966,7 @@ describe("inventory directory preservation", () => {
   }
 
   const coordinator = {
+    isRuntimeReplacementOwner: () => false,
     runAsWriter: async <T>(task: () => Promise<T>) => await task(),
     runExclusiveRuntimeReplacement: async <T>(task: () => Promise<T>) => await task(),
   } as never

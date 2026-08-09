@@ -1702,17 +1702,35 @@ export async function listPendingRuntimeDrafts(): Promise<PendingRuntimeDraft[]>
     const snapshot = await store.exportSnapshot()
     const templates = new Map(snapshot.templates.map((template) => [template.id, template]))
     const versions = new Map(snapshot.versions.map((version) => [version.id, version]))
-    return snapshot.workingCopies.flatMap((entry) => {
+    const drafts = new Map<string, PendingRuntimeDraft>()
+    const recordDraft = (draft: PendingRuntimeDraft) => {
+      const existing = drafts.get(draft.sourceKey)
+      if (!existing || draft.updatedAt > existing.updatedAt) {
+        drafts.set(draft.sourceKey, draft)
+      }
+    }
+    const getUserTemplateBaseline = (templateId: string) => {
+      const template = templates.get(templateId)
+      const currentVersion = template ? versions.get(template.currentVersionId) : undefined
+      if (!template || !currentVersion) {
+        return null
+      }
+      return {
+        baseline: currentVersion.document,
+        label: template.name,
+      }
+    }
+
+    snapshot.workingCopies.forEach((entry) => {
       let baseline: CanvasDraftDocument
       let label: string
       if (entry.source.kind === "user-template") {
-        const template = templates.get(entry.source.templateId)
-        const currentVersion = template ? versions.get(template.currentVersionId) : undefined
-        if (!template || !currentVersion) {
-          return []
+        const userTemplate = getUserTemplateBaseline(entry.source.templateId)
+        if (!userTemplate) {
+          return
         }
-        baseline = currentVersion.document
-        label = template.name
+        baseline = userTemplate.baseline
+        label = userTemplate.label
       } else if (entry.source.kind === "preset-template") {
         const template = getSystemTemplateById(entry.source.presetId)
         baseline = createDraftFromSystemTemplate(template)
@@ -1723,17 +1741,38 @@ export async function listPendingRuntimeDrafts(): Promise<PendingRuntimeDraft[]>
         label = preset.name
       }
       if (sameDocumentContent(entry.draft, baseline)) {
-        return []
+        return
       }
-      return [
-        {
-          label,
-          source: entry.source,
-          sourceKey: entry.sourceKey,
-          updatedAt: entry.updatedAt,
-        },
-      ]
+      recordDraft({
+        label,
+        source: entry.source,
+        sourceKey: entry.sourceKey,
+        updatedAt: entry.updatedAt,
+      })
     })
+
+    snapshot.versions
+      .filter((version) => version.kind === "autosave")
+      .forEach((version) => {
+        const userTemplate = getUserTemplateBaseline(version.templateId)
+        if (!userTemplate || sameDocumentContent(version.document, userTemplate.baseline)) {
+          return
+        }
+        const source: CanvasDraftSource = {
+          kind: "user-template",
+          templateId: version.templateId,
+        }
+        recordDraft({
+          label: userTemplate.label,
+          source,
+          sourceKey: createSourceKey(source),
+          updatedAt: version.createdAt,
+        })
+      })
+
+    return Array.from(drafts.values()).sort((left, right) =>
+      right.updatedAt.localeCompare(left.updatedAt)
+    )
   })
 }
 

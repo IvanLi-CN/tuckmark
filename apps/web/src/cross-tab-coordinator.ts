@@ -234,7 +234,10 @@ export class CrossTabCoordinator {
     })
   }
 
-  async runExclusiveRuntimeReplacement<T>(task: () => Promise<T>): Promise<T> {
+  async runExclusiveRuntimeReplacement<T>(
+    task: () => Promise<T>,
+    options?: { didReplace?: (result: T) => boolean }
+  ): Promise<T> {
     this.refreshState(true)
     if (this.state.role !== "writer") {
       throw new Error("当前标签未持有数据写入租约，请先在系统页接管写入。")
@@ -258,7 +261,9 @@ export class CrossTabCoordinator {
       this.refreshRuntimeReplacementState()
       try {
         const result = await task()
-        this.writeRuntimeGeneration(this.runtimeReplacementState.generation + 1)
+        if (options?.didReplace?.(result) ?? true) {
+          this.writeRuntimeGeneration(this.runtimeReplacementState.generation + 1)
+        }
         return result
       } finally {
         if (replacementHeartbeat !== null) {
