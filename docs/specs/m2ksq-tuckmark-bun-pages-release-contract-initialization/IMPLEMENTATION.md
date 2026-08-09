@@ -145,3 +145,4 @@
   contract remains checkable after TypeScript CLI/server source removal.
 - Runtime and CLI bundles designate Rust DEVD and Rust CLI as their only
   production service and command implementations.
+- Host releases publish only native macOS `tuckmark` and `tuckmark-devd` archives with SHA256SUMS; runtime execution requires no JavaScript toolchain.

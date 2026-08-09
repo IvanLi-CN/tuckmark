@@ -8,8 +8,7 @@ import { promisify } from "node:util"
 const execFileAsync = promisify(execFile)
 const repoRoot = process.cwd()
 const outDir = path.resolve(process.argv[2] ?? "work/agent-template-practice")
-const cliPath = path.join(repoRoot, "packages/cli/src/index.ts")
-const cliTsconfigPath = path.join(repoRoot, "packages/cli/tsconfig.typecheck.json")
+const nativeCliPath = process.env.TUCKMARK_CLI_PATH
 
 const scenarios = [
   {
@@ -84,20 +83,20 @@ async function runCodexScenario(scenario) {
 }
 
 async function runCli(args) {
-  const result = await execFileAsync(
-    "bun",
-    ["tsx", "--tsconfig", cliTsconfigPath, cliPath, ...args],
-    {
-      cwd: repoRoot,
-      timeout: 120_000,
-      maxBuffer: 1024 * 1024 * 8,
-      env: {
-        ...process.env,
-        TUCKMARK_DETONGER_PACKET_ENCODER: "lpapi",
-        TUCKMARK_MOCK_PRINTERS: "1",
-      },
-    }
-  )
+  const command = nativeCliPath ?? "cargo"
+  const commandArgs = nativeCliPath
+    ? args
+    : ["run", "--locked", "--package", "tuckmark-cli", "--", ...args]
+  const result = await execFileAsync(command, commandArgs, {
+    cwd: repoRoot,
+    timeout: 120_000,
+    maxBuffer: 1024 * 1024 * 8,
+    env: {
+      ...process.env,
+      TUCKMARK_DETONGER_PACKET_ENCODER: "lpapi",
+      TUCKMARK_MOCK_PRINTERS: "1",
+    },
+  })
   return JSON.parse(result.stdout)
 }
 

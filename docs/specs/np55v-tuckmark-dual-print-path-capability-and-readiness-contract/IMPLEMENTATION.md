@@ -37,3 +37,4 @@
   gated in the Web runtime.
 - Contract checks parse fixture JSON directly and do not require TypeScript CLI
   or server source files.
+- Native release builds statically link the pinned detonger crates into Rust DEVD; TypeScript printing remains Web-only and is not a host runtime.

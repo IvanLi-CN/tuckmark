@@ -1805,6 +1805,13 @@ pub fn normalize_legacy_value(value: Value) -> Result<Value, ContractError> {
     Ok(canonicalize_json(normalized))
 }
 
+/// Applies the legacy canvas defaults used by the Web normalizer to one
+/// persisted JSON value without changing its schema or writing it back.
+pub fn normalize_legacy_tree_value(mut value: Value) -> Value {
+    normalize_legacy_tree(&mut value);
+    canonicalize_json(value)
+}
+
 fn normalize_legacy_tree(value: &mut Value) {
     match value {
         Value::Array(values) => {
@@ -1814,8 +1821,11 @@ fn normalize_legacy_tree(value: &mut Value) {
         }
         Value::Object(object) => {
             normalize_recommended_use(object);
-            if object.get("kind").and_then(Value::as_str) == Some("text") {
+            if object.get("kind").and_then(Value::as_str) == Some("text")
+                && object.contains_key("id")
+            {
                 normalize_stretch_aliases(object);
+                normalize_text_defaults(object);
             }
             for value in object.values_mut() {
                 normalize_legacy_tree(value);
@@ -1823,6 +1833,251 @@ fn normalize_legacy_tree(value: &mut Value) {
         }
         _ => {}
     }
+}
+
+fn normalize_text_defaults(object: &mut serde_json::Map<String, Value>) {
+    let has_explicit_height = object.get("height").is_some_and(|value| !value.is_null());
+    for field in [
+        "width",
+        "height",
+        "fontWeight",
+        "align",
+        "fontFamily",
+        "lineHeight",
+        "justifyAlign",
+        "verticalAlign",
+        "stretchXGrow",
+        "stretchXShrink",
+        "stretchYGrow",
+        "stretchYShrink",
+        "stretchX",
+        "stretchY",
+        "autoWrap",
+        "adaptiveFontSize",
+        "verticalText",
+        "value",
+        "maxLines",
+        "rotation",
+        "resolvedLayout",
+    ] {
+        if object.get(field).is_some_and(Value::is_null) {
+            object.remove(field);
+        }
+    }
+    object.entry("width").or_insert_with(|| Value::from(22.5));
+    let font_size = object
+        .get("fontSize")
+        .and_then(Value::as_f64)
+        .unwrap_or(5.0);
+    let line_height = object
+        .get("lineHeight")
+        .and_then(Value::as_f64)
+        .unwrap_or(1.2)
+        .clamp(0.7, 4.0);
+    let line_count = estimate_legacy_line_count(object, font_size);
+    object
+        .entry("height")
+        .or_insert_with(|| Value::from(font_size * (1.0 + (line_count - 1.0) * line_height)));
+    if !has_explicit_height {
+        if let Some(y) = object.get("y").and_then(Value::as_f64) {
+            object.insert("y".into(), Value::from(y - font_size));
+        }
+    }
+    object
+        .entry("fontWeight")
+        .or_insert_with(|| Value::String("normal".into()));
+    object
+        .entry("align")
+        .or_insert_with(|| Value::String("left".into()));
+    object
+        .entry("fontFamily")
+        .or_insert_with(|| Value::String("system-sans".into()));
+    object
+        .entry("lineHeight")
+        .or_insert_with(|| Value::from(1.2));
+    object
+        .entry("verticalAlign")
+        .or_insert_with(|| Value::String("top".into()));
+    for field in [
+        "stretchXGrow",
+        "stretchXShrink",
+        "stretchYGrow",
+        "stretchYShrink",
+    ] {
+        object.entry(field).or_insert(Value::Bool(false));
+    }
+    object.entry("autoWrap").or_insert(Value::Bool(true));
+    object
+        .entry("adaptiveFontSize")
+        .or_insert(Value::Bool(false));
+    object.entry("verticalText").or_insert(Value::Bool(false));
+    object
+        .entry("value")
+        .or_insert_with(|| Value::String(String::new()));
+    object.entry("rotation").or_insert(Value::from(0));
+}
+
+fn estimate_legacy_line_count(object: &serde_json::Map<String, Value>, font_size: f64) -> f64 {
+    let value = object
+        .get("value")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let auto_wrap = object
+        .get("autoWrap")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let width = object
+        .get("width")
+        .and_then(Value::as_f64)
+        .unwrap_or(22.5)
+        .max(0.0001);
+    let font_family = object
+        .get("fontFamily")
+        .and_then(Value::as_str)
+        .or(Some("system-sans"));
+    let mut lines = Vec::new();
+    for chunk in value.replace("\r\n", "\n").split('\n') {
+        if chunk.is_empty() || !auto_wrap {
+            lines.push(chunk.to_owned());
+            continue;
+        }
+        let mut current = String::new();
+        for token in chunk.split_whitespace() {
+            let candidate = if current.is_empty() {
+                token.to_owned()
+            } else {
+                format!("{current} {token}")
+            };
+            if legacy_text_width(&candidate, font_size, font_family) > width && !current.is_empty()
+            {
+                lines.push(current);
+                let parts = legacy_break_text_token(token, font_size, width, font_family);
+                let last_index = parts.len().saturating_sub(1);
+                lines.extend(parts.iter().take(last_index).cloned());
+                current = parts.get(last_index).cloned().unwrap_or_default();
+            } else if legacy_text_width(&candidate, font_size, font_family) > width {
+                let parts = legacy_break_text_token(token, font_size, width, font_family);
+                let last_index = parts.len().saturating_sub(1);
+                lines.extend(parts.iter().take(last_index).cloned());
+                current = parts.get(last_index).cloned().unwrap_or_default();
+            } else {
+                current = candidate;
+            }
+        }
+        if !current.is_empty() {
+            lines.push(current);
+        }
+    }
+    let line_count = lines.len().max(1) as f64;
+    object
+        .get("maxLines")
+        .and_then(Value::as_u64)
+        .map_or(line_count, |max_lines| {
+            line_count.min(max_lines.max(1) as f64)
+        })
+}
+
+fn legacy_break_text_token(
+    token: &str,
+    font_size: f64,
+    width: f64,
+    font_family: Option<&str>,
+) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    for character in token.chars() {
+        let mut candidate = current.clone();
+        candidate.push(character);
+        if !current.is_empty() && legacy_text_width(&candidate, font_size, font_family) > width {
+            parts.push(current);
+            current = character.to_string();
+        } else {
+            current = candidate;
+        }
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts
+}
+
+fn legacy_text_width(text: &str, font_size: f64, font_family: Option<&str>) -> f64 {
+    text.chars()
+        .map(|character| legacy_glyph_width_ratio(character, font_family) * font_size)
+        .sum()
+}
+
+fn legacy_glyph_width_ratio(character: char, font_family: Option<&str>) -> f64 {
+    let metrics = legacy_font_metrics(font_family);
+    if character.is_whitespace() {
+        metrics[0]
+    } else if legacy_is_wide_character(character) {
+        metrics[1]
+    } else if character.is_ascii_uppercase() {
+        metrics[2]
+    } else if character.is_ascii_lowercase() {
+        metrics[3]
+    } else if character.is_ascii_digit() {
+        metrics[4]
+    } else if matches!(
+        character,
+        '-' | '.'
+            | ','
+            | ':'
+            | ';'
+            | '\''
+            | '"'
+            | '!'
+            | '?'
+            | '|'
+            | '/'
+            | '\\'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+    ) {
+        metrics[5]
+    } else if character.is_ascii() {
+        metrics[6]
+    } else {
+        metrics[7]
+    }
+}
+
+fn legacy_font_metrics(font_family: Option<&str>) -> [f64; 8] {
+    match font_family.unwrap_or("noto-sans-sc") {
+        "noto-serif-sc" => [0.3, 1.0, 0.76, 0.55, 0.54, 0.31, 0.74, 0.74],
+        "barlow-condensed" | "bebas-neue" | "inter-tight" | "oswald" | "rajdhani"
+        | "roboto-condensed" => [0.28, 1.0, 0.62, 0.5, 0.51, 0.28, 0.64, 0.64],
+        "exo-2" | "manrope" | "outfit" | "space-grotesk" => {
+            [0.3, 1.0, 0.72, 0.56, 0.58, 0.33, 0.78, 0.76]
+        }
+        "georgia" | "ibm-plex-serif" | "source-serif-4" | "times-new-roman" | "system-serif" => {
+            [0.32, 1.0, 0.75, 0.55, 0.53, 0.32, 0.74, 0.74]
+        }
+        "courier-new" | "ibm-plex-mono" | "inconsolata" | "jetbrains-mono" | "space-mono"
+        | "system-mono" => [0.6; 8],
+        "noto-sans-sc" => [0.32, 1.0, 0.73, 0.57, 0.56, 0.36, 0.8, 0.8],
+        _ => [0.31, 1.0, 0.7, 0.55, 0.56, 0.32, 0.75, 0.74],
+    }
+}
+
+fn legacy_is_wide_character(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x1100..=0x115f
+            | 0x2e80..=0xa4cf
+            | 0xac00..=0xd7a3
+            | 0xf900..=0xfaff
+            | 0xfe10..=0xfe19
+            | 0xfe30..=0xfe6f
+            | 0xff00..=0xff60
+            | 0xffe0..=0xffe6
+            | 0x20000..=0x3fffd
+    )
 }
 
 fn normalize_recommended_use(object: &mut serde_json::Map<String, Value>) {

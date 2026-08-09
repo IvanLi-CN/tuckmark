@@ -20,7 +20,7 @@ use tuckmark_contracts::{
     DevdDataState, DevdDataTransaction, DevdLiveLock, DevdOwner, InventoryAdjustment,
     InventoryMaterial, InventorySnapshot, JsonWrite, RevisionEvent, RuntimeSnapshot,
     TemplateRecord, TemplateVersion, WorkingCopyRecord, canonical_json_bytes,
-    validate_referential_integrity, validate_relative_path,
+    normalize_legacy_tree_value, validate_referential_integrity, validate_relative_path,
 };
 use uuid::Uuid;
 
@@ -604,6 +604,7 @@ impl DataAuthority {
         let mut materials = Vec::new();
         let mut adjustments = Vec::new();
         for (path, value) in files {
+            let value = normalize_legacy_tree_value(value);
             if path.starts_with("templates/") && path.ends_with("/template.json") {
                 templates.push(serde_json::from_value::<TemplateRecord>(value)?);
             } else if path.starts_with("templates/") && path.contains("/versions/") {
@@ -644,6 +645,7 @@ impl DataAuthority {
         let mut materials = Vec::new();
         let mut adjustments = Vec::new();
         for (path, value) in files {
+            let value = normalize_legacy_tree_value(value);
             if path.starts_with("templates/") && path.ends_with("/template.json") {
                 templates.push(serde_json::from_value::<TemplateRecord>(value)?);
             } else if path.starts_with("templates/") && path.contains("/versions/") {

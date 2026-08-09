@@ -146,6 +146,72 @@ fn directory_tree_archive_round_trips_the_frozen_fixture_entries_deterministical
 }
 
 #[test]
+fn directory_tree_archive_import_normalizes_legacy_text_defaults() {
+    let exported_at = "2026-01-02T03:04:05.000Z".to_owned();
+    let mut manifest = DataDirectoryManifest::new("legacy-archive", exported_at.clone());
+    manifest.counts.templates = 1;
+    manifest.counts.versions = 1;
+    manifest.files.templates_dir = "templates".into();
+    let entries = BTreeMap::from([
+        ("settings/app-settings.json".into(), json!({})),
+        (
+            "templates/template-1/template.json".into(),
+            json!({
+                "id": "template-1",
+                "name": "Legacy",
+                "description": "",
+                "width": 100,
+                "height": 50,
+                "createdAt": "2026-01-02T03:04:05.000Z",
+                "updatedAt": "2026-01-02T03:04:05.000Z",
+                "fieldOrder": [],
+                "currentVersionId": "version-1"
+            }),
+        ),
+        (
+            "templates/template-1/versions/version-1.json".into(),
+            json!({
+                "id": "version-1",
+                "templateId": "template-1",
+                "version": 1,
+                "kind": "saved",
+                "createdAt": "2026-01-02T03:04:05.000Z",
+                "label": "Legacy",
+                "document": {
+                    "version": 1,
+                    "id": "template-1",
+                    "presetId": "template-1",
+                    "name": "Legacy",
+                    "source": {"kind": "user-template", "templateId": "template-1"},
+                    "width": 100,
+                    "height": 50,
+                    "fields": [],
+                    "elements": [{
+                        "id": "text-1",
+                        "meta": {"name": "Text", "visible": true, "locked": false},
+                        "kind": "text",
+                        "x": 0,
+                        "y": 0,
+                        "fontSize": 4,
+                        "value": "A\nB",
+                        "stretchX": false,
+                        "stretchY": false
+                    }],
+                    "editor": {"gridEnabled": true, "snapEnabled": true}
+                }
+            }),
+        ),
+    ]);
+    let archive = DirectoryTreeArchive::new(exported_at, manifest, entries).unwrap();
+
+    let archive = archive.to_devd_data_archive().unwrap();
+    let text = &archive.runtime.versions[0].document.as_ref().unwrap()["elements"][0];
+    assert_eq!(text["fontWeight"], "normal");
+    assert_eq!(text["align"], "left");
+    assert_eq!(text["height"], 8.8);
+}
+
+#[test]
 fn directory_tree_archive_rejects_path_traversal_entries() {
     let (exported_at, manifest, entries) = fixture_entries();
     let mut archive_entries = vec![

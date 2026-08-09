@@ -11,14 +11,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  prepare:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    name: Release Publish
+    name: Release Prepare
     runs-on: ubuntu-latest
     permissions:
       actions: write
       contents: write
       pull-requests: read
+    outputs:
+      skipped: ${{ steps.release-notes.outputs.skipped }}
+      merge_sha: ${{ steps.release-values.outputs.merge_sha }}
+      release_version: ${{ steps.release-values.outputs.release_version }}
+      context_artifact: ${{ steps.release-notes.outputs.artifact_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,6 +58,7 @@ jobs:
         run: node .github/scripts/release-notes.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
       - name: Upload release context artifact
         if: steps.release-notes.outputs.skipped != 'true'
         uses: actions/upload-artifact@v4
@@ -61,50 +67,104 @@ jobs:
           path: |
             work/release/release-context.json
             work/release/release-notes.md
-      - name: Check out release commit
+      - id: release-values
+        name: Export release plan values
         run: |
-          MERGE_SHA="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).merge_sha")"
-          git checkout --detach "$MERGE_SHA"
-          git submodule update --init --recursive
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Build bundles
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs = require("node:fs")
+          const plan = JSON.parse(fs.readFileSync("work/release/release-plan.json", "utf8"))
+          console.log(`merge_sha=${plan.merge_sha}`)
+          console.log(`release_version=${plan.release_version}`)
+          NODE
+
+  native:
+    needs: prepare
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.skipped != 'true'
+    name: Native ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            target: aarch64-apple-darwin
+          - runner: macos-13
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.merge_sha }}
+          fetch-depth: 0
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0
+          targets: ${{ matrix.target }}
+      - name: Build native binaries
+        run: cargo build --locked --release --target ${{ matrix.target }} --bin tuckmark --bin tuckmark-devd
+      - name: Ad-hoc sign and package
+        id: package
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
         run: |
-          bun run build
-          mkdir -p work/release/bundles
-          tar -czf work/release/bundles/tuckmark-runtime-bundle.tgz packages packages/server package.json bun.lock README.md PRODUCT.md DESIGN.md CONTEXT.md
-          tar -czf work/release/bundles/tuckmark-cli-bundle.tgz packages/cli packages/core package.json bun.lock README.md
-      - name: Publish GitHub Release
+          version="${RELEASE_VERSION#v}"
+          root="tuckmark-${version}-${{ matrix.target }}"
+          mkdir -p "$root"
+          cp "target/${{ matrix.target }}/release/tuckmark" "target/${{ matrix.target }}/release/tuckmark-devd" "$root/"
+          codesign --force --sign - "$root/tuckmark" "$root/tuckmark-devd"
+          tar -czf "${root}.tar.gz" "$root"
+          echo "archive=${root}.tar.gz" >> "$GITHUB_OUTPUT"
+      - name: Artifact smoke test without JavaScript runtime
+        run: bash scripts/test-native-release-artifact.sh "${{ steps.package.outputs.archive }}" ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.target }}
+          path: ${{ steps.package.outputs.archive }}
+
+  publish:
+    needs: [prepare, native]
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.skipped != 'true'
+    name: Publish Release
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.merge_sha }}
+          fetch-depth: 1
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.context_artifact }}
+          path: work/release
+      - name: Build release checksum manifest
+        run: shasum -a 256 "release"/*.tar.gz > release/SHA256SUMS
+      - name: Publish native release archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          VERSION="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).release_version")"
-          TYPE_LABEL="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).type_label")"
-          CHANNEL_LABEL="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).channel_label || ''")"
-          MERGE_SHA="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).merge_sha")"
-          if [ "$TYPE_LABEL" = "type:none" ]; then
-            echo "Skipping release for type:none"
-            exit 0
+          context="work/release/release-context.json"
+          version="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).release_version' "$context")"
+          channel="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).channel_label' "$context")"
+          merge_sha="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).merge_sha' "$context")"
+          release_args=()
+          if [ "$channel" = "channel:preview" ]; then
+            release_args+=(--prerelease --latest=false)
           fi
-          RELEASE_ARGS=()
-          if [ "$CHANNEL_LABEL" = "channel:preview" ]; then
-            RELEASE_ARGS+=(--prerelease --latest=false)
-          fi
-          gh release create "$VERSION" \
-            work/release/bundles/tuckmark-runtime-bundle.tgz \
-            work/release/bundles/tuckmark-cli-bundle.tgz \
-            --title "$VERSION" \
+          gh release create "$version" \
+            release/*.tar.gz release/SHA256SUMS \
+            --title "$version" \
             --notes-file work/release/release-notes.md \
-            --target "$MERGE_SHA" \
-            "${RELEASE_ARGS[@]}"
-        env:
-          GH_TOKEN: ${{ github.token }}
-      - name: Redeploy Pages with release metadata
-        run: |
-          VERSION="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).release_version")"
-          TYPE_LABEL="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).type_label")"
-          if [ "$TYPE_LABEL" = "type:none" ]; then
-            echo "Skipping Pages redeploy for type:none"
-            exit 0
-          fi
-          gh workflow run pages.yml --ref main -f release_tag="$VERSION"
-        env:
-          GH_TOKEN: ${{ github.token }}
+            --target "$merge_sha" \
+            "${release_args[@]}"
+          gh workflow run pages.yml --ref main -f release_tag="$version"

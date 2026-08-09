@@ -93,6 +93,14 @@ The release workflow uploads:
 - `CLI bundle`
 - `release-context-<merge_sha>` artifact with release notes and release context
 
+The runtime and CLI bundle names are logical release-note entries. The published
+host assets are native macOS archives named
+`tuckmark-<version>-aarch64-apple-darwin.tar.gz` and
+`tuckmark-<version>-x86_64-apple-darwin.tar.gz`, plus one combined
+`SHA256SUMS` manifest. Each archive contains the Rust `tuckmark` and
+`tuckmark-devd` binaries and can be smoke-tested without Node, Bun, npm, or
+another JavaScript runtime.
+
 `workflow_dispatch` can backfill pending snapshots without recomputing release
 intent from a PR head.
 

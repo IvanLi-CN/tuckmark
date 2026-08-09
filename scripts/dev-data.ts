@@ -13,10 +13,13 @@ import {
 } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import {
-  type DevdConfigOptions,
-  resolveConfiguredDataDirectory,
-} from "../packages/server/src/devd-config.js"
+export type DevdConfigOptions = { explicitDataDir?: string; dataDir?: string }
+
+function resolveConfiguredDataDirectory(options: DevdConfigOptions) {
+  const dataDir = options.explicitDataDir || options.dataDir || process.env.TUCKMARK_DATA_DIR
+  if (!dataDir) throw new Error("Set TUCKMARK_DATA_DIR or pass an explicit source directory.")
+  return { dataDir: path.resolve(dataDir) }
+}
 
 const COPY_SCHEMA = "tuckmark.dev-data-copy.v1"
 const DATA_SCHEMA = "tuckmark.data-dir-manifest.v1"
