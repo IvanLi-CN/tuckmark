@@ -199,6 +199,12 @@ fn legacy_recommended_uses_and_text_stretch_aliases_normalize_without_losing_beh
                     "recommendedUses": ["parts"],
                     "elements": [{
                         "kind": "text",
+                        "fontSize": 4,
+                        "width": null,
+                        "height": 4,
+                        "lineHeight": 1.2,
+                        "fontFamily": "system-sans",
+                        "value": "legacy",
                         "stretchX": true,
                         "stretchY": false
                     }]
@@ -228,6 +234,9 @@ fn legacy_recommended_uses_and_text_stretch_aliases_normalize_without_losing_beh
     assert_eq!(text["stretchXShrink"], true);
     assert_eq!(text["stretchYGrow"], false);
     assert_eq!(text["stretchYShrink"], false);
+    assert_eq!(text["width"], 22.5);
+    assert_eq!(text["autoWrap"], true);
+    assert_eq!(text["verticalText"], false);
 }
 
 #[test]

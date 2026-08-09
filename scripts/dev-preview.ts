@@ -60,11 +60,16 @@ console.log(`- proxy:    ${apiOrigin}`)
 console.log(`- data:     ${dataDir}`)
 console.log(`- instance: ${devdInstance}`)
 
-startChild("devd", ["run", "--locked", "--package", "tuckmark-devd", "--", "serve"], {
-  PORT: serverPort,
-  TUCKMARK_DATA_DIR: dataDir,
-  TUCKMARK_DEVD_INSTANCE: devdInstance,
-}, cargoCommand)
+startChild(
+  "devd",
+  ["run", "--locked", "--package", "tuckmark-devd", "--", "serve"],
+  {
+    PORT: serverPort,
+    TUCKMARK_DATA_DIR: dataDir,
+    TUCKMARK_DEVD_INSTANCE: devdInstance,
+  },
+  cargoCommand
+)
 
 startChild(
   "web",

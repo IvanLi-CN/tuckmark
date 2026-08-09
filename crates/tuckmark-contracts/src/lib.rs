@@ -1693,6 +1693,13 @@ pub fn normalize_legacy_value(value: Value) -> Result<Value, ContractError> {
     Ok(canonicalize_json(normalized))
 }
 
+/// Applies the legacy canvas defaults used by the Web normalizer to one
+/// persisted JSON value without changing its schema or writing it back.
+pub fn normalize_legacy_tree_value(mut value: Value) -> Value {
+    normalize_legacy_tree(&mut value);
+    canonicalize_json(value)
+}
+
 fn normalize_legacy_tree(value: &mut Value) {
     match value {
         Value::Array(values) => {
@@ -1704,6 +1711,7 @@ fn normalize_legacy_tree(value: &mut Value) {
             normalize_recommended_use(object);
             if object.get("kind").and_then(Value::as_str) == Some("text") {
                 normalize_stretch_aliases(object);
+                normalize_text_defaults(object);
             }
             for value in object.values_mut() {
                 normalize_legacy_tree(value);
@@ -1711,6 +1719,68 @@ fn normalize_legacy_tree(value: &mut Value) {
         }
         _ => {}
     }
+}
+
+fn normalize_text_defaults(object: &mut serde_json::Map<String, Value>) {
+    for field in [
+        "width",
+        "height",
+        "fontFamily",
+        "lineHeight",
+        "justifyAlign",
+        "verticalAlign",
+        "stretchXGrow",
+        "stretchXShrink",
+        "stretchYGrow",
+        "stretchYShrink",
+        "stretchX",
+        "stretchY",
+        "autoWrap",
+        "adaptiveFontSize",
+        "verticalText",
+        "value",
+        "maxLines",
+        "rotation",
+        "resolvedLayout",
+    ] {
+        if object.get(field).is_some_and(Value::is_null) {
+            object.remove(field);
+        }
+    }
+    object.entry("width").or_insert_with(|| Value::from(22.5));
+    let font_size = object
+        .get("fontSize")
+        .and_then(Value::as_f64)
+        .unwrap_or(5.0);
+    object
+        .entry("height")
+        .or_insert_with(|| Value::from(font_size));
+    object
+        .entry("fontFamily")
+        .or_insert_with(|| Value::String("system-sans".into()));
+    object
+        .entry("lineHeight")
+        .or_insert_with(|| Value::from(1.2));
+    object
+        .entry("verticalAlign")
+        .or_insert_with(|| Value::String("top".into()));
+    for field in [
+        "stretchXGrow",
+        "stretchXShrink",
+        "stretchYGrow",
+        "stretchYShrink",
+    ] {
+        object.entry(field).or_insert(Value::Bool(false));
+    }
+    object.entry("autoWrap").or_insert(Value::Bool(true));
+    object
+        .entry("adaptiveFontSize")
+        .or_insert(Value::Bool(false));
+    object.entry("verticalText").or_insert(Value::Bool(false));
+    object
+        .entry("value")
+        .or_insert_with(|| Value::String(String::new()));
+    object.entry("rotation").or_insert(Value::from(0));
 }
 
 fn normalize_recommended_use(object: &mut serde_json::Map<String, Value>) {
