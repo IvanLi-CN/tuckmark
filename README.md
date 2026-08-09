@@ -92,7 +92,7 @@ one label binding, and an inbound adjustment, while restocks write only an
 inbound adjustment. Sessions use a fragment-held key and expire after 30 minutes.
 
 Use `skills/tuckmark-agent-import-user` outside a source checkout and
-`skills/tuckmark-agent-import-developer` while testing the active worktree.
+`skills/tuckmark-agent-import-developer` while testing the active Rust worktree.
 
 ## Local Preview
 

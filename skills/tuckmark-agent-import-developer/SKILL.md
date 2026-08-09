@@ -5,7 +5,8 @@ description: Exercise private order-derived Tuckmark agent imports from the curr
 
 # Tuckmark Agent Import Developer
 
-Use this skill inside a Tuckmark source checkout. It deliberately invokes the active worktree source CLI, never a globally installed `tuckmark` binary.
+Use this skill inside a Tuckmark source checkout. It deliberately invokes the
+active Rust worktree CLI, never a globally installed `tuckmark` binary.
 
 ## Source Guard
 
@@ -13,16 +14,17 @@ Resolve the checkout before every command:
 
 ```bash
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-test -f "$REPO_ROOT/packages/cli/src/index.ts"
+test -f "$REPO_ROOT/crates/tuckmark-cli/Cargo.toml"
+test -f "$REPO_ROOT/crates/tuckmark-devd/Cargo.toml"
 ```
 
 Use this command prefix:
 
 ```bash
-bun tsx --tsconfig "$REPO_ROOT/packages/cli/tsconfig.typecheck.json" "$REPO_ROOT/packages/cli/src/index.ts"
+cargo run --locked --package tuckmark-cli --
 ```
 
-Do not substitute `tuckmark` while validating source changes. Run
+Do not substitute a released `tuckmark` while validating source changes. Run
 `bun run dev:data:prepare` when representative local data is needed; an existing
 valid worktree copy is reused. Otherwise use the empty isolated directory
 created by `bun run dev:preview`. Never point development DEVD at the formal
@@ -31,13 +33,13 @@ user data directory.
 ## Workflow
 
 1. Follow the privacy, identity, and browser boundaries in `tuckmark-agent-import-user`. Never add a real order export to a fixture, test, screenshot, or commit.
-2. Start the worktree's named DEVD instance through `bun run dev:preview`, then
-   query its catalog and inventory with the source CLI. The default instance is
+2. Start the worktree's named Rust DEVD instance through `bun run dev:preview`,
+   then query its catalog and inventory with the source CLI. The default instance is
    derived from the worktree path and printed at startup. Native commands use
    IPC; the CLI never reads the directory:
 
    ```bash
-   bun tsx --tsconfig "$REPO_ROOT/packages/cli/tsconfig.typecheck.json" "$REPO_ROOT/packages/cli/src/index.ts" \
+   cargo run --locked --package tuckmark-cli -- \
      agent-import catalog --instance "$DEVD_INSTANCE"
    ```
 
@@ -45,9 +47,9 @@ user data directory.
 4. Create and drive a session with the same source command prefix:
 
    ```bash
-   bun tsx --tsconfig "$REPO_ROOT/packages/cli/tsconfig.typecheck.json" "$REPO_ROOT/packages/cli/src/index.ts" \
+   cargo run --locked --package tuckmark-cli -- \
      agent-import create --file /tmp/mock-proposal.json --instance "$DEVD_INSTANCE" --no-open
-   bun tsx --tsconfig "$REPO_ROOT/packages/cli/tsconfig.typecheck.json" "$REPO_ROOT/packages/cli/src/index.ts" \
+   cargo run --locked --package tuckmark-cli -- \
      agent-import wait --session <session-id> --instance "$DEVD_INSTANCE"
    ```
 
@@ -67,8 +69,7 @@ saved-version count, and stale revisions must be re-read rather than replayed.
 ## Focused Validation
 
 ```bash
+cargo test --workspace --locked
 bun run --filter @tuckmark/inventory test
-bun run --filter @tuckmark/server test
-bun run --filter @tuckmark/cli test
 bun run --filter @tuckmark/web test
 ```
