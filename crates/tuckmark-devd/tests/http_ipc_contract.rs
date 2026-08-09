@@ -1,0 +1,440 @@
+use std::{net::SocketAddr, time::Duration};
+
+use axum::{
+    body::Body,
+    extract::ConnectInfo,
+    http::{Request, StatusCode, header},
+};
+use http_body_util::BodyExt;
+use serde_json::{Value, json};
+use tempfile::tempdir;
+#[cfg(any(unix, windows))]
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(unix)]
+use tokio::net::UnixStream;
+#[cfg(windows)]
+use tokio::net::windows::named_pipe::ClientOptions;
+use tokio::time::timeout;
+use tower::ServiceExt;
+#[cfg(unix)]
+use tuckmark_devd::ipc::bind_unix_ipc;
+#[cfg(windows)]
+use tuckmark_devd::ipc::bind_windows_ipc;
+use tuckmark_devd::{
+    AppState,
+    config::DevdConfig,
+    routes::{TransportContext, app_router_for_transport},
+};
+
+fn test_state() -> (tempfile::TempDir, AppState) {
+    let directory = tempdir().unwrap();
+    let config = DevdConfig::resolve(Some(directory.path().to_path_buf())).unwrap();
+    let state = AppState::open(config, None).unwrap();
+    (directory, state)
+}
+
+fn http_request_from(path: &str, address: SocketAddr) -> Request<Body> {
+    let mut request = Request::builder()
+        .uri(path)
+        .header(header::HOST, "127.0.0.1")
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(ConnectInfo(address));
+    request
+}
+
+fn http_request(path: &str) -> Request<Body> {
+    http_request_from(path, SocketAddr::from(([127, 0, 0, 1], 34000)))
+}
+
+fn json_request(method: axum::http::Method, path: &str, payload: Value) -> Request<Body> {
+    let mut request = http_request(path);
+    *request.method_mut() = method;
+    request.headers_mut().insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("application/json"),
+    );
+    *request.body_mut() = Body::from(serde_json::to_vec(&payload).unwrap());
+    request
+}
+
+async fn response_json(response: axum::response::Response) -> Value {
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+#[tokio::test]
+async fn frozen_http_fixture_preserves_health_conflict_and_origin_boundaries() {
+    let (_directory, state) = test_state();
+    for expected_revision in 0..5 {
+        state
+            .data
+            .mutate_runtime(
+                "save-settings",
+                expected_revision,
+                json!({ "patch": { "threshold": 140 + expected_revision } }),
+            )
+            .unwrap();
+    }
+    let app = app_router_for_transport(state, TransportContext::Http);
+
+    let health = app.clone().oneshot(http_request("/health")).await.unwrap();
+    assert_eq!(health.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(health).await,
+        json!({ "status": "ok", "name": "tuckmark" })
+    );
+
+    let mapped_loopback = app
+        .clone()
+        .oneshot(http_request_from(
+            "/api/data/status",
+            "[::ffff:127.0.0.1]:34000".parse().unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(mapped_loopback.status(), StatusCode::OK);
+
+    let remote_peer = app
+        .clone()
+        .oneshot(http_request_from(
+            "/api/data/status",
+            SocketAddr::from(([192, 0, 2, 67], 34000)),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(remote_peer.status(), StatusCode::FORBIDDEN);
+
+    let mut conflict = http_request("/api/data/runtime/save-settings");
+    *conflict.method_mut() = axum::http::Method::POST;
+    conflict.headers_mut().insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("application/json"),
+    );
+    *conflict.body_mut() = Body::from(
+        serde_json::to_vec(&json!({
+            "expectedRevision": 4,
+            "args": { "patch": { "threshold": 144 } },
+        }))
+        .unwrap(),
+    );
+    let conflict = app.clone().oneshot(conflict).await.unwrap();
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        response_json(conflict).await,
+        json!({
+            "status": "error",
+            "code": "revision_conflict",
+            "expectedRevision": 4,
+            "actualRevision": 5,
+            "error": "Expected revision 4 but current revision is 5.",
+        })
+    );
+
+    let mut cross_origin = http_request("/api/data/status");
+    cross_origin.headers_mut().insert(
+        header::ORIGIN,
+        header::HeaderValue::from_static("https://synthetic.invalid"),
+    );
+    let cross_origin = app.oneshot(cross_origin).await.unwrap();
+    assert_eq!(cross_origin.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        response_json(cross_origin).await,
+        json!({ "status": "error", "error": "Cross-origin DEVD access is forbidden." })
+    );
+
+    let preflight = Request::builder()
+        .method(axum::http::Method::OPTIONS)
+        .uri("/api/data/status")
+        .body(Body::empty())
+        .unwrap();
+    let (_preflight_directory, preflight_state) = test_state();
+    let preflight = app_router_for_transport(preflight_state, TransportContext::Http)
+        .oneshot(preflight)
+        .await
+        .unwrap();
+    assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        preflight
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap(),
+        "*"
+    );
+}
+
+#[tokio::test]
+async fn sse_observes_the_committed_revision() {
+    let (_directory, state) = test_state();
+    let http = app_router_for_transport(state.clone(), TransportContext::Http);
+    let sse = http
+        .clone()
+        .oneshot(http_request("/api/data/events"))
+        .await
+        .unwrap();
+    assert_eq!(sse.status(), StatusCode::OK);
+    assert_eq!(
+        sse.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-cache, no-transform"
+    );
+    let mut body = sse.into_body();
+    let retry = timeout(Duration::from_secs(1), body.frame())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .into_data()
+        .unwrap();
+    assert_eq!(&retry[..], b"retry: 3000\n\n");
+
+    let updated = state
+        .data
+        .mutate_runtime("save-settings", 0, json!({ "patch": { "threshold": 151 } }))
+        .unwrap();
+    assert_eq!(updated["revision"], 1);
+    let event = timeout(Duration::from_secs(1), body.frame())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .into_data()
+        .unwrap();
+    let event = String::from_utf8(event.to_vec()).unwrap();
+    assert!(event.contains("id: 1\n"));
+    assert!(event.contains("event: data-revision\n"));
+    assert!(event.contains("\"revision\":1"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn unix_named_ipc_observes_the_committed_revision() {
+    let (_directory, state) = test_state();
+    state
+        .data
+        .mutate_runtime("save-settings", 0, json!({ "patch": { "threshold": 151 } }))
+        .unwrap();
+    let instance = format!("ticket-67-{}", std::process::id());
+    let ipc = bind_unix_ipc(&instance).await.unwrap();
+    let endpoint = ipc.endpoint().address.clone();
+    let (listener, _cleanup) = ipc.into_parts();
+    let ipc_router = app_router_for_transport(state, TransportContext::Ipc);
+    let server = tokio::spawn(async move {
+        axum::serve(listener, ipc_router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let mut stream = UnixStream::connect(endpoint).await.unwrap();
+    stream
+        .write_all(
+            b"GET /api/data/status HTTP/1.1\r\nHost: localhost\r\nx-tuckmark-ipc: 1\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.unwrap();
+    server.abort();
+    assert!(response.starts_with("HTTP/1.1 200"));
+    assert!(response.contains("\"revision\":1"));
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_named_ipc_observes_the_committed_revision() {
+    let (_directory, state) = test_state();
+    state
+        .data
+        .mutate_runtime("save-settings", 0, json!({ "patch": { "threshold": 151 } }))
+        .unwrap();
+    let instance = format!("ticket-67-{}", std::process::id());
+    let ipc = bind_windows_ipc(&instance).unwrap();
+    let endpoint = ipc.endpoint().address.clone();
+    let ipc_router = app_router_for_transport(state, TransportContext::Ipc);
+    let server = tokio::spawn(async move {
+        axum::serve(ipc, ipc_router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let mut stream = ClientOptions::new().open(endpoint).unwrap();
+    stream
+        .write_all(
+            b"GET /api/data/status HTTP/1.1\r\nHost: localhost\r\nx-tuckmark-ipc: 1\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.unwrap();
+    server.abort();
+    assert!(response.starts_with("HTTP/1.1 200"));
+    assert!(response.contains("\"revision\":1"));
+}
+
+#[tokio::test]
+async fn native_service_routes_render_persist_and_serve_contract_artifacts() {
+    let (_directory, state) = test_state();
+    let app = app_router_for_transport(state, TransportContext::Http);
+
+    let templates = app
+        .clone()
+        .oneshot(http_request("/api/templates"))
+        .await
+        .unwrap();
+    assert_eq!(templates.status(), StatusCode::OK);
+    let templates = response_json(templates).await;
+    assert_eq!(
+        templates["templates"][0]["id"],
+        Value::String("shipping-compact".into())
+    );
+
+    let preview = app
+        .clone()
+        .oneshot(json_request(
+            axum::http::Method::POST,
+            "/api/preview/template",
+            json!({
+                "templateId": "shipping-compact",
+                "input": {
+                    "recipient": "Ada",
+                    "address": "Loopback Lane",
+                    "orderId": "ORDER-67",
+                    "note": "contract"
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(preview.status(), StatusCode::OK);
+    let preview = response_json(preview).await;
+    let artifact_id = preview["artifact"]["id"].as_str().unwrap().to_owned();
+
+    let png = app
+        .clone()
+        .oneshot(http_request(&format!("/api/artifacts/{artifact_id}/png")))
+        .await
+        .unwrap();
+    assert_eq!(png.status(), StatusCode::OK);
+    assert_eq!(
+        png.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/png"
+    );
+    assert!(
+        !png.into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .is_empty()
+    );
+
+    let svg = app
+        .clone()
+        .oneshot(http_request(&format!("/api/artifacts/{artifact_id}/svg")))
+        .await
+        .unwrap();
+    assert_eq!(svg.status(), StatusCode::OK);
+    assert_eq!(
+        svg.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/svg+xml"
+    );
+
+    let packets = app
+        .clone()
+        .oneshot(http_request(&format!(
+            "/api/artifacts/{artifact_id}/packets"
+        )))
+        .await
+        .unwrap();
+    assert_eq!(packets.status(), StatusCode::OK);
+    assert_eq!(response_json(packets).await["artifactId"], artifact_id);
+
+    let sync = app
+        .clone()
+        .oneshot(json_request(
+            axum::http::Method::POST,
+            "/api/sync/state",
+            json!({
+                "schemaVersion": 1,
+                "updatedAt": "2026-08-09T00:00:00.000Z",
+                "templateUsageRecords": [],
+                "recentPrintRecords": [],
+                "canvasDraftRecords": []
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(sync.status(), StatusCode::OK);
+    assert_eq!(response_json(sync).await["state"]["schemaVersion"], 1);
+
+    let print = app
+        .oneshot(json_request(
+            axum::http::Method::POST,
+            "/api/print/artifact",
+            json!({ "printerId": "none", "artifactId": artifact_id }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(print.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(print).await["error"],
+        "Server-side printer control is disabled. Set TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 to enable it."
+    );
+}
+
+#[tokio::test]
+async fn sync_record_routes_apply_existing_optional_field_defaults() {
+    let (_directory, state) = test_state();
+    let app = app_router_for_transport(state, TransportContext::Http);
+    let response = app
+        .oneshot(json_request(
+            axum::http::Method::POST,
+            "/api/sync/template-usage",
+            json!({
+                "kind": "template_usage",
+                "recordId": "usage-67",
+                "version": 1,
+                "vectorClock": {},
+                "updatedAt": "2026-08-09T00:00:00.000Z",
+                "hash": "usage-67-hash",
+                "payload": {
+                    "id": "shipping-compact",
+                    "name": "Shipping Compact",
+                    "description": "Compact shipping label",
+                    "usedAt": "2026-08-09T00:00:00.000Z"
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let state = response_json(response).await["state"].clone();
+    assert_eq!(
+        state["templateUsageRecords"][0]["vectorClock"],
+        json!({ "browser": 0, "service": 0 })
+    );
+    assert_eq!(state["templateUsageRecords"][0]["conflicts"], json!([]));
+}
+
+#[tokio::test]
+async fn sync_record_routes_reject_payloads_outside_the_existing_schema() {
+    let (_directory, state) = test_state();
+    let app = app_router_for_transport(state, TransportContext::Http);
+    let response = app
+        .oneshot(json_request(
+            axum::http::Method::POST,
+            "/api/sync/template-usage",
+            json!({
+                "kind": "template_usage",
+                "recordId": "usage-invalid",
+                "version": 1,
+                "vectorClock": {},
+                "updatedAt": "2026-08-09T00:00:00.000Z",
+                "hash": "usage-invalid-hash",
+                "payload": { "id": "shipping-compact" }
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response_json(response).await["status"], "error");
+}

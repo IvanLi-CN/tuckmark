@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -56,6 +57,62 @@ pub struct SessionCommitResult {
     pub event: Option<RevisionEvent>,
 }
 
+/// The serializable agent-import template catalog exposed by the DEVD adapters.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentImportCatalogResponse {
+    pub templates: Vec<AgentImportTemplate>,
+}
+
+/// An active inventory material referenced by a restock item in a session.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentImportRestockTarget {
+    pub item_id: String,
+    pub material: InventoryMaterial,
+}
+
+/// A pending request for an agent to supply label-template field values.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentImportTemplateInputEvent {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub item_id: String,
+    pub revision: u64,
+    pub template: AgentImportTemplate,
+    pub created_at: String,
+    pub status: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct UpdateAgentImportItem {
+    pub session_id: String,
+    pub secret: String,
+    pub item_id: String,
+    pub expected_revision: u64,
+    pub item: AgentImportItem,
+}
+
+#[derive(Clone, Debug)]
+pub struct RequestAgentImportTemplateInput {
+    pub session_id: String,
+    pub secret: String,
+    pub item_id: String,
+    pub expected_revision: u64,
+    pub template: AgentImportTemplate,
+}
+
+#[derive(Clone, Debug)]
+pub struct FulfillAgentImportTemplateInput {
+    pub session_id: String,
+    pub secret: String,
+    pub event_id: String,
+    pub expected_revision: u64,
+    pub input: BTreeMap<String, String>,
+}
+
 /// The bounded system template set available to agent-import confirmation.
 ///
 /// User templates are resolved from the active data directory at confirmation
@@ -64,6 +121,7 @@ pub struct SessionCommitResult {
 #[derive(Clone, Debug)]
 pub struct AgentImportCatalog {
     system_templates: BTreeMap<String, AgentImportTemplate>,
+    system_template_order: Vec<String>,
 }
 
 impl AgentImportCatalog {
@@ -98,22 +156,32 @@ impl AgentImportCatalog {
         templates: impl IntoIterator<Item = AgentImportTemplate>,
     ) -> Result<Self, AgentImportError> {
         let mut system_templates = BTreeMap::new();
+        let mut system_template_order = Vec::new();
         for template in templates {
             validate_catalog_template(&template, "system")?;
-            if system_templates
-                .insert(template.id.clone(), template)
-                .is_some()
-            {
+            if system_templates.contains_key(&template.id) {
                 return Err(AgentImportError::Validation(
                     "agent import system template ids must be unique".into(),
                 ));
             }
+            system_template_order.push(template.id.clone());
+            system_templates.insert(template.id.clone(), template);
         }
-        Ok(Self { system_templates })
+        Ok(Self {
+            system_templates,
+            system_template_order,
+        })
     }
 
     fn resolve_system(&self, id: &str) -> Option<AgentImportTemplate> {
         self.system_templates.get(id).cloned()
+    }
+
+    fn list_system(&self) -> Vec<AgentImportTemplate> {
+        self.system_template_order
+            .iter()
+            .filter_map(|id| self.system_templates.get(id).cloned())
+            .collect()
     }
 }
 
@@ -231,6 +299,285 @@ impl AgentImportManager {
             .ok_or(AgentImportError::SessionNotFound)?;
         assert_secret(session, secret)?;
         Ok(session.session.clone())
+    }
+
+    /// Returns the system and active user-template catalog for an agent-import client.
+    pub fn catalog(&self) -> Result<AgentImportCatalogResponse, AgentImportError> {
+        Ok(AgentImportCatalogResponse {
+            templates: self.list_templates()?,
+        })
+    }
+
+    /// Lists active inventory materials that an agent may search while preparing an import.
+    pub fn list_inventory(
+        &self,
+        query: Option<&str>,
+    ) -> Result<Vec<InventoryMaterial>, AgentImportError> {
+        let query = query.unwrap_or_default().trim().to_lowercase();
+        let mut materials = self
+            .read_materials()?
+            .into_iter()
+            .filter(|material| material.archived_at.is_none())
+            .filter(|material| material_matches_query(material, &query))
+            .collect::<Vec<_>>();
+        materials.sort_by(|left, right| {
+            left.full_name
+                .to_lowercase()
+                .cmp(&right.full_name.to_lowercase())
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(materials)
+    }
+
+    /// Resolves each active material still referenced by a restock item in a session.
+    pub fn resolve_restock_targets(
+        &self,
+        session_id: &str,
+        secret: &str,
+    ) -> Result<Vec<AgentImportRestockTarget>, AgentImportError> {
+        let session = self.get_session(session_id, secret)?;
+        let materials = self
+            .read_materials()?
+            .into_iter()
+            .map(|material| (material.id.clone(), material))
+            .collect::<BTreeMap<_, _>>();
+        Ok(session
+            .proposal
+            .items
+            .into_iter()
+            .filter(|item| item.kind == AgentImportItemKind::Restock)
+            .filter_map(|item| {
+                let material = materials.get(item.target_material_id.as_deref()?)?;
+                (material.archived_at.is_none()).then(|| AgentImportRestockTarget {
+                    item_id: item.id,
+                    material: material.clone(),
+                })
+            })
+            .collect())
+    }
+
+    /// Lists template-input requests that remain actionable for an agent.
+    pub fn list_events(
+        &self,
+        session_id: &str,
+        secret: &str,
+    ) -> Result<Vec<AgentImportTemplateInputEvent>, AgentImportError> {
+        let session = self.get_session(session_id, secret)?;
+        session
+            .events
+            .iter()
+            .map(parse_template_input_event)
+            .filter_map(|event| match event {
+                Ok(event) if event.status == "open" => Some(Ok(event)),
+                Ok(_) => None,
+                Err(error) => Some(Err(error)),
+            })
+            .collect()
+    }
+
+    /// Applies a client edit to a session item, enforcing its optimistic revision.
+    pub fn update_item(
+        &self,
+        input: UpdateAgentImportItem,
+    ) -> Result<AgentImportSession, AgentImportError> {
+        let now = self.clock.now();
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AgentImportError::Validation("session lock is poisoned".into()))?;
+        cleanup_expired_sessions(&mut sessions, &now);
+        let managed = sessions
+            .get_mut(&input.session_id)
+            .ok_or(AgentImportError::SessionNotFound)?;
+        assert_secret(managed, &input.secret)?;
+        ensure_open_session(managed)?;
+        let item_index = session_item_index(&managed.session, &input.item_id)?;
+        let current = managed.session.proposal.items[item_index].clone();
+        if current.revision != input.expected_revision {
+            return Err(AgentImportError::Validation(
+                "This import item changed. Refresh before saving it again.".into(),
+            ));
+        }
+
+        let pending_event = current
+            .pending_template_event_id
+            .as_deref()
+            .map(|event_id| find_open_event(&managed.session.events, event_id, &current.id))
+            .transpose()?
+            .flatten();
+        if current.pending_template_event_id.is_some() && pending_event.is_none() {
+            return Err(AgentImportError::Validation(
+                "Template input event is no longer open.".into(),
+            ));
+        }
+
+        let next = match current.kind {
+            AgentImportItemKind::Restock => AgentImportItem {
+                selected: input.item.selected,
+                quantity: input.item.quantity,
+                source_note: input.item.source_note,
+                revision: current.revision + 1,
+                ..current.clone()
+            },
+            AgentImportItemKind::New => AgentImportItem {
+                id: current.id.clone(),
+                kind: current.kind.clone(),
+                revision: current.revision + 1,
+                template: current.template.clone(),
+                template_input: pending_event.as_ref().map_or_else(
+                    || input.item.template_input.clone(),
+                    |_| current.template_input.clone(),
+                ),
+                pending_template_event_id: current.pending_template_event_id.clone(),
+                ..input.item
+            },
+        };
+        validate_agent_import_item(&next)?;
+
+        if let Some((event_index, mut event)) = pending_event {
+            event.revision = next.revision;
+            managed.session.events[event_index] = encode_template_input_event(&event)?;
+        }
+        managed.session.proposal.items[item_index] = next;
+        Ok(managed.session.clone())
+    }
+
+    /// Selects a catalog template and opens a request for its required field values.
+    pub fn request_template_input(
+        &self,
+        input: RequestAgentImportTemplateInput,
+    ) -> Result<AgentImportSession, AgentImportError> {
+        let requested_key = template_key(&input.template);
+        let template = self
+            .list_templates()?
+            .into_iter()
+            .find(|candidate| template_key(candidate) == requested_key)
+            .ok_or_else(|| {
+                AgentImportError::Validation(format!(
+                    "Label template {requested_key} was not found."
+                ))
+            })?;
+        let now = self.clock.now();
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AgentImportError::Validation("session lock is poisoned".into()))?;
+        cleanup_expired_sessions(&mut sessions, &now);
+        let managed = sessions
+            .get_mut(&input.session_id)
+            .ok_or(AgentImportError::SessionNotFound)?;
+        assert_secret(managed, &input.secret)?;
+        ensure_open_session(managed)?;
+        let item_index = session_item_index(&managed.session, &input.item_id)?;
+        let current = managed.session.proposal.items[item_index].clone();
+        if current.kind != AgentImportItemKind::New {
+            return Err(AgentImportError::Validation(
+                "Only new materials accept an import template change.".into(),
+            ));
+        }
+        if current.revision != input.expected_revision {
+            return Err(AgentImportError::Validation(
+                "This import item changed. Refresh before changing its template.".into(),
+            ));
+        }
+
+        for value in &mut managed.session.events {
+            let mut event = parse_template_input_event(value)?;
+            if event.item_id == current.id && event.status == "open" {
+                event.status = "superseded".into();
+                *value = encode_template_input_event(&event)?;
+            }
+        }
+        let event = AgentImportTemplateInputEvent {
+            id: format!("agent-import-event-{}", Uuid::new_v4()),
+            event_type: "template-input-requested".into(),
+            item_id: current.id.clone(),
+            revision: current.revision + 1,
+            template: template.clone(),
+            created_at: now,
+            status: "open".into(),
+        };
+        managed.session.proposal.items[item_index] = AgentImportItem {
+            template: Some(template),
+            template_input: BTreeMap::new(),
+            pending_template_event_id: Some(event.id.clone()),
+            revision: event.revision,
+            ..current
+        };
+        managed
+            .session
+            .events
+            .push(encode_template_input_event(&event)?);
+        Ok(managed.session.clone())
+    }
+
+    /// Records an agent's response to a pending template-input request.
+    pub fn fulfill_template_input(
+        &self,
+        input: FulfillAgentImportTemplateInput,
+    ) -> Result<AgentImportSession, AgentImportError> {
+        let now = self.clock.now();
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AgentImportError::Validation("session lock is poisoned".into()))?;
+        cleanup_expired_sessions(&mut sessions, &now);
+        let managed = sessions
+            .get_mut(&input.session_id)
+            .ok_or(AgentImportError::SessionNotFound)?;
+        assert_secret(managed, &input.secret)?;
+        ensure_open_session(managed)?;
+        let event_index = managed
+            .session
+            .events
+            .iter()
+            .position(|value| {
+                parse_template_input_event(value)
+                    .map(|event| event.id == input.event_id)
+                    .unwrap_or(false)
+            })
+            .ok_or_else(|| {
+                AgentImportError::Validation("Template input event is no longer open.".into())
+            })?;
+        let mut event = parse_template_input_event(&managed.session.events[event_index])?;
+        if event.status != "open" {
+            return Err(AgentImportError::Validation(
+                "Template input event is no longer open.".into(),
+            ));
+        }
+        if event.revision != input.expected_revision {
+            return Err(AgentImportError::Validation(
+                "Template input event revision does not match.".into(),
+            ));
+        }
+        let item_index = match session_item_index(&managed.session, &event.item_id) {
+            Ok(item_index) => item_index,
+            Err(error) => {
+                event.status = "superseded".into();
+                managed.session.events[event_index] = encode_template_input_event(&event)?;
+                return Err(error);
+            }
+        };
+        let current = managed.session.proposal.items[item_index].clone();
+        if current.revision != event.revision
+            || current.pending_template_event_id.as_deref() != Some(event.id.as_str())
+        {
+            event.status = "superseded".into();
+            managed.session.events[event_index] = encode_template_input_event(&event)?;
+            return Err(AgentImportError::Validation(
+                "Template input event was superseded by a user edit.".into(),
+            ));
+        }
+        ensure_required_template_input(&event.template, &input.input)?;
+        managed.session.proposal.items[item_index] = AgentImportItem {
+            template_input: input.input,
+            pending_template_event_id: None,
+            revision: current.revision + 1,
+            ..current
+        };
+        event.status = "fulfilled".into();
+        managed.session.events[event_index] = encode_template_input_event(&event)?;
+        Ok(managed.session.clone())
     }
 
     pub fn confirm(
@@ -420,6 +767,83 @@ impl AgentImportManager {
                 Ok(serde_json::from_value(value)?)
             })
             .collect()
+    }
+
+    fn list_templates(&self) -> Result<Vec<AgentImportTemplate>, AgentImportError> {
+        let mut templates = self.catalog.list_system();
+        let archive = self.authority.export_archive()?;
+        let versions = archive
+            .runtime
+            .versions
+            .into_iter()
+            .map(|version| (version.id.clone(), version))
+            .collect::<BTreeMap<_, _>>();
+        for record in archive.runtime.templates {
+            if record.archived_at.is_some() {
+                continue;
+            }
+            let Some(version_id) = record.current_version_id.as_deref() else {
+                continue;
+            };
+            let Some(version) = versions.get(version_id) else {
+                return Err(AgentImportError::Validation(format!(
+                    "user template {} current version {version_id} was not found",
+                    record.id
+                )));
+            };
+            if version.template_id != record.id {
+                return Err(AgentImportError::Validation(format!(
+                    "user template {} current version has a mismatched template id",
+                    record.id
+                )));
+            }
+            let document = version
+                .document
+                .as_ref()
+                .and_then(Value::as_object)
+                .ok_or_else(|| {
+                    AgentImportError::Validation(format!(
+                        "user template {} current version has no document",
+                        record.id
+                    ))
+                })?;
+            let fields = document
+                .get("fields")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    AgentImportError::Validation(format!(
+                        "user template {} current version has no fields",
+                        record.id
+                    ))
+                })?
+                .iter()
+                .map(normalize_user_template_field)
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut extra = BTreeMap::new();
+            if let Some(recommended_use) = record
+                .extra
+                .get("recommendedUse")
+                .and_then(normalize_recommended_use)
+            {
+                extra.insert("recommendedUse".into(), Value::String(recommended_use));
+            } else if let Some(recommended_use) = record
+                .extra
+                .get("recommendedUses")
+                .and_then(normalize_recommended_uses)
+            {
+                extra.insert("recommendedUse".into(), Value::String(recommended_use));
+            }
+            let template = AgentImportTemplate {
+                source: "user-template".into(),
+                id: record.id,
+                name: record.name,
+                fields,
+                extra,
+            };
+            validate_catalog_template(&template, "user-template")?;
+            templates.push(template);
+        }
+        Ok(templates)
     }
 
     fn new_material(
@@ -668,6 +1092,121 @@ fn normalize_proposal_defaults(proposal: &mut AgentImportProposal) -> Result<(),
                 .or_insert_with(|| Value::String(String::new()));
         }
     }
+    Ok(())
+}
+
+fn template_key(template: &AgentImportTemplate) -> String {
+    format!("{}:{}", template.source, template.id)
+}
+
+fn normalize_recommended_use(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => (!value.trim().is_empty()).then(|| value.trim().to_owned()),
+        Value::Object(value) => value
+            .get("scope")
+            .and_then(Value::as_str)
+            .and_then(|scope| (!scope.trim().is_empty()).then(|| scope.trim().to_owned())),
+        _ => None,
+    }
+}
+
+fn normalize_recommended_uses(value: &Value) -> Option<String> {
+    let values = value.as_array()?;
+    let joined = values
+        .iter()
+        .filter_map(normalize_recommended_use)
+        .collect::<Vec<_>>()
+        .join("；");
+    (!joined.is_empty()).then_some(joined)
+}
+
+fn material_matches_query(material: &InventoryMaterial, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    let mut fields = vec![
+        material.full_name.clone(),
+        material.matrix_code.clone().unwrap_or_default(),
+    ];
+    for key in [
+        "baseName",
+        "variantName",
+        "packageName",
+        "description",
+        "deviceDetails",
+        "packagingRemark",
+    ] {
+        if let Some(value) = material.extra.get(key).and_then(Value::as_str) {
+            fields.push(value.to_owned());
+        }
+    }
+    fields
+        .into_iter()
+        .any(|field| field.to_lowercase().contains(query))
+}
+
+fn parse_template_input_event(
+    value: &Value,
+) -> Result<AgentImportTemplateInputEvent, AgentImportError> {
+    let event = serde_json::from_value::<AgentImportTemplateInputEvent>(value.clone())?;
+    if event.event_type != "template-input-requested" {
+        return Err(AgentImportError::Validation(
+            "agent import event type is invalid".into(),
+        ));
+    }
+    Ok(event)
+}
+
+fn encode_template_input_event(
+    event: &AgentImportTemplateInputEvent,
+) -> Result<Value, AgentImportError> {
+    Ok(serde_json::to_value(event)?)
+}
+
+fn find_open_event(
+    events: &[Value],
+    event_id: &str,
+    item_id: &str,
+) -> Result<Option<(usize, AgentImportTemplateInputEvent)>, AgentImportError> {
+    for (index, value) in events.iter().enumerate() {
+        let event = parse_template_input_event(value)?;
+        if event.id == event_id && event.item_id == item_id && event.status == "open" {
+            return Ok(Some((index, event)));
+        }
+    }
+    Ok(None)
+}
+
+fn session_item_index(
+    session: &AgentImportSession,
+    item_id: &str,
+) -> Result<usize, AgentImportError> {
+    session
+        .proposal
+        .items
+        .iter()
+        .position(|item| item.id == item_id)
+        .ok_or_else(|| AgentImportError::Validation("Agent import item was not found.".into()))
+}
+
+fn ensure_open_session(session: &ManagedSession) -> Result<(), AgentImportError> {
+    if session.session.state != "open" {
+        return Err(AgentImportError::SessionClosed);
+    }
+    if session.committing {
+        return Err(AgentImportError::SessionCommitting);
+    }
+    Ok(())
+}
+
+fn validate_agent_import_item(item: &AgentImportItem) -> Result<(), AgentImportError> {
+    AgentImportProposal {
+        schema: "tuckmark.agent-import.v1".into(),
+        source_note: Some(String::new()),
+        items: vec![item.clone()],
+        extra: Default::default(),
+    }
+    .validate()?;
     Ok(())
 }
 

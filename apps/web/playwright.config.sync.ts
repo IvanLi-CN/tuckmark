@@ -10,6 +10,11 @@ const syncPort = Number(process.env.TUCKMARK_SYNC_E2E_PORT ?? "4210")
 const syncInstance = process.env.TUCKMARK_DEVD_INSTANCE ?? `sync-${syncPort}-${process.pid}`
 const syncBaseURL = `http://127.0.0.1:${syncPort}`
 const browserChannel = process.env.TUCKMARK_E2E_BROWSER_CHANNEL === "chrome" ? "chrome" : undefined
+const syncWebDist = path.join(repoRoot, "apps", "web", "dist")
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\"'\"'")}'`
+}
 
 export default defineConfig({
   testDir: "./tests",
@@ -24,9 +29,15 @@ export default defineConfig({
     command: [
       "rm -rf work/playwright-sync",
       "mkdir -p work/playwright-sync",
-      "bun run build",
-      "cd work/playwright-sync",
-      `PORT=${syncPort} TUCKMARK_WEB_DIST=../../apps/web/dist node ../../packages/server/dist/index.js`,
+      "bun run --filter @tuckmark/web build",
+      [
+        "cargo run --locked --package tuckmark-devd -- serve",
+        "--host 127.0.0.1",
+        `--port ${syncPort}`,
+        `--data-dir ${shellQuote(syncRoot)}`,
+        `--web-dist ${shellQuote(syncWebDist)}`,
+        `--instance ${shellQuote(syncInstance)}`,
+      ].join(" "),
     ].join(" && "),
     url: `${syncBaseURL}/health`,
     timeout: 240_000,
@@ -36,6 +47,7 @@ export default defineConfig({
       TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "0",
       TUCKMARK_DATA_DIR: syncRoot,
       TUCKMARK_DEVD_INSTANCE: syncInstance,
+      TUCKMARK_WEB_SURFACE: "server-http",
       HOME: process.env.HOME ?? "",
       PATH: process.env.PATH ?? "",
       NODE_ENV: "test",
