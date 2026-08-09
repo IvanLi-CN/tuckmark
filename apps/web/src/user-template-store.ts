@@ -1722,9 +1722,15 @@ export async function loadWorkingCopy(
   return await withRuntimeStore(async (store) => await store.loadWorkingCopy(source))
 }
 
-export async function clearWorkingCopy(source: CanvasDraftSource): Promise<void> {
-  await withRuntimeStore(async (store) => await store.clearWorkingCopy(source))
-  clearEphemeralCanvasDraft(source)
+export async function clearWorkingCopy(
+  source: CanvasDraftSource,
+  options?: { onCleared?: () => void }
+): Promise<void> {
+  await withRuntimeStore(async (store) => {
+    await store.clearWorkingCopy(source)
+    options?.onCleared?.()
+    clearEphemeralCanvasDraft(source)
+  })
   emitRuntimeStoreMutation("working-copy-cleared", { source })
 }
 

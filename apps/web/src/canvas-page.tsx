@@ -78,7 +78,6 @@ import {
   getSystemTemplateById,
   loadStoredDraftDocument,
   normalizeDraftDocument,
-  persistDraftDocument,
   renameDraftField,
   reorderDraftElements,
   toCanvasPrintSource,
@@ -143,7 +142,6 @@ import {
   RuntimeDataSourceChangedError,
 } from "./cross-tab-coordinator.js"
 import { defaultDraftRenderOptions } from "./demo-data.js"
-import { isServerHttpDataSurface } from "./devd-data-client.js"
 import { getDraftProcessingPath } from "./draft-processing-route.js"
 import {
   buildCanvasDimensionOptions,
@@ -2193,10 +2191,12 @@ async function resetCanvasDraft(args: {
     }
   }
 
-  // Remove the legacy local copy before broadcasting the working-copy clear.
-  // A different tab may reload as soon as it receives that event.
-  clearStoredDraftDocument(state.routeSource.presetId)
-  await clearWorkingCopy(state.routeSource)
+  const presetId = state.routeSource.presetId
+  await clearWorkingCopy(state.routeSource, {
+    // Remove the legacy local copy before broadcasting the working-copy clear.
+    // A different tab may reload as soon as it receives that event.
+    onCleared: () => clearStoredDraftDocument(presetId),
+  })
   return resetDraft(state)
 }
 
@@ -6489,11 +6489,30 @@ export function CanvasWorkspace({
           )
         })
         .catch((cause) => {
-          setState((current) => ({
-            ...current,
-            outputStatus: cause instanceof Error ? cause.message : "加载画布失败。",
-            storageMode: "reset-pending",
-          }))
+          setState((current) => {
+            const unavailableDraft: CanvasDraftDocument = {
+              ...current.liveDraft,
+              name: "不可用画布",
+              elements: [],
+              fields: [],
+            }
+            return {
+              ...current,
+              liveDraft: unavailableDraft,
+              draft: cloneDraft(unavailableDraft),
+              selectedIds: [],
+              editingId: null,
+              pendingPaste: null,
+              history: [cloneDraft(unavailableDraft)],
+              historyIndex: 0,
+              loading: false,
+              outputStatus:
+                cause instanceof Error
+                  ? `当前画布来源已失效：${cause.message}`
+                  : "当前画布来源已失效。",
+              storageMode: "reset-pending",
+            }
+          })
         })
         .finally(() => {
           remoteDraftReloadingRef.current = false
@@ -6767,9 +6786,6 @@ export function CanvasWorkspace({
         source: autosaveRouteSource,
         document: autosaveDocument,
       })
-      if (!isServerHttpDataSurface()) {
-        persistDraftDocument(autosaveDocument)
-      }
     }
   }, [
     autosaveLiveDraft,
@@ -6783,30 +6799,6 @@ export function CanvasWorkspace({
     runtimeDataReloading,
     state.storageMode,
     startupSyncPending,
-  ])
-
-  React.useEffect(() => {
-    if (initialScenario || state.loading || startupSyncPending) {
-      return
-    }
-    if (state.routeSource.kind === "scratch") {
-      if (state.storageMode === "reset-pending") {
-        controller.deleteCanvasDraft(state.presetId)
-        return
-      }
-      controller.recordCanvasDraft(state.presetId, draftWithCurrentRenderOptions(state.liveDraft))
-    }
-  }, [
-    controller.deleteCanvasDraft,
-    controller.recordCanvasDraft,
-    draftWithCurrentRenderOptions,
-    initialScenario,
-    startupSyncPending,
-    state.liveDraft,
-    state.loading,
-    state.presetId,
-    state.routeSource.kind,
-    state.storageMode,
   ])
 
   React.useEffect(() => {
