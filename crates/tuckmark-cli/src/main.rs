@@ -456,7 +456,7 @@ struct TemplatePackage {
     elements: Vec<TemplateElement>,
     #[serde(default)]
     sample_input: BTreeMap<String, String>,
-    #[serde(default)]
+    #[serde(default = "empty_object")]
     render_options: Value,
     #[serde(default)]
     tags: Vec<String>,
@@ -500,6 +500,10 @@ fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(error) if error.kind() == ErrorKind::InvalidSubcommand => {
+            if let Some(message) = nested_subcommand_error() {
+                eprintln!("{message}");
+                return ExitCode::FAILURE;
+            }
             print_help();
             return ExitCode::FAILURE;
         }
@@ -525,7 +529,7 @@ fn run(cli: Cli) -> Result<()> {
         Some(CommandTree::Inventory(args)) => handle_inventory(args)?,
         Some(CommandTree::AgentImport(args)) => handle_agent_import(args)?,
         Some(CommandTree::Config(args)) => handle_config(args)?,
-        Some(CommandTree::Printers) => output_json(&list_printers())?,
+        Some(CommandTree::Printers) => output_json(&list_printers()?)?,
         Some(CommandTree::Probe(args)) => handle_probe(args)?,
         Some(CommandTree::Preview(args)) => handle_preview(args)?,
         Some(CommandTree::BatchPreview(args)) => handle_batch_preview(args)?,
@@ -1209,7 +1213,6 @@ fn handle_template_package(args: TemplatePackageArgs) -> Result<()> {
             output_json(&json!({ "preview": { "artifact": preview }, "packets": packets }))?;
         }
         TemplatePackageCommand::Print(args) => {
-            require_server_print_enabled()?;
             let printer = require_flag(args.printer, "--printer")?;
             let (preview, store) = preview_package(args.render)?;
             let job = print_artifact(
@@ -1733,9 +1736,9 @@ fn local_artifact_store() -> ArtifactStore {
     ArtifactStore::new(root)
 }
 
-fn list_printers() -> Value {
-    if env::var("TUCKMARK_MOCK_PRINTERS").as_deref() != Ok("0") {
-        return json!([{
+fn list_printers() -> Result<Value> {
+    if mock_printers_enabled() {
+        return Ok(json!([{
             "id": "mock-printer",
             "name": "Mock Label Printer",
             "capabilities": {
@@ -1745,13 +1748,41 @@ fn list_printers() -> Value {
                 "colors": ["mono"],
                 "notes": ["Mock fallback printer while detonger is unavailable."]
             }
-        }]);
+        }]));
     }
-    json!([])
+    #[cfg(target_os = "macos")]
+    {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .map_err(|error| {
+                CliError::Message(format!("Unable to start printer discovery: {error}"))
+            })?;
+        let printers = runtime
+            .block_on(detonger_printer::scan(Duration::from_secs(2)))
+            .map_err(|error| CliError::Message(format!("Unable to discover printers: {error}")))?
+            .into_iter()
+            .map(|printer| {
+                json!({
+                    "id": printer.id.0,
+                    "name": printer.name.unwrap_or_else(|| "Detonger Label Printer".into()),
+                    "capabilities": {
+                        "dpi": 203,
+                        "printWidthDots": 384,
+                        "supportedPaperTypes": ["gap", "continuous"],
+                        "colors": ["mono"],
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(Value::Array(printers))
+    }
+    #[cfg(not(target_os = "macos"))]
+    Ok(json!([]))
 }
 
 fn resolve_printer(id: &str, printer_name: Option<&str>) -> Result<Value> {
-    let printers = list_printers();
+    let printers = list_printers()?;
     let selected = printers
         .as_array()
         .and_then(|printers| {
@@ -1777,18 +1808,6 @@ fn resolve_printer(id: &str, printer_name: Option<&str>) -> Result<Value> {
     })
 }
 
-fn require_server_print_enabled() -> Result<()> {
-    let enabled = env::var("TUCKMARK_ENABLE_SERVER_SIDE_PRINT")
-        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true"))
-        .unwrap_or(false);
-    if !enabled {
-        return Err(CliError::Message(
-            "Server-side printer control is disabled. Set TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 to enable it.".into(),
-        ));
-    }
-    Ok(())
-}
-
 fn packetize_artifact(
     store: &ArtifactStore,
     artifact: &tuckmark_contracts::PreviewArtifact,
@@ -1804,7 +1823,6 @@ fn print_artifact(
     printer_id: &str,
     printer_name: Option<&str>,
 ) -> Result<Value> {
-    require_server_print_enabled()?;
     let printer = resolve_printer(printer_id, printer_name)?;
     let print_width = printer
         .get("capabilities")
@@ -1818,14 +1836,68 @@ fn print_artifact(
             "Artifact does not fit the selected printer.".into(),
         ));
     }
-    packetize_artifact(store, &artifact)?;
+    let packets = packetize_artifact(store, &artifact)?;
+    dispatch_print(printer_id, &artifact)?;
     Ok(json!({
         "id": Uuid::new_v4(),
         "artifactId": artifact.id,
         "printerId": printer.get("id").cloned().unwrap_or_else(|| Value::String(printer_id.into())),
         "createdAt": now_rfc3339(),
         "status": "completed",
+        "packetCount": packets.packet_count,
     }))
+}
+
+fn mock_printers_enabled() -> bool {
+    env::var("TUCKMARK_MOCK_PRINTERS")
+        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true"))
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
+fn dispatch_print(printer_id: &str, artifact: &tuckmark_contracts::PreviewArtifact) -> Result<()> {
+    if mock_printers_enabled() {
+        return Ok(());
+    }
+    let png = fs::read(&artifact.png_path)?;
+    let options = detonger_printer::PrintOptions {
+        threshold: artifact.render_options.threshold,
+        x_offset_dots: i16::try_from(artifact.render_options.x_offset_dots).map_err(|_| {
+            CliError::Message("Print X offset is outside the printer transport range.".into())
+        })?,
+        paper_type: match artifact.render_options.paper_type {
+            tuckmark_contracts::PaperType::Continuous => {
+                detonger_printer::protocol::PaperType::Continuous
+            }
+            tuckmark_contracts::PaperType::Gap => detonger_printer::protocol::PaperType::Gap,
+        },
+    };
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .map_err(|error| {
+            CliError::Message(format!("Unable to start printer transport: {error}"))
+        })?;
+    runtime
+        .block_on(async {
+            let mut printer =
+                detonger_printer::connect(&detonger_printer::DeviceId(printer_id.into())).await?;
+            printer.print_png(&png, &options).await
+        })
+        .map_err(|error| CliError::Message(format!("Printer transport failed: {error}")))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn dispatch_print(
+    _printer_id: &str,
+    _artifact: &tuckmark_contracts::PreviewArtifact,
+) -> Result<()> {
+    if mock_printers_enabled() {
+        return Ok(());
+    }
+    Err(CliError::Message(
+        "Local printer transport is only available on macOS.".into(),
+    ))
 }
 
 fn inventory_payload(
@@ -2050,7 +2122,35 @@ fn valid_identifier(value: &str) -> bool {
             .is_some_and(|byte| byte.is_ascii_alphanumeric())
         && value
             .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphabetic())
+        && value
+            .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+fn empty_object() -> Value {
+    json!({})
+}
+
+fn nested_subcommand_error() -> Option<&'static str> {
+    let mut arguments = env::args().skip(1);
+    match (arguments.next().as_deref(), arguments.next()) {
+        (Some("template"), Some(_)) => Some(
+            "template supports list, show, import, update, rename, archive, restore, and delete.",
+        ),
+        (Some("inventory"), Some(_)) => Some(
+            "inventory supports list, show, create, update, archive, restore, delete, adjust, and print.",
+        ),
+        (Some("agent-import"), Some(_)) => {
+            Some("agent-import supports catalog, inventory, create, open, wait, and fulfill.")
+        }
+        (Some("config"), Some(_)) => Some("config requires get-data-dir or set-data-dir."),
+        (Some("template-package"), Some(_)) => {
+            Some("template-package requires validate, preview, packets, or print.")
+        }
+        _ => None,
+    }
 }
 
 fn now_rfc3339() -> String {

@@ -1609,6 +1609,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "clap",
+ "detonger-printer",
  "libc",
  "serde",
  "serde_json",
@@ -1616,6 +1617,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "time",
+ "tokio",
  "tuckmark-contracts",
  "tuckmark-engine",
  "uuid",

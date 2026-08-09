@@ -117,6 +117,17 @@ fn fixture_error_cases_preserve_stdout_stderr_and_exit_codes() {
     assert_eq!(unknown.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&unknown.stdout).contains("tuckmark commands:"));
     assert_eq!(unknown.stderr, b"");
+
+    let nested = run(
+        runtime.path(),
+        &["template", "bogus", "--instance", "fixture-devd"],
+    );
+    assert_eq!(nested.status.code(), Some(1));
+    assert_eq!(nested.stdout, b"");
+    assert_eq!(
+        nested.stderr,
+        b"template supports list, show, import, update, rename, archive, restore, and delete.\n"
+    );
 }
 
 #[test]
@@ -294,4 +305,84 @@ fn local_template_package_preview_and_packets_use_native_engine() {
     let result: Value = serde_json::from_slice(&packets.stdout).expect("packets JSON");
     assert_eq!(result["preview"]["artifact"]["source"], "canvas");
     assert!(result["packets"]["packetCount"].as_u64().unwrap_or(0) > 0);
+
+    let print = Command::new(binary())
+        .args([
+            "template-package",
+            "print",
+            "--file",
+            fixture.to_str().unwrap(),
+            "--printer",
+            "mock-printer",
+        ])
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .env("TUCKMARK_CLI_ARTIFACT_DIR", artifacts.path())
+        .env("TUCKMARK_MOCK_PRINTERS", "1")
+        .output()
+        .expect("run local print");
+    assert_eq!(print.status.code(), Some(0));
+    let result: Value = serde_json::from_slice(&print.stdout).expect("print JSON");
+    assert_eq!(result["job"]["status"], "completed");
+    assert!(result["job"]["packetCount"].as_u64().unwrap_or(0) > 0);
+}
+
+#[test]
+fn template_package_uses_contract_defaults_and_identifier_rules() {
+    let runtime = TempDir::new().expect("runtime dir");
+    let package = runtime.path().join("minimal.package.json");
+    fs::write(
+        &package,
+        r##"{
+  "schema": "tuckmark.user-template-package.v1",
+  "id": "valid-package",
+  "name": "Valid Package",
+  "canvas": { "width": 64, "height": 32 },
+  "fields": [{ "key": "name", "label": "Name" }],
+  "elements": [{ "kind": "text", "key": "name", "x": 2, "y": 2, "fontSize": 12 }]
+}"##,
+    )
+    .expect("write valid package");
+    let valid = run(
+        runtime.path(),
+        &[
+            "template-package",
+            "validate",
+            "--file",
+            package.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(
+        valid.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&valid.stderr)
+    );
+
+    let invalid = runtime.path().join("invalid.package.json");
+    fs::write(
+        &invalid,
+        r##"{
+  "schema": "tuckmark.user-template-package.v1",
+  "id": "9-invalid",
+  "name": "Invalid Package",
+  "canvas": { "width": 64, "height": 32 },
+  "fields": [{ "key": "name", "label": "Name" }],
+  "elements": [{ "kind": "text", "key": "name", "x": 2, "y": 2, "fontSize": 12 }]
+}"##,
+    )
+    .expect("write invalid package");
+    let invalid = run(
+        runtime.path(),
+        &[
+            "template-package",
+            "validate",
+            "--file",
+            invalid.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(invalid.status.code(), Some(1));
+    assert_eq!(
+        invalid.stderr,
+        b"Invalid user template package identifier.\n"
+    );
 }

@@ -185,8 +185,8 @@ pub fn resolve_instance(
     reject_legacy_access()?;
     let environment = env::var("TUCKMARK_DEVD_INSTANCE").ok();
     let instance = explicit
-        .or(environment.as_deref())
         .or(fallback)
+        .or(environment.as_deref())
         .ok_or_else(|| {
             IpcError::Message(
                 "DEVD instance is required. Pass --instance or set TUCKMARK_DEVD_INSTANCE.".into(),
