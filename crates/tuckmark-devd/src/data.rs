@@ -16,6 +16,12 @@ use tuckmark_engine::{ArchiveImportMode, DataAuthority, DataAuthorityError, Data
 use uuid::Uuid;
 
 const RUNTIME_SCHEMA: &str = "tuckmark.runtime-export.v1";
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ArchiveNormalizationSource {
+    Incoming,
+    Persisted,
+}
+
 const DEFAULT_SETTINGS: &str = r#"{
   "version": 2,
   "updatedAt": "1970-01-01T00:00:00.000Z",
@@ -217,13 +223,13 @@ impl DataFacade {
     pub fn read_archive(&self) -> Result<Value, DataError> {
         let _guard = self.lock_mutation()?;
         let revision = self.authority.revision()?;
-        let archive = self.authority.export_archive()?;
+        let archive = self.archive_locked()?;
         Ok(json!({ "revision": revision, "data": archive }))
     }
 
     pub fn inspect_archive(&self, archive: Value) -> Result<Value, DataError> {
         let _guard = self.lock_mutation()?;
-        let archive = serde_json::from_value::<DevdDataArchive>(archive)?;
+        let archive = parse_data_archive(archive, ArchiveNormalizationSource::Incoming)?;
         let inspection = self.authority.inspect_archive(&archive)?;
         Ok(json!({
             "archiveHash": inspection.archive_hash,
@@ -246,7 +252,7 @@ impl DataFacade {
         archive: Value,
     ) -> Result<Value, DataError> {
         let _guard = self.lock_mutation()?;
-        let archive = serde_json::from_value::<DevdDataArchive>(archive)?;
+        let archive = parse_data_archive(archive, ArchiveNormalizationSource::Incoming)?;
         let mode = match mode {
             "merge" => ArchiveImportMode::Merge,
             "replace" => ArchiveImportMode::Replace,
@@ -393,12 +399,23 @@ impl DataFacade {
         }))
     }
 
+    fn archive_locked(&self) -> Result<Value, DataError> {
+        // Keep the authority's single-lock archive snapshot while applying the
+        // same persisted-data canonicalization used by the archive endpoints.
+        let archive = serde_json::to_value(self.authority.export_archive()?)?;
+        canonicalize_data_archive(archive, ArchiveNormalizationSource::Persisted)
+    }
+
     fn materials_locked(
         &self,
         query: &str,
         include_archived: bool,
     ) -> Result<Vec<Value>, DataError> {
-        let mut values = self.read_value_directory("inventory/materials")?;
+        let mut values = self
+            .read_value_directory("inventory/materials")?
+            .into_iter()
+            .map(normalize_persisted_inventory_material)
+            .collect::<Result<Vec<_>, _>>()?;
         let query = query.trim().to_ascii_lowercase();
         values.retain(|material| {
             let archived = material
@@ -428,7 +445,11 @@ impl DataFacade {
     }
 
     fn adjustments_locked(&self, material_id: Option<&str>) -> Result<Vec<Value>, DataError> {
-        let mut values = self.read_value_directory("inventory/adjustments")?;
+        let mut values = self
+            .read_value_directory("inventory/adjustments")?
+            .into_iter()
+            .map(normalize_persisted_inventory_adjustment)
+            .collect::<Result<Vec<_>, _>>()?;
         if let Some(material_id) = material_id {
             values.retain(|value| {
                 value.get("materialId").and_then(Value::as_str) == Some(material_id)
@@ -572,13 +593,44 @@ fn required_string(object: &Map<String, Value>, key: &str) -> Result<String, Dat
         .ok_or_else(|| DataError::Validation(format!("{key} is required.")))
 }
 
-fn optional_string(object: &Map<String, Value>, key: &str) -> Option<String> {
-    object
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
+fn optional_input_string<'a>(
+    object: &'a Map<String, Value>,
+    key: &str,
+) -> Result<Option<&'a str>, DataError> {
+    match object.get(key) {
+        None => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value)),
+        Some(_) => Err(DataError::Validation(format!("{key} must be a string."))),
+    }
+}
+
+fn required_input_string<'a>(
+    object: &'a Map<String, Value>,
+    key: &str,
+) -> Result<&'a str, DataError> {
+    optional_input_string(object, key)?
+        .ok_or_else(|| DataError::Validation(format!("{key} is required.")))
+}
+
+fn optional_identifier(
+    object: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<String>, DataError> {
+    let Some(value) = optional_input_string(object, key)? else {
+        return Ok(None);
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(DataError::Validation(format!("{key} is required.")));
+    }
+    Ok(Some(value.into()))
+}
+
+fn adjustment_created_at(input: &Map<String, Value>, fallback: &str) -> Result<String, DataError> {
+    match optional_input_string(input, "createdAt")? {
+        Some(value) if !value.trim().is_empty() => Ok(value.into()),
+        Some(_) | None => Ok(fallback.into()),
+    }
 }
 
 fn value_array(snapshot: &Value, key: &str) -> Result<Vec<Value>, DataError> {
@@ -732,7 +784,7 @@ fn apply_runtime_command(
     match command {
         "save-template" => {
             let name = required_string(&args, "name")?;
-            let template_id = optional_string(&args, "templateId")
+            let template_id = optional_identifier(&args, "templateId")?
                 .unwrap_or_else(|| format!("user-template-{}", Uuid::new_v4()));
             if !safe_segment(&template_id) {
                 return Err(DataError::Validation("Invalid data identifier.".into()));
@@ -757,6 +809,7 @@ fn apply_runtime_command(
                 + 1;
             let version_id = format!("user-template-version-{}", Uuid::new_v4());
             let saved_source = json!({ "kind": "user-template", "templateId": template_id });
+            let source_version_id = optional_identifier(&args, "sourceVersionId")?;
             let has_explicit_recommended_use = document.contains_key("recommendedUse");
             document.insert("templateId".into(), Value::String(template_id.clone()));
             document.remove("baseVersionId");
@@ -774,16 +827,21 @@ fn apply_runtime_command(
             let document_object = require_object(document.clone(), "document")?;
             let width = positive_number(&document_object, "width")?;
             let height = positive_number(&document_object, "height")?;
-            let version = json!({
+            let mut version = json!({
                 "id": version_id,
                 "templateId": template_id,
                 "version": next_version,
                 "kind": "saved",
                 "createdAt": timestamp,
                 "label": format!("已保存版本 {next_version}"),
-                "sourceVersionId": args.get("sourceVersionId").cloned().unwrap_or(Value::Null),
                 "document": document,
             });
+            if let Some(source_version_id) = source_version_id {
+                version
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("sourceVersionId".into(), Value::String(source_version_id));
+            }
             versions.push(version.clone());
             versions.retain(|candidate| {
                 !(string_field(candidate, "templateId") == template_id
@@ -799,9 +857,8 @@ fn apply_runtime_command(
             template.insert("name".into(), Value::String(name));
             template.insert(
                 "description".into(),
-                args.get("description")
-                    .and_then(Value::as_str)
-                    .map(|value| Value::String(value.to_owned()))
+                optional_input_string(&args, "description")?
+                    .map(|value| Value::String(value.into()))
                     .or_else(|| template.get("description").cloned())
                     .unwrap_or_else(|| Value::String(String::new())),
             );
@@ -852,44 +909,30 @@ fn apply_runtime_command(
         }
         "update-template-metadata" => {
             let template_id = required_string(&args, "templateId")?;
-            let patch = args
-                .get("patch")
-                .and_then(Value::as_object)
-                .ok_or_else(|| DataError::Validation("patch is required.".into()))?;
-            if patch.is_empty() {
-                return Err(DataError::Validation(
-                    "Template metadata patch is empty.".into(),
-                ));
-            }
+            let patch = normalize_template_metadata_patch(&args)?;
             let template = find_by_id_mut(&mut templates, &template_id)
                 .ok_or_else(|| DataError::NotFound("Template was not found.".into()))?;
             let object = template
                 .as_object_mut()
                 .ok_or_else(|| DataError::Validation("Template is invalid.".into()))?;
             if let Some(name) = patch.get("name").and_then(Value::as_str) {
-                if name.trim().is_empty() {
-                    return Err(DataError::Validation("name is required.".into()));
-                }
-                object.insert("name".into(), Value::String(name.trim().into()));
+                object.insert("name".into(), Value::String(name.into()));
             }
             if let Some(description) = patch.get("description").and_then(Value::as_str) {
-                object.insert(
-                    "description".into(),
-                    Value::String(description.trim().into()),
-                );
+                object.insert("description".into(), Value::String(description.into()));
             }
             if let Some(recommended_use) = patch.get("recommendedUse").and_then(Value::as_str) {
-                if recommended_use.trim().is_empty() {
+                if recommended_use.is_empty() {
                     object.remove("recommendedUse");
                 } else {
                     object.insert(
                         "recommendedUse".into(),
-                        Value::String(recommended_use.trim().into()),
+                        Value::String(recommended_use.into()),
                     );
                 }
             }
             object.insert("updatedAt".into(), Value::String(now()));
-            update_working_copy_metadata(&mut working_copies, &template_id, patch);
+            update_working_copy_metadata(&mut working_copies, &template_id, &patch);
             data = template_summary(template, &versions, &working_copies);
         }
         "rename-template" => {
@@ -957,7 +1000,8 @@ fn apply_runtime_command(
                 .get("source")
                 .cloned()
                 .ok_or_else(|| DataError::Validation("source is required.".into()))?;
-            let source = require_object(source, "source")?;
+            let mut source = require_object(source, "source")?;
+            normalize_canvas_source(&mut source);
             let source_key = source_key(&source)?;
             let default_preset_id = source
                 .get("presetId")
@@ -974,15 +1018,24 @@ fn apply_runtime_command(
                 default_preset_id,
                 "document",
             )?;
-            let template_id = optional_string(&args, "templateId");
-            let working_copy = json!({
+            let template_id = optional_identifier(&args, "templateId")?;
+            let source_version_id = optional_identifier(&args, "sourceVersionId")?;
+            let mut working_copy = json!({
                 "sourceKey": source_key,
                 "source": source,
-                "templateId": template_id,
                 "draft": document,
                 "updatedAt": timestamp,
-                "baseVersionId": args.get("sourceVersionId").cloned().unwrap_or(Value::Null),
             });
+            let working_copy_object = working_copy.as_object_mut().unwrap();
+            if let Some(template_id) = template_id.as_ref() {
+                working_copy_object.insert("templateId".into(), Value::String(template_id.clone()));
+            }
+            if let Some(source_version_id) = source_version_id.as_ref() {
+                working_copy_object.insert(
+                    "baseVersionId".into(),
+                    Value::String(source_version_id.clone()),
+                );
+            }
             upsert_by_key(&mut working_copies, "sourceKey", working_copy.clone());
             if command == "save-autosave"
                 && let Some(template_id) = template_id
@@ -995,16 +1048,22 @@ fn apply_runtime_command(
                     .max()
                     .unwrap_or(0)
                     + 1;
-                versions.push(json!({
+                let mut version = json!({
                     "id": format!("user-template-autosave-{}", Uuid::new_v4()),
                     "templateId": template_id,
                     "version": version_number,
                     "kind": "autosave",
                     "createdAt": timestamp.clone(),
                     "label": "未保存草稿",
-                    "sourceVersionId": args.get("sourceVersionId").cloned().unwrap_or(Value::Null),
                     "document": working_copy.get("draft").cloned().unwrap_or(Value::Null),
-                }));
+                });
+                if let Some(source_version_id) = source_version_id {
+                    version
+                        .as_object_mut()
+                        .unwrap()
+                        .insert("sourceVersionId".into(), Value::String(source_version_id));
+                }
+                versions.push(version);
                 prune_versions(&mut versions, &template_id, "autosave", 10);
             }
             data = working_copy;
@@ -1085,7 +1144,7 @@ fn apply_inventory_command(
     let args = require_object(args, "Inventory command arguments")?;
     let mut materials = current_materials;
     let mut adjustments = current_adjustments;
-    let id = optional_string(&args, "materialId").or_else(|| optional_string(&args, "id"));
+    let id = optional_identifier(&args, "materialId")?.or(optional_identifier(&args, "id")?);
     let existing_index = id.as_deref().and_then(|id| {
         materials
             .iter()
@@ -1097,7 +1156,7 @@ fn apply_inventory_command(
     match command {
         "save-material" => {
             let full_name = required_string(&args, "fullName")?;
-            let material_id = optional_string(&args, "id")
+            let material_id = optional_identifier(&args, "id")?
                 .or_else(|| {
                     existing_index
                         .and_then(|index| materials.get(index))
@@ -1122,26 +1181,47 @@ fn apply_inventory_command(
             }
             material.insert("id".into(), Value::String(material_id.clone()));
             material.insert("fullName".into(), Value::String(full_name));
-            for key in [
-                "baseName",
-                "variantName",
-                "packageName",
-                "description",
-                "deviceDetails",
-                "packagingRemark",
-            ] {
-                if let Some(value) = args.get(key).and_then(Value::as_str) {
-                    material.insert(key.into(), Value::String(value.trim().into()));
+            for key in ["baseName", "variantName", "packageName"] {
+                match optional_input_string(&args, key)?
+                    .map(|value| value.trim())
+                    .filter(|value| !value.is_empty())
+                {
+                    Some(value) => {
+                        material.insert(key.into(), Value::String(value.into()));
+                    }
+                    None => {
+                        material.remove(key);
+                    }
                 }
             }
-            match optional_string(&args, "matrixCode") {
+            let description = optional_input_string(&args, "description")?
+                .map(|value| value.trim().to_owned())
+                .unwrap_or_default();
+            material.insert("description".into(), Value::String(description));
+            let device_details = optional_input_string(&args, "deviceDetails")?
+                .map(|value| value.trim().to_owned())
+                .or_else(|| {
+                    material
+                        .get("deviceDetails")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                })
+                .unwrap_or_default();
+            material.insert("deviceDetails".into(), Value::String(device_details));
+            let packaging_remark = optional_input_string(&args, "packagingRemark")?
+                .map(|value| value.trim().to_owned())
+                .unwrap_or_default();
+            material.insert("packagingRemark".into(), Value::String(packaging_remark));
+            match optional_input_string(&args, "matrixCode")?
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty())
+            {
                 Some(matrix_code) => {
-                    material.insert("matrixCode".into(), Value::String(matrix_code));
+                    material.insert("matrixCode".into(), Value::String(matrix_code.into()));
                 }
-                None if args.contains_key("matrixCode") => {
+                None => {
                     material.remove("matrixCode");
                 }
-                None => {}
             }
             let bindings = args
                 .get("labelBindings")
@@ -1217,7 +1297,16 @@ fn apply_inventory_command(
                 .get("input")
                 .and_then(Value::as_object)
                 .ok_or_else(|| DataError::Validation("input is required.".into()))?;
-            let kind = required_string(input, "kind")?;
+            let kind = required_input_string(input, "kind")?.to_owned();
+            let note = optional_input_string(input, "note")?
+                .unwrap_or_default()
+                .to_owned();
+            let actor = optional_input_string(input, "actor")?.unwrap_or("unknown");
+            if actor.is_empty() {
+                return Err(DataError::Validation("actor is required.".into()));
+            }
+            let actor = actor.to_owned();
+            let created_at = adjustment_created_at(input, &timestamp)?;
             let quantity_before = integer_field(&materials[index], "currentQuantity").unwrap_or(0);
             let (quantity_after, quantity_delta, target_quantity) = match kind.as_str() {
                 "in" => {
@@ -1243,7 +1332,7 @@ fn apply_inventory_command(
                 .as_object_mut()
                 .ok_or_else(|| DataError::Validation("Material is invalid.".into()))?;
             material.insert("currentQuantity".into(), json!(quantity_after));
-            material.insert("updatedAt".into(), Value::String(timestamp.clone()));
+            material.insert("updatedAt".into(), Value::String(created_at.clone()));
             let material = Value::Object(material.clone());
             let adjustment = json!({
                 "id": format!("inventory-adjustment-{}", Uuid::new_v4()),
@@ -1252,9 +1341,9 @@ fn apply_inventory_command(
                 "quantityDelta": quantity_delta,
                 "targetQuantity": target_quantity,
                 "quantityAfter": quantity_after,
-                "note": input.get("note").cloned().unwrap_or(Value::Null),
-                "actor": input.get("actor").cloned().unwrap_or(Value::Null),
-                "createdAt": input.get("createdAt").cloned().unwrap_or_else(|| Value::String(timestamp)),
+                "note": note,
+                "actor": actor,
+                "createdAt": created_at,
             });
             adjustments.push(adjustment.clone());
             data = json!({ "material": material, "adjustment": adjustment });
@@ -1266,6 +1355,322 @@ fn apply_inventory_command(
         }
     }
     Ok((materials, adjustments, data))
+}
+
+fn normalize_persisted_inventory_material(value: Value) -> Result<Value, DataError> {
+    let mut material = require_object(value, "Material")?;
+    // InventoryMaterial serializes this optional field as null even though the
+    // TypeScript schema represents an absent matrix code by omitting it.
+    if material.get("matrixCode").is_some_and(Value::is_null) {
+        material.remove("matrixCode");
+    }
+    normalize_inventory_material(Value::Object(material))
+}
+
+fn normalize_inventory_material(value: Value) -> Result<Value, DataError> {
+    let mut material = require_object(value, "Material")?;
+    required_nonempty_string(&material, "id", "Material")?;
+    required_nonempty_string(&material, "fullName", "Material")?;
+
+    for key in ["baseName", "variantName", "packageName", "matrixCode"] {
+        validate_optional_string_field(&material, key, "Material")?;
+    }
+    for (key, default) in [
+        ("description", ""),
+        ("deviceDetails", ""),
+        ("packagingRemark", ""),
+    ] {
+        match material.get(key) {
+            None => {
+                material.insert(key.into(), Value::String(default.into()));
+            }
+            Some(Value::String(_)) => {}
+            Some(_) => {
+                return Err(DataError::Validation(format!(
+                    "Material {key} must be a string."
+                )));
+            }
+        }
+    }
+
+    let current_quantity = match material.get("currentQuantity") {
+        Some(value) => non_negative_i64(value, "Material currentQuantity")?,
+        None => 0,
+    };
+    material.insert("currentQuantity".into(), json!(current_quantity));
+
+    required_nonempty_string(&material, "createdAt", "Material")?;
+    required_nonempty_string(&material, "updatedAt", "Material")?;
+    if material
+        .get("archivedAt")
+        .is_some_and(|value| !value.is_null() && !value.is_string())
+    {
+        return Err(DataError::Validation(
+            "Material archivedAt must be a string or null.".into(),
+        ));
+    }
+
+    let bindings = material
+        .get("labelBindings")
+        .cloned()
+        .unwrap_or_else(|| Value::Array(Vec::new()));
+    material.insert("labelBindings".into(), normalize_label_bindings(bindings)?);
+    Ok(Value::Object(material))
+}
+
+fn normalize_persisted_inventory_adjustment(value: Value) -> Result<Value, DataError> {
+    let mut adjustment = require_object(value, "Inventory adjustment")?;
+    // InventoryAdjustment likewise emits null for defaulted Option<String>
+    // fields, while Zod produces their string defaults during reads.
+    for key in ["note", "actor"] {
+        if adjustment.get(key).is_some_and(Value::is_null) {
+            adjustment.remove(key);
+        }
+    }
+    normalize_inventory_adjustment(Value::Object(adjustment))
+}
+
+fn normalize_inventory_adjustment(value: Value) -> Result<Value, DataError> {
+    let mut adjustment = require_object(value, "Inventory adjustment")?;
+    required_nonempty_string(&adjustment, "id", "Inventory adjustment")?;
+    required_nonempty_string(&adjustment, "materialId", "Inventory adjustment")?;
+    required_nonempty_string(&adjustment, "createdAt", "Inventory adjustment")?;
+    let kind = required_input_string(&adjustment, "kind")?;
+    if !matches!(kind, "in" | "out" | "correction") {
+        return Err(DataError::Validation(
+            "Inventory adjustment kind is invalid.".into(),
+        ));
+    }
+
+    let quantity_delta = adjustment.get("quantityDelta").ok_or_else(|| {
+        DataError::Validation("Inventory adjustment quantityDelta is required.".into())
+    })?;
+    adjustment.insert(
+        "quantityDelta".into(),
+        json!(json_i64(
+            quantity_delta,
+            "Inventory adjustment quantityDelta"
+        )?),
+    );
+    let target_quantity = adjustment.get("targetQuantity").ok_or_else(|| {
+        DataError::Validation("Inventory adjustment targetQuantity is required.".into())
+    })?;
+    if !target_quantity.is_null() {
+        adjustment.insert(
+            "targetQuantity".into(),
+            json!(non_negative_i64(
+                target_quantity,
+                "Inventory adjustment targetQuantity"
+            )?),
+        );
+    }
+    let quantity_after = adjustment.get("quantityAfter").ok_or_else(|| {
+        DataError::Validation("Inventory adjustment quantityAfter is required.".into())
+    })?;
+    adjustment.insert(
+        "quantityAfter".into(),
+        json!(non_negative_i64(
+            quantity_after,
+            "Inventory adjustment quantityAfter"
+        )?),
+    );
+
+    match adjustment.get("note") {
+        None => {
+            adjustment.insert("note".into(), Value::String(String::new()));
+        }
+        Some(Value::String(_)) => {}
+        Some(_) => {
+            return Err(DataError::Validation(
+                "Inventory adjustment note must be a string.".into(),
+            ));
+        }
+    }
+    match adjustment.get("actor") {
+        None => {
+            adjustment.insert("actor".into(), Value::String("unknown".into()));
+        }
+        Some(Value::String(value)) if !value.is_empty() => {}
+        Some(Value::String(_)) => {
+            return Err(DataError::Validation(
+                "Inventory adjustment actor is required.".into(),
+            ));
+        }
+        Some(_) => {
+            return Err(DataError::Validation(
+                "Inventory adjustment actor must be a string.".into(),
+            ));
+        }
+    }
+    Ok(Value::Object(adjustment))
+}
+
+fn validate_optional_string_field(
+    object: &Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<(), DataError> {
+    if object.get(key).is_some_and(|value| !value.is_string()) {
+        return Err(DataError::Validation(format!(
+            "{label} {key} must be a string."
+        )));
+    }
+    Ok(())
+}
+
+fn json_i64(value: &Value, label: &str) -> Result<i64, DataError> {
+    value
+        .as_i64()
+        .or_else(|| {
+            value
+                .as_f64()
+                .filter(|value| {
+                    value.is_finite()
+                        && value.fract() == 0.0
+                        && *value >= i64::MIN as f64
+                        && *value <= i64::MAX as f64
+                })
+                .map(|value| value as i64)
+        })
+        .ok_or_else(|| DataError::Validation(format!("{label} must be an integer.")))
+}
+
+fn non_negative_i64(value: &Value, label: &str) -> Result<i64, DataError> {
+    let value = json_i64(value, label)?;
+    if value < 0 {
+        return Err(DataError::Validation(format!(
+            "{label} must be a non-negative integer."
+        )));
+    }
+    Ok(value)
+}
+
+fn normalize_template_metadata_patch(
+    args: &Map<String, Value>,
+) -> Result<Map<String, Value>, DataError> {
+    let patch = args
+        .get("patch")
+        .and_then(Value::as_object)
+        .ok_or_else(|| DataError::Validation("patch is required.".into()))?;
+    if patch.is_empty() {
+        return Err(DataError::Validation(
+            "Template metadata patch is empty.".into(),
+        ));
+    }
+
+    let mut normalized = Map::new();
+    for (key, value) in patch {
+        let value = value
+            .as_str()
+            .ok_or_else(|| DataError::Validation(format!("patch.{key} must be a string.")))?
+            .trim();
+        match key.as_str() {
+            "name" if value.is_empty() => {
+                return Err(DataError::Validation("name is required.".into()));
+            }
+            "name" | "description" | "recommendedUse" => {
+                normalized.insert(key.clone(), Value::String(value.into()));
+            }
+            _ => {
+                return Err(DataError::Validation(format!(
+                    "Template metadata patch field {key} is not supported."
+                )));
+            }
+        }
+    }
+    Ok(normalized)
+}
+
+/// Rebuilds the archive through the same parse/transform boundary used by all
+/// DEVD archive endpoints. The raw JSON check happens before serde converts
+/// optional values, so invalid incoming `null` values cannot become silently
+/// omitted. Persisted values first repair the `Option::None` nulls emitted by
+/// the Rust authority, which TypeScript would represent as omitted fields.
+fn canonicalize_data_archive(
+    value: Value,
+    source: ArchiveNormalizationSource,
+) -> Result<Value, DataError> {
+    let mut archive = normalize_legacy_value(value)
+        .map_err(|error| DataError::Validation(format!("Archive is invalid: {error}")))?;
+    let archive_object = archive
+        .as_object_mut()
+        .ok_or_else(|| DataError::Validation("Archive must be an object.".into()))?;
+    let runtime = archive_object
+        .get_mut("runtime")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| DataError::Validation("Archive runtime must be an object.".into()))?;
+    normalize_runtime_canvas_documents(runtime);
+    validate_runtime_optional_string_fields(runtime)?;
+
+    let inventory = archive_object
+        .get_mut("inventory")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| DataError::Validation("Archive inventory must be an object.".into()))?;
+    normalize_archive_material_records(inventory, source)?;
+    normalize_archive_adjustment_records(inventory, source)?;
+
+    let archive = normalize_legacy_value(archive)
+        .map_err(|error| DataError::Validation(format!("Archive is invalid: {error}")))?;
+    let validated = serde_json::from_value::<DevdDataArchive>(archive.clone())?;
+    validated
+        .validate()
+        .map_err(|error| DataError::Validation(format!("Archive is invalid: {error}")))?;
+    Ok(archive)
+}
+
+fn parse_data_archive(
+    value: Value,
+    source: ArchiveNormalizationSource,
+) -> Result<DevdDataArchive, DataError> {
+    let archive = canonicalize_data_archive(value, source)?;
+    let archive = serde_json::from_value::<DevdDataArchive>(archive)?;
+    archive
+        .validate()
+        .map_err(|error| DataError::Validation(format!("Archive is invalid: {error}")))?;
+    Ok(archive)
+}
+
+fn normalize_archive_material_records(
+    inventory: &mut Map<String, Value>,
+    source: ArchiveNormalizationSource,
+) -> Result<(), DataError> {
+    let Some(records) = inventory.get_mut("materials").and_then(Value::as_array_mut) else {
+        return Ok(());
+    };
+    for record in records {
+        *record = match source {
+            ArchiveNormalizationSource::Incoming => {
+                normalize_inventory_material(std::mem::take(record))?
+            }
+            ArchiveNormalizationSource::Persisted => {
+                normalize_persisted_inventory_material(std::mem::take(record))?
+            }
+        };
+    }
+    Ok(())
+}
+
+fn normalize_archive_adjustment_records(
+    inventory: &mut Map<String, Value>,
+    source: ArchiveNormalizationSource,
+) -> Result<(), DataError> {
+    let Some(records) = inventory
+        .get_mut("adjustments")
+        .and_then(Value::as_array_mut)
+    else {
+        return Ok(());
+    };
+    for record in records {
+        *record = match source {
+            ArchiveNormalizationSource::Incoming => {
+                normalize_inventory_adjustment(std::mem::take(record))?
+            }
+            ArchiveNormalizationSource::Persisted => {
+                normalize_persisted_inventory_adjustment(std::mem::take(record))?
+            }
+        };
+    }
+    Ok(())
 }
 
 fn runtime_validation_archive(runtime: Value) -> Value {
@@ -1283,9 +1688,18 @@ fn runtime_validation_archive(runtime: Value) -> Value {
 fn normalize_runtime_snapshot(snapshot: Value) -> Result<Value, DataError> {
     let normalized = normalize_legacy_value(runtime_validation_archive(snapshot))
         .map_err(|error| DataError::Validation(format!("Runtime snapshot is invalid: {error}")))?;
-    normalized.get("runtime").cloned().ok_or_else(|| {
-        DataError::Validation("Runtime snapshot normalization did not return runtime data.".into())
-    })
+    let mut runtime = normalized
+        .get("runtime")
+        .and_then(Value::as_object)
+        .cloned()
+        .ok_or_else(|| {
+            DataError::Validation(
+                "Runtime snapshot normalization did not return runtime data.".into(),
+            )
+        })?;
+    normalize_runtime_canvas_documents(&mut runtime);
+    validate_runtime_optional_string_fields(&runtime)?;
+    Ok(Value::Object(runtime))
 }
 
 fn normalize_canvas_document(
@@ -1303,6 +1717,7 @@ fn normalize_canvas_document(
         .entry("editor")
         .or_insert_with(default_canvas_editor);
     document.entry("source").or_insert(source);
+    normalize_canvas_document_fields(&mut document);
 
     let normalized = normalize_legacy_value(json!({
         "schema": DEVD_DATA_ARCHIVE_SCHEMA,
@@ -1319,6 +1734,137 @@ fn normalize_canvas_document(
         })?;
     validate_canvas_document(&document, label)?;
     Ok(document)
+}
+
+fn normalize_runtime_canvas_documents(runtime: &mut Map<String, Value>) {
+    normalize_runtime_record_documents(runtime.get_mut("versions"), "document");
+    normalize_runtime_record_documents(runtime.get_mut("workingCopies"), "draft");
+    normalize_working_copy_sources(runtime.get_mut("workingCopies"));
+}
+
+fn normalize_runtime_record_documents(records: Option<&mut Value>, document_key: &str) {
+    let Some(records) = records.and_then(Value::as_array_mut) else {
+        return;
+    };
+    for record in records {
+        let Some(document) = record
+            .as_object_mut()
+            .and_then(|record| record.get_mut(document_key))
+            .and_then(Value::as_object_mut)
+        else {
+            continue;
+        };
+        normalize_canvas_document_fields(document);
+    }
+}
+
+fn normalize_working_copy_sources(records: Option<&mut Value>) {
+    let Some(records) = records.and_then(Value::as_array_mut) else {
+        return;
+    };
+    for record in records {
+        if let Some(source) = record
+            .as_object_mut()
+            .and_then(|record| record.get_mut("source"))
+            .and_then(Value::as_object_mut)
+        {
+            normalize_canvas_source(source);
+        }
+    }
+}
+
+fn validate_runtime_optional_string_fields(runtime: &Map<String, Value>) -> Result<(), DataError> {
+    validate_runtime_record_optional_strings(
+        runtime.get("versions"),
+        "Template version",
+        &["sourceVersionId"],
+    )?;
+    validate_runtime_record_optional_strings(
+        runtime.get("workingCopies"),
+        "Working copy",
+        &["templateId", "baseVersionId"],
+    )
+}
+
+fn validate_runtime_record_optional_strings(
+    records: Option<&Value>,
+    label: &str,
+    fields: &[&str],
+) -> Result<(), DataError> {
+    let Some(records) = records.and_then(Value::as_array) else {
+        return Ok(());
+    };
+    for record in records {
+        let Some(record) = record.as_object() else {
+            continue;
+        };
+        for field in fields {
+            if record.get(*field).is_some_and(|value| !value.is_string()) {
+                return Err(DataError::Validation(format!(
+                    "{label} {field} must be a string."
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn normalize_canvas_document_fields(document: &mut Map<String, Value>) {
+    for key in ["id", "presetId", "name", "templateId", "baseVersionId"] {
+        trim_identifier_field(document, key);
+    }
+    if let Some(source) = document.get_mut("source").and_then(Value::as_object_mut) {
+        normalize_canvas_source(source);
+    }
+    if let Some(fields) = document.get_mut("fields").and_then(Value::as_array_mut) {
+        for field in fields {
+            if let Some(field) = field.as_object_mut() {
+                trim_identifier_field(field, "key");
+                trim_identifier_field(field, "label");
+            }
+        }
+    }
+    if let Some(elements) = document.get_mut("elements").and_then(Value::as_array_mut) {
+        for element in elements {
+            if let Some(element) = element.as_object_mut() {
+                trim_identifier_field(element, "id");
+            }
+        }
+    }
+    if let Some(editor) = document.get_mut("editor").and_then(Value::as_object_mut) {
+        normalize_canvas_editor(editor);
+    }
+}
+
+fn normalize_canvas_source(source: &mut Map<String, Value>) {
+    match source.get("kind").and_then(Value::as_str) {
+        Some("scratch" | "preset-template") => trim_identifier_field(source, "presetId"),
+        Some("user-template") => trim_identifier_field(source, "templateId"),
+        _ => {}
+    }
+}
+
+fn trim_identifier_field(object: &mut Map<String, Value>, key: &str) {
+    if let Some(Value::String(value)) = object.get_mut(key) {
+        *value = value.trim().into();
+    }
+}
+
+fn normalize_canvas_editor(editor: &mut Map<String, Value>) {
+    if !editor
+        .get("gridSize")
+        .and_then(Value::as_f64)
+        .is_some_and(|value| value == 1.0 || value == 2.0 || value == 5.0)
+    {
+        editor.insert("gridSize".into(), json!(1));
+    }
+    if !editor
+        .get("snapStep")
+        .and_then(Value::as_f64)
+        .is_some_and(|value| value == 0.25 || value == 0.5 || value == 1.0)
+    {
+        editor.insert("snapStep".into(), json!(1));
+    }
 }
 
 fn default_canvas_editor() -> Value {
@@ -1385,25 +1931,28 @@ fn normalize_label_bindings(value: Value) -> Result<Value, DataError> {
         .ok_or_else(|| DataError::Validation("labelBindings must be an array.".into()))?;
     let mut normalized = Vec::with_capacity(bindings.len());
     for binding in bindings {
-        let mut binding = require_object(binding.clone(), "Label binding")?;
-        required_nonempty_string(&binding, "id", "Label binding")?;
+        let binding = require_object(binding.clone(), "Label binding")?;
+        let id = required_nonempty_string(&binding, "id", "Label binding")?.to_owned();
         let template_source =
-            required_nonempty_string(&binding, "templateSource", "Label binding")?;
-        if !matches!(template_source, "system" | "user-template") {
+            required_nonempty_string(&binding, "templateSource", "Label binding")?.to_owned();
+        if !matches!(template_source.as_str(), "system" | "user-template") {
             return Err(DataError::Validation(
                 "Label binding templateSource is invalid.".into(),
             ));
         }
-        required_nonempty_string(&binding, "templateId", "Label binding")?;
-        required_nonempty_string(&binding, "templateName", "Label binding")?;
-        required_nonempty_string(&binding, "createdAt", "Label binding")?;
-        required_nonempty_string(&binding, "updatedAt", "Label binding")?;
+        let template_id =
+            required_nonempty_string(&binding, "templateId", "Label binding")?.to_owned();
+        let template_name =
+            required_nonempty_string(&binding, "templateName", "Label binding")?.to_owned();
+        let created_at =
+            required_nonempty_string(&binding, "createdAt", "Label binding")?.to_owned();
+        let updated_at =
+            required_nonempty_string(&binding, "updatedAt", "Label binding")?.to_owned();
 
         let print_quantity = match binding.get("printQuantity") {
             Some(value) => positive_json_integer(value, "Label binding printQuantity")?,
             None => 1,
         };
-        binding.insert("printQuantity".into(), json!(print_quantity));
 
         let field_overrides = binding
             .get("fieldOverrides")
@@ -1417,11 +1966,18 @@ fn normalize_label_bindings(value: Value) -> Result<Value, DataError> {
                 "Label binding fieldOverrides values must be strings.".into(),
             ));
         }
-        binding.insert(
-            "fieldOverrides".into(),
-            Value::Object(field_overrides.clone()),
-        );
-        normalized.push(Value::Object(binding));
+        // This nested Zod object strips unrecognized fields, unlike the
+        // enclosing material schema which deliberately preserves legacy data.
+        normalized.push(json!({
+            "id": id,
+            "templateSource": template_source,
+            "templateId": template_id,
+            "templateName": template_name,
+            "printQuantity": print_quantity,
+            "fieldOverrides": field_overrides,
+            "createdAt": created_at,
+            "updatedAt": updated_at,
+        }));
     }
     Ok(Value::Array(normalized))
 }
@@ -1454,6 +2010,23 @@ fn positive_json_integer(value: &Value, label: &str) -> Result<u64, DataError> {
                 .map(|value| value as u64)
         })
         .ok_or_else(|| DataError::Validation(format!("{label} must be a positive integer.")))
+}
+
+fn non_negative_json_integer(value: &Value, label: &str) -> Result<u64, DataError> {
+    value
+        .as_u64()
+        .or_else(|| {
+            value
+                .as_f64()
+                .filter(|value| {
+                    value.is_finite()
+                        && *value >= 0.0
+                        && value.fract() == 0.0
+                        && *value <= u64::MAX as f64
+                })
+                .map(|value| value as u64)
+        })
+        .ok_or_else(|| DataError::Validation(format!("{label} must be a non-negative integer.")))
 }
 
 fn positive_number(object: &Map<String, Value>, key: &str) -> Result<f64, DataError> {
@@ -1660,17 +2233,17 @@ fn integer_field(value: &Value, key: &str) -> Option<i64> {
 fn positive_integer(object: &Map<String, Value>, key: &str) -> Result<i64, DataError> {
     let value = object
         .get(key)
-        .and_then(Value::as_i64)
-        .filter(|value| *value > 0)
         .ok_or_else(|| DataError::Validation(format!("{key} must be a positive integer.")))?;
-    Ok(value)
+    let value = positive_json_integer(value, key)?;
+    i64::try_from(value)
+        .map_err(|_| DataError::Validation(format!("{key} must be a positive integer.")))
 }
 
 fn non_negative_integer(object: &Map<String, Value>, key: &str) -> Result<i64, DataError> {
     let value = object
         .get(key)
-        .and_then(Value::as_i64)
-        .filter(|value| *value >= 0)
         .ok_or_else(|| DataError::Validation(format!("{key} must be a non-negative integer.")))?;
-    Ok(value)
+    let value = non_negative_json_integer(value, key)?;
+    i64::try_from(value)
+        .map_err(|_| DataError::Validation(format!("{key} must be a non-negative integer.")))
 }

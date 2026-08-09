@@ -706,21 +706,21 @@ pub struct AgentImportItem {
     pub selected: bool,
     #[serde(default)]
     pub material: Value,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_material_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_material_updated_at: Option<String>,
     #[serde(default)]
     pub quantity: i64,
     #[serde(default)]
     pub source_note: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<AgentImportTemplate>,
     #[serde(default)]
     pub template_input: BTreeMap<String, String>,
     #[serde(default)]
     pub pending_template_event_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label_print_quantity: Option<u32>,
     #[serde(default)]
     pub revision: u64,

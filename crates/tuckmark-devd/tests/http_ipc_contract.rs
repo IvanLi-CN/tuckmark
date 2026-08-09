@@ -26,6 +26,9 @@ use tuckmark_devd::{
     routes::{TransportContext, app_router_for_transport},
 };
 
+const AGENT_SESSION_ID: &str = "agent-import-http-contract-session";
+const AGENT_SESSION_SECRET: &str = "agent-import-http-contract-secret-012345";
+
 fn test_state() -> (tempfile::TempDir, AppState) {
     let directory = tempdir().unwrap();
     let config = DevdConfig::resolve(Some(directory.path().to_path_buf())).unwrap();
@@ -61,6 +64,37 @@ fn json_request(method: axum::http::Method, path: &str, payload: Value) -> Reque
 async fn response_json(response: axum::response::Response) -> Value {
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     serde_json::from_slice(&bytes).unwrap()
+}
+
+fn agent_json_request(method: axum::http::Method, path: &str, payload: Value) -> Request<Body> {
+    let mut request = json_request(method, path, payload);
+    request.headers_mut().insert(
+        "x-tuckmark-agent-import-key",
+        header::HeaderValue::from_static(AGENT_SESSION_SECRET),
+    );
+    request
+}
+
+fn agent_session_payload() -> Value {
+    json!({
+        "sessionId": AGENT_SESSION_ID,
+        "secret": AGENT_SESSION_SECRET,
+        "proposal": {
+            "schema": "tuckmark.agent-import.v1",
+            "items": [{
+                "id": "agent-http-item",
+                "kind": "new",
+                "quantity": 1,
+                "material": { "fullName": "HTTP contract material" },
+                "templateAlternatives": [{
+                    "source": "system",
+                    "id": "cable-tag",
+                    "name": "Cable Tag",
+                    "fields": [{ "key": "name", "label": "Name" }]
+                }]
+            }]
+        }
+    })
 }
 
 #[tokio::test]
@@ -437,4 +471,224 @@ async fn sync_record_routes_reject_payloads_outside_the_existing_schema() {
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(response_json(response).await["status"], "error");
+}
+
+#[tokio::test]
+async fn agent_import_routes_preserve_optional_defaults_and_reject_explicit_nulls() {
+    let (_directory, state) = test_state();
+    let app = app_router_for_transport(state, TransportContext::Http);
+    let created = app
+        .clone()
+        .oneshot(json_request(
+            axum::http::Method::POST,
+            "/api/agent-import/sessions",
+            agent_session_payload(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let created = response_json(created).await;
+    let item = &created["session"]["proposal"]["items"][0];
+    assert_eq!(item["sourceNote"], "");
+    assert_eq!(
+        item["templateAlternatives"][0]["fields"][0]["required"],
+        false
+    );
+    assert_eq!(
+        item["templateAlternatives"][0]["fields"][0]["multiline"],
+        false
+    );
+    for key in [
+        "targetMaterialId",
+        "targetMaterialUpdatedAt",
+        "template",
+        "labelPrintQuantity",
+    ] {
+        assert!(item.get(key).is_none(), "{key} must remain omitted");
+    }
+
+    let mut null_proposal_note = agent_session_payload();
+    null_proposal_note["proposal"]["sourceNote"] = Value::Null;
+    let mut null_target = agent_session_payload();
+    null_target["proposal"]["items"][0]["targetMaterialId"] = Value::Null;
+    let mut null_template = agent_session_payload();
+    null_template["proposal"]["items"][0]["template"] = Value::Null;
+    let mut null_label_quantity = agent_session_payload();
+    null_label_quantity["proposal"]["items"][0]["labelPrintQuantity"] = Value::Null;
+    let mut null_material_default = agent_session_payload();
+    null_material_default["proposal"]["items"][0]["material"]["description"] = Value::Null;
+    let mut null_alternatives = agent_session_payload();
+    null_alternatives["proposal"]["items"][0]["templateAlternatives"] = Value::Null;
+    for payload in [
+        null_proposal_note,
+        null_target,
+        null_template,
+        null_label_quantity,
+        null_material_default,
+        null_alternatives,
+    ] {
+        let response = app
+            .clone()
+            .oneshot(json_request(
+                axum::http::Method::POST,
+                "/api/agent-import/sessions",
+                payload,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    let mut nullable_pending_event = agent_session_payload();
+    nullable_pending_event["sessionId"] = json!("agent-import-http-nullable-event-session");
+    nullable_pending_event["proposal"]["items"][0]["pendingTemplateEventId"] = Value::Null;
+    let response = app
+        .clone()
+        .oneshot(json_request(
+            axum::http::Method::POST,
+            "/api/agent-import/sessions",
+            nullable_pending_event,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert!(
+        response_json(response).await["session"]["proposal"]["items"][0]["pendingTemplateEventId"]
+            .is_null()
+    );
+
+    let mut null_item_note = created["session"]["proposal"]["items"][0].clone();
+    null_item_note["sourceNote"] = Value::Null;
+    let response = app
+        .clone()
+        .oneshot(agent_json_request(
+            axum::http::Method::PUT,
+            &format!("/api/agent-import/sessions/{AGENT_SESSION_ID}/items/agent-http-item"),
+            json!({ "expectedRevision": 0, "item": null_item_note }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let response = app
+        .clone()
+        .oneshot(agent_json_request(
+            axum::http::Method::POST,
+            &format!(
+                "/api/agent-import/sessions/{AGENT_SESSION_ID}/items/agent-http-item/template-input"
+            ),
+            json!({
+                "expectedRevision": 0,
+                "template": {
+                    "source": "system",
+                    "id": "shipping-compact",
+                    "name": "Compact Shipping Label",
+                    "recommendedUse": null
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let response = app
+        .clone()
+        .oneshot(agent_json_request(
+            axum::http::Method::POST,
+            &format!(
+                "/api/agent-import/sessions/{AGENT_SESSION_ID}/items/agent-http-item/template-input"
+            ),
+            json!({
+                "expectedRevision": 0,
+                "template": {
+                    "source": "system",
+                    "id": "shipping-compact",
+                    "name": "Compact Shipping Label"
+                },
+                "unexpected": true
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let requested = app
+        .clone()
+        .oneshot(agent_json_request(
+            axum::http::Method::POST,
+            &format!(
+                "/api/agent-import/sessions/{AGENT_SESSION_ID}/items/agent-http-item/template-input"
+            ),
+            json!({
+                "expectedRevision": 0,
+                "template": {
+                    "source": "system",
+                    "id": "shipping-compact",
+                    "name": "Compact Shipping Label"
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(requested.status(), StatusCode::OK);
+    let requested = response_json(requested).await;
+    assert_eq!(
+        requested["session"]["proposal"]["items"][0]["templateAlternatives"][0]["id"],
+        "cable-tag"
+    );
+    let event = &requested["session"]["events"][0];
+    let fulfilled = app
+        .oneshot(agent_json_request(
+            axum::http::Method::POST,
+            &format!(
+                "/api/agent-import/sessions/{AGENT_SESSION_ID}/events/{}/fulfill",
+                event["id"].as_str().unwrap()
+            ),
+            json!({
+                "expectedRevision": event["revision"],
+                "input": {
+                    "recipient": "Ada",
+                    "address": "Loopback Lane",
+                    "orderId": "ORDER-67"
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(fulfilled.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(fulfilled).await["session"]["proposal"]["items"][0]["templateAlternatives"]
+            [0]["id"],
+        "cable-tag"
+    );
+}
+
+#[tokio::test]
+async fn archive_import_rejects_noncanonical_hash_before_data_mutation() {
+    let (_directory, state) = test_state();
+    let app = app_router_for_transport(state.clone(), TransportContext::Http);
+    for archive_hash in ["a".repeat(63), "A".repeat(64)] {
+        let response = app
+            .clone()
+            .oneshot(json_request(
+                axum::http::Method::POST,
+                "/api/data/archive/import",
+                json!({
+                    "expectedRevision": 0,
+                    "archiveHash": archive_hash,
+                    "mode": "replace",
+                    "archive": {}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(
+            response_json(response).await["error"]
+                .as_str()
+                .unwrap()
+                .contains("archiveHash")
+        );
+    }
+    assert_eq!(state.data.status().unwrap()["revision"], 0);
 }

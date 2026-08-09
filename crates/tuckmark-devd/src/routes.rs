@@ -21,7 +21,7 @@ use axum::{
 };
 use futures_util::{StreamExt, stream};
 use mime_guess::from_path;
-use serde::Deserialize;
+use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Map, Value, json};
 use tokio::fs;
 use tokio_stream::wrappers::BroadcastStream;
@@ -720,12 +720,24 @@ async fn import_archive(
     State(state): State<AppState>,
     Json(payload): Json<ArchiveImportRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    if !is_lowercase_sha256(&payload.archive_hash) {
+        return Err(ApiError::bad_request(
+            "archiveHash must be exactly 64 lowercase hexadecimal characters.",
+        ));
+    }
     Ok(Json(state.data.import_archive(
         payload.expected_revision,
         &payload.archive_hash,
         &payload.mode,
         payload.archive,
     )?))
+}
+
+fn is_lowercase_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 #[derive(Debug, Deserialize)]
@@ -769,8 +781,10 @@ struct CreateAgentSessionRequest {
 
 async fn create_agent_session(
     State(state): State<AppState>,
-    Json(payload): Json<CreateAgentSessionRequest>,
+    Json(payload): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let payload: CreateAgentSessionRequest =
+        parse_agent_import_request(payload, validate_create_agent_session_request)?;
     let session = state
         .agent_import
         .create_session(CreateAgentImportSession {
@@ -826,8 +840,10 @@ async fn update_agent_item(
     State(state): State<AppState>,
     AxumPath((session_id, item_id)): AxumPath<(String, String)>,
     headers: HeaderMap,
-    Json(payload): Json<UpdateAgentItemRequest>,
+    Json(payload): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
+    let payload: UpdateAgentItemRequest =
+        parse_agent_import_request(payload, validate_update_agent_item_request)?;
     let session = state.agent_import.update_item(UpdateAgentImportItem {
         session_id,
         secret: agent_secret(&headers)?.to_owned(),
@@ -849,8 +865,10 @@ async fn request_agent_template_input(
     State(state): State<AppState>,
     AxumPath((session_id, item_id)): AxumPath<(String, String)>,
     headers: HeaderMap,
-    Json(payload): Json<RequestAgentTemplateRequest>,
+    Json(payload): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
+    let payload: RequestAgentTemplateRequest =
+        parse_agent_import_request(payload, validate_request_agent_template_request)?;
     let session = state
         .agent_import
         .request_template_input(RequestAgentImportTemplateInput {
@@ -861,6 +879,176 @@ async fn request_agent_template_input(
             template: payload.template,
         })?;
     Ok(Json(json!({ "session": session })))
+}
+
+fn parse_agent_import_request<T>(
+    payload: Value,
+    validator: fn(&Value) -> Result<(), ApiError>,
+) -> Result<T, ApiError>
+where
+    T: DeserializeOwned,
+{
+    validator(&payload)?;
+    serde_json::from_value(payload)
+        .map_err(|error| ApiError::bad_request(format!("Agent import request is invalid: {error}")))
+}
+
+fn validate_create_agent_session_request(payload: &Value) -> Result<(), ApiError> {
+    let payload = agent_import_object(payload, "Agent import session request")?;
+    let proposal = payload
+        .get("proposal")
+        .ok_or_else(|| ApiError::bad_request("proposal is required."))?;
+    validate_agent_import_proposal_optional_fields(proposal)
+}
+
+fn validate_update_agent_item_request(payload: &Value) -> Result<(), ApiError> {
+    let payload = agent_import_object(payload, "Agent import item update")?;
+    let item = payload
+        .get("item")
+        .ok_or_else(|| ApiError::bad_request("item is required."))?;
+    validate_agent_import_item_optional_fields(item, "item")
+}
+
+fn validate_request_agent_template_request(payload: &Value) -> Result<(), ApiError> {
+    let payload = agent_import_object(payload, "Agent import template request")?;
+    reject_unexpected_fields(
+        payload,
+        "Agent import template request",
+        &["expectedRevision", "template"],
+    )?;
+    let template = payload
+        .get("template")
+        .ok_or_else(|| ApiError::bad_request("template is required."))?;
+    validate_agent_import_template_optional_fields(template, "template")
+}
+
+fn validate_agent_import_proposal_optional_fields(proposal: &Value) -> Result<(), ApiError> {
+    let proposal = agent_import_object(proposal, "proposal")?;
+    reject_explicit_null(proposal, "proposal", &["sourceNote"])?;
+    let Some(items) = proposal.get("items") else {
+        return Ok(());
+    };
+    let items = items
+        .as_array()
+        .ok_or_else(|| ApiError::bad_request("proposal.items must be an array."))?;
+    for (index, item) in items.iter().enumerate() {
+        validate_agent_import_item_optional_fields(item, &format!("proposal.items[{index}]"))?;
+    }
+    Ok(())
+}
+
+fn validate_agent_import_item_optional_fields(item: &Value, path: &str) -> Result<(), ApiError> {
+    let item = agent_import_object(item, path)?;
+    reject_explicit_null(
+        item,
+        path,
+        &[
+            "targetMaterialId",
+            "targetMaterialUpdatedAt",
+            "sourceNote",
+            "needsAttention",
+            "template",
+            "labelPrintQuantity",
+            "templateAlternatives",
+        ],
+    )?;
+    if let Some(material) = item.get("material") {
+        validate_agent_import_material_optional_fields(material, &format!("{path}.material"))?;
+    }
+    if let Some(template) = item.get("template") {
+        validate_agent_import_template_optional_fields(template, &format!("{path}.template"))?;
+    }
+    if let Some(alternatives) = item.get("templateAlternatives") {
+        let alternatives = alternatives.as_array().ok_or_else(|| {
+            ApiError::bad_request(format!("{path}.templateAlternatives must be an array."))
+        })?;
+        for (index, template) in alternatives.iter().enumerate() {
+            validate_agent_import_template_optional_fields(
+                template,
+                &format!("{path}.templateAlternatives[{index}]"),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_agent_import_material_optional_fields(
+    material: &Value,
+    path: &str,
+) -> Result<(), ApiError> {
+    let material = agent_import_object(material, path)?;
+    reject_explicit_null(
+        material,
+        path,
+        &[
+            "baseName",
+            "variantName",
+            "packageName",
+            "description",
+            "deviceDetails",
+            "matrixCode",
+            "packagingRemark",
+        ],
+    )
+}
+
+fn validate_agent_import_template_optional_fields(
+    template: &Value,
+    path: &str,
+) -> Result<(), ApiError> {
+    let template = agent_import_object(template, path)?;
+    reject_explicit_null(template, path, &["recommendedUse", "fields"])?;
+    if let Some(fields) = template.get("fields") {
+        let fields = fields
+            .as_array()
+            .ok_or_else(|| ApiError::bad_request(format!("{path}.fields must be an array.")))?;
+        for (index, field) in fields.iter().enumerate() {
+            let field_path = format!("{path}.fields[{index}]");
+            let field = agent_import_object(field, &field_path)?;
+            reject_explicit_null(field, &field_path, &["required", "multiline"])?;
+        }
+    }
+    Ok(())
+}
+
+fn agent_import_object<'a>(
+    value: &'a Value,
+    path: &str,
+) -> Result<&'a Map<String, Value>, ApiError> {
+    value
+        .as_object()
+        .ok_or_else(|| ApiError::bad_request(format!("{path} must be an object.")))
+}
+
+fn reject_explicit_null(
+    object: &Map<String, Value>,
+    path: &str,
+    fields: &[&str],
+) -> Result<(), ApiError> {
+    for field in fields {
+        if object.get(*field).is_some_and(Value::is_null) {
+            return Err(ApiError::bad_request(format!(
+                "{path}.{field} must not be null."
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn reject_unexpected_fields(
+    object: &Map<String, Value>,
+    path: &str,
+    allowed_fields: &[&str],
+) -> Result<(), ApiError> {
+    if let Some(field) = object
+        .keys()
+        .find(|field| !allowed_fields.contains(&field.as_str()))
+    {
+        return Err(ApiError::bad_request(format!(
+            "{path}.{field} is not allowed."
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
