@@ -418,9 +418,7 @@ impl DataFacade {
             .collect::<Result<Vec<_>, _>>()?;
         let query = query.trim().to_ascii_lowercase();
         values.retain(|material| {
-            let archived = material
-                .get("archivedAt")
-                .is_some_and(|value| !value.is_null());
+            let archived = material_is_archived(material);
             let matches = query.is_empty()
                 || [
                     "fullName",
@@ -428,7 +426,9 @@ impl DataFacade {
                     "variantName",
                     "packageName",
                     "description",
+                    "deviceDetails",
                     "matrixCode",
+                    "packagingRemark",
                 ]
                 .into_iter()
                 .filter_map(|key| material.get(key).and_then(Value::as_str))
@@ -533,6 +533,16 @@ fn value_source_key_compare(left: &Value, right: &Value) -> std::cmp::Ordering {
 
 fn string_field<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
+}
+
+fn material_is_archived(material: &Value) -> bool {
+    archived_at_has_timestamp(material.get("archivedAt"))
+}
+
+fn archived_at_has_timestamp(value: Option<&Value>) -> bool {
+    value
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.is_empty())
 }
 
 fn timestamps(
@@ -815,12 +825,7 @@ fn apply_runtime_command(
             document.remove("baseVersionId");
             document.insert("lastSavedAt".into(), Value::String(timestamp.clone()));
             document.insert("name".into(), Value::String(name.clone()));
-            let document = normalize_canvas_document(
-                Value::Object(document),
-                saved_source.clone(),
-                "custom",
-                "document",
-            )?;
+            let document = normalize_canvas_document(Value::Object(document), "document")?;
             let mut document = require_object(document, "document")?;
             document.insert("source".into(), saved_source);
             let document = Value::Object(document);
@@ -1003,21 +1008,11 @@ fn apply_runtime_command(
             let mut source = require_object(source, "source")?;
             normalize_canvas_source(&mut source);
             let source_key = source_key(&source)?;
-            let default_preset_id = source
-                .get("presetId")
-                .or_else(|| source.get("templateId"))
-                .and_then(Value::as_str)
-                .unwrap_or("custom");
             let document = args
                 .get("document")
                 .cloned()
                 .ok_or_else(|| DataError::Validation("document is required.".into()))?;
-            let document = normalize_canvas_document(
-                document,
-                Value::Object(source.clone()),
-                default_preset_id,
-                "document",
-            )?;
+            let document = normalize_canvas_document(document, "document")?;
             let template_id = optional_identifier(&args, "templateId")?;
             let source_version_id = optional_identifier(&args, "sourceVersionId")?;
             let mut working_copy = json!({
@@ -1144,7 +1139,11 @@ fn apply_inventory_command(
     let args = require_object(args, "Inventory command arguments")?;
     let mut materials = current_materials;
     let mut adjustments = current_adjustments;
-    let id = optional_identifier(&args, "materialId")?.or(optional_identifier(&args, "id")?);
+    let id = if command == "save-material" {
+        optional_identifier(&args, "id")?
+    } else {
+        optional_identifier(&args, "materialId")?.or(optional_identifier(&args, "id")?)
+    };
     let existing_index = id.as_deref().and_then(|id| {
         materials
             .iter()
@@ -1171,10 +1170,7 @@ fn apply_inventory_command(
                 .and_then(Value::as_object)
                 .cloned()
                 .unwrap_or_default();
-            if material
-                .get("archivedAt")
-                .is_some_and(|value| !value.is_null())
-            {
+            if archived_at_has_timestamp(material.get("archivedAt")) {
                 return Err(DataError::Validation(
                     "Cannot edit an archived material.".into(),
                 ));
@@ -1285,10 +1281,7 @@ fn apply_inventory_command(
                 .iter()
                 .position(|material| string_field(material, "id") == material_id)
                 .ok_or_else(|| DataError::NotFound("Material was not found.".into()))?;
-            if materials[index]
-                .get("archivedAt")
-                .is_some_and(|value| !value.is_null())
-            {
+            if material_is_archived(&materials[index]) {
                 return Err(DataError::Validation(
                     "Cannot adjust an archived material.".into(),
                 ));
@@ -1702,21 +1695,8 @@ fn normalize_runtime_snapshot(snapshot: Value) -> Result<Value, DataError> {
     Ok(Value::Object(runtime))
 }
 
-fn normalize_canvas_document(
-    document: Value,
-    source: Value,
-    default_preset_id: &str,
-    label: &str,
-) -> Result<Value, DataError> {
+fn normalize_canvas_document(document: Value, label: &str) -> Result<Value, DataError> {
     let mut document = require_object(document, label)?;
-    document.entry("version").or_insert_with(|| json!(1));
-    document
-        .entry("presetId")
-        .or_insert_with(|| Value::String(default_preset_id.into()));
-    document
-        .entry("editor")
-        .or_insert_with(default_canvas_editor);
-    document.entry("source").or_insert(source);
     normalize_canvas_document_fields(&mut document);
 
     let normalized = normalize_legacy_value(json!({
@@ -1865,15 +1845,6 @@ fn normalize_canvas_editor(editor: &mut Map<String, Value>) {
     {
         editor.insert("snapStep".into(), json!(1));
     }
-}
-
-fn default_canvas_editor() -> Value {
-    json!({
-        "gridEnabled": true,
-        "gridSize": 1,
-        "snapEnabled": true,
-        "snapStep": 1
-    })
 }
 
 fn validate_canvas_document(document: &Value, label: &str) -> Result<(), DataError> {

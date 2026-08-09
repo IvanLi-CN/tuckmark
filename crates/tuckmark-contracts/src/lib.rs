@@ -2,7 +2,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Serialize,
+    de::{self, Deserializer},
+};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -50,6 +53,70 @@ fn non_empty(value: &str, name: &str) -> Result<(), ContractError> {
 
 fn default_true() -> bool {
     true
+}
+
+fn deserialize_optional_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Value::deserialize(deserializer)?
+        .as_str()
+        .map(|value| Some(value.to_owned()))
+        .ok_or_else(|| de::Error::custom("must be a string"))
+}
+
+fn deserialize_optional_non_empty_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    let value = value
+        .as_str()
+        .ok_or_else(|| de::Error::custom("must be a string"))?;
+    if value.is_empty() {
+        return Err(de::Error::custom("must not be empty"));
+    }
+    Ok(Some(value.to_owned()))
+}
+
+fn deserialize_optional_u32<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    let value = value
+        .as_u64()
+        .or_else(|| {
+            value
+                .as_f64()
+                .filter(|value| {
+                    value.is_finite()
+                        && *value >= 0.0
+                        && value.fract() == 0.0
+                        && *value <= u32::MAX as f64
+                })
+                .map(|value| value as u64)
+        })
+        .filter(|value| *value <= u32::MAX as u64)
+        .ok_or_else(|| de::Error::custom("must be a non-negative integer"))?;
+    Ok(Some(value as u32))
+}
+
+fn deserialize_optional_agent_import_template<'de, D>(
+    deserializer: D,
+) -> Result<Option<AgentImportTemplate>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    if value.is_null() {
+        return Err(de::Error::custom("must be an object"));
+    }
+    serde_json::from_value(value)
+        .map(Some)
+        .map_err(de::Error::custom)
 }
 
 fn expected_schema(actual: &str, expected: &str) -> Result<(), ContractError> {
@@ -355,7 +422,7 @@ pub struct InventoryMaterial {
     pub full_name: String,
     #[serde(default)]
     pub current_quantity: i64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub matrix_code: Option<String>,
     #[serde(default)]
     pub label_bindings: Vec<LabelBinding>,
@@ -706,21 +773,37 @@ pub struct AgentImportItem {
     pub selected: bool,
     #[serde(default)]
     pub material: Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_empty_string"
+    )]
     pub target_material_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_empty_string"
+    )]
     pub target_material_updated_at: Option<String>,
     #[serde(default)]
     pub quantity: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_string")]
     pub source_note: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_agent_import_template"
+    )]
     pub template: Option<AgentImportTemplate>,
     #[serde(default)]
     pub template_input: BTreeMap<String, String>,
     #[serde(default)]
     pub pending_template_event_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_u32"
+    )]
     pub label_print_quantity: Option<u32>,
     #[serde(default)]
     pub revision: u64,
@@ -732,7 +815,7 @@ pub struct AgentImportItem {
 #[serde(rename_all = "camelCase")]
 pub struct AgentImportProposal {
     pub schema: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_string")]
     pub source_note: Option<String>,
     #[serde(default)]
     pub items: Vec<AgentImportItem>,
@@ -764,11 +847,30 @@ impl AgentImportProposal {
                 )));
             }
             validate_agent_import_material(&item.material, &item.id)?;
-            if item.kind == AgentImportItemKind::Restock {
-                non_empty(
-                    item.target_material_id.as_deref().unwrap_or_default(),
-                    "agent import restock targetMaterialId",
-                )?;
+            if item
+                .target_material_id
+                .as_deref()
+                .is_some_and(str::is_empty)
+            {
+                return Err(ContractError::Validation(format!(
+                    "agent import item {} targetMaterialId must not be empty",
+                    item.id
+                )));
+            }
+            if item
+                .target_material_updated_at
+                .as_deref()
+                .is_some_and(str::is_empty)
+            {
+                return Err(ContractError::Validation(format!(
+                    "agent import item {} targetMaterialUpdatedAt must not be empty",
+                    item.id
+                )));
+            }
+            if item.kind == AgentImportItemKind::Restock && item.target_material_id.is_none() {
+                return Err(ContractError::Validation(
+                    "agent import restock targetMaterialId must not be empty".into(),
+                ));
             }
             if item.label_print_quantity == Some(0) {
                 return Err(ContractError::Validation(format!(
@@ -778,6 +880,16 @@ impl AgentImportProposal {
             }
             if let Some(template) = &item.template {
                 validate_agent_import_template(template)?;
+            }
+            if item
+                .extra
+                .get("needsAttention")
+                .is_some_and(|value| value.as_str().is_none_or(str::is_empty))
+            {
+                return Err(ContractError::Validation(format!(
+                    "agent import item {} needsAttention must be a non-empty string",
+                    item.id
+                )));
             }
             if item
                 .pending_template_event_id

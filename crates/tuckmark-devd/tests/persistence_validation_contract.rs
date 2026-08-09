@@ -202,37 +202,6 @@ fn canonical_archive_equivalent() -> Value {
 }
 
 #[test]
-fn save_template_normalizes_legacy_document_defaults_before_persisting() {
-    let (_directory, data) = data_facade();
-    let result = data
-        .mutate_runtime(
-            "save-template",
-            0,
-            json!({
-                "name": "Legacy template",
-                "document": {
-                    "id": "legacy-document",
-                    "name": "Legacy template",
-                    "width": 48,
-                    "height": 24,
-                    "fields": [],
-                    "elements": [],
-                    "recommendedUses": [{ "scope": "electronics" }, "bench"]
-                }
-            }),
-        )
-        .unwrap();
-
-    let document = &result["data"]["version"]["document"];
-    assert_eq!(document["version"], 1);
-    assert_eq!(document["presetId"], "custom");
-    assert_eq!(document["recommendedUse"], "electronics；bench");
-    assert!(document.get("recommendedUses").is_none());
-    assert_eq!(document["editor"]["gridSize"], 1);
-    assert_eq!(document["editor"]["snapStep"], 1);
-}
-
-#[test]
 fn runtime_document_commands_apply_canvas_zod_transforms_before_persisting() {
     let (_directory, data) = data_facade();
     let saved = data
@@ -315,6 +284,30 @@ fn runtime_document_commands_reject_malformed_documents_without_committing() {
 
         assert!(data.mutate_runtime(command, 0, args).is_err(), "{command}");
         assert_eq!(data.status().unwrap()["revision"], 0, "{command}");
+    }
+
+    for missing_field in ["version", "presetId", "editor", "source"] {
+        for command in ["save-template", "save-autosave", "replace-working-copy"] {
+            let (_directory, data) = data_facade();
+            let mut document = canvas_document(json!({
+                "kind": "scratch",
+                "presetId": "validation-scratch"
+            }));
+            document.as_object_mut().unwrap().remove(missing_field);
+            let args = if command == "save-template" {
+                json!({ "name": "Canvas schema fields are required", "document": document })
+            } else {
+                json!({
+                    "source": { "kind": "scratch", "presetId": "validation-scratch" },
+                    "document": document
+                })
+            };
+            assert!(
+                data.mutate_runtime(command, 0, args).is_err(),
+                "{command} must require {missing_field}"
+            );
+            assert_eq!(data.status().unwrap()["revision"], 0, "{command}");
+        }
     }
 
     let (_directory, data) = data_facade();
@@ -494,6 +487,92 @@ fn save_material_normalizes_inventory_schema_defaults() {
 }
 
 #[test]
+fn save_material_ignores_the_unsupported_material_id_alias() {
+    let (_directory, data) = data_facade();
+    let existing = data
+        .mutate_inventory(
+            "save-material",
+            0,
+            json!({ "fullName": "Existing material" }),
+        )
+        .unwrap();
+    let existing_id = existing["data"]["id"].as_str().unwrap();
+
+    let created = data
+        .mutate_inventory(
+            "save-material",
+            1,
+            json!({
+                "materialId": existing_id,
+                "fullName": "New material"
+            }),
+        )
+        .unwrap();
+    assert_ne!(created["data"]["id"], existing_id);
+    assert_eq!(
+        data.read_materials("", true).unwrap()["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn empty_archived_at_remains_an_active_material() {
+    let (_directory, data) = data_facade();
+    let root = data.authority().root();
+    fs::create_dir_all(root.join("inventory/materials")).unwrap();
+    fs::write(
+        root.join("inventory/materials/empty-archived-at.json"),
+        json!({
+            "id": "empty-archived-at",
+            "fullName": "Empty archive marker",
+            "description": "",
+            "deviceDetails": "",
+            "packagingRemark": "",
+            "currentQuantity": 0,
+            "createdAt": "2026-08-09T00:00:00.000Z",
+            "updatedAt": "2026-08-09T00:00:00.000Z",
+            "archivedAt": "",
+            "labelBindings": []
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        data.read_materials("", false).unwrap()["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        data.mutate_inventory(
+            "save-material",
+            0,
+            json!({
+                "id": "empty-archived-at",
+                "fullName": "Still active"
+            }),
+        )
+        .is_ok()
+    );
+    assert!(
+        data.mutate_inventory(
+            "apply-adjustment",
+            1,
+            json!({
+                "materialId": "empty-archived-at",
+                "input": { "kind": "in", "quantity": 1 }
+            }),
+        )
+        .is_ok()
+    );
+}
+
+#[test]
 fn legacy_inventory_reads_apply_schema_defaults_before_returning_data() {
     let (_directory, data) = data_facade();
     let root = data.authority().root();
@@ -504,6 +583,8 @@ fn legacy_inventory_reads_apply_schema_defaults_before_returning_data() {
         json!({
             "id": "legacy-material",
             "fullName": "Legacy material",
+            "deviceDetails": "Laser calibration fixture",
+            "packagingRemark": "Blue carton insert",
             "createdAt": "2026-08-09T00:00:00.000Z",
             "updatedAt": "2026-08-09T00:00:00.000Z"
         })
@@ -530,10 +611,24 @@ fn legacy_inventory_reads_apply_schema_defaults_before_returning_data() {
     let materials = data.read_materials("", true).unwrap();
     let material = &materials["data"][0];
     assert_eq!(material["description"], "");
-    assert_eq!(material["deviceDetails"], "");
-    assert_eq!(material["packagingRemark"], "");
+    assert_eq!(material["deviceDetails"], "Laser calibration fixture");
+    assert_eq!(material["packagingRemark"], "Blue carton insert");
     assert_eq!(material["currentQuantity"], 0);
     assert_eq!(material["labelBindings"], json!([]));
+    assert_eq!(
+        data.read_materials("calibration fixture", true).unwrap()["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        data.read_materials("carton insert", true).unwrap()["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 
     let adjustments = data.read_adjustments(Some("legacy-material")).unwrap();
     let adjustment = &adjustments["data"][0];

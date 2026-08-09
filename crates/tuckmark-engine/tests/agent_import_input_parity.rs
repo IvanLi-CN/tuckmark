@@ -391,3 +391,325 @@ fn list_inventory_rejects_noncanonical_legacy_material_fields() {
 
     assert!(manager.list_inventory(None).is_err());
 }
+
+#[test]
+fn list_inventory_canonicalizes_label_bindings_and_omits_missing_matrix_codes() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    authority
+        .commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![JsonWrite::new(
+                "inventory/materials/canonical-binding-material.json",
+                json!({
+                    "id": "canonical-binding-material",
+                    "fullName": "Canonical binding material",
+                    "matrixCode": null,
+                    "createdAt": "2026-08-09T00:00:00Z",
+                    "updatedAt": "2026-08-09T00:00:00Z",
+                    "labelBindings": [{
+                        "id": "canonical-binding",
+                        "templateSource": "system",
+                        "templateId": "cable-tag",
+                        "templateName": "Cable Tag",
+                        "createdAt": "2026-08-09T00:00:00Z",
+                        "updatedAt": "2026-08-09T00:00:00Z",
+                        "unexpected": { "must": "not leak" }
+                    }]
+                }),
+            )],
+            deletes: vec![],
+            domains: vec!["inventory".into()],
+            reason: "agent-import-canonical-binding-fixture".into(),
+        })
+        .unwrap();
+    let manager = AgentImportManager::new(authority);
+
+    let material = manager.list_inventory(None).unwrap().remove(0);
+    let response = serde_json::to_value(material).unwrap();
+    assert!(response.get("matrixCode").is_none());
+    assert_eq!(
+        response["labelBindings"],
+        json!([{
+            "id": "canonical-binding",
+            "templateSource": "system",
+            "templateId": "cable-tag",
+            "templateName": "Cable Tag",
+            "printQuantity": 1,
+            "fieldOverrides": {},
+            "createdAt": "2026-08-09T00:00:00Z",
+            "updatedAt": "2026-08-09T00:00:00Z"
+        }])
+    );
+}
+
+#[test]
+fn list_inventory_rejects_invalid_label_binding_shapes() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    authority
+        .commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![JsonWrite::new(
+                "inventory/materials/invalid-binding-material.json",
+                json!({
+                    "id": "invalid-binding-material",
+                    "fullName": "Invalid binding material",
+                    "createdAt": "2026-08-09T00:00:00Z",
+                    "updatedAt": "2026-08-09T00:00:00Z",
+                    "labelBindings": [{
+                        "id": "invalid-binding",
+                        "templateSource": "unsupported",
+                        "templateId": "cable-tag",
+                        "templateName": "Cable Tag",
+                        "printQuantity": 0,
+                        "fieldOverrides": { "name": 42 },
+                        "createdAt": "2026-08-09T00:00:00Z",
+                        "updatedAt": "2026-08-09T00:00:00Z"
+                    }]
+                }),
+            )],
+            deletes: vec![],
+            domains: vec!["inventory".into()],
+            reason: "agent-import-invalid-binding-fixture".into(),
+        })
+        .unwrap();
+
+    assert!(
+        AgentImportManager::new(authority)
+            .list_inventory(None)
+            .is_err()
+    );
+}
+
+#[test]
+fn restock_treats_an_empty_archived_timestamp_as_active_and_writes_schema_output() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    authority
+        .commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![JsonWrite::new(
+                "inventory/materials/empty-archived-target.json",
+                json!({
+                    "id": "empty-archived-target",
+                    "fullName": "Empty archived target",
+                    "currentQuantity": 2,
+                    "matrixCode": null,
+                    "createdAt": "2026-08-09T00:00:00Z",
+                    "updatedAt": "2026-08-09T00:00:00Z",
+                    "archivedAt": "",
+                    "labelBindings": [{
+                        "id": "target-binding",
+                        "templateSource": "system",
+                        "templateId": "cable-tag",
+                        "templateName": "Cable Tag",
+                        "createdAt": "2026-08-09T00:00:00Z",
+                        "updatedAt": "2026-08-09T00:00:00Z",
+                        "discard": true
+                    }]
+                }),
+            )],
+            deletes: vec![],
+            domains: vec!["inventory".into()],
+            reason: "agent-import-empty-archived-target-fixture".into(),
+        })
+        .unwrap();
+    let manager = AgentImportManager::new(authority.clone());
+    let session = create_session(
+        &manager,
+        "agent-import-empty-archived-session",
+        SECRET,
+        proposal(json!({
+            "schema": "tuckmark.agent-import.v1",
+            "items": [{
+                "id": "empty-archived-restock",
+                "kind": "restock",
+                "quantity": 1,
+                "targetMaterialId": "empty-archived-target",
+                "targetMaterialUpdatedAt": "2026-08-09T00:00:00Z",
+                "material": { "fullName": "Empty archived target" }
+            }]
+        })),
+    )
+    .unwrap();
+
+    assert_eq!(manager.list_inventory(None).unwrap().len(), 1);
+    assert_eq!(
+        manager
+            .resolve_restock_targets(&session.id, SECRET)
+            .unwrap()
+            .len(),
+        1
+    );
+    manager.confirm(&session.id, SECRET).unwrap();
+
+    let material = authority
+        .read_json("inventory/materials/empty-archived-target.json")
+        .unwrap()
+        .unwrap();
+    assert_eq!(material["currentQuantity"], 3);
+    assert_eq!(material["archivedAt"], "");
+    assert!(material.get("matrixCode").is_none());
+    assert_eq!(material["labelBindings"][0]["printQuantity"], 1);
+    assert!(material["labelBindings"][0].get("discard").is_none());
+
+    let adjustment = authority
+        .list_json_files("inventory/adjustments")
+        .unwrap()
+        .into_iter()
+        .next()
+        .and_then(|path| {
+            path.strip_prefix(authority.root())
+                .ok()
+                .map(|path| path.to_string_lossy().replace('\\', "/"))
+        })
+        .and_then(|path| authority.read_json(&path).ok().flatten())
+        .unwrap();
+    assert_eq!(adjustment["note"], "");
+}
+
+#[test]
+fn user_templates_with_empty_archived_timestamps_remain_available_for_confirmation() {
+    let directory = tempdir().unwrap();
+    let authority = DataAuthority::open(directory.path()).unwrap();
+    authority
+        .commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![
+                JsonWrite::new(
+                    "templates/empty-archived-template/template.json",
+                    json!({
+                        "id": "empty-archived-template",
+                        "name": "Empty archived template",
+                        "description": "",
+                        "width": 100,
+                        "height": 50,
+                        "createdAt": "2026-08-09T00:00:00Z",
+                        "updatedAt": "2026-08-09T00:00:00Z",
+                        "currentVersionId": "empty-archived-template-v1",
+                        "fieldOrder": [],
+                        "archivedAt": ""
+                    }),
+                ),
+                JsonWrite::new(
+                    "templates/empty-archived-template/versions/empty-archived-template-v1.json",
+                    json!({
+                        "id": "empty-archived-template-v1",
+                        "templateId": "empty-archived-template",
+                        "version": 1,
+                        "kind": "saved",
+                        "createdAt": "2026-08-09T00:00:00Z",
+                        "label": "Initial",
+                        "document": {
+                            "version": 1,
+                            "id": "empty-archived-template",
+                            "presetId": "shipping-compact",
+                            "name": "Empty archived template",
+                            "source": {
+                                "kind": "user-template",
+                                "templateId": "empty-archived-template"
+                            },
+                            "width": 100,
+                            "height": 50,
+                            "fields": [{
+                                "key": "serial",
+                                "label": "Serial",
+                                "required": true
+                            }],
+                            "elements": [],
+                            "editor": {
+                                "gridEnabled": true,
+                                "gridSize": 1,
+                                "snapEnabled": true,
+                                "snapStep": 1
+                            }
+                        }
+                    }),
+                ),
+            ],
+            deletes: vec![],
+            domains: vec!["templates".into()],
+            reason: "agent-import-empty-archived-template-fixture".into(),
+        })
+        .unwrap();
+    let manager = AgentImportManager::new(authority.clone());
+
+    assert!(
+        manager
+            .catalog()
+            .unwrap()
+            .templates
+            .iter()
+            .any(|template| template.id == "empty-archived-template")
+    );
+    let session = create_session(
+        &manager,
+        "agent-import-empty-archived-template-session",
+        SECRET,
+        proposal(json!({
+            "schema": "tuckmark.agent-import.v1",
+            "items": [{
+                "id": "empty-archived-template-item",
+                "kind": "new",
+                "quantity": 1,
+                "material": { "fullName": "Empty archived template material" },
+                "template": {
+                    "source": "user-template",
+                    "id": "empty-archived-template",
+                    "name": "Caller label",
+                    "fields": []
+                },
+                "templateInput": { "serial": "SN-42" }
+            }]
+        })),
+    )
+    .unwrap();
+
+    manager.confirm(&session.id, SECRET).unwrap();
+    assert_eq!(
+        authority
+            .list_json_files("inventory/materials")
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn agent_import_contract_rejects_empty_targets_and_nullable_optional_values() {
+    for field in ["targetMaterialId", "targetMaterialUpdatedAt"] {
+        let mut value = proposal_value();
+        value["items"][0][field] = json!("");
+        assert!(serde_json::from_value::<AgentImportProposal>(value).is_err());
+    }
+
+    let mut target_id = proposal(proposal_value());
+    target_id.items[0].target_material_id = Some(String::new());
+    assert!(target_id.validate().is_err());
+    let mut target_timestamp = proposal(proposal_value());
+    target_timestamp.items[0].target_material_updated_at = Some(String::new());
+    assert!(target_timestamp.validate().is_err());
+
+    for field in ["sourceNote", "template"] {
+        let mut value = proposal_value();
+        value["items"][0][field] = Value::Null;
+        assert!(serde_json::from_value::<AgentImportProposal>(value).is_err());
+    }
+
+    for invalid in [Value::Null, json!("1")] {
+        let mut value = proposal_value();
+        value["items"][0]["labelPrintQuantity"] = invalid;
+        assert!(serde_json::from_value::<AgentImportProposal>(value).is_err());
+    }
+
+    let mut value = proposal_value();
+    value["sourceNote"] = Value::Null;
+    assert!(serde_json::from_value::<AgentImportProposal>(value).is_err());
+
+    let mut needs_attention = proposal(proposal_value());
+    needs_attention.items[0]
+        .extra
+        .insert("needsAttention".into(), Value::String(String::new()));
+    assert!(needs_attention.validate().is_err());
+}

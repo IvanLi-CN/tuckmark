@@ -25,6 +25,7 @@ use tuckmark_devd::{
     config::DevdConfig,
     routes::{TransportContext, app_router_for_transport},
 };
+use tuckmark_engine::{CommitRequest, JsonWrite};
 
 const AGENT_SESSION_ID: &str = "agent-import-http-contract-session";
 const AGENT_SESSION_SECRET: &str = "agent-import-http-contract-secret-012345";
@@ -661,6 +662,75 @@ async fn agent_import_routes_preserve_optional_defaults_and_reject_explicit_null
             [0]["id"],
         "cable-tag"
     );
+}
+
+#[tokio::test]
+async fn agent_inventory_http_and_ipc_apply_the_shared_inventory_contract() {
+    let (_directory, state) = test_state();
+    state
+        .data
+        .authority()
+        .commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![JsonWrite::new(
+                "inventory/materials/adapter-canonical-material.json",
+                json!({
+                    "id": "adapter-canonical-material",
+                    "fullName": "Adapter canonical material",
+                    "matrixCode": null,
+                    "createdAt": "2026-08-09T00:00:00Z",
+                    "updatedAt": "2026-08-09T00:00:00Z",
+                    "labelBindings": [{
+                        "id": "adapter-canonical-binding",
+                        "templateSource": "system",
+                        "templateId": "cable-tag",
+                        "templateName": "Cable Tag",
+                        "createdAt": "2026-08-09T00:00:00Z",
+                        "updatedAt": "2026-08-09T00:00:00Z",
+                        "discard": true
+                    }]
+                }),
+            )],
+            deletes: vec![],
+            domains: vec!["inventory".into()],
+            reason: "agent-inventory-adapter-contract-fixture".into(),
+        })
+        .unwrap();
+
+    let http = app_router_for_transport(state.clone(), TransportContext::Http);
+    let http_response = http
+        .oneshot(http_request("/api/agent-import/inventory"))
+        .await
+        .unwrap();
+    assert_eq!(http_response.status(), StatusCode::OK);
+    let http_response = response_json(http_response).await;
+
+    let ipc = app_router_for_transport(state, TransportContext::Ipc);
+    let mut ipc_request = http_request("/api/agent-import/inventory");
+    ipc_request
+        .headers_mut()
+        .insert("x-tuckmark-ipc", header::HeaderValue::from_static("1"));
+    let ipc_response = ipc.oneshot(ipc_request).await.unwrap();
+    assert_eq!(ipc_response.status(), StatusCode::OK);
+    let ipc_response = response_json(ipc_response).await;
+
+    for response in [http_response, ipc_response] {
+        let material = &response["materials"][0];
+        assert!(material.get("matrixCode").is_none());
+        assert_eq!(
+            material["labelBindings"],
+            json!([{
+                "id": "adapter-canonical-binding",
+                "templateSource": "system",
+                "templateId": "cable-tag",
+                "templateName": "Cable Tag",
+                "printQuantity": 1,
+                "fieldOverrides": {},
+                "createdAt": "2026-08-09T00:00:00Z",
+                "updatedAt": "2026-08-09T00:00:00Z"
+            }])
+        );
+    }
 }
 
 #[tokio::test]

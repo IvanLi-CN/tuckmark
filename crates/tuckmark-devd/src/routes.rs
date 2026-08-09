@@ -458,7 +458,10 @@ fn resolve_inventory_print_plan(
         .iter()
         .find(|material| material["id"].as_str() == Some(material_id))
         .ok_or_else(|| DataError::NotFound("Material was not found.".into()))?;
-    if material["archivedAt"].is_string() {
+    if material["archivedAt"]
+        .as_str()
+        .is_some_and(|timestamp| !timestamp.is_empty())
+    {
         return Err(ApiError::bad_request(
             "Cannot print labels for an archived material.",
         ));

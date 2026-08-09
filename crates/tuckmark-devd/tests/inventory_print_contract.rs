@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{fs, net::SocketAddr};
 
 use axum::{
     body::Body,
@@ -133,6 +133,34 @@ async fn inventory_print_treats_cli_null_optionals_as_omitted() {
 
     let response = app
         .oneshot(json_request("/api/data/inventory/print-binding", payload))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(response).await["error"],
+        "Server-side printer control is disabled. Set TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 to enable it."
+    );
+}
+
+#[tokio::test]
+async fn inventory_print_treats_an_empty_archive_marker_as_active() {
+    let (_directory, state) = test_state();
+    let (material_id, revision) = save_material(&state, system_binding(json!({}), 1));
+    let path = state
+        .data
+        .authority()
+        .root()
+        .join("inventory/materials")
+        .join(format!("{material_id}.json"));
+    let mut material: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    material["archivedAt"] = json!("");
+    fs::write(path, serde_json::to_vec(&material).unwrap()).unwrap();
+
+    let response = app_router_for_transport(state, TransportContext::Http)
+        .oneshot(json_request(
+            "/api/data/inventory/print-binding",
+            print_payload(revision, &material_id, "binding-system"),
+        ))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
