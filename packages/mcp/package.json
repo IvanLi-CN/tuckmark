@@ -5,18 +5,15 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "prebuild": "bun --cwd=../../packages/ipc run build",
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
-    "pretypecheck": "bun --cwd=../../packages/ipc run build",
     "typecheck": "tsc -p tsconfig.typecheck.json"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@tuckmark/core": "workspace:*",
-    "@tuckmark/ipc": "workspace:*",
     "zod": "^4.4.3"
   }
 }

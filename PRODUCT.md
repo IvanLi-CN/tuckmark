@@ -19,8 +19,8 @@ not the product contract boundary.
 ## Product Surfaces
 
 - `apps/web`: the canonical Web surface and the canonical owner-facing Web demo
-- `packages/server`: the HTTP runtime surface that serves `/api`
-- `packages/cli`: the CLI surface that ships in the release bundle
+- `crates/tuckmark-devd`: the Rust HTTP/IPC runtime surface that serves `/api`
+- `crates/tuckmark-cli`: the Rust CLI surface that ships in native release archives
 - `packages/mcp`: the MCP surface for agent integration
 - `packages/core`: the shared domain and rendering layer
 

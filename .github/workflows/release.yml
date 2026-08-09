@@ -1,110 +1,72 @@
 name: release
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows: ["ci-main"]
     types: [completed]
-  workflow_dispatch:
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  release:
+  native:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    name: Release Publish
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            target: aarch64-apple-darwin
+          - runner: macos-13
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
     permissions:
-      actions: write
       contents: write
-      pull-requests: read
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          fetch-depth: 0
-          submodules: recursive
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.14"
-      - id: snapshot
-        name: Select release snapshot
-        run: node .github/scripts/select-release-snapshot.mjs
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-      - name: Restore release snapshot
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ steps.snapshot.outputs.artifact_name }}
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.snapshot.outputs.run_id }}
-          github-token: ${{ github.token }}
-          path: work/release/inbox
-      - name: Normalize release snapshot
+          targets: ${{ matrix.target }}
+      - name: Build native binaries
+        run: cargo build --locked --release --target ${{ matrix.target }} --bin tuckmark --bin tuckmark-devd
+      - name: Ad-hoc sign and package
+        id: package
+        shell: bash
         run: |
-          SNAPSHOT="$(find work/release/inbox -name release-intent.json -print -quit)"
-          test -n "$SNAPSHOT"
-          mkdir -p work/release
-          cp "$SNAPSHOT" work/release/release-intent.json
-      - name: Build release plan
-        run: node .github/scripts/release-plan.mjs
-      - id: release-notes
-        name: Render release notes and context
-        run: node .github/scripts/release-notes.mjs
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-      - name: Upload release context artifact
-        if: steps.release-notes.outputs.skipped != 'true'
-        uses: actions/upload-artifact@v4
+          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' crates/tuckmark-cli/Cargo.toml | head -1)"
+          root="tuckmark-${version}-${{ matrix.target }}"
+          mkdir -p "$root"
+          cp "target/${{ matrix.target }}/release/tuckmark" "target/${{ matrix.target }}/release/tuckmark-devd" "$root/"
+          codesign --force --sign - "$root/tuckmark" "$root/tuckmark-devd"
+          tar -czf "${root}.tar.gz" "$root"
+          shasum -a 256 "${root}.tar.gz" > SHA256SUMS
+          echo "archive=${root}.tar.gz" >> "$GITHUB_OUTPUT"
+      - name: Artifact smoke test without JavaScript runtime
+        run: bash scripts/test-native-release-artifact.sh "${{ steps.package.outputs.archive }}" ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.release-notes.outputs.artifact_name }}
+          name: native-${{ matrix.target }}
           path: |
-            work/release/release-context.json
-            work/release/release-notes.md
-      - name: Check out release commit
-        run: |
-          MERGE_SHA="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).merge_sha")"
-          git checkout --detach "$MERGE_SHA"
-          git submodule update --init --recursive
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Build bundles
-        run: |
-          bun run build
-          mkdir -p work/release/bundles
-          tar -czf work/release/bundles/tuckmark-runtime-bundle.tgz packages packages/server package.json bun.lock README.md PRODUCT.md DESIGN.md CONTEXT.md
-          tar -czf work/release/bundles/tuckmark-cli-bundle.tgz packages/cli packages/core package.json bun.lock README.md
-      - name: Publish GitHub Release
-        run: |
-          VERSION="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).release_version")"
-          TYPE_LABEL="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).type_label")"
-          CHANNEL_LABEL="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).channel_label || ''")"
-          MERGE_SHA="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).merge_sha")"
-          if [ "$TYPE_LABEL" = "type:none" ]; then
-            echo "Skipping release for type:none"
-            exit 0
-          fi
-          RELEASE_ARGS=()
-          if [ "$CHANNEL_LABEL" = "channel:preview" ]; then
-            RELEASE_ARGS+=(--prerelease --latest=false)
-          fi
-          gh release create "$VERSION" \
-            work/release/bundles/tuckmark-runtime-bundle.tgz \
-            work/release/bundles/tuckmark-cli-bundle.tgz \
-            --title "$VERSION" \
-            --notes-file work/release/release-notes.md \
-            --target "$MERGE_SHA" \
-            "${RELEASE_ARGS[@]}"
+            ${{ steps.package.outputs.archive }}
+            SHA256SUMS
+
+  publish:
+    needs: native
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: release
+      - name: Publish native release archives
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Redeploy Pages with release metadata
         run: |
-          VERSION="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).release_version")"
-          TYPE_LABEL="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).type_label")"
-          if [ "$TYPE_LABEL" = "type:none" ]; then
-            echo "Skipping Pages redeploy for type:none"
-            exit 0
-          fi
-          gh workflow run pages.yml --ref main -f release_tag="$VERSION"
-        env:
-          GH_TOKEN: ${{ github.token }}
+          version="$(find release -name 'tuckmark-*.tar.gz' -print -quit | sed -E 's#release/tuckmark-([0-9.]+)-.*#\1#')"
+          gh release create "$version" release/*.tar.gz release/SHA256SUMS --title "$version" --generate-notes

@@ -33,3 +33,4 @@ default to the formal user directory.
   behavior without exposing an order export, credential, or user directory.
 - Rust DEVD is the production service and transaction owner; TypeScript service
   modules are not loaded by the compatibility check.
+- Production authority: Rust `tuckmark-devd` and `tuckmark` binaries. Agent Import IPC and persistence are served by Rust without Node/Bun/npm.

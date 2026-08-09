@@ -116,3 +116,4 @@
   modules.
 - The root `test:contracts` command is part of normal workspace CI and remains
   independently runnable when the reference TypeScript runtime is removed.
+- Production authority: Rust `tuckmark-devd` and `tuckmark` binaries. TypeScript server, CLI, and IPC packages are retired; server-http reaches DEVD over HTTP only.

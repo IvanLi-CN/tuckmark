@@ -8,8 +8,6 @@ import { promisify } from "node:util"
 const execFileAsync = promisify(execFile)
 const repoRoot = process.cwd()
 const outDir = path.resolve(process.argv[2] ?? "work/agent-template-practice")
-const cliPath = path.join(repoRoot, "packages/cli/src/index.ts")
-const cliTsconfigPath = path.join(repoRoot, "packages/cli/tsconfig.typecheck.json")
 
 const scenarios = [
   {

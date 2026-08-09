@@ -24,8 +24,8 @@ You can still override this with `TUCKMARK_DETONGER_COMMAND` or `TUCKMARK_DETONG
 ## Workspace
 
 - `packages/core`: shared domain logic, rendering, artifact storage, and detonger integration
-- `packages/server`: HTTP API
-- `packages/cli`: command-line interface
+- `crates/tuckmark-devd`: Rust HTTP/IPC DEVD authority
+- `crates/tuckmark-cli`: Rust command-line interface
 - `packages/mcp`: MCP server
 - `apps/web`: Web UI
 - `plugins/inventory`: inventory and data-directory template domain module
@@ -106,7 +106,7 @@ needed; see [Development Data](docs/development.md).
 
 This is the default developer entrypoint because it starts:
 
-- the HTTP API from `packages/server`
+- the Rust HTTP/IPC authority from `crates/tuckmark-devd`
 - the Vite Web dev server from `apps/web`
 - the matching `/api` proxy wiring between them
 
@@ -127,7 +127,7 @@ Default URLs:
   - skip an existing valid copy unless `--refresh` is passed
 - `bun run dev:web`
   - use only when you intentionally want the standalone Vite dev server
-  - this does not start `packages/server`
+  - this does not start Rust DEVD
   - `/api` requests will fail unless you start the server separately or point `TUCKMARK_API_ORIGIN` at a live runtime
 - `bun run dev:server`
   - use when you only need the HTTP API process
