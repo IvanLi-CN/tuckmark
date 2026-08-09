@@ -303,6 +303,53 @@ async fn windows_named_ipc_observes_the_committed_revision() {
     assert!(response.contains("\"revision\":1"));
 }
 
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_named_ipc_serves_agent_inventory_contract() {
+    let (_directory, state) = test_state();
+    state
+        .data
+        .authority()
+        .commit(CommitRequest {
+            expected_revision: 0,
+            writes: vec![JsonWrite::new(
+                "inventory/materials/windows-ipc-material.json",
+                json!({
+                    "id": "windows-ipc-material",
+                    "fullName": "Windows IPC material",
+                    "createdAt": "2026-08-10T00:00:00Z",
+                    "updatedAt": "2026-08-10T00:00:00Z",
+                    "labelBindings": []
+                }),
+            )],
+            deletes: vec![],
+            domains: vec!["inventory".into()],
+            reason: "windows-named-ipc-agent-inventory-contract".into(),
+        })
+        .unwrap();
+    let instance = format!("ticket-67-inventory-{}", std::process::id());
+    let ipc = bind_windows_ipc(&instance).unwrap();
+    let endpoint = ipc.endpoint().address.clone();
+    let ipc_router = app_router_for_transport(state, TransportContext::Ipc);
+    let server = tokio::spawn(async move {
+        axum::serve(ipc, ipc_router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let mut stream = ClientOptions::new().open(endpoint).unwrap();
+    stream
+        .write_all(
+            b"GET /api/agent-import/inventory HTTP/1.1\r\nHost: localhost\r\nx-tuckmark-ipc: 1\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.unwrap();
+    server.abort();
+    assert!(response.starts_with("HTTP/1.1 200"));
+    assert!(response.contains("windows-ipc-material"));
+}
+
 #[tokio::test]
 async fn native_service_routes_render_persist_and_serve_contract_artifacts() {
     let (_directory, state) = test_state();
