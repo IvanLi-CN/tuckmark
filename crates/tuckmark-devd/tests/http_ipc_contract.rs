@@ -13,7 +13,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(unix)]
 use tokio::net::UnixStream;
 #[cfg(windows)]
-use tokio::net::windows::named_pipe::ClientOptions;
+use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 use tokio::time::timeout;
 use tower::ServiceExt;
 #[cfg(unix)]
@@ -65,6 +65,26 @@ fn json_request(method: axum::http::Method, path: &str, payload: Value) -> Reque
 async fn response_json(response: axum::response::Response) -> Value {
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     serde_json::from_slice(&bytes).unwrap()
+}
+
+#[cfg(windows)]
+async fn open_windows_ipc(endpoint: &str) -> NamedPipeClient {
+    const ERROR_PIPE_BUSY: i32 = 231;
+
+    for attempt in 0..100 {
+        // `spawn` does not poll the listener synchronously. Yield once so it
+        // can start waiting, then tolerate the documented busy-pipe race.
+        tokio::task::yield_now().await;
+        match ClientOptions::new().open(endpoint) {
+            Ok(stream) => return stream,
+            Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY) && attempt < 99 => {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            Err(error) => panic!("failed to open Windows IPC endpoint: {error}"),
+        }
+    }
+
+    unreachable!("Windows IPC open retry loop returned without a stream")
 }
 
 fn agent_json_request(method: axum::http::Method, path: &str, payload: Value) -> Request<Body> {
@@ -289,7 +309,7 @@ async fn windows_named_ipc_observes_the_committed_revision() {
             .await
             .unwrap();
     });
-    let mut stream = ClientOptions::new().open(endpoint).unwrap();
+    let mut stream = open_windows_ipc(&endpoint).await;
     stream
         .write_all(
             b"GET /api/data/status HTTP/1.1\r\nHost: localhost\r\nx-tuckmark-ipc: 1\r\nConnection: close\r\n\r\n",
@@ -336,7 +356,7 @@ async fn windows_named_ipc_serves_agent_inventory_contract() {
             .await
             .unwrap();
     });
-    let mut stream = ClientOptions::new().open(endpoint).unwrap();
+    let mut stream = open_windows_ipc(&endpoint).await;
     stream
         .write_all(
             b"GET /api/agent-import/inventory HTTP/1.1\r\nHost: localhost\r\nx-tuckmark-ipc: 1\r\nConnection: close\r\n\r\n",

@@ -769,6 +769,10 @@ async fn agent_inventory(
     State(state): State<AppState>,
     Query(query): Query<AgentInventoryQuery>,
 ) -> Result<Json<Value>, ApiError> {
+    let gate = state.data.mutation_gate();
+    let _gate = gate
+        .lock()
+        .map_err(|_| ApiError::bad_request("DEVD mutation queue is poisoned."))?;
     Ok(Json(json!({
         "materials": state.agent_import.list_inventory(query.query.as_deref())?,
     })))
