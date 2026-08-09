@@ -1539,6 +1539,7 @@ fn canvas_draft_element(
     let object = value
         .as_object_mut()
         .expect("template element serializes as object");
+    object.retain(|_, value| !value.is_null());
     let kind = object
         .get("kind")
         .and_then(Value::as_str)
@@ -1567,6 +1568,43 @@ fn canvas_draft_element(
             })
             .unwrap_or_default();
         object.insert("value".into(), Value::String(resolved));
+    }
+    if kind == "text" && !object.contains_key("height") {
+        let font_size = object
+            .get("fontSize")
+            .and_then(Value::as_f64)
+            .unwrap_or(12.0);
+        let line_height = object
+            .get("lineHeight")
+            .and_then(Value::as_f64)
+            .unwrap_or(1.2);
+        let line_count = object
+            .get("value")
+            .and_then(Value::as_str)
+            .map(|value| value.lines().count().max(1) as f64)
+            .unwrap_or(1.0);
+        object.insert(
+            "height".into(),
+            Value::from(font_size + (line_count - 1.0) * font_size * line_height),
+        );
+    }
+    if kind == "text" {
+        let defaults = [
+            ("width", Value::from(180.0)),
+            ("fontFamily", Value::String("system-sans".into())),
+            ("lineHeight", Value::from(1.2)),
+            ("verticalAlign", Value::String("top".into())),
+            ("stretchXGrow", Value::Bool(false)),
+            ("stretchXShrink", Value::Bool(false)),
+            ("stretchYGrow", Value::Bool(false)),
+            ("stretchYShrink", Value::Bool(false)),
+            ("autoWrap", Value::Bool(true)),
+            ("adaptiveFontSize", Value::Bool(false)),
+            ("verticalText", Value::Bool(false)),
+        ];
+        for (field, default) in defaults {
+            object.entry(field).or_insert(default);
+        }
     }
     value
 }

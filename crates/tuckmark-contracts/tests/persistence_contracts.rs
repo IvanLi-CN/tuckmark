@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde_json::{Value, json};
 use tuckmark_contracts::{
     DataDirectoryManifest, DevdDataArchive, DevdDataTransaction, canonical_json_string,
-    normalize_legacy_value,
+    normalize_legacy_tree_value, normalize_legacy_value,
 };
 
 fn fixture(name: &str) -> String {
@@ -198,7 +198,15 @@ fn legacy_recommended_uses_and_text_stretch_aliases_normalize_without_losing_beh
                 "document": {
                     "recommendedUses": ["parts"],
                     "elements": [{
+                        "id": "text-1",
                         "kind": "text",
+                        "fontSize": 4,
+                        "width": null,
+                        "height": 4,
+                        "lineHeight": 1.2,
+                        "fontFamily": "system-sans",
+                        "value": "legacy",
+                        "binding": {"fieldKey": "label", "kind": "text"},
                         "stretchX": true,
                         "stretchY": false
                     }]
@@ -228,6 +236,74 @@ fn legacy_recommended_uses_and_text_stretch_aliases_normalize_without_losing_beh
     assert_eq!(text["stretchXShrink"], true);
     assert_eq!(text["stretchYGrow"], false);
     assert_eq!(text["stretchYShrink"], false);
+    assert_eq!(text["width"], 22.5);
+    assert_eq!(text["fontWeight"], "normal");
+    assert_eq!(text["align"], "left");
+    assert_eq!(
+        text["binding"],
+        json!({"fieldKey": "label", "kind": "text"})
+    );
+    assert_eq!(text["autoWrap"], true);
+    assert_eq!(text["verticalText"], false);
+}
+
+#[test]
+fn legacy_multiline_text_uses_web_natural_height_defaults() {
+    let normalized = normalize_legacy_value(json!({
+        "schema": "tuckmark.data-archive.v1",
+        "exportedAt": "2026-01-02T03:04:05.000Z",
+        "runtime": {
+            "templates": [],
+            "versions": [{
+                "id": "version-1",
+                "templateId": "template-1",
+                "document": {
+                    "version": 1,
+                    "id": "template-1",
+                    "presetId": "template-1",
+                    "name": "Legacy",
+                    "source": {"kind": "user-template", "templateId": "template-1"},
+                    "width": 100,
+                    "height": 50,
+                    "fields": [],
+                    "elements": [{
+                        "id": "text-1",
+                        "meta": {"name": "Text", "visible": true, "locked": false},
+                        "kind": "text",
+                        "x": 0,
+                        "y": 0,
+                        "fontSize": 4,
+                        "value": "A\nB"
+                    }],
+                    "editor": {"gridEnabled": true, "snapEnabled": true}
+                }
+            }],
+            "workingCopies": []
+        },
+        "inventory": {"materials": [], "adjustments": []}
+    }))
+    .unwrap();
+
+    let text = &normalized["runtime"]["versions"][0]["document"]["elements"][0];
+    assert_eq!(text["fontWeight"], "normal");
+    assert_eq!(text["align"], "left");
+    assert_eq!(text["y"], -4.0);
+    assert_eq!(text["height"], 8.8);
+}
+
+#[test]
+fn legacy_wrapped_height_uses_the_native_font_metric_boundary() {
+    let normalized = normalize_legacy_tree_value(json!({
+        "id": "text-1",
+        "kind": "text",
+        "x": 0,
+        "y": 10,
+        "fontSize": 5,
+        "value": "abcdefgh"
+    }));
+
+    assert_eq!(normalized["height"], 5.0);
+    assert_eq!(normalized["y"], 5.0);
 }
 
 #[test]

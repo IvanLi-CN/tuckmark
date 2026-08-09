@@ -265,46 +265,49 @@ describe("Pages workflow metadata", () => {
   })
 })
 
-describe("Release workflow Pages redeploy", () => {
+describe("Native release workflow", () => {
   const releaseWorkflow = readFileSync(
     new URL("../../.github/workflows/release.yml", import.meta.url),
     "utf8"
   )
+
+  it("builds both supported macOS native targets from the Rust workspace", () => {
+    expect(releaseWorkflow).toContain("workflow_dispatch:")
+    expect(releaseWorkflow).toContain('workflows: ["ci-main"]')
+    expect(releaseWorkflow).toContain("target: aarch64-apple-darwin")
+    expect(releaseWorkflow).toContain("target: x86_64-apple-darwin")
+    expect(releaseWorkflow).toContain(
+      `cargo build --locked --release --target \${{ matrix.target }} --bin tuckmark --bin tuckmark-devd`
+    )
+  })
+
+  it("signs and smoke-tests archives without a JavaScript runtime", () => {
+    expect(releaseWorkflow).toContain("codesign --force --sign -")
+    expect(releaseWorkflow).toContain("Artifact smoke test without JavaScript runtime")
+    expect(releaseWorkflow).toContain("scripts/test-native-release-artifact.sh")
+    expect(releaseWorkflow).toContain('shasum -a 256 "release"/*.tar.gz > release/SHA256SUMS')
+  })
+
+  it("publishes from the durable release snapshot on both automatic and manual runs", () => {
+    expect(releaseWorkflow).toContain("release-intent.json")
+    expect(releaseWorkflow).toContain("release-context.json")
+    expect(releaseWorkflow).toContain("release-notes.md")
+    expect(releaseWorkflow).toContain("ref: ${{ needs.prepare.outputs.merge_sha }}")
+    expect(releaseWorkflow).toContain("needs.prepare.outputs.skipped != 'true'")
+    expect(releaseWorkflow).toContain("release/*.tar.gz release/SHA256SUMS")
+    expect(releaseWorkflow).toContain("--notes-file work/release/release-notes.md")
+    expect(releaseWorkflow).toContain("gh release create")
+    expect(releaseWorkflow).toContain("gh workflow run pages.yml --ref main -f release_tag=")
+  })
+})
+
+describe("Release failure notification", () => {
   const notifyReleaseFailureWorkflow = readFileSync(
     new URL("../../.github/workflows/notify-release-failure.yml", import.meta.url),
     "utf8"
   )
 
-  it("dispatches Pages after publishing a GitHub Release", () => {
-    expect(releaseWorkflow).toContain("actions: write")
-    expect(releaseWorkflow).toContain("pull-requests: read")
-    expect(releaseWorkflow).toContain("gh workflow run pages.yml --ref main -f release_tag")
-  })
-
-  it("publishes release notes from a generated notes file instead of an inline placeholder", () => {
-    expect(releaseWorkflow).toContain("Render release notes and context")
-    expect(releaseWorkflow).toContain("node .github/scripts/release-notes.mjs")
-    expect(releaseWorkflow).toContain("--notes-file work/release/release-notes.md")
-    expect(releaseWorkflow).not.toContain('--notes "Tuckmark release $VERSION"')
-  })
-
-  it("renders release notes before checking out the release commit for backfill safety", () => {
-    expect(releaseWorkflow.indexOf("Render release notes and context")).toBeLessThan(
-      releaseWorkflow.indexOf("Check out release commit")
-    )
-  })
-
-  it("uploads a release context artifact before publishing the release", () => {
-    expect(releaseWorkflow).toContain("Upload release context artifact")
-    expect(releaseWorkflow).toContain("steps.release-notes.outputs.artifact_name")
-    expect(releaseWorkflow).toContain("work/release/release-context.json")
-    expect(releaseWorkflow).toContain("work/release/release-notes.md")
-    expect(releaseWorkflow.indexOf("Upload release context artifact")).toBeLessThan(
-      releaseWorkflow.indexOf("Check out release commit")
-    )
-  })
-
-  it("lets release failure notification read release context artifacts when they exist", () => {
+  it("can read release context artifacts when they exist", () => {
     expect(notifyReleaseFailureWorkflow).toContain("Download release context artifact")
     expect(notifyReleaseFailureWorkflow).toContain("pattern: release-context-*")
     expect(notifyReleaseFailureWorkflow).toContain("work/release-context/release-context.json")

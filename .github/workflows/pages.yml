@@ -31,6 +31,9 @@ jobs:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || 'refs/heads/main' }}
           fetch-depth: 0
           submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0
       - name: Validate and check out manual release tag
         if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
         env:

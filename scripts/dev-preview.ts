@@ -12,6 +12,7 @@ const apiOrigin = process.env.TUCKMARK_API_ORIGIN ?? `http://127.0.0.1:${serverP
 const devdInstance =
   process.env.TUCKMARK_DEVD_INSTANCE?.trim() || resolveDevelopmentInstance(process.cwd())
 const bunCommand = process.platform === "win32" ? "bun.exe" : "bun"
+const cargoCommand = process.platform === "win32" ? "cargo.exe" : "cargo"
 const preparedDataDir = await findPreparedDevelopmentData()
 const dataDir =
   process.env.TUCKMARK_DATA_DIR?.trim() ||
@@ -20,8 +21,8 @@ const dataDir =
 
 const children: ReturnType<typeof spawn>[] = []
 
-function startChild(name: string, args: string[], env: NodeJS.ProcessEnv) {
-  const child = spawn(bunCommand, args, {
+function startChild(name: string, args: string[], env: NodeJS.ProcessEnv, command = bunCommand) {
+  const child = spawn(command, args, {
     cwd: process.cwd(),
     env: { ...process.env, ...env },
     stdio: "inherit",
@@ -59,11 +60,16 @@ console.log(`- proxy:    ${apiOrigin}`)
 console.log(`- data:     ${dataDir}`)
 console.log(`- instance: ${devdInstance}`)
 
-startChild("server", ["run", "--filter", "@tuckmark/server", "dev"], {
-  PORT: serverPort,
-  TUCKMARK_DATA_DIR: dataDir,
-  TUCKMARK_DEVD_INSTANCE: devdInstance,
-})
+startChild(
+  "devd",
+  ["run", "--locked", "--package", "tuckmark-devd", "--", "serve"],
+  {
+    PORT: serverPort,
+    TUCKMARK_DATA_DIR: dataDir,
+    TUCKMARK_DEVD_INSTANCE: devdInstance,
+  },
+  cargoCommand
+)
 
 startChild(
   "web",
