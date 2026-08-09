@@ -135,6 +135,14 @@ function discardLocalRuntimeDrafts(): void {
   clearStoredDraftDocuments()
 }
 
+function discardRuntimeSnapshotDrafts(snapshot: RuntimeStoreSnapshot): RuntimeStoreSnapshot {
+  return {
+    ...snapshot,
+    versions: snapshot.versions.filter((version) => version.kind !== "autosave"),
+    workingCopies: [],
+  }
+}
+
 function getBackupDirectoryPath(kind: "manual" | "protection") {
   return kind === "manual" ? MANUAL_BACKUPS_DIR : PROTECTION_BACKUPS_DIR
 }
@@ -1126,7 +1134,11 @@ export async function attachDataDirectory(args: {
       discardLocalRuntimeDrafts()
     }
     const previousHandle = await loadConfiguredDataDirectoryHandle()
-    const snapshot = await exportRuntimeSnapshot()
+    const currentSnapshot = await exportRuntimeSnapshot()
+    const snapshot =
+      args.discardDrafts && args.mode === "overwrite-current"
+        ? discardRuntimeSnapshotDrafts(currentSnapshot)
+        : currentSnapshot
     const inventorySnapshot = previousHandle
       ? await readInventorySnapshotFromDirectory(previousHandle)
       : readBrowserLocalInventorySnapshot()

@@ -44,6 +44,7 @@ import {
   listBackupEntries,
   loadConfiguredDataDirectoryHandle,
   pickDataDirectory,
+  readRuntimeSnapshotFromDirectoryHandle,
   restoreRuntimeFromConfiguredDirectoryIfNeeded,
   setDataDirectoryRuntimeMode,
   syncConfiguredDataDirectory,
@@ -1080,6 +1081,43 @@ describe("inventory directory preservation", () => {
       expect.objectContaining({ name: "Tuckmark" })
     )
     expect(runtimeStoreMocks.rebindRuntimeStoreForDataDirectoryChange).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not mirror runtime-store drafts into a forced overwrite attachment", async () => {
+    const snapshot = createSnapshot({
+      templateIds: ["template-a"],
+      versionCount: 1,
+      workingCopyCount: 1,
+      updatedAt: "2026-08-09T16:00:00.000Z",
+    })
+    const savedVersion = snapshot.versions[0]
+    if (!savedVersion) {
+      throw new Error("Expected saved template version")
+    }
+    snapshot.versions.push({
+      ...savedVersion,
+      id: "autosave-template-a-2",
+      kind: "autosave",
+      label: "Autosave 2",
+      version: 2,
+    })
+    const tree: DirectoryEntries = {}
+    const handle = createDirectoryHandle("Tuckmark", tree)
+    runtimeStoreMocks.exportRuntimeSnapshot.mockResolvedValue(snapshot)
+    handleStoreMocks.loadStoredDataDirectoryHandle.mockResolvedValue(null)
+
+    await attachDataDirectory({
+      coordinator,
+      handle,
+      mode: "overwrite-current",
+      discardDrafts: true,
+    })
+
+    const persisted = await readRuntimeSnapshotFromDirectoryHandle(handle)
+    expect(persisted.versions).toEqual([
+      expect.objectContaining({ id: savedVersion.id, kind: "saved" }),
+    ])
+    expect(persisted.workingCopies).toEqual([])
   })
 
   it("restores the previous directory binding when the new runtime store cannot bind", async () => {

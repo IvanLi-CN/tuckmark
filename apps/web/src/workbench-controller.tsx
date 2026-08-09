@@ -1896,33 +1896,26 @@ export function useWorkbenchController({
 
   const beginDataReplacement = React.useCallback(
     async (operation: DataReplacementOperation) => {
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 100)
-      })
-      const settledDrafts = await listPendingRuntimeDrafts()
-      if (settledDrafts.length > 0) {
-        setDataDirectoryDialog({
-          kind: "drafts-required",
-          drafts: settledDrafts,
-          operation,
+      const outcome = await runDataDirectoryTask("replace-runtime-data", async () => {
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 100)
         })
-        return
-      }
-      const outcome = await runDataDirectoryTask(
-        "replace-runtime-data",
-        async () =>
-          await coordinator.runExclusiveRuntimeReplacement(
-            async () => {
-              const drafts = await listPendingRuntimeDrafts()
-              if (drafts.length > 0) {
-                return { drafts }
-              }
-              await performDataReplacement(operation)
-              return { drafts: [] as PendingRuntimeDraft[] }
-            },
-            { didReplace: (result) => result.drafts.length === 0 }
-          )
-      )
+        const settledDrafts = await listPendingRuntimeDrafts()
+        if (settledDrafts.length > 0) {
+          return { drafts: settledDrafts }
+        }
+        return await coordinator.runExclusiveRuntimeReplacement(
+          async () => {
+            const drafts = await listPendingRuntimeDrafts()
+            if (drafts.length > 0) {
+              return { drafts }
+            }
+            await performDataReplacement(operation)
+            return { drafts: [] as PendingRuntimeDraft[] }
+          },
+          { didReplace: (result) => result.drafts.length === 0 }
+        )
+      })
       if (!outcome) {
         return
       }
