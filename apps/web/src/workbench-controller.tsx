@@ -33,6 +33,7 @@ import {
   requestConfiguredDirectoryPermission,
   restoreConfiguredBackup,
   restoreRuntimeFromConfiguredDirectoryIfNeeded,
+  setDataDirectoryRuntimeMode,
   supportsDataDirectoryFeatures,
   syncConfiguredDataDirectory,
   tryBackgroundMirrorSync,
@@ -422,6 +423,7 @@ export function useWorkbenchController({
       providedContext ?? resolveAppContext(import.meta.env as Record<string, string | undefined>),
     [providedContext]
   )
+  setDataDirectoryRuntimeMode(context.mode)
   const client = React.useMemo(
     () => providedClient ?? createApiClient(context),
     [context, providedClient]

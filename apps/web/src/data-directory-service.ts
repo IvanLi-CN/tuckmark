@@ -33,6 +33,7 @@ import {
 import { normalizeRuntimeAppSettings } from "./runtime-app-settings.js"
 import type { RuntimeStoreSnapshot } from "./runtime-store-contract.js"
 import type {
+  AppMode,
   CanvasWorkingCopyIndexEntry,
   UserTemplateRecord,
   UserTemplateVersionSnapshot,
@@ -61,6 +62,7 @@ const MANIFEST_SCHEMA = "tuckmark.data-dir-manifest.v1"
 const PROTECTION_BACKUP_LIMIT = 20
 const STATUS_STORAGE_KEY = "tuckmark.data-directory-status.v1"
 const DEMO_DATA_DIRECTORY_NAME = "Demo data directory"
+let dataDirectoryRuntimeMode: AppMode | null = null
 
 async function runRuntimeReplacement<T>(
   coordinator: CrossTabCoordinator,
@@ -112,7 +114,14 @@ export type DataArchiveInspection = {
   summary: RuntimeSnapshotSummary
 }
 
+export function setDataDirectoryRuntimeMode(mode: AppMode | null): void {
+  dataDirectoryRuntimeMode = mode
+}
+
 function isDemoDataDirectoryMode(): boolean {
+  if (dataDirectoryRuntimeMode !== null) {
+    return dataDirectoryRuntimeMode === "demo"
+  }
   if (typeof window === "undefined") {
     return false
   }

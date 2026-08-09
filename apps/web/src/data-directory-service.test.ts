@@ -31,8 +31,10 @@ import {
   importRuntimeArchive,
   inspectImportArchiveFile,
   listBackupEntries,
+  loadConfiguredDataDirectoryHandle,
   pickDataDirectory,
   restoreRuntimeFromConfiguredDirectoryIfNeeded,
+  setDataDirectoryRuntimeMode,
   syncConfiguredDataDirectory,
 } from "./data-directory-service.js"
 import {
@@ -360,9 +362,22 @@ beforeEach(() => {
   runtimeStoreMocks.replaceRuntimeSnapshot.mockReset()
   installLocalStorage(createMemoryStorage())
   window.history.replaceState({}, "", "/")
+  setDataDirectoryRuntimeMode(null)
 })
 
 describe("demo data directory isolation", () => {
+  it("retains demo directory isolation after SPA navigation removes the query parameter", async () => {
+    setDataDirectoryRuntimeMode("demo")
+    handleStoreMocks.loadStoredDataDirectoryHandle.mockResolvedValue(
+      createDirectoryHandle("Real directory", {})
+    )
+    window.history.replaceState({}, "", "/system?demo=true")
+    window.history.replaceState({}, "", "/templates")
+
+    await expect(loadConfiguredDataDirectoryHandle()).resolves.toBeNull()
+    expect(handleStoreMocks.loadStoredDataDirectoryHandle).not.toHaveBeenCalled()
+  })
+
   it("never opens the native directory picker in demo mode", async () => {
     window.history.replaceState({}, "", "/system?demo=true")
     const nativePicker = vi.fn(async () => {

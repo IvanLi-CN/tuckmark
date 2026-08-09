@@ -141,6 +141,54 @@ describe("CrossTabCoordinator runtime replacement", () => {
     })
   })
 
+  it("serializes a replacement behind an in-flight fallback runtime access", async () => {
+    const primary = new CrossTabCoordinator()
+    const secondary = new CrossTabCoordinator()
+    coordinators.push(primary, secondary)
+    primary.start()
+    secondary.start()
+
+    let releaseAccess: () => void = () => undefined
+    let accessEntered: () => void = () => undefined
+    const accessReady = new Promise<void>((resolve) => {
+      accessEntered = resolve
+    })
+    const accessGate = new Promise<void>((resolve) => {
+      releaseAccess = resolve
+    })
+    const access = secondary.runRuntimeAccess(async () => {
+      accessEntered()
+      await accessGate
+      return "accessed"
+    })
+    await accessReady
+
+    let replacementRan = false
+    const replacement = primary.runExclusiveRuntimeReplacement(async () => {
+      replacementRan = true
+      return "replaced"
+    })
+    await new Promise((resolve) => window.setTimeout(resolve, 40))
+    expect(replacementRan).toBe(false)
+
+    releaseAccess()
+    await expect(access).resolves.toBe("accessed")
+    await expect(replacement).resolves.toBe("replaced")
+    expect(replacementRan).toBe(true)
+  })
+
+  it("allows nested fallback access in the same coordinator", async () => {
+    const coordinator = new CrossTabCoordinator()
+    coordinators.push(coordinator)
+    coordinator.start()
+
+    await expect(
+      coordinator.runRuntimeAccess(
+        async () => await coordinator.runRuntimeAccess(async () => "nested access")
+      )
+    ).resolves.toBe("nested access")
+  })
+
   it("cancels an older queued runtime request after a replacement changes generation", async () => {
     installQueueingLocks()
     const primary = new CrossTabCoordinator()

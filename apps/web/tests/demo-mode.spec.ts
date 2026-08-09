@@ -65,6 +65,29 @@ test("demo mode uses a virtual data directory instead of the native picker", asy
   await expect(page.getByRole("button", { name: "导入演示数据" })).toBeVisible()
 })
 
+test("demo directory isolation survives SPA navigation without the demo query parameter", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "showDirectoryPicker", {
+      configurable: true,
+      value: () => {
+        throw new Error("Demo mode must not open the native directory picker.")
+      },
+    })
+  })
+
+  await page.goto("/system?demo=true")
+  await page.getByRole("link", { name: "模板" }).click()
+  await expect(page).toHaveURL("/templates")
+  await page.getByRole("link", { name: "系统" }).click()
+  await expect(page).toHaveURL("/system")
+  await expect(page.getByText("Demo mode", { exact: false }).first()).toBeVisible()
+
+  await page.getByRole("button", { name: "接入演示目录" }).click()
+  await expect(page.getByRole("heading", { name: "发现演示数据目录" })).toBeVisible()
+})
+
 test("system tab processes another tab's pending draft without returning to the canvas tab", async ({
   page: canvasPage,
   context,

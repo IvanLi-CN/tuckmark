@@ -11,6 +11,12 @@ type RuntimeReplacementRecord = {
   updatedAt: string
 }
 
+type RuntimeAccessFallbackLockRecord = {
+  operationId: string
+  tabId: string
+  expiresAt: string
+}
+
 export type CrossTabLeaseState = {
   role: "writer" | "follower" | "unsupported"
   currentTabId: string
@@ -34,9 +40,12 @@ const LEASE_STORAGE_KEY = "tuckmark.runtime-writer-lease.v1"
 const RUNTIME_REPLACEMENT_STORAGE_KEY = "tuckmark.runtime-replacement.v1"
 const RUNTIME_GENERATION_STORAGE_KEY = "tuckmark.runtime-generation.v1"
 const RUNTIME_ACCESS_LOCK_NAME = "tuckmark.runtime-access.v1"
+const RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_KEY = "tuckmark.runtime-access-fallback.v1"
 const LEASE_TTL_MS = 15_000
 const RUNTIME_REPLACEMENT_TTL_MS = 60_000
 const RUNTIME_REPLACEMENT_HEARTBEAT_MS = 15_000
+const RUNTIME_ACCESS_FALLBACK_LOCK_TTL_MS = 60_000
+const RUNTIME_ACCESS_FALLBACK_LOCK_RETRY_MS = 4
 const HEARTBEAT_INTERVAL_MS = 5_000
 
 function createTabId(): string {
@@ -100,6 +109,40 @@ function isRuntimeReplacementExpired(
   return !record || Date.parse(record.expiresAt) <= now
 }
 
+function parseRuntimeAccessFallbackLockRecord(
+  raw: string | null
+): RuntimeAccessFallbackLockRecord | null {
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<RuntimeAccessFallbackLockRecord>
+    if (
+      typeof parsed.operationId !== "string" ||
+      typeof parsed.tabId !== "string" ||
+      typeof parsed.expiresAt !== "string"
+    ) {
+      return null
+    }
+    return parsed as RuntimeAccessFallbackLockRecord
+  } catch {
+    return null
+  }
+}
+
+function isRuntimeAccessFallbackLockExpired(
+  record: RuntimeAccessFallbackLockRecord | null,
+  now = Date.now()
+): boolean {
+  return !record || Date.parse(record.expiresAt) <= now
+}
+
+function waitForFallbackLockRetry(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, RUNTIME_ACCESS_FALLBACK_LOCK_RETRY_MS)
+  })
+}
+
 function parseRuntimeGeneration(raw: string | null): number {
   const parsed = Number(raw)
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0
@@ -132,6 +175,11 @@ export class CrossTabCoordinator {
     operationId: null,
     ownerTabId: null,
   }
+  private fallbackRuntimeAccessLock: {
+    record: RuntimeAccessFallbackLockRecord
+    depth: number
+    heartbeat: number
+  } | null = null
 
   start(): void {
     if (this.started) {
@@ -439,9 +487,93 @@ export class CrossTabCoordinator {
     task: () => Promise<T>
   ): Promise<T> {
     if (typeof navigator === "undefined" || typeof navigator.locks?.request !== "function") {
-      return await task()
+      return await this.withRuntimeAccessFallbackLock(task)
     }
     return await navigator.locks.request(RUNTIME_ACCESS_LOCK_NAME, { mode }, task)
+  }
+
+  private readRuntimeAccessFallbackLock(): RuntimeAccessFallbackLockRecord | null {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return null
+    }
+    return parseRuntimeAccessFallbackLockRecord(
+      window.localStorage.getItem(RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_KEY)
+    )
+  }
+
+  private async withRuntimeAccessFallbackLock<T>(task: () => Promise<T>): Promise<T> {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+      return await task()
+    }
+
+    if (this.fallbackRuntimeAccessLock) {
+      this.fallbackRuntimeAccessLock.depth += 1
+      try {
+        return await task()
+      } finally {
+        this.fallbackRuntimeAccessLock.depth -= 1
+      }
+    }
+
+    const operationId = createTabId()
+    let record: RuntimeAccessFallbackLockRecord | null = null
+    while (!record) {
+      const current = this.readRuntimeAccessFallbackLock()
+      if (!isRuntimeAccessFallbackLockExpired(current)) {
+        await waitForFallbackLockRetry()
+        continue
+      }
+
+      const candidate: RuntimeAccessFallbackLockRecord = {
+        operationId,
+        tabId: this.tabId,
+        expiresAt: new Date(Date.now() + RUNTIME_ACCESS_FALLBACK_LOCK_TTL_MS).toISOString(),
+      }
+      window.localStorage.setItem(
+        RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_KEY,
+        JSON.stringify(candidate)
+      )
+      await waitForFallbackLockRetry()
+      const confirmed = this.readRuntimeAccessFallbackLock()
+      if (confirmed?.operationId === operationId && confirmed.tabId === this.tabId) {
+        record = candidate
+      }
+    }
+
+    const heldLock = {
+      record,
+      depth: 1,
+      heartbeat: window.setInterval(() => {
+        const current = this.readRuntimeAccessFallbackLock()
+        if (current?.operationId !== record.operationId || current.tabId !== this.tabId) {
+          return
+        }
+        window.localStorage.setItem(
+          RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_KEY,
+          JSON.stringify({
+            ...current,
+            expiresAt: new Date(Date.now() + RUNTIME_ACCESS_FALLBACK_LOCK_TTL_MS).toISOString(),
+          } satisfies RuntimeAccessFallbackLockRecord)
+        )
+      }, RUNTIME_ACCESS_FALLBACK_LOCK_TTL_MS / 2),
+    }
+    this.fallbackRuntimeAccessLock = heldLock
+
+    try {
+      return await task()
+    } finally {
+      heldLock.depth -= 1
+      if (heldLock.depth === 0) {
+        window.clearInterval(heldLock.heartbeat)
+        const current = this.readRuntimeAccessFallbackLock()
+        if (current?.operationId === record.operationId && current.tabId === this.tabId) {
+          window.localStorage.removeItem(RUNTIME_ACCESS_FALLBACK_LOCK_STORAGE_KEY)
+        }
+        if (this.fallbackRuntimeAccessLock === heldLock) {
+          this.fallbackRuntimeAccessLock = null
+        }
+      }
+    }
   }
 
   private refreshRuntimeReplacementState(): void {

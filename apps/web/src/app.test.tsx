@@ -178,6 +178,7 @@ const originalFetch = globalThis.fetch
 const originalIndexedDb = globalThis.indexedDB
 const originalMatchMedia = window.matchMedia
 const originalNavigatorClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard")
+const originalNavigatorLocks = Object.getOwnPropertyDescriptor(navigator, "locks")
 const originalClipboardItem = globalThis.ClipboardItem
 const originalSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureContext")
 const originalHistoryPushState = window.history.pushState
@@ -1111,6 +1112,16 @@ beforeEach(async () => {
     value: true,
     configurable: true,
   })
+  Object.defineProperty(navigator, "locks", {
+    value: {
+      request: async (
+        _name: string,
+        _options: unknown,
+        callback: () => Promise<unknown>
+      ): Promise<unknown> => await callback(),
+    },
+    configurable: true,
+  })
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
   browserPrinterMocks.isBrowserPrintSupported.mockReturnValue(true)
@@ -1163,6 +1174,11 @@ afterEach(async () => {
     Object.defineProperty(navigator, "clipboard", originalNavigatorClipboard)
   } else {
     Reflect.deleteProperty(navigator, "clipboard")
+  }
+  if (originalNavigatorLocks) {
+    Object.defineProperty(navigator, "locks", originalNavigatorLocks)
+  } else {
+    Reflect.deleteProperty(navigator, "locks")
   }
   if (originalClipboardItem) {
     Object.defineProperty(globalThis, "ClipboardItem", {
