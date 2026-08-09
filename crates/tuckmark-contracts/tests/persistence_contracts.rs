@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde_json::{Value, json};
 use tuckmark_contracts::{
     DataDirectoryManifest, DevdDataArchive, DevdDataTransaction, canonical_json_string,
-    normalize_legacy_value,
+    normalize_legacy_tree_value, normalize_legacy_value,
 };
 
 fn fixture(name: &str) -> String {
@@ -289,6 +289,21 @@ fn legacy_multiline_text_uses_web_natural_height_defaults() {
     assert_eq!(text["align"], "left");
     assert_eq!(text["y"], -4.0);
     assert_eq!(text["height"], 8.8);
+}
+
+#[test]
+fn legacy_wrapped_height_uses_the_native_font_metric_boundary() {
+    let normalized = normalize_legacy_tree_value(json!({
+        "id": "text-1",
+        "kind": "text",
+        "x": 0,
+        "y": 10,
+        "fontSize": 5,
+        "value": "abcdefgh"
+    }));
+
+    assert_eq!(normalized["height"], 5.0);
+    assert_eq!(normalized["y"], 5.0);
 }
 
 #[test]

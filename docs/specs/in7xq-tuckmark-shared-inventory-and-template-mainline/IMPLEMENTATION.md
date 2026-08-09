@@ -47,22 +47,19 @@
 - `apps/web/src/inventory-page.stories.tsx` covers browser-local empty,
   configured empty, populated, edit/bind, and adjust/print inventory states
   for review capture.
-- `packages/cli/src/devd-ipc-client.ts` implements the CLI's named IPC client:
+- `crates/tuckmark-cli` implements the production CLI's named IPC client:
   - required explicit instance resolution
   - HTTP-shaped revisioned runtime and inventory requests
   - Agent Import session requests with instance credentials
   - DEVD-owned inventory print requests
-- `packages/server/src/devd-data-service.ts` remains the sole file-backed
-  runtime owner. Its template metadata patch keeps saved-version history
-  stable, synchronizes user working copies, and rejects stale revisions.
-- `packages/server/src/devd-config.ts` resolves the formal platform default,
-  reads and atomically writes `tuckmark.devd-config.v1`, applies environment,
-  saved, and default precedence, and validates directory switches. The shared
-  Express app exposes this service to Web HTTP and named IPC clients without
-  giving CLI any filesystem ownership.
-- `packages/ipc` implements per-user Unix socket / Named Pipe endpoint
-  resolution, validation, stale Unix socket recovery, and endpoint occupancy
-  errors for named development instances.
+- `crates/tuckmark-devd` remains the sole production file-backed runtime owner.
+  Its native authority preserves template metadata history, working copies,
+  stale revision checks, atomic configuration writes, and the named Unix socket
+  or Windows Named Pipe adapters.
+- The former `packages/cli`, `packages/server`, and `packages/ipc` modules are
+  retired production implementations. Web `server-http` reaches the Rust DEVD
+  over HTTP, while Rust CLI and Agent Import clients use the named local IPC
+  boundary.
 - `scripts/dev-data.ts` prepares a validated, worktree-specific temporary copy
   of current business data. `scripts/dev-preview.ts` reuses only a valid
   prepared copy, otherwise creates an empty disposable directory, and derives

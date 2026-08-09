@@ -129,9 +129,13 @@ jobs:
     name: Publish Release
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: write
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.merge_sha }}
+          fetch-depth: 1
       - uses: actions/download-artifact@v4
         with:
           pattern: native-*
@@ -146,6 +150,7 @@ jobs:
       - name: Publish native release archives
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           context="work/release/release-context.json"
           version="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).release_version' "$context")"
