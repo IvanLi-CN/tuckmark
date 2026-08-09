@@ -334,7 +334,7 @@ fn template_package_uses_contract_defaults_and_identifier_rules() {
         &package,
         r##"{
   "schema": "tuckmark.user-template-package.v1",
-  "id": "valid-package",
+  "id": "9-valid-package",
   "name": "Valid Package",
   "canvas": { "width": 64, "height": 32 },
   "fields": [{ "key": "name", "label": "Name" }],
@@ -363,7 +363,7 @@ fn template_package_uses_contract_defaults_and_identifier_rules() {
         &invalid,
         r##"{
   "schema": "tuckmark.user-template-package.v1",
-  "id": "9-invalid",
+  "id": "-invalid",
   "name": "Invalid Package",
   "canvas": { "width": 64, "height": 32 },
   "fields": [{ "key": "name", "label": "Name" }],

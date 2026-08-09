@@ -1823,6 +1823,9 @@ fn print_artifact(
     printer_id: &str,
     printer_name: Option<&str>,
 ) -> Result<Value> {
+    if !mock_printers_enabled() {
+        require_server_print_enabled()?;
+    }
     let printer = resolve_printer(printer_id, printer_name)?;
     let print_width = printer
         .get("capabilities")
@@ -1852,6 +1855,18 @@ fn mock_printers_enabled() -> bool {
     env::var("TUCKMARK_MOCK_PRINTERS")
         .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true"))
         .unwrap_or(false)
+}
+
+fn require_server_print_enabled() -> Result<()> {
+    let enabled = env::var("TUCKMARK_ENABLE_SERVER_SIDE_PRINT")
+        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true"))
+        .unwrap_or(false);
+    if !enabled {
+        return Err(CliError::Message(
+            "Server-side printer control is disabled. Set TUCKMARK_ENABLE_SERVER_SIDE_PRINT=1 to enable it.".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -2123,7 +2138,7 @@ fn valid_identifier(value: &str) -> bool {
         && value
             .bytes()
             .next()
-            .is_some_and(|byte| byte.is_ascii_alphabetic())
+            .is_some_and(|byte| byte.is_ascii_alphanumeric())
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
