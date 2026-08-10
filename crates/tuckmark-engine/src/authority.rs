@@ -86,10 +86,10 @@ impl ProcessProbe for SystemProcessProbe {
         #[cfg(windows)]
         {
             use windows_sys::Win32::Foundation::{
-                CloseHandle, ERROR_INVALID_PARAMETER, GetLastError, STILL_ACTIVE,
+                CloseHandle, ERROR_INVALID_PARAMETER, GetLastError, WAIT_TIMEOUT,
             };
             use windows_sys::Win32::System::Threading::{
-                GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+                OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, WaitForSingleObject,
             };
 
             // Querying the process handle avoids treating every non-current
@@ -101,9 +101,7 @@ impl ProcessProbe for SystemProcessProbe {
                     // must not let a second writer steal a live lock.
                     return GetLastError() != ERROR_INVALID_PARAMETER;
                 }
-                let mut exit_code = 0;
-                let alive = GetExitCodeProcess(handle, &mut exit_code) != 0
-                    && exit_code == STILL_ACTIVE as u32;
+                let alive = WaitForSingleObject(handle, 0) == WAIT_TIMEOUT;
                 CloseHandle(handle);
                 alive
             }
