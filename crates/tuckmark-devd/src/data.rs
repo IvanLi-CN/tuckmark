@@ -1068,11 +1068,14 @@ fn apply_runtime_command(
                 .get("source")
                 .and_then(Value::as_object)
                 .ok_or_else(|| DataError::Validation("source is required.".into()))?;
-            let source_key = source_key(source)?;
+            let mut source = source.clone();
+            normalize_canvas_source(&mut source);
+            let source_key = source_key(&source)?;
             working_copies.retain(|copy| string_field(copy, "sourceKey") != source_key);
         }
         "clear-template-autosaves" => {
-            let template_id = required_string(&args, "templateId")?;
+            let template_id = optional_identifier(&args, "templateId")?
+                .ok_or_else(|| DataError::Validation("templateId is required.".into()))?;
             versions.retain(|version| {
                 !(string_field(version, "templateId") == template_id
                     && version.get("kind").and_then(Value::as_str) == Some("autosave"))
@@ -1762,12 +1765,34 @@ fn normalize_working_copy_sources(records: Option<&mut Value>) {
         return;
     };
     for record in records {
-        if let Some(source) = record
-            .as_object_mut()
-            .and_then(|record| record.get_mut("source"))
-            .and_then(Value::as_object_mut)
-        {
-            normalize_canvas_source(source);
+        let Some(record) = record.as_object_mut() else {
+            continue;
+        };
+        trim_identifier_field(record, "templateId");
+        trim_identifier_field(record, "baseVersionId");
+        let source_key =
+            if let Some(source) = record.get_mut("source").and_then(Value::as_object_mut) {
+                normalize_canvas_source(source);
+                match source.get("kind").and_then(Value::as_str) {
+                    Some("user-template") => source
+                        .get("templateId")
+                        .and_then(Value::as_str)
+                        .map(|id| format!("user:{id}")),
+                    Some("preset-template") => source
+                        .get("presetId")
+                        .and_then(Value::as_str)
+                        .map(|id| format!("preset:{id}")),
+                    Some("scratch") => source
+                        .get("presetId")
+                        .and_then(Value::as_str)
+                        .map(|id| format!("scratch:{id}")),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+        if let Some(source_key) = source_key {
+            record.insert("sourceKey".into(), Value::String(source_key));
         }
     }
 }

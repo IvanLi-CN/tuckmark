@@ -83,7 +83,28 @@ impl ProcessProbe for SystemProcessProbe {
             }
             io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+            use windows_sys::Win32::System::Threading::{
+                GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+            };
+
+            // Querying the process handle avoids treating every non-current
+            // Windows PID as stale and preserves the single-writer lock.
+            unsafe {
+                let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+                if handle.is_null() {
+                    return false;
+                }
+                let mut exit_code = 0;
+                let alive = GetExitCodeProcess(handle, &mut exit_code) != 0
+                    && exit_code == STILL_ACTIVE as u32;
+                CloseHandle(handle);
+                alive
+            }
+        }
+        #[cfg(all(not(unix), not(windows)))]
         {
             pid == std::process::id()
         }
@@ -105,7 +126,11 @@ impl ProcessProbe for SystemProcessProbe {
             let _ = pid;
             None
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        {
+            windows_process_start_identity(pid)
+        }
+        #[cfg(all(not(unix), not(windows)))]
         {
             let _ = pid;
             None
@@ -902,6 +927,33 @@ fn macos_process_start_identity(pid: u32) -> Option<String> {
     }
     let info = unsafe { info.assume_init() };
     macos_lstart_identity(info.pbi_start_tvsec)
+}
+
+#[cfg(windows)]
+fn windows_process_start_identity(pid: u32) -> Option<String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows_sys::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return None;
+        }
+        let mut creation = FILETIME::default();
+        let mut exit = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        let available =
+            GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) != 0;
+        CloseHandle(handle);
+        if !available {
+            return None;
+        }
+        let ticks = (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime);
+        Some(ticks.to_string())
+    }
 }
 
 #[cfg(target_os = "macos")]

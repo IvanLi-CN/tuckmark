@@ -115,6 +115,8 @@ fn sparse_legacy_archive() -> Value {
     let mut runtime = runtime_snapshot(document);
     runtime["templates"][0]["recommendedUses"] = json!([{ "scope": "  electronics  " }]);
     runtime["workingCopies"][0]["source"]["templateId"] = json!("  validation-template  ");
+    runtime["workingCopies"][0]["sourceKey"] = json!("user:  validation-template  ");
+    runtime["workingCopies"][0]["templateId"] = json!("  validation-template  ");
 
     json!({
         "schema": "tuckmark.devd-data-archive.v1",

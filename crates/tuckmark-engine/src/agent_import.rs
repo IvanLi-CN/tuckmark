@@ -1752,6 +1752,11 @@ fn validate_session_id(id: &str) -> Result<(), AgentImportError> {
 }
 
 fn validate_session_secret(secret: &str) -> Result<(), AgentImportError> {
+    if secret.trim() != secret {
+        return Err(AgentImportError::Validation(
+            "agent import session key must not have surrounding whitespace".into(),
+        ));
+    }
     let length = javascript_string_code_units(secret);
     if length < MINIMUM_SESSION_SECRET_CODE_UNITS {
         return Err(AgentImportError::SecretTooShort);

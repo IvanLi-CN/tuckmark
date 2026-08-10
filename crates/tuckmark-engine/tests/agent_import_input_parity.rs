@@ -308,6 +308,15 @@ fn create_session_enforces_server_session_id_and_secret_boundaries() {
         ),
         Err(AgentImportError::SecretTooLong)
     ));
+    assert!(
+        create_session(
+            &manager().manager,
+            "i".repeat(24),
+            format!(" {} ", "s".repeat(32)),
+            proposal(proposal_value()),
+        )
+        .is_err()
+    );
 }
 
 #[test]
