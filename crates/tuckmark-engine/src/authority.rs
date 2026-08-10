@@ -86,8 +86,9 @@ impl ProcessProbe for SystemProcessProbe {
         #[cfg(windows)]
         {
             use windows_sys::Win32::Foundation::{
-                CloseHandle, ERROR_INVALID_PARAMETER, GetLastError, WAIT_TIMEOUT,
+                CloseHandle, ERROR_INVALID_PARAMETER, GetLastError, WAIT_FAILED, WAIT_TIMEOUT,
             };
+            use windows_sys::Win32::Storage::FileSystem::SYNCHRONIZE;
             use windows_sys::Win32::System::Threading::{
                 OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, WaitForSingleObject,
             };
@@ -95,13 +96,16 @@ impl ProcessProbe for SystemProcessProbe {
             // Querying the process handle avoids treating every non-current
             // Windows PID as stale and preserves the single-writer lock.
             unsafe {
-                let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+                let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid);
                 if handle.is_null() {
                     // A missing PID is stale; access failures are unknown and
                     // must not let a second writer steal a live lock.
                     return GetLastError() != ERROR_INVALID_PARAMETER;
                 }
-                let alive = WaitForSingleObject(handle, 0) == WAIT_TIMEOUT;
+                let wait_result = WaitForSingleObject(handle, 0);
+                // A failed wait is an unknown state, not proof that the owner
+                // exited. Only a signaled process handle proves termination.
+                let alive = wait_result == WAIT_TIMEOUT || wait_result == WAIT_FAILED;
                 CloseHandle(handle);
                 alive
             }
