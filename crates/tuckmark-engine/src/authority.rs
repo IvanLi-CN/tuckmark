@@ -85,7 +85,9 @@ impl ProcessProbe for SystemProcessProbe {
         }
         #[cfg(windows)]
         {
-            use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+            use windows_sys::Win32::Foundation::{
+                CloseHandle, ERROR_INVALID_PARAMETER, GetLastError, STILL_ACTIVE,
+            };
             use windows_sys::Win32::System::Threading::{
                 GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
             };
@@ -95,7 +97,9 @@ impl ProcessProbe for SystemProcessProbe {
             unsafe {
                 let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
                 if handle.is_null() {
-                    return false;
+                    // A missing PID is stale; access failures are unknown and
+                    // must not let a second writer steal a live lock.
+                    return GetLastError() != ERROR_INVALID_PARAMETER;
                 }
                 let mut exit_code = 0;
                 let alive = GetExitCodeProcess(handle, &mut exit_code) != 0
@@ -356,7 +360,11 @@ impl DataAuthority {
                 actual,
             });
         }
-        let name = format!("{}-{}.zip", self.inner.options.clock.now(), Uuid::new_v4());
+        let name = format!(
+            "{}-{}.zip",
+            filename_safe_timestamp(&self.inner.options.clock.now()),
+            Uuid::new_v4()
+        );
         let relative_path = format!("backups/manual/{name}");
         write_archive_zip(&self.resolve_relative(&relative_path)?, &archive)?;
         let event = self.commit_locked(CommitRequest {
@@ -408,7 +416,7 @@ impl DataAuthority {
         let writes = archive_writes(&next)?;
         let protection_relative_path = format!(
             "backups/protection/{}-{}.zip",
-            self.inner.options.clock.now(),
+            filename_safe_timestamp(&self.inner.options.clock.now()),
             Uuid::new_v4()
         );
         let deletes = match mode {
@@ -1150,7 +1158,7 @@ fn atomic_write_json<T: serde::Serialize>(
         let mut file = File::create(&temporary)?;
         file.write_all(&canonical_json_bytes(value)?)?;
         file.sync_all()?;
-        fs::rename(&temporary, path)?;
+        replace_file_atomic(&temporary, path)?;
         sync_directory(parent)?;
         Ok(())
     })();
@@ -1176,7 +1184,7 @@ fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<(), DataAuthorityErro
         let mut file = File::create(&temporary)?;
         file.write_all(bytes)?;
         file.sync_all()?;
-        fs::rename(&temporary, path)?;
+        replace_file_atomic(&temporary, path)?;
         sync_directory(parent)?;
         Ok(())
     })();
@@ -1184,6 +1192,46 @@ fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<(), DataAuthorityErro
         let _ = fs::remove_file(temporary);
     }
     result
+}
+
+fn filename_safe_timestamp(timestamp: &str) -> String {
+    timestamp.replace(':', "-")
+}
+
+fn replace_file_atomic(from: &Path, to: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+        };
+
+        let from_wide = from
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>();
+        let to_wide = to
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>();
+        let moved = unsafe {
+            MoveFileExW(
+                from_wide.as_ptr(),
+                to_wide.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if moved == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        fs::rename(from, to)
+    }
 }
 
 fn create_dir_all_durable(directory: &Path) -> io::Result<()> {
@@ -2594,7 +2642,7 @@ mod tests {
     }
 
     #[test]
-    fn atomic_writes_sync_the_parent_directory_after_rename() {
+    fn atomic_writes_sync_the_parent_directory_after_replacement() {
         let source = include_str!("authority.rs");
 
         for (function, following_function) in [
@@ -2609,10 +2657,10 @@ mod tests {
                 .find(&format!("\nfn {following_function}"))
                 .expect("following helper exists");
             let body = &after_start[..end];
-            let rename = body
-                .find("fs::rename(&temporary, path)?;")
-                .expect("atomic write renames its prepared file");
-            let sync = body[rename..]
+            let replacement = body
+                .find("replace_file_atomic(&temporary, path)?;")
+                .expect("atomic write replaces its prepared file");
+            let sync = body[replacement..]
                 .find("sync_directory(parent)?;")
                 .expect("atomic write syncs the parent directory after rename");
 

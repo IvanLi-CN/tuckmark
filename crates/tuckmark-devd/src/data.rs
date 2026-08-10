@@ -1307,7 +1307,11 @@ fn apply_inventory_command(
             let (quantity_after, quantity_delta, target_quantity) = match kind.as_str() {
                 "in" => {
                     let quantity = positive_integer(input, "quantity")?;
-                    (quantity_before.saturating_add(quantity), quantity, None)
+                    let quantity_after =
+                        quantity_before.checked_add(quantity).ok_or_else(|| {
+                            DataError::Validation("Stock quantity overflowed.".into())
+                        })?;
+                    (quantity_after, quantity, None)
                 }
                 "out" => {
                     let quantity = positive_integer(input, "quantity")?;

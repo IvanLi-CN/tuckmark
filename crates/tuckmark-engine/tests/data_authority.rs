@@ -684,6 +684,7 @@ fn authority_writes_manual_and_protection_backups_as_portable_zip_archives() {
             .and_then(|extension| extension.to_str()),
         Some("zip")
     );
+    assert!(!manual.name.contains(':'));
     let manual_inspection = authority
         .inspect_archive_zip(&fs::read(&manual.path).unwrap())
         .unwrap();
@@ -702,6 +703,13 @@ fn authority_writes_manual_and_protection_backups_as_portable_zip_archives() {
             .extension()
             .and_then(|extension| extension.to_str()),
         Some("zip")
+    );
+    assert!(
+        !protection[0]
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap()
+            .contains(':')
     );
     let protection_inspection = authority
         .inspect_archive_zip(&fs::read(&protection[0]).unwrap())

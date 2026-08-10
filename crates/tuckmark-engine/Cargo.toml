@@ -29,7 +29,11 @@ detonger-protocol = { git = "https://github.com/IvanLi-CN/detonger.git", rev = "
 detonger-printer = { git = "https://github.com/IvanLi-CN/detonger.git", rev = "3ef5904738bb528e8145ab3b9eb71bafc542341f" }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Threading"] }
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 tempfile = "3.16.0"

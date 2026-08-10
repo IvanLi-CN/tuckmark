@@ -780,6 +780,43 @@ fn apply_adjustment_normalizes_inventory_input_defaults() {
 }
 
 #[test]
+fn apply_adjustment_rejects_inbound_quantity_overflow() {
+    let (_directory, data) = data_facade();
+    let material = data
+        .mutate_inventory(
+            "save-material",
+            0,
+            json!({ "fullName": "Maximum quantity material" }),
+        )
+        .unwrap();
+    let material_id = material["data"]["id"].as_str().unwrap();
+    let material_path = data
+        .authority()
+        .root()
+        .join("inventory/materials")
+        .join(format!("{material_id}.json"));
+    let mut persisted_material = material["data"].clone();
+    persisted_material["currentQuantity"] = json!(9223372036854775807i64);
+    fs::write(material_path, persisted_material.to_string()).unwrap();
+
+    let result = data.mutate_inventory(
+        "apply-adjustment",
+        1,
+        json!({
+            "materialId": material_id,
+            "input": { "kind": "in", "quantity": 1 }
+        }),
+    );
+    assert!(result.is_err());
+    assert_eq!(data.status().unwrap()["revision"], 1);
+    let persisted = data.read_materials("", true).unwrap();
+    assert_eq!(
+        persisted["data"][0]["currentQuantity"],
+        9223372036854775807i64
+    );
+}
+
+#[test]
 fn update_template_metadata_rejects_non_schema_patches() {
     let (_directory, data) = data_facade();
     let created = data
