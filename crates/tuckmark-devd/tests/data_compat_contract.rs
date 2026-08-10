@@ -11,12 +11,21 @@ fn data_facade() -> (tempfile::TempDir, DataFacade) {
 
 fn template_document(recommended_use: &str) -> serde_json::Value {
     json!({
+        "version": 1,
         "id": "document-67",
+        "presetId": "compatibility-template",
         "name": "Compatibility template",
+        "source": { "kind": "scratch", "presetId": "compatibility-template" },
         "width": 384,
         "height": 224,
         "fields": [],
         "elements": [],
+        "editor": {
+            "gridEnabled": true,
+            "gridSize": 1,
+            "snapEnabled": true,
+            "snapStep": 1
+        },
         "recommendedUse": recommended_use,
     })
 }

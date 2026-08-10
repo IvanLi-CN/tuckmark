@@ -684,6 +684,7 @@ fn authority_writes_manual_and_protection_backups_as_portable_zip_archives() {
             .and_then(|extension| extension.to_str()),
         Some("zip")
     );
+    assert!(!manual.name.contains(':'));
     let manual_inspection = authority
         .inspect_archive_zip(&fs::read(&manual.path).unwrap())
         .unwrap();
@@ -702,6 +703,13 @@ fn authority_writes_manual_and_protection_backups_as_portable_zip_archives() {
             .extension()
             .and_then(|extension| extension.to_str()),
         Some("zip")
+    );
+    assert!(
+        !protection[0]
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap()
+            .contains(':')
     );
     let protection_inspection = authority
         .inspect_archive_zip(&fs::read(&protection[0]).unwrap())
@@ -833,14 +841,17 @@ fn agent_import_falls_back_to_the_proposal_source_note() {
     .unwrap();
     manager
         .create_session(CreateAgentImportSession {
-            id: "proposal-note-session".into(),
+            id: "proposal-note-session-0001".into(),
             secret: "synthetic-secret-at-least-sixteen".into(),
             proposal,
         })
         .unwrap();
 
     manager
-        .confirm("proposal-note-session", "synthetic-secret-at-least-sixteen")
+        .confirm(
+            "proposal-note-session-0001",
+            "synthetic-secret-at-least-sixteen",
+        )
         .unwrap();
     let adjustment_path = authority
         .list_json_files("inventory/adjustments")
@@ -872,6 +883,7 @@ fn agent_import_confirmation_commits_new_and_restock_items_in_one_revision() {
                     "id": "restock-target",
                     "fullName": "Restock Target",
                     "currentQuantity": 4,
+                    "createdAt": "2026-01-01T00:00:00Z",
                     "updatedAt": "2026-01-01T00:00:00Z",
                     "labelBindings": []
                 }),
@@ -914,14 +926,17 @@ fn agent_import_confirmation_commits_new_and_restock_items_in_one_revision() {
     .unwrap();
     manager
         .create_session(CreateAgentImportSession {
-            id: "session-atomic".into(),
+            id: "session-atomic-0000000001".into(),
             secret: "synthetic-secret-at-least-sixteen".into(),
             proposal,
         })
         .unwrap();
 
     let completed = manager
-        .confirm("session-atomic", "synthetic-secret-at-least-sixteen")
+        .confirm(
+            "session-atomic-0000000001",
+            "synthetic-secret-at-least-sixteen",
+        )
         .unwrap();
 
     assert_eq!(completed.state, "completed");
@@ -955,6 +970,7 @@ fn agent_import_applies_duplicate_restock_targets_against_the_session_snapshot()
                     "id": "duplicate-restock-target",
                     "fullName": "Duplicate Restock Target",
                     "currentQuantity": 4,
+                    "createdAt": "2026-01-01T00:00:00Z",
                     "updatedAt": "2026-01-01T00:00:00Z",
                     "labelBindings": []
                 }),
@@ -1056,7 +1072,7 @@ fn agent_import_confirmation_rejects_the_entire_batch_when_one_restock_is_invali
     .unwrap();
     manager
         .create_session(CreateAgentImportSession {
-            id: "session-invalid".into(),
+            id: "session-invalid-0000000001".into(),
             secret: "synthetic-secret-at-least-sixteen".into(),
             proposal,
         })
@@ -1064,7 +1080,10 @@ fn agent_import_confirmation_rejects_the_entire_batch_when_one_restock_is_invali
 
     assert!(
         manager
-            .confirm("session-invalid", "synthetic-secret-at-least-sixteen")
+            .confirm(
+                "session-invalid-0000000001",
+                "synthetic-secret-at-least-sixteen",
+            )
             .is_err()
     );
     assert_eq!(authority.revision().unwrap(), 0);
@@ -1090,8 +1109,8 @@ fn agent_import_serializes_concurrent_confirmations() {
     let secret = "synthetic-secret-at-least-sixteen";
 
     for (session_id, material_name) in [
-        ("concurrent-session-one", "Concurrent material one"),
-        ("concurrent-session-two", "Concurrent material two"),
+        ("concurrent-session-one-0001", "Concurrent material one"),
+        ("concurrent-session-two-0001", "Concurrent material two"),
     ] {
         let proposal: AgentImportProposal = serde_json::from_value(json!({
             "schema": "tuckmark.agent-import.v1",
@@ -1126,13 +1145,13 @@ fn agent_import_serializes_concurrent_confirmations() {
         let first_barrier = barrier.clone();
         let first = scope.spawn(move || {
             first_barrier.wait();
-            first_manager.confirm("concurrent-session-one", secret)
+            first_manager.confirm("concurrent-session-one-0001", secret)
         });
         let second_manager = manager.clone();
         let second_barrier = barrier.clone();
         let second = scope.spawn(move || {
             second_barrier.wait();
-            second_manager.confirm("concurrent-session-two", secret)
+            second_manager.confirm("concurrent-session-two-0001", secret)
         });
         barrier.wait();
         (first.join().unwrap(), second.join().unwrap())
@@ -1157,8 +1176,8 @@ fn agent_import_rejects_unknown_system_and_user_templates() {
     let manager = AgentImportManager::new(authority.clone());
 
     for (session_id, source) in [
-        ("unknown-system-template", "system"),
-        ("unknown-user-template", "user-template"),
+        ("unknown-system-template-0001", "system"),
+        ("unknown-user-template-0001", "user-template"),
     ] {
         let proposal: AgentImportProposal = serde_json::from_value(json!({
             "schema": "tuckmark.agent-import.v1",
@@ -1327,7 +1346,7 @@ fn agent_import_expires_sessions_and_returns_the_commit_event() {
     let secret = "synthetic-secret-at-least-sixteen";
     let session = manager
         .create_session(CreateAgentImportSession {
-            id: "session-event".into(),
+            id: "session-event-0000000001".into(),
             secret: secret.into(),
             proposal,
         })
@@ -1335,7 +1354,7 @@ fn agent_import_expires_sessions_and_returns_the_commit_event() {
     assert_eq!(session.expires_at, "2026-01-02T03:34:05Z");
 
     let confirmed = manager
-        .confirm_with_result("session-event", secret)
+        .confirm_with_result("session-event-0000000001", secret)
         .unwrap();
     assert_eq!(confirmed.event.unwrap().revision, 1);
 
@@ -1359,11 +1378,15 @@ fn agent_import_expires_sessions_and_returns_the_commit_event() {
     .unwrap();
     manager
         .create_session(CreateAgentImportSession {
-            id: "session-expired".into(),
+            id: "session-expired-0000000001".into(),
             secret: secret.into(),
             proposal: expired_proposal,
         })
         .unwrap();
     clock.set("2026-01-02T04:30:00Z");
-    assert!(manager.get_session("session-expired", secret).is_err());
+    assert!(
+        manager
+            .get_session("session-expired-0000000001", secret)
+            .is_err()
+    );
 }

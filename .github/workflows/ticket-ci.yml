@@ -84,3 +84,17 @@ jobs:
         run: cargo test --locked --package tuckmark-devd
       - name: Run Web server-HTTP contract harness
         run: bun run --filter @tuckmark/web test:e2e:sync
+
+  windows-named-ipc-contract:
+    name: windows-named-ipc-contract
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0
+      - name: Run Windows named IPC contract tests
+        run: cargo test --locked --package tuckmark-devd --test http_ipc_contract windows_named_ipc

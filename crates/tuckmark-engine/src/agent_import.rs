@@ -4,7 +4,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
@@ -17,7 +17,10 @@ use uuid::Uuid;
 
 use crate::{Clock, CommitRequest, DataAuthority, DataAuthorityError, RevisionEvent, SystemClock};
 
-const MINIMUM_SESSION_SECRET_BYTES: usize = 32;
+const MINIMUM_SESSION_ID_CODE_UNITS: usize = 24;
+const MAXIMUM_SESSION_ID_CODE_UNITS: usize = 200;
+const MINIMUM_SESSION_SECRET_CODE_UNITS: usize = 32;
+const MAXIMUM_SESSION_SECRET_CODE_UNITS: usize = 1000;
 const SESSION_TTL: Duration = Duration::minutes(30);
 
 #[derive(Debug, Error)]
@@ -40,6 +43,8 @@ pub enum AgentImportError {
     DuplicateSession,
     #[error("agent import session key is too short")]
     SecretTooShort,
+    #[error("agent import session key is too long")]
+    SecretTooLong,
     #[error("agent import input is invalid: {0}")]
     Validation(String),
 }
@@ -157,7 +162,8 @@ impl AgentImportCatalog {
     ) -> Result<Self, AgentImportError> {
         let mut system_templates = BTreeMap::new();
         let mut system_template_order = Vec::new();
-        for template in templates {
+        for mut template in templates {
+            normalize_agent_import_template(&mut template, "system catalog template")?;
             validate_catalog_template(&template, "system")?;
             if system_templates.contains_key(&template.id) {
                 return Err(AgentImportError::Validation(
@@ -238,17 +244,11 @@ impl AgentImportManager {
         &self,
         input: CreateAgentImportSession,
     ) -> Result<AgentImportSession, AgentImportError> {
-        if input.id.trim().is_empty() {
-            return Err(AgentImportError::Validation(
-                "session id is required".into(),
-            ));
-        }
-        if input.secret.len() < MINIMUM_SESSION_SECRET_BYTES {
-            return Err(AgentImportError::SecretTooShort);
-        }
+        validate_session_id(&input.id)?;
+        validate_session_secret(&input.secret)?;
         let mut proposal = input.proposal;
-        proposal.validate()?;
         normalize_proposal_defaults(&mut proposal)?;
+        proposal.validate()?;
         for item in &mut proposal.items {
             // Session-local coordination state is never accepted from the caller.
             item.revision = 0;
@@ -317,7 +317,7 @@ impl AgentImportManager {
         let mut materials = self
             .read_materials()?
             .into_iter()
-            .filter(|material| material.archived_at.is_none())
+            .filter(|material| !has_archived_timestamp(material.archived_at.as_deref()))
             .filter(|material| material_matches_query(material, &query))
             .collect::<Vec<_>>();
         materials.sort_by(|left, right| {
@@ -348,9 +348,11 @@ impl AgentImportManager {
             .filter(|item| item.kind == AgentImportItemKind::Restock)
             .filter_map(|item| {
                 let material = materials.get(item.target_material_id.as_deref()?)?;
-                (material.archived_at.is_none()).then(|| AgentImportRestockTarget {
-                    item_id: item.id,
-                    material: material.clone(),
+                (!has_archived_timestamp(material.archived_at.as_deref())).then(|| {
+                    AgentImportRestockTarget {
+                        item_id: item.id,
+                        material: material.clone(),
+                    }
                 })
             })
             .collect())
@@ -411,7 +413,7 @@ impl AgentImportManager {
             ));
         }
 
-        let next = match current.kind {
+        let mut next = match current.kind {
             AgentImportItemKind::Restock => AgentImportItem {
                 selected: input.item.selected,
                 quantity: input.item.quantity,
@@ -432,6 +434,7 @@ impl AgentImportManager {
                 ..input.item
             },
         };
+        normalize_agent_import_item(&mut next)?;
         validate_agent_import_item(&next)?;
 
         if let Some((event_index, mut event)) = pending_event {
@@ -447,7 +450,9 @@ impl AgentImportManager {
         &self,
         input: RequestAgentImportTemplateInput,
     ) -> Result<AgentImportSession, AgentImportError> {
-        let requested_key = template_key(&input.template);
+        let mut requested = input.template.clone();
+        normalize_agent_import_template(&mut requested, "requested label template")?;
+        let requested_key = template_key(&requested);
         let template = self
             .list_templates()?
             .into_iter()
@@ -703,12 +708,14 @@ impl AgentImportManager {
                 quantity_delta: Some(item.quantity),
                 target_quantity: None,
                 quantity_after: Some(material.current_quantity),
-                note: item
-                    .source_note
-                    .as_deref()
-                    .filter(|note| !note.is_empty())
-                    .map(str::to_owned)
-                    .or_else(|| proposal.source_note.clone()),
+                note: Some(
+                    item.source_note
+                        .as_deref()
+                        .filter(|note| !note.is_empty())
+                        .or(proposal.source_note.as_deref())
+                        .unwrap_or_default()
+                        .to_owned(),
+                ),
                 actor: Some("agent-import".into()),
                 created_at: Some(now.clone()),
                 extra: Default::default(),
@@ -764,7 +771,9 @@ impl AgentImportManager {
                     .authority
                     .read_json(&relative)?
                     .ok_or_else(|| AgentImportError::Validation("material disappeared".into()))?;
-                Ok(serde_json::from_value(value)?)
+                Ok(serde_json::from_value(
+                    normalize_agent_import_inventory_material(value)?,
+                )?)
             })
             .collect()
     }
@@ -779,7 +788,7 @@ impl AgentImportManager {
             .map(|version| (version.id.clone(), version))
             .collect::<BTreeMap<_, _>>();
         for record in archive.runtime.templates {
-            if record.archived_at.is_some() {
+            if has_archived_timestamp(record.archived_at.as_deref()) {
                 continue;
             }
             let Some(version_id) = record.current_version_id.as_deref() else {
@@ -928,7 +937,9 @@ impl AgentImportManager {
                 ]),
             })?]),
         );
-        let mut material = serde_json::from_value::<InventoryMaterial>(Value::Object(value))?;
+        let mut material = serde_json::from_value::<InventoryMaterial>(
+            normalize_agent_import_inventory_material(Value::Object(value))?,
+        )?;
         material.current_quantity = material
             .current_quantity
             .checked_add(item.quantity)
@@ -956,7 +967,7 @@ impl AgentImportManager {
             .ok_or_else(|| {
                 AgentImportError::Validation(format!("restock target {target_id} was not found"))
             })?;
-        if material.archived_at.is_some() {
+        if has_archived_timestamp(material.archived_at.as_deref()) {
             return Err(AgentImportError::Validation(format!(
                 "restock target {} is archived",
                 material.id
@@ -1021,7 +1032,7 @@ impl AgentImportManager {
                 record.id
             )));
         }
-        if record.archived_at.is_some() {
+        if has_archived_timestamp(record.archived_at.as_deref()) {
             return Err(AgentImportError::Validation(format!(
                 "label template user-template:{id} is archived"
             )));
@@ -1081,18 +1092,423 @@ impl AgentImportManager {
 
 fn normalize_proposal_defaults(proposal: &mut AgentImportProposal) -> Result<(), AgentImportError> {
     proposal.source_note.get_or_insert_with(String::new);
+    proposal.extra.clear();
     for item in &mut proposal.items {
-        item.source_note.get_or_insert_with(String::new);
-        let material = item.material.as_object_mut().ok_or_else(|| {
-            AgentImportError::Validation(format!("item {} material must be an object", item.id))
-        })?;
-        for key in ["description", "deviceDetails", "packagingRemark"] {
-            material
-                .entry(key)
-                .or_insert_with(|| Value::String(String::new()));
-        }
+        normalize_agent_import_item(item)?;
     }
     Ok(())
+}
+
+fn normalize_agent_import_inventory_material(value: Value) -> Result<Value, AgentImportError> {
+    let mut material = value.as_object().cloned().ok_or_else(|| {
+        AgentImportError::Validation("inventory material must be an object".into())
+    })?;
+    for key in ["id", "fullName", "createdAt", "updatedAt"] {
+        if material
+            .get(key)
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        {
+            return Err(AgentImportError::Validation(format!(
+                "inventory material {key} must be a non-empty string"
+            )));
+        }
+    }
+    for key in ["baseName", "variantName", "packageName"] {
+        if material.get(key).is_some_and(|value| !value.is_string()) {
+            return Err(AgentImportError::Validation(format!(
+                "inventory material {key} must be a string"
+            )));
+        }
+    }
+    match material.get("matrixCode") {
+        Some(Value::Null) => {
+            material.remove("matrixCode");
+        }
+        Some(Value::String(_)) | None => {}
+        Some(_) => {
+            return Err(AgentImportError::Validation(
+                "inventory material matrixCode must be a string".into(),
+            ));
+        }
+    }
+    for key in ["description", "deviceDetails", "packagingRemark"] {
+        match material.get(key) {
+            None => {
+                material.insert(key.into(), Value::String(String::new()));
+            }
+            Some(Value::String(_)) => {}
+            Some(_) => {
+                return Err(AgentImportError::Validation(format!(
+                    "inventory material {key} must be a string"
+                )));
+            }
+        }
+    }
+    let current_quantity = match material.get("currentQuantity") {
+        None => 0,
+        Some(value) => non_negative_inventory_quantity(value)?,
+    };
+    material.insert("currentQuantity".into(), json!(current_quantity));
+    if material
+        .get("archivedAt")
+        .is_some_and(|value| !value.is_null() && !value.is_string())
+    {
+        return Err(AgentImportError::Validation(
+            "inventory material archivedAt must be a string or null".into(),
+        ));
+    }
+    let bindings = match material.remove("labelBindings") {
+        None => vec![],
+        Some(Value::Array(bindings)) => bindings,
+        Some(_) => {
+            return Err(AgentImportError::Validation(
+                "inventory material labelBindings must be an array".into(),
+            ));
+        }
+    };
+    let bindings = bindings
+        .into_iter()
+        .enumerate()
+        .map(|(index, binding)| normalize_agent_import_label_binding(binding, index))
+        .collect::<Result<Vec<_>, _>>()?;
+    material.insert("labelBindings".into(), Value::Array(bindings));
+    Ok(Value::Object(material))
+}
+
+fn normalize_agent_import_label_binding(
+    value: Value,
+    index: usize,
+) -> Result<Value, AgentImportError> {
+    let binding = value.as_object().ok_or_else(|| {
+        AgentImportError::Validation(format!(
+            "inventory material labelBindings[{index}] must be an object"
+        ))
+    })?;
+    let id = required_label_binding_string(binding, "id", index)?;
+    let template_source = required_label_binding_string(binding, "templateSource", index)?;
+    if !matches!(template_source.as_str(), "system" | "user-template") {
+        return Err(AgentImportError::Validation(format!(
+            "inventory material labelBindings[{index}].templateSource is invalid"
+        )));
+    }
+    let template_id = required_label_binding_string(binding, "templateId", index)?;
+    let template_name = required_label_binding_string(binding, "templateName", index)?;
+    let created_at = required_label_binding_string(binding, "createdAt", index)?;
+    let updated_at = required_label_binding_string(binding, "updatedAt", index)?;
+    let print_quantity = binding
+        .get("printQuantity")
+        .map(|value| positive_inventory_quantity(value, "printQuantity"))
+        .transpose()?
+        .unwrap_or(1);
+    let field_overrides = match binding.get("fieldOverrides") {
+        None => Map::new(),
+        Some(Value::Object(overrides)) => overrides
+            .iter()
+            .map(|(key, value)| {
+                value.as_str().map_or_else(
+                    || {
+                        Err(AgentImportError::Validation(format!(
+                            "inventory material labelBindings[{index}].fieldOverrides.{key} must be a string"
+                        )))
+                    },
+                    |value| Ok((key.clone(), Value::String(value.to_owned()))),
+                )
+            })
+            .collect::<Result<Map<_, _>, _>>()?,
+        Some(_) => {
+            return Err(AgentImportError::Validation(format!(
+                "inventory material labelBindings[{index}].fieldOverrides must be an object"
+            )));
+        }
+    };
+    Ok(json!({
+        "id": id,
+        "templateSource": template_source,
+        "templateId": template_id,
+        "templateName": template_name,
+        "printQuantity": print_quantity,
+        "fieldOverrides": field_overrides,
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+    }))
+}
+
+fn required_label_binding_string(
+    binding: &Map<String, Value>,
+    field: &str,
+    index: usize,
+) -> Result<String, AgentImportError> {
+    binding
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            AgentImportError::Validation(format!(
+                "inventory material labelBindings[{index}].{field} must be a non-empty string"
+            ))
+        })
+}
+
+fn non_negative_inventory_quantity(value: &Value) -> Result<i64, AgentImportError> {
+    value
+        .as_i64()
+        .filter(|quantity| *quantity >= 0)
+        .or_else(|| {
+            value
+                .as_u64()
+                .filter(|quantity| *quantity <= i64::MAX as u64)
+                .map(|quantity| quantity as i64)
+        })
+        .or_else(|| {
+            value
+                .as_f64()
+                .filter(|quantity| {
+                    quantity.is_finite()
+                        && *quantity >= 0.0
+                        && quantity.fract() == 0.0
+                        && *quantity < i64::MAX as f64
+                })
+                .map(|quantity| quantity as i64)
+        })
+        .ok_or_else(|| {
+            AgentImportError::Validation(
+                "inventory material currentQuantity must be a non-negative integer".into(),
+            )
+        })
+}
+
+fn positive_inventory_quantity(value: &Value, field: &str) -> Result<i64, AgentImportError> {
+    let quantity = non_negative_inventory_quantity(value).map_err(|_| {
+        AgentImportError::Validation(format!(
+            "inventory material labelBindings {field} must be a positive integer"
+        ))
+    })?;
+    if quantity == 0 {
+        return Err(AgentImportError::Validation(format!(
+            "inventory material labelBindings {field} must be a positive integer"
+        )));
+    }
+    Ok(quantity)
+}
+
+fn normalize_agent_import_item(item: &mut AgentImportItem) -> Result<(), AgentImportError> {
+    item.source_note.get_or_insert_with(String::new);
+    for (field, value) in [
+        ("targetMaterialId", item.target_material_id.as_deref()),
+        (
+            "targetMaterialUpdatedAt",
+            item.target_material_updated_at.as_deref(),
+        ),
+    ] {
+        if value.is_some_and(str::is_empty) {
+            return Err(AgentImportError::Validation(format!(
+                "item {} {field} must be a non-empty string",
+                item.id
+            )));
+        }
+    }
+    normalize_agent_import_material(item)?;
+    if let Some(template) = &mut item.template {
+        normalize_agent_import_template(template, "agent import item template")?;
+    }
+    normalize_template_alternatives(item)?;
+    let needs_attention = match item.extra.get("needsAttention") {
+        None => None,
+        Some(Value::String(value)) if !value.is_empty() => Some(value.clone()),
+        Some(_) => {
+            return Err(AgentImportError::Validation(format!(
+                "item {} needsAttention must be a non-empty string",
+                item.id
+            )));
+        }
+    };
+    let template_alternatives = item.extra.remove("templateAlternatives").ok_or_else(|| {
+        AgentImportError::Validation(format!(
+            "item {} templateAlternatives could not be normalized",
+            item.id
+        ))
+    })?;
+    item.extra.clear();
+    if let Some(needs_attention) = needs_attention {
+        item.extra
+            .insert("needsAttention".into(), Value::String(needs_attention));
+    }
+    item.extra
+        .insert("templateAlternatives".into(), template_alternatives);
+    Ok(())
+}
+
+fn normalize_agent_import_material(item: &mut AgentImportItem) -> Result<(), AgentImportError> {
+    let item_id = item.id.clone();
+    let material = item.material.as_object().ok_or_else(|| {
+        AgentImportError::Validation(format!("item {item_id} material must be an object"))
+    })?;
+    let full_name = material
+        .get("fullName")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            AgentImportError::Validation(format!(
+                "item {item_id} material fullName must be a non-empty string"
+            ))
+        })?;
+    let mut normalized = Map::new();
+    normalized.insert("fullName".into(), Value::String(full_name.to_owned()));
+    for key in ["baseName", "variantName", "packageName", "matrixCode"] {
+        if let Some(value) = material.get(key) {
+            let value = value.as_str().ok_or_else(|| {
+                AgentImportError::Validation(format!(
+                    "item {item_id} material {key} must be a string"
+                ))
+            })?;
+            normalized.insert(key.into(), Value::String(value.to_owned()));
+        }
+    }
+    for key in ["description", "deviceDetails", "packagingRemark"] {
+        let value = material.get(key).map_or(Ok(""), |value| {
+            value.as_str().ok_or_else(|| {
+                AgentImportError::Validation(format!(
+                    "item {item_id} material {key} must be a string"
+                ))
+            })
+        })?;
+        normalized.insert(key.into(), Value::String(value.to_owned()));
+    }
+    item.material = Value::Object(normalized);
+    Ok(())
+}
+
+fn normalize_template_alternatives(item: &mut AgentImportItem) -> Result<(), AgentImportError> {
+    let alternatives = match item.extra.get("templateAlternatives") {
+        None => vec![],
+        Some(Value::Array(alternatives)) => alternatives.clone(),
+        Some(_) => {
+            return Err(AgentImportError::Validation(format!(
+                "item {} templateAlternatives must be an array",
+                item.id
+            )));
+        }
+    };
+    let mut normalized = Vec::with_capacity(alternatives.len());
+    for (index, value) in alternatives.into_iter().enumerate() {
+        let mut template =
+            serde_json::from_value::<AgentImportTemplate>(value).map_err(|error| {
+                AgentImportError::Validation(format!(
+                    "item {} templateAlternatives[{index}] is invalid: {error}",
+                    item.id
+                ))
+            })?;
+        normalize_agent_import_template(
+            &mut template,
+            &format!("item {} templateAlternatives[{index}]", item.id),
+        )?;
+        normalized.push(serde_json::to_value(template)?);
+    }
+    item.extra
+        .insert("templateAlternatives".into(), Value::Array(normalized));
+    Ok(())
+}
+
+fn normalize_agent_import_template(
+    template: &mut AgentImportTemplate,
+    context: &str,
+) -> Result<(), AgentImportError> {
+    if !matches!(template.source.as_str(), "system" | "user-template") {
+        return Err(AgentImportError::Validation(format!(
+            "{context} source is invalid"
+        )));
+    }
+    if template.id.is_empty() || template.name.is_empty() {
+        return Err(AgentImportError::Validation(format!(
+            "{context} id and name must be non-empty strings"
+        )));
+    }
+    for field in &mut template.fields {
+        normalize_agent_import_template_field(field, context)?;
+    }
+    let recommended_use = template.extra.remove("recommendedUse");
+    template.extra.clear();
+    if let Some(recommended_use) = recommended_use {
+        template.extra.insert(
+            "recommendedUse".into(),
+            Value::String(normalize_recommended_use_input(&recommended_use, context)?),
+        );
+    }
+    Ok(())
+}
+
+fn normalize_agent_import_template_field(
+    field: &mut Value,
+    context: &str,
+) -> Result<(), AgentImportError> {
+    let field_object = field.as_object().ok_or_else(|| {
+        AgentImportError::Validation(format!("{context} field must be an object"))
+    })?;
+    let key = required_template_field_string(field_object, "key", context)?;
+    let label = required_template_field_string(field_object, "label", context)?;
+    let required = optional_template_field_boolean(field_object, "required", context)?;
+    let multiline = optional_template_field_boolean(field_object, "multiline", context)?;
+    *field = json!({
+        "key": key,
+        "label": label,
+        "required": required,
+        "multiline": multiline,
+    });
+    Ok(())
+}
+
+fn required_template_field_string(
+    field: &Map<String, Value>,
+    key: &str,
+    context: &str,
+) -> Result<String, AgentImportError> {
+    field
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            AgentImportError::Validation(format!(
+                "{context} field {key} must be a non-empty string"
+            ))
+        })
+}
+
+fn optional_template_field_boolean(
+    field: &Map<String, Value>,
+    key: &str,
+    context: &str,
+) -> Result<bool, AgentImportError> {
+    match field.get(key) {
+        None => Ok(false),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(_) => Err(AgentImportError::Validation(format!(
+            "{context} field {key} must be a boolean"
+        ))),
+    }
+}
+
+fn normalize_recommended_use_input(
+    value: &Value,
+    context: &str,
+) -> Result<String, AgentImportError> {
+    match value {
+        Value::String(value) if !value.trim().is_empty() => Ok(value.trim().to_owned()),
+        Value::Object(value) => value
+            .get("scope")
+            .and_then(Value::as_str)
+            .and_then(|scope| (!scope.trim().is_empty()).then(|| scope.trim().to_owned()))
+            .ok_or_else(|| {
+                AgentImportError::Validation(format!(
+                    "{context} recommendedUse must be a non-empty string or scope object"
+                ))
+            }),
+        _ => Err(AgentImportError::Validation(format!(
+            "{context} recommendedUse must be a non-empty string or scope object"
+        ))),
+    }
 }
 
 fn template_key(template: &AgentImportTemplate) -> String {
@@ -1118,6 +1534,10 @@ fn normalize_recommended_uses(value: &Value) -> Option<String> {
         .collect::<Vec<_>>()
         .join("；");
     (!joined.is_empty()).then_some(joined)
+}
+
+fn has_archived_timestamp(value: Option<&str>) -> bool {
+    value.is_some_and(|value| !value.is_empty())
 }
 
 fn material_matches_query(material: &InventoryMaterial, query: &str) -> bool {
@@ -1255,6 +1675,17 @@ fn normalize_user_template_field(field: &Value) -> Result<Value, AgentImportErro
     // Shared template fields are optional when exposed through agent import,
     // matching the TypeScript catalog's listTemplates() normalization.
     field.insert("required".into(), Value::Bool(false));
+    match field.get("multiline") {
+        None => {
+            field.insert("multiline".into(), Value::Bool(false));
+        }
+        Some(Value::Bool(_)) => {}
+        Some(_) => {
+            return Err(AgentImportError::Validation(
+                "user template field multiline must be a boolean".into(),
+            ));
+        }
+    }
     Ok(Value::Object(field))
 }
 
@@ -1294,17 +1725,50 @@ fn validate_catalog_template(
                 template.id
             )));
         }
-        if field
-            .get("required")
-            .is_some_and(|required| !required.is_boolean())
-        {
+        if !field.get("required").is_some_and(Value::is_boolean) {
             return Err(AgentImportError::Validation(format!(
                 "agent import catalog template {} field {key} has invalid required flag",
                 template.id
             )));
         }
+        if !field.get("multiline").is_some_and(Value::is_boolean) {
+            return Err(AgentImportError::Validation(format!(
+                "agent import catalog template {} field {key} has invalid multiline flag",
+                template.id
+            )));
+        }
     }
     Ok(())
+}
+
+fn validate_session_id(id: &str) -> Result<(), AgentImportError> {
+    let length = javascript_string_code_units(id);
+    if !(MINIMUM_SESSION_ID_CODE_UNITS..=MAXIMUM_SESSION_ID_CODE_UNITS).contains(&length) {
+        return Err(AgentImportError::Validation(format!(
+            "session id must contain {MINIMUM_SESSION_ID_CODE_UNITS} to {MAXIMUM_SESSION_ID_CODE_UNITS} UTF-16 code units"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_session_secret(secret: &str) -> Result<(), AgentImportError> {
+    if secret.trim() != secret {
+        return Err(AgentImportError::Validation(
+            "agent import session key must not have surrounding whitespace".into(),
+        ));
+    }
+    let length = javascript_string_code_units(secret);
+    if length < MINIMUM_SESSION_SECRET_CODE_UNITS {
+        return Err(AgentImportError::SecretTooShort);
+    }
+    if length > MAXIMUM_SESSION_SECRET_CODE_UNITS {
+        return Err(AgentImportError::SecretTooLong);
+    }
+    Ok(())
+}
+
+fn javascript_string_code_units(value: &str) -> usize {
+    value.encode_utf16().count()
 }
 
 fn session_expiry(now: &str) -> Result<String, AgentImportError> {
