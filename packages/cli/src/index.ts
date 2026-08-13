@@ -391,16 +391,18 @@ async function writeStableJson(value: unknown, args: string[]): Promise<void> {
     return
   }
   const resolved = path.resolve(filePath)
-  if (!hasFlag(args, "--overwrite")) {
-    try {
-      await readFile(resolved)
-      throw new Error(`Refusing to overwrite existing file: ${resolved}`)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-    }
-  }
   await mkdir(path.dirname(resolved), { recursive: true })
-  await writeFile(resolved, output, "utf8")
+  try {
+    await writeFile(resolved, output, {
+      encoding: "utf8",
+      flag: hasFlag(args, "--overwrite") ? "w" : "wx",
+    })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error(`Refusing to overwrite existing file: ${resolved}`)
+    }
+    throw error
+  }
 }
 
 function parseTemplatePackageInput(args: string[]): Record<string, string> | undefined {
