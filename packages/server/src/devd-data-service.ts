@@ -361,6 +361,7 @@ const canvasDraftDocumentSchema = z
     width: z.number().finite().positive(),
     height: z.number().finite().positive(),
     renderOptions: z.record(z.string(), z.unknown()).optional(),
+    tags: z.array(z.string().min(1)).default([]),
     recommendedUse: recommendedUseSchema.optional(),
     recommendedUses: legacyRecommendedUsesSchema.optional(),
     fields: z.array(
@@ -443,6 +444,7 @@ const materialReferenceArgsSchema = z
 const runtimeMutationArgsSchemas = {
   "save-template": z.object({
     templateId: dataIdentifierSchema.optional(),
+    createOnly: z.boolean().optional(),
     name: dataIdentifierSchema,
     description: z.string().optional(),
     sourceVersionId: dataIdentifierSchema.optional(),
@@ -1246,6 +1248,9 @@ export class DevdDataService {
     ) {
       const templateId = args.templateId ?? `user-template-${randomUUID()}`
       const existing = findTemplate(templateId)
+      if (command === "save-template" && args.createOnly && existing) {
+        throw new Error("Template already exists. Use template import --update.")
+      }
       if (command !== "save-template") {
         if (!existing) throw new DevdDataNotFoundError("Template was not found.")
         const working = workingCopies.find((item) => item.sourceKey === `user:${templateId}`)
@@ -1295,10 +1300,12 @@ export class DevdDataService {
         document,
       }
       versions.push(version)
-      for (let index = versions.length - 1; index >= 0; index -= 1) {
-        const entry = versions[index]
-        if (entry?.templateId === templateId && entry?.kind === "autosave")
-          versions.splice(index, 1)
+      if (command !== "restore-template-version") {
+        for (let index = versions.length - 1; index >= 0; index -= 1) {
+          const entry = versions[index]
+          if (entry?.templateId === templateId && entry?.kind === "autosave")
+            versions.splice(index, 1)
+        }
       }
       this.pruneTemplateVersions(versions, templateId, "saved", MAX_SAVED_TEMPLATE_VERSIONS)
       const hasRecommendedUse = Object.hasOwn(document, "recommendedUse")

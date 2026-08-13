@@ -857,6 +857,7 @@ async function handleTemplateCommand(args: string[]): Promise<void> {
           name: name ?? templatePackage.name,
           description: description ?? templatePackage.description,
           document,
+          ...(!isUpdate ? { createOnly: true } : {}),
           ...(templatePackage.editBaseline
             ? {
                 baselineVersionId: templatePackage.editBaseline.currentVersionId,

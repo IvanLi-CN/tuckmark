@@ -138,23 +138,34 @@ describe("UserTemplatePackage", () => {
     expect(canvas.elements[2]).toMatchObject({ kind: "text", value: "SMAF" })
   })
 
-  it("rejects packages wider than the current printer capability default", () => {
-    expect(() =>
+  it("accepts freeform package dimensions beyond a printer capability", () => {
+    expect(
       parseUserTemplatePackage({
         ...componentPackage,
-        canvas: { width: 512, height: 96 },
-      })
-    ).toThrow()
+        canvas: { width: 512, height: 768 },
+        renderOptions: {},
+      }).canvas
+    ).toEqual({ width: 512, height: 768 })
   })
 
-  it("rejects packages wider than their configured render print width", () => {
-    expect(() =>
-      parseUserTemplatePackage({
-        ...componentPackage,
-        canvas: { width: 384, height: 96 },
-        renderOptions: { printWidthDots: 192 },
-      })
-    ).toThrow(/exceeds render print width/)
+  it("excludes hidden editor layers from rendered canvases", () => {
+    const parsed = parseUserTemplatePackage({
+      ...componentPackage,
+      editor: {
+        gridEnabled: true,
+        gridSize: 1,
+        snapEnabled: true,
+        snapStep: 1,
+        layers: componentPackage.elements.map((_, index) => ({
+          id: `layer-${index}`,
+          name: `Layer ${index}`,
+          visible: index !== 1,
+          locked: false,
+        })),
+      },
+    })
+
+    expect(compileUserTemplatePackageToCanvas(parsed).elements).toHaveLength(2)
   })
 
   it("rejects rotated elements that exceed the canvas bounds", () => {

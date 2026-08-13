@@ -277,6 +277,7 @@ const canvasDraftDocumentSchema = z
     width: z.number().positive(),
     height: z.number().positive(),
     renderOptions: renderOptionsSchema.partial().optional(),
+    tags: z.array(z.string().min(1)).default([]),
     recommendedUse: recommendedUseSchema.optional(),
     recommendedUses: legacyRecommendedUsesSchema.optional(),
     fields: z.array(canvasDraftFieldSchema),
@@ -675,6 +676,7 @@ export function createDraftFromUserTemplatePackage(
     width: dotsToMillimeters(templatePackage.canvas.width),
     height: dotsToMillimeters(templatePackage.canvas.height),
     renderOptions: templatePackage.renderOptions,
+    tags: templatePackage.tags,
     recommendedUse: templatePackage.recommendedUse,
     fields: synced.fields,
     elements: synced.elements,
@@ -869,7 +871,7 @@ export function createUserTemplatePackageFromDraft(args: {
     elements: canvas.elements,
     sampleInput,
     renderOptions: args.document.renderOptions ?? {},
-    tags: [],
+    tags: args.document.tags,
     ...(args.document.recommendedUse ? { recommendedUse: args.document.recommendedUse } : {}),
     ...(args.editable
       ? {

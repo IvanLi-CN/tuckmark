@@ -37,8 +37,8 @@ export const userTemplatePackageSchema = z
     name: z.string().min(1),
     description: z.string().default(""),
     canvas: z.object({
-      width: z.number().int().positive().max(384),
-      height: z.number().int().positive().max(640),
+      width: z.number().int().positive(),
+      height: z.number().int().positive(),
     }),
     fields: z.array(userTemplatePackageFieldSchema).default([]),
     elements: z.array(templateElementSchema).min(1),
@@ -107,9 +107,9 @@ export function compileUserTemplatePackageToCanvas(
     name: templatePackage.name,
     width: templatePackage.canvas.width,
     height: templatePackage.canvas.height,
-    elements: templatePackage.elements.map((element) =>
-      materializeTemplateElement(element, fieldDefaults)
-    ),
+    elements: templatePackage.elements
+      .filter((_, index) => templatePackage.editor?.layers[index]?.visible ?? true)
+      .map((element) => materializeTemplateElement(element, fieldDefaults)),
   })
 }
 
@@ -118,13 +118,6 @@ export function resolveUserTemplatePackageRenderOptions(templatePackage: UserTem
 }
 
 function validateUserTemplatePackageSemantics(templatePackage: UserTemplatePackage): void {
-  const printWidthDots = templatePackage.renderOptions.printWidthDots
-  if (printWidthDots !== undefined && templatePackage.canvas.width > printWidthDots) {
-    throw new Error(
-      `Canvas width ${templatePackage.canvas.width} exceeds render print width ${printWidthDots}`
-    )
-  }
-
   const fieldKeys = new Set<string>()
   const fieldDefaults = new Map<string, string>()
   for (const field of templatePackage.fields) {

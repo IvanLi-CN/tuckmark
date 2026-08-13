@@ -549,12 +549,20 @@ describe("cli smoke", () => {
       ])
       const exported = JSON.parse(await readFile(exportPath, "utf8")) as {
         name: string
+        tags: string[]
         editBaseline: { currentVersionId: string; workingCopyUpdatedAt: string }
         editor: { layers: Array<{ id: string; name: string }> }
       }
       expect(exported.editBaseline.currentVersionId).toBeTruthy()
       expect(exported.editBaseline.workingCopyUpdatedAt).toBeTruthy()
       expect(exported.editor.layers.length).toBeGreaterThan(0)
+      expect(exported.tags).toEqual(["electronics", "component-bin"])
+
+      const collision = await runCliWithEnvAllowFailure(
+        ["template", "import", "--file", fixturePath, "--instance", instance],
+        {}
+      )
+      expect(collision.stderr).toContain("Template already exists")
 
       const overwrite = await runCliWithEnvAllowFailure(
         [
@@ -611,6 +619,12 @@ describe("cli smoke", () => {
         editBaseline?: unknown
       }
       expect(historical.editBaseline).toBeUndefined()
+
+      const historicalCollision = await runCliWithEnvAllowFailure(
+        ["template", "import", "--file", historyPath, "--instance", instance],
+        {}
+      )
+      expect(historicalCollision.stderr).toContain("Template already exists")
 
       await runCliOn(instance, [
         "template",
