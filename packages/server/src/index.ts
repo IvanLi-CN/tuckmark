@@ -254,6 +254,8 @@ function sendDataError(res: express.Response, error: unknown): void {
 
 const runtimeDataCommandSchema = z.enum([
   "save-template",
+  "update-template-package",
+  "restore-template-version",
   "update-template-metadata",
   "rename-template",
   "archive-template",

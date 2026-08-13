@@ -414,6 +414,12 @@
 - Agent-generated user template packages are covered by a shared core schema
   and compiler. CLI commands can validate, preview, generate packets, and print
   packages through the existing canvas artifact seam.
+- The shared package schema accepts strict optional `editor` state and CLI-only
+  `editBaseline` metadata. CLI export converts current DEVD working copies or
+  immutable historical versions into stable JSON; `import --update` delegates
+  atomic template and working-copy baseline checks to DEVD. Version listing and
+  restore commands expose retained saved/autosave history, and restore creates a
+  new saved version linked to its source version.
 - The template workspace can import a `tuckmark.user-template-package.v1` JSON
   file and save it into the active user-template store: the configured data
   directory when present, otherwise the browser-local runtime store.

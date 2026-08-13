@@ -132,6 +132,8 @@ type WorkingCopyRecord = {
 export type RuntimeMutation = {
   command:
     | "save-template"
+    | "update-template-package"
+    | "restore-template-version"
     | "update-template-metadata"
     | "rename-template"
     | "archive-template"
@@ -445,6 +447,20 @@ const runtimeMutationArgsSchemas = {
     description: z.string().optional(),
     sourceVersionId: dataIdentifierSchema.optional(),
     document: canvasDraftDocumentSchema,
+  }),
+  "update-template-package": z.object({
+    templateId: dataIdentifierSchema,
+    name: dataIdentifierSchema,
+    description: z.string().optional(),
+    baselineVersionId: dataIdentifierSchema,
+    baselineWorkingCopyUpdatedAt: z.string().min(1).nullable(),
+    document: canvasDraftDocumentSchema,
+  }),
+  "restore-template-version": z.object({
+    templateId: dataIdentifierSchema,
+    versionId: dataIdentifierSchema,
+    baselineVersionId: dataIdentifierSchema,
+    baselineWorkingCopyUpdatedAt: z.string().min(1).nullable(),
   }),
   "update-template-metadata": z.object({
     templateId: dataIdentifierSchema,
@@ -1223,20 +1239,50 @@ export class DevdDataService {
     }
     let data: any = null
 
-    if (command === "save-template") {
+    if (
+      command === "save-template" ||
+      command === "update-template-package" ||
+      command === "restore-template-version"
+    ) {
       const templateId = args.templateId ?? `user-template-${randomUUID()}`
       const existing = findTemplate(templateId)
+      if (command !== "save-template") {
+        if (!existing) throw new DevdDataNotFoundError("Template was not found.")
+        const working = workingCopies.find((item) => item.sourceKey === `user:${templateId}`)
+        if (
+          existing.currentVersionId !== args.baselineVersionId ||
+          (working?.updatedAt ?? null) !== args.baselineWorkingCopyUpdatedAt
+        ) {
+          throw new Error("Template changed after export. Export it again and merge the changes.")
+        }
+      }
+      const restoredVersion =
+        command === "restore-template-version"
+          ? versions.find((item) => item.id === args.versionId && item.templateId === templateId)
+          : undefined
+      if (command === "restore-template-version" && !restoredVersion) {
+        throw new DevdDataNotFoundError("Template version was not found.")
+      }
+      const restoreSource =
+        command === "restore-template-version" && restoredVersion && existing
+          ? { version: restoredVersion, template: existing }
+          : undefined
+      const sourceDocument = restoreSource ? clone(restoreSource.version.document) : args.document
+      const sourceName = restoreSource ? restoreSource.template.name : args.name
+      const sourceDescription = restoreSource
+        ? restoreSource.template.description
+        : args.description
       const nextVersion =
         Math.max(0, ...versions.filter((v) => v.templateId === templateId).map((v) => v.version)) +
         1
       const versionId = `user-template-version-${randomUUID()}`
       const document = {
-        ...clone(args.document),
+        ...clone(sourceDocument),
         templateId,
         source: { kind: "user-template", templateId },
         baseVersionId: undefined,
         lastSavedAt: now,
-        name: args.name,
+        name: sourceName,
       }
       const version: VersionRecord = {
         id: versionId,
@@ -1245,7 +1291,7 @@ export class DevdDataService {
         kind: "saved",
         createdAt: now,
         label: `已保存版本 ${nextVersion}`,
-        sourceVersionId: args.sourceVersionId,
+        sourceVersionId: restoreSource ? restoreSource.version.id : args.sourceVersionId,
         document,
       }
       versions.push(version)
@@ -1261,8 +1307,8 @@ export class DevdDataService {
         : existing?.recommendedUse
       const template: TemplateRecord = {
         id: templateId,
-        name: args.name,
-        description: args.description ?? existing?.description ?? "",
+        name: sourceName,
+        description: sourceDescription ?? existing?.description ?? "",
         width: document.width,
         height: document.height,
         createdAt: existing?.createdAt ?? now,

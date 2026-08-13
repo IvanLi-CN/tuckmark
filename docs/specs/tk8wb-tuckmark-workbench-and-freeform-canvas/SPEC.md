@@ -668,6 +668,15 @@ output.
   - Tuckmark CLI and Web validate, preview, import, packetize, and print
     template packages deterministically; they do not embed an LLM for template
     generation
+  - CLI user-template export preserves public template content and optional
+    editor state in stable `tuckmark.user-template-package.v1` JSON; current
+    exports carry a template-version and working-copy baseline, while system
+    and historical exports remain read-only inputs without an update baseline
+  - CLI content updates require `import --update`, reject a stale template or
+    working-copy baseline, and remain distinct from create-only imports
+  - CLI history lists saved versions by default, can include autosaves
+    explicitly, exports immutable historical versions for inspection, and
+    restores any retained version by creating a new saved version
 - Canvas editor contract:
   - system template elements with fixed keys such as `__title` stay static when
     imported into the editor

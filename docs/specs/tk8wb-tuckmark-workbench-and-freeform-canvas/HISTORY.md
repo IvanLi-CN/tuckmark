@@ -159,6 +159,12 @@ while the workbench was being productized:
   - CLI validates and renders packages through the same canvas artifact seam
   - Web import saves packages as browser-local user templates without changing
     the service sync boundary
+- Released-CLI template guidance was consolidated under `tuckmark-templates`,
+  with a source-checkout adapter that reuses the same workflow. Managed template
+  editing gained stable export, template-local conflict detection, editor-state
+  round trips, history inspection, and non-destructive version restoration so
+  Agent edits no longer rely on internal DEVD document shapes or silent
+  overwrites.
 - The top-level workbench routing contract was later rebuilt again around
   navigation responsiveness:
   - the app shell moved from the older React Router stack onto TanStack Router

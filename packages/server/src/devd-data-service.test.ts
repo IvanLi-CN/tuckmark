@@ -141,6 +141,63 @@ describe("DevdDataService", () => {
     ).rejects.toBeInstanceOf(DevdDataConflictError)
   })
 
+  it("updates and restores templates only from a matching template baseline", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const created = await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: 0,
+      args: { name: "Editable mock", document: mockDocument("Editable mock") },
+    })
+    const templateId = created.data.template.id as string
+    const baselineVersionId = created.data.version.id as string
+    const baselineWorkingCopyUpdatedAt = created.data.workingCopy.updatedAt as string
+
+    const updated = await service.mutateRuntime({
+      command: "update-template-package",
+      expectedRevision: created.revision,
+      args: {
+        templateId,
+        name: "Edited mock",
+        document: mockDocument("Edited mock"),
+        baselineVersionId,
+        baselineWorkingCopyUpdatedAt,
+      },
+    })
+    expect(updated.data.template.name).toBe("Edited mock")
+
+    await expect(
+      service.mutateRuntime({
+        command: "update-template-package",
+        expectedRevision: updated.revision,
+        args: {
+          templateId,
+          name: "Stale edit",
+          document: mockDocument("Stale edit"),
+          baselineVersionId,
+          baselineWorkingCopyUpdatedAt,
+        },
+      })
+    ).rejects.toThrow("Template changed after export")
+
+    const restored = await service.mutateRuntime({
+      command: "restore-template-version",
+      expectedRevision: updated.revision,
+      args: {
+        templateId,
+        versionId: baselineVersionId,
+        baselineVersionId: updated.data.version.id,
+        baselineWorkingCopyUpdatedAt: updated.data.workingCopy.updatedAt,
+      },
+    })
+    expect(restored.data.version).toMatchObject({
+      version: 3,
+      sourceVersionId: baselineVersionId,
+    })
+    expect((await service.runtimeSnapshot()).versions).toHaveLength(3)
+  })
+
   it("preserves grid and snap settings in templates and working copies", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
     cleanupPaths.push(root)

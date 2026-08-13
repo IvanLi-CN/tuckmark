@@ -72,8 +72,11 @@ a migration error without an HTTP fallback.
 - `tuckmark agent-import wait` and `fulfill` use the instance stored in the credential file (or an explicit `--instance`) to handle field contracts after the user changes a new-material template.
 
 User template lifecycle commands use the same named IPC boundary:
-`template list`, `show`, `import`, `update`, `rename`, `archive`, `restore`,
-and `delete`. Metadata updates patch `name`, `description`, and
+`template list`, `show`, `import`, `export`, `versions`, `restore-version`,
+`update`, `rename`, `archive`, `restore`, and `delete`. Editable exports carry
+a template-version and working-copy baseline; `import --update` rejects stale
+exports. Historical exports are read-only, while `restore-version` creates a
+new saved version without rewriting history. Metadata updates patch `name`, `description`, and
 `recommendedUse` without creating a saved version; complete package imports
 create a saved version. System templates are read-only, stale revisions fail
 explicitly, and permanent deletes require the CLI command itself to target a
@@ -93,6 +96,9 @@ inbound adjustment. Sessions use a fragment-held key and expire after 30 minutes
 
 Use `skills/tuckmark-agent-import-user` outside a source checkout and
 `skills/tuckmark-agent-import-developer` while testing the active worktree.
+Use `skills/tuckmark-templates` for released CLI template management and
+`skills/tuckmark-templates-source` to exercise the same contract through the
+active source checkout.
 
 ## Local Preview
 

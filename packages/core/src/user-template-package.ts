@@ -27,27 +27,55 @@ export const userTemplatePackageFieldSchema = z.object({
 })
 export type UserTemplatePackageField = z.infer<typeof userTemplatePackageFieldSchema>
 
-export const userTemplatePackageSchema = z.object({
-  schema: z.literal("tuckmark.user-template-package.v1"),
-  id: z
-    .string()
-    .min(1)
-    .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/),
-  name: z.string().min(1),
-  description: z.string().default(""),
-  canvas: z.object({
-    width: z.number().int().positive().max(384),
-    height: z.number().int().positive().max(640),
-  }),
-  fields: z.array(userTemplatePackageFieldSchema).default([]),
-  elements: z.array(templateElementSchema).min(1),
-  sampleInput: z.record(z.string(), z.string()).default({}),
-  renderOptions: renderOptionsSchema.partial().default({}),
-  tags: z.array(z.string().min(1)).default([]),
-  recommendedUse: templateRecommendedUseSchema.optional(),
-  // Read packages exported before the scope model was corrected to one suggestion string.
-  recommendedUses: z.array(templateRecommendedUseSchema).optional(),
-})
+export const userTemplatePackageSchema = z
+  .object({
+    schema: z.literal("tuckmark.user-template-package.v1"),
+    id: z
+      .string()
+      .min(1)
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/),
+    name: z.string().min(1),
+    description: z.string().default(""),
+    canvas: z.object({
+      width: z.number().int().positive().max(384),
+      height: z.number().int().positive().max(640),
+    }),
+    fields: z.array(userTemplatePackageFieldSchema).default([]),
+    elements: z.array(templateElementSchema).min(1),
+    sampleInput: z.record(z.string(), z.string()).default({}),
+    renderOptions: renderOptionsSchema.partial().default({}),
+    tags: z.array(z.string().min(1)).default([]),
+    recommendedUse: templateRecommendedUseSchema.optional(),
+    editBaseline: z
+      .object({
+        currentVersionId: z.string().min(1),
+        workingCopyUpdatedAt: z.string().min(1).nullable(),
+      })
+      .strict()
+      .optional(),
+    editor: z
+      .object({
+        gridEnabled: z.boolean(),
+        gridSize: z.union([z.literal(1), z.literal(2), z.literal(5)]),
+        snapEnabled: z.boolean(),
+        snapStep: z.union([z.literal(0.25), z.literal(0.5), z.literal(1)]),
+        layers: z.array(
+          z
+            .object({
+              id: z.string().min(1),
+              name: z.string().min(1),
+              visible: z.boolean(),
+              locked: z.boolean(),
+            })
+            .strict()
+        ),
+      })
+      .strict()
+      .optional(),
+    // Read packages exported before the scope model was corrected to one suggestion string.
+    recommendedUses: z.array(templateRecommendedUseSchema).optional(),
+  })
+  .strict()
 export type UserTemplatePackage = z.infer<typeof userTemplatePackageSchema>
 
 export function parseUserTemplatePackage(input: unknown): UserTemplatePackage {
@@ -105,6 +133,16 @@ function validateUserTemplatePackageSemantics(templatePackage: UserTemplatePacka
     }
     fieldKeys.add(field.key)
     fieldDefaults.set(field.key, templatePackage.sampleInput[field.key] ?? field.defaultValue)
+  }
+
+  if (templatePackage.editor) {
+    if (templatePackage.editor.layers.length !== templatePackage.elements.length) {
+      throw new Error("Editor layer count must match template element count")
+    }
+    const layerIds = new Set(templatePackage.editor.layers.map((layer) => layer.id))
+    if (layerIds.size !== templatePackage.editor.layers.length) {
+      throw new Error("Editor layer IDs must be unique")
+    }
   }
 
   for (const [index, element] of templatePackage.elements.entries()) {
