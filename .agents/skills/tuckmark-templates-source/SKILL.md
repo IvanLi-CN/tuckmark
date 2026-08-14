@@ -5,7 +5,9 @@ description: Exercise the Tuckmark template management workflow through the acti
 
 # Tuckmark Templates Source
 
-Use this skill inside a Tuckmark source checkout. Read and follow `../tuckmark-templates/SKILL.md` first. If it is unavailable, stop.
+Use this skill inside a Tuckmark source checkout. After resolving `REPO_ROOT`
+below, read and follow `$REPO_ROOT/skills/tuckmark-templates/SKILL.md` first. If
+it is unavailable, stop.
 
 ## Source Guard
 

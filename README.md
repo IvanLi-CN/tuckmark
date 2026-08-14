@@ -94,11 +94,15 @@ notice. Confirmed writes are performed by DEVD; new items create one material,
 one label binding, and an inbound adjustment, while restocks write only an
 inbound adjustment. Sessions use a fragment-held key and expire after 30 minutes.
 
-Use `skills/tuckmark-agent-import-user` outside a source checkout and
-`skills/tuckmark-agent-import-developer` while testing the active worktree.
+Use `skills/tuckmark-agent-import` outside a source checkout and
+`.agents/skills/tuckmark-agent-import-source` while testing the active worktree.
 Use `skills/tuckmark-templates` for released CLI template management and
-`skills/tuckmark-templates-source` to exercise the same contract through the
-active source checkout.
+`.agents/skills/tuckmark-templates-source` to exercise the same contract
+through the active source checkout.
+
+Released Skills live under `skills/`; source-checkout Skills live under
+`.agents/skills/` so Codex can discover them as project-level development
+Skills.
 
 ## Local Preview
 

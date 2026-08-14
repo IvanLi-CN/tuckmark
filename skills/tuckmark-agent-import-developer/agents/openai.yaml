@@ -1,4 +1,0 @@
-interface:
-  display_name: "Tuckmark Agent Import Dev"
-  short_description: "Exercise agent imports from the active Tuckmark source tree."
-  default_prompt: "Use this Tuckmark source checkout to prepare and test an agent-assisted inventory import."

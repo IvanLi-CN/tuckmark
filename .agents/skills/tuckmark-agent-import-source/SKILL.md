@@ -1,9 +1,9 @@
 ---
-name: tuckmark-agent-import-developer
+name: tuckmark-agent-import-source
 description: Exercise private order-derived Tuckmark agent imports from the current source tree without accidentally invoking a globally installed release CLI. Use while developing or validating a cloned Tuckmark checkout.
 ---
 
-# Tuckmark Agent Import Developer
+# Tuckmark Agent Import Source
 
 Use this skill inside a Tuckmark source checkout. It deliberately invokes the active worktree source CLI, never a globally installed `tuckmark` binary.
 
@@ -30,7 +30,7 @@ user data directory.
 
 ## Workflow
 
-1. Follow the privacy, identity, and browser boundaries in `tuckmark-agent-import-user`. Never add a real order export to a fixture, test, screenshot, or commit.
+1. Follow the privacy, identity, and browser boundaries in `tuckmark-agent-import`. Never add a real order export to a fixture, test, screenshot, or commit.
 2. Start the worktree's named DEVD instance through `bun run dev:preview`, then
    query its catalog and inventory with the source CLI. The default instance is
    derived from the worktree path and printed at startup. Native commands use

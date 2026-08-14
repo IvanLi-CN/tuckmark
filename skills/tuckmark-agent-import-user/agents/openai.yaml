@@ -1,4 +1,0 @@
-interface:
-  display_name: "Tuckmark Agent Import"
-  short_description: "Import order-derived inventory proposals with the released CLI."
-  default_prompt: "Use the released Tuckmark CLI to prepare and submit a private order-derived inventory proposal."
