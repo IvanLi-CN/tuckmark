@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tuckmark Templates"
+  short_description: "Manage and edit templates through the released Tuckmark CLI."
+  default_prompt: "Use $tuckmark-templates to inspect, create, edit, validate, preview, or manage templates through the released CLI and DEVD."

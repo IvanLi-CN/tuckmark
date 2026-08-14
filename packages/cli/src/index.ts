@@ -20,6 +20,7 @@ import { DevdIpcClient } from "./devd-ipc-client.js"
 import {
   createDraftFromUserTemplatePackage,
   createInventoryAdjustmentInput,
+  createUserTemplatePackageFromDraft,
 } from "./shared-data-directory.js"
 
 const service = new TuckmarkService()
@@ -118,6 +119,10 @@ function printHelp(): void {
       "  tuckmark template list --instance <name> [--source <all|system|user>] [--all]",
       "  tuckmark template show --id <id> --instance <name>",
       "  tuckmark template import --file <path> --instance <name> [--id <id>] [--name <name>] [--description <text>]",
+      "  tuckmark template import --file <path> --instance <name> --update",
+      "  tuckmark template export --id <id> --instance <name> [--version <version-id>] [--file <path>] [--overwrite]",
+      "  tuckmark template versions --id <id> --instance <name> [--include-autosaves]",
+      "  tuckmark template restore-version --id <id> --version <version-id> --instance <name>",
       "  tuckmark template update --id <id> --instance <name> [--name <name>] [--description <text>] [--recommended-use <text>]",
       "  tuckmark template rename --id <id> --name <name> --instance <name>",
       "  tuckmark template archive --id <id> --instance <name>",
@@ -376,6 +381,28 @@ async function readTemplatePackageFromArgs(args: string[]) {
   const filePath = requireFlag(args, "--file")
   const raw = await readFile(path.resolve(filePath), "utf8")
   return parseUserTemplatePackage(JSON.parse(raw))
+}
+
+async function writeStableJson(value: unknown, args: string[]): Promise<void> {
+  const output = `${JSON.stringify(value, null, 2)}\n`
+  const filePath = parseFlag(args, "--file")
+  if (!filePath) {
+    process.stdout.write(output)
+    return
+  }
+  const resolved = path.resolve(filePath)
+  await mkdir(path.dirname(resolved), { recursive: true })
+  try {
+    await writeFile(resolved, output, {
+      encoding: "utf8",
+      flag: hasFlag(args, "--overwrite") ? "w" : "wx",
+    })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error(`Refusing to overwrite existing file: ${resolved}`)
+    }
+    throw error
+  }
 }
 
 function parseTemplatePackageInput(args: string[]): Record<string, string> | undefined {
@@ -810,6 +837,13 @@ async function handleTemplateCommand(args: string[]): Promise<void> {
     }
     case "import": {
       const templatePackage = await readTemplatePackageFromArgs(rest)
+      const isUpdate = hasFlag(rest, "--update")
+      if (isUpdate && !templatePackage.editBaseline) {
+        throw new Error("template import --update requires an exported editBaseline.")
+      }
+      if (!isUpdate && templatePackage.editBaseline) {
+        throw new Error("Exported editable templates require template import --update.")
+      }
       const templateId = parseFlag(rest, "--id") ?? templatePackage.id
       const name = parseFlag(rest, "--name")
       const description = parseFlag(rest, "--description")
@@ -818,13 +852,124 @@ async function handleTemplateCommand(args: string[]): Promise<void> {
         ...(name !== undefined ? { name } : {}),
         ...(description !== undefined ? { description } : {}),
       })
-      const imported = await client.runtimeCommand("save-template", {
-        templateId,
-        name: name ?? templatePackage.name,
-        description: description ?? templatePackage.description,
-        document,
-      })
+      const imported = await client.runtimeCommand(
+        isUpdate ? "update-template-package" : "save-template",
+        {
+          templateId,
+          name: name ?? templatePackage.name,
+          description: description ?? templatePackage.description,
+          document,
+          ...(!isUpdate ? { createOnly: true } : {}),
+          ...(templatePackage.editBaseline
+            ? {
+                baselineVersionId: templatePackage.editBaseline.currentVersionId,
+                baselineWorkingCopyUpdatedAt: templatePackage.editBaseline.workingCopyUpdatedAt,
+              }
+            : {}),
+        }
+      )
       console.log(JSON.stringify({ instance: client.instance, imported }, null, 2))
+      return
+    }
+    case "versions": {
+      const templateId = requireFlag(rest, "--id")
+      const snapshot = await client.snapshot()
+      if (!snapshot.templates.some((item: any) => item.id === templateId)) {
+        throw new Error(`Template ${templateId} was not found.`)
+      }
+      const versions = snapshot.versions
+        .filter(
+          (item: any) =>
+            item.templateId === templateId &&
+            (hasFlag(rest, "--include-autosaves") || item.kind === "saved")
+        )
+        .sort((left: any, right: any) => left.version - right.version)
+        .map(({ document: _document, ...version }: any) => version)
+      console.log(JSON.stringify({ instance: client.instance, templateId, versions }, null, 2))
+      return
+    }
+    case "export": {
+      const templateId = requireFlag(rest, "--id")
+      const requestedVersionId = parseFlag(rest, "--version")
+      const systemTemplate = (await service.listTemplates()).find(
+        (template) => template.id === templateId
+      )
+      if (systemTemplate) {
+        if (requestedVersionId) throw new Error("System templates do not have managed versions.")
+        const document = createDraftFromUserTemplatePackage({
+          schema: "tuckmark.user-template-package.v1",
+          id: systemTemplate.id,
+          name: systemTemplate.name,
+          description: systemTemplate.description,
+          canvas: { width: systemTemplate.width, height: systemTemplate.height },
+          fields: systemTemplate.fields.map((field) => ({
+            key: field.key,
+            label: field.label,
+            defaultValue: field.defaultValue ?? "",
+            multiline: field.multiline,
+          })),
+          elements: systemTemplate.elements,
+          sampleInput: Object.fromEntries(
+            systemTemplate.fields.map((field) => [field.key, field.defaultValue ?? field.label])
+          ),
+          renderOptions: {},
+          tags: systemTemplate.tags,
+          ...(systemTemplate.recommendedUse
+            ? { recommendedUse: systemTemplate.recommendedUse }
+            : {}),
+        })
+        await writeStableJson(
+          createUserTemplatePackageFromDraft({ document, template: systemTemplate }),
+          rest
+        )
+        return
+      }
+      const snapshot = await client.snapshot()
+      const template = snapshot.templates.find((item: any) => item.id === templateId)
+      if (!template) throw new Error(`Template ${templateId} was not found.`)
+      const working = snapshot.workingCopies.find(
+        (item: any) => item.sourceKey === `user:${templateId}`
+      )
+      const requestedVersion = requestedVersionId
+        ? snapshot.versions.find(
+            (item: any) => item.id === requestedVersionId && item.templateId === templateId
+          )
+        : undefined
+      if (requestedVersionId && !requestedVersion) {
+        throw new Error(`Template version ${requestedVersionId} was not found.`)
+      }
+      const currentVersion = snapshot.versions.find(
+        (item: any) => item.id === template.currentVersionId
+      )
+      const document = requestedVersion?.document ?? working?.draft ?? currentVersion?.document
+      if (!document) throw new Error(`Template ${templateId} has no exportable document.`)
+      await writeStableJson(
+        createUserTemplatePackageFromDraft({
+          document,
+          template,
+          workingCopyUpdatedAt: working?.updatedAt ?? null,
+          editable: !requestedVersionId,
+        }),
+        rest
+      )
+      return
+    }
+    case "restore-version": {
+      const templateId = requireFlag(rest, "--id")
+      const versionId = requireFlag(rest, "--version")
+      const snapshot = await client.snapshot()
+      const template = snapshot.templates.find((item: any) => item.id === templateId)
+      if (!template) throw new Error(`Template ${templateId} was not found.`)
+      const working = snapshot.workingCopies.find(
+        (item: any) => item.sourceKey === `user:${templateId}`
+      )
+      const restored = await client.runtimeCommand("restore-template-version", {
+        templateId,
+        versionId,
+        baselineVersionId: template.currentVersionId,
+        baselineWorkingCopyUpdatedAt: working?.updatedAt ?? null,
+      })
+      console.log(JSON.stringify({ instance: client.instance, restored }, null, 2))
       return
     }
     case "update": {
@@ -875,7 +1020,7 @@ async function handleTemplateCommand(args: string[]): Promise<void> {
     }
     default:
       throw new Error(
-        "template supports list, show, import, update, rename, archive, restore, and delete."
+        "template supports list, show, import, export, versions, restore-version, update, rename, archive, restore, and delete."
       )
   }
 }

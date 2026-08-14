@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tuckmark Templates Source"
+  short_description: "Validate template workflows from the active Tuckmark source tree."
+  default_prompt: "Use $tuckmark-templates-source to exercise template management from this Tuckmark source checkout without invoking a global CLI."

@@ -528,6 +528,126 @@ describe("cli smoke", () => {
     })
   })
 
+  it("round-trips editable templates with conflict-safe history operations", {
+    timeout: 45_000,
+  }, async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-template-edit-"))
+    const workDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-template-files-"))
+    tempDirs.push(dataDir, workDir)
+    const exportPath = path.join(workDir, "component.json")
+    const historyPath = path.join(workDir, "history.json")
+
+    await withDevd(dataDir, async (instance) => {
+      await runCliOn(instance, ["template", "import", "--file", fixturePath])
+      await runCliOn(instance, [
+        "template",
+        "export",
+        "--id",
+        "component-bin-sot23",
+        "--file",
+        exportPath,
+      ])
+      const exported = JSON.parse(await readFile(exportPath, "utf8")) as {
+        name: string
+        tags: string[]
+        editBaseline: { currentVersionId: string; workingCopyUpdatedAt: string }
+        editor: { layers: Array<{ id: string; name: string }> }
+      }
+      expect(exported.editBaseline.currentVersionId).toBeTruthy()
+      expect(exported.editBaseline.workingCopyUpdatedAt).toBeTruthy()
+      expect(exported.editor.layers.length).toBeGreaterThan(0)
+      expect(exported.tags).toEqual(["electronics", "component-bin"])
+
+      const collision = await runCliWithEnvAllowFailure(
+        ["template", "import", "--file", fixturePath, "--instance", instance],
+        {}
+      )
+      expect(collision.stderr).toContain("Template already exists")
+
+      const overwrite = await runCliWithEnvAllowFailure(
+        [
+          "template",
+          "export",
+          "--id",
+          "component-bin-sot23",
+          "--file",
+          exportPath,
+          "--instance",
+          instance,
+        ],
+        {}
+      )
+      expect(overwrite.stderr).toContain("Refusing to overwrite existing file")
+
+      await writeFile(
+        exportPath,
+        `${JSON.stringify({ ...exported, name: "Edited Template" }, null, 2)}\n`
+      )
+      await runCli(["template-package", "validate", "--file", exportPath])
+      const preview = JSON.parse(
+        (await runCli(["template-package", "preview", "--file", exportPath])).stdout
+      ) as { artifact: { pngPath: string } }
+      expect(preview.artifact.pngPath).toContain("preview.png")
+      await runCliOn(instance, ["template", "import", "--file", exportPath, "--update"])
+
+      const stale = await runCliWithEnvAllowFailure(
+        ["template", "import", "--file", exportPath, "--update", "--instance", instance],
+        {}
+      )
+      expect(stale.stderr).toContain("Template changed after export")
+
+      const versions = JSON.parse(
+        (await runCliOn(instance, ["template", "versions", "--id", "component-bin-sot23"])).stdout
+      ) as { versions: Array<{ id: string; kind: string; version: number }> }
+      expect(versions.versions.map((version) => version.version)).toEqual([1, 2])
+      expect(versions.versions.every((version) => version.kind === "saved")).toBe(true)
+      const firstVersionId = versions.versions[0]?.id
+      expect(firstVersionId).toBeTruthy()
+      if (!firstVersionId) throw new Error("Expected an initial saved template version.")
+
+      await runCliOn(instance, [
+        "template",
+        "export",
+        "--id",
+        "component-bin-sot23",
+        "--version",
+        firstVersionId,
+        "--file",
+        historyPath,
+      ])
+      const historical = JSON.parse(await readFile(historyPath, "utf8")) as {
+        editBaseline?: unknown
+      }
+      expect(historical.editBaseline).toBeUndefined()
+
+      const historicalCollision = await runCliWithEnvAllowFailure(
+        ["template", "import", "--file", historyPath, "--instance", instance],
+        {}
+      )
+      expect(historicalCollision.stderr).toContain("Template already exists")
+
+      await runCliOn(instance, [
+        "template",
+        "restore-version",
+        "--id",
+        "component-bin-sot23",
+        "--version",
+        firstVersionId,
+      ])
+      const restoredVersions = JSON.parse(
+        (await runCliOn(instance, ["template", "versions", "--id", "component-bin-sot23"])).stdout
+      ) as { versions: Array<{ version: number; sourceVersionId?: string }> }
+      expect(restoredVersions.versions).toHaveLength(3)
+      expect(restoredVersions.versions[2]).toMatchObject({
+        version: 3,
+        sourceVersionId: firstVersionId,
+      })
+
+      await runCliOn(instance, ["template", "archive", "--id", "component-bin-sot23"])
+      await runCliOn(instance, ["template", "restore", "--id", "component-bin-sot23"])
+    })
+  })
+
   it("rejects legacy data-directory flags without touching the directory", {
     timeout: 20_000,
   }, async () => {

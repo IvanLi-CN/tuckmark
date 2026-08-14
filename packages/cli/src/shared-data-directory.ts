@@ -5,6 +5,7 @@ import path from "node:path"
 
 import {
   type DirectCanvasDefinition,
+  parseUserTemplatePackage,
   type RenderOptions,
   renderOptionsSchema,
   type TemplateDefinition,
@@ -276,6 +277,7 @@ const canvasDraftDocumentSchema = z
     width: z.number().positive(),
     height: z.number().positive(),
     renderOptions: renderOptionsSchema.partial().optional(),
+    tags: z.array(z.string().min(1)).default([]),
     recommendedUse: recommendedUseSchema.optional(),
     recommendedUses: legacyRecommendedUsesSchema.optional(),
     fields: z.array(canvasDraftFieldSchema),
@@ -507,15 +509,23 @@ export function createDraftFromUserTemplatePackage(
   const fieldMap = new Map(template.fields.map((field) => [field.key, field]))
   const elements = template.elements.map((element, index) => {
     const field = "key" in element ? fieldMap.get(element.key) : undefined
-    const meta = {
-      name: inferDraftLayerName(element, field, index),
-      visible: true,
-      locked: false,
-    }
+    const exportedLayer = templatePackage.editor?.layers[index]
+    const meta = exportedLayer
+      ? {
+          name: exportedLayer.name,
+          visible: exportedLayer.visible,
+          locked: exportedLayer.locked,
+        }
+      : {
+          name: inferDraftLayerName(element, field, index),
+          visible: true,
+          locked: false,
+        }
+    const elementId = exportedLayer?.id ?? createId(`draft-${element.kind}`)
     switch (element.kind) {
       case "text":
         return canvasDraftElementSchema.parse({
-          id: `text-${createId("draft")}`,
+          id: elementId,
           kind: "text",
           x: dotsToMillimeters(element.x),
           y: dotsToMillimeters(
@@ -553,7 +563,7 @@ export function createDraftFromUserTemplatePackage(
         })
       case "rect":
         return canvasDraftElementSchema.parse({
-          id: `rect-${createId("draft")}`,
+          id: elementId,
           kind: "rect",
           x: dotsToMillimeters(element.x),
           y: dotsToMillimeters(element.y),
@@ -568,7 +578,7 @@ export function createDraftFromUserTemplatePackage(
         })
       case "circle":
         return canvasDraftElementSchema.parse({
-          id: `circle-${createId("draft")}`,
+          id: elementId,
           kind: "circle",
           x: dotsToMillimeters(element.x),
           y: dotsToMillimeters(element.y),
@@ -580,7 +590,7 @@ export function createDraftFromUserTemplatePackage(
         })
       case "triangle":
         return canvasDraftElementSchema.parse({
-          id: `triangle-${createId("draft")}`,
+          id: elementId,
           kind: "triangle",
           x: dotsToMillimeters(element.x),
           y: dotsToMillimeters(element.y),
@@ -594,7 +604,7 @@ export function createDraftFromUserTemplatePackage(
         })
       case "line":
         return canvasDraftElementSchema.parse({
-          id: `line-${createId("draft")}`,
+          id: elementId,
           kind: "line",
           x: dotsToMillimeters(element.x1),
           y: dotsToMillimeters(element.y1),
@@ -606,7 +616,7 @@ export function createDraftFromUserTemplatePackage(
         })
       case "barcode":
         return canvasDraftElementSchema.parse({
-          id: `barcode-${createId("draft")}`,
+          id: elementId,
           kind: "barcode",
           x: dotsToMillimeters(element.x),
           y: dotsToMillimeters(element.y),
@@ -622,7 +632,7 @@ export function createDraftFromUserTemplatePackage(
         })
       case "qr":
         return canvasDraftElementSchema.parse({
-          id: `qr-${createId("draft")}`,
+          id: elementId,
           kind: "qr",
           x: dotsToMillimeters(element.x),
           y: dotsToMillimeters(element.y),
@@ -636,7 +646,7 @@ export function createDraftFromUserTemplatePackage(
         })
       case "datamatrix":
         return canvasDraftElementSchema.parse({
-          id: `datamatrix-${createId("draft")}`,
+          id: elementId,
           kind: "datamatrix",
           x: dotsToMillimeters(element.x),
           y: dotsToMillimeters(element.y),
@@ -666,151 +676,161 @@ export function createDraftFromUserTemplatePackage(
     width: dotsToMillimeters(templatePackage.canvas.width),
     height: dotsToMillimeters(templatePackage.canvas.height),
     renderOptions: templatePackage.renderOptions,
+    tags: templatePackage.tags,
     recommendedUse: templatePackage.recommendedUse,
     fields: synced.fields,
     elements: synced.elements,
-    editor: {
-      gridEnabled: true,
-      gridSize: 1,
-      snapEnabled: true,
-      snapStep: 1,
-    },
+    editor: templatePackage.editor
+      ? {
+          gridEnabled: templatePackage.editor.gridEnabled,
+          gridSize: templatePackage.editor.gridSize,
+          snapEnabled: templatePackage.editor.snapEnabled,
+          snapStep: templatePackage.editor.snapStep,
+        }
+      : {
+          gridEnabled: true,
+          gridSize: 1,
+          snapEnabled: true,
+          snapStep: 1,
+        },
   })
 }
 
 function compileFilledCanvasFromDraft(
   document: CanvasDraftDocument,
-  input: Record<string, string>
+  input: Record<string, string>,
+  options: { includeHidden?: boolean } = {}
 ): DirectCanvasDefinition {
   const fieldDefaults = new Map<string, string>(
     document.fields.map((field) => [field.key, input[field.key] ?? field.defaultValue ?? ""])
   )
-  const elements = document.elements
-    .filter((element) => element.meta.visible)
-    .map((element) => {
-      const resolvedValue =
-        "binding" in element && element.binding
-          ? (fieldDefaults.get(element.binding.fieldKey) ?? element.value)
-          : "value" in element
-            ? element.value
-            : undefined
-      const resolvedKey =
-        "binding" in element && element.binding ? element.binding.fieldKey : element.id
-      switch (element.kind) {
-        case "text":
-          return {
-            kind: "text",
-            key: resolvedKey,
-            x: millimetersToDots(element.x),
-            y: millimetersToDots(element.y),
-            width: millimetersToDots(element.width),
-            height: millimetersToDots(element.height),
-            fontSize: millimetersToDots(element.fontSize),
-            fontFamily:
-              element.fontFamily as DirectCanvasDefinition["elements"][number] extends infer T
-                ? T extends { kind: "text"; fontFamily?: infer TFontFamily }
-                  ? TFontFamily
-                  : never
-                : never,
-            lineHeight: element.lineHeight,
-            fontWeight: element.fontWeight,
-            align: element.align,
-            justifyAlign: element.justifyAlign,
-            verticalAlign: element.verticalAlign,
-            stretchXGrow: element.stretchXGrow,
-            stretchXShrink: element.stretchXShrink,
-            stretchYGrow: element.stretchYGrow,
-            stretchYShrink: element.stretchYShrink,
-            autoWrap: element.autoWrap,
-            adaptiveFontSize: element.adaptiveFontSize,
-            verticalText: element.verticalText,
-            value: resolvedValue ?? "",
-            maxLines: element.maxLines,
-            rotation: element.rotation ?? 0,
-          } as DirectCanvasDefinition["elements"][number]
-        case "rect":
-          return {
-            kind: "rect",
-            x: millimetersToDots(element.x),
-            y: millimetersToDots(element.y),
-            width: millimetersToDots(element.width),
-            height: millimetersToDots(element.height),
-            strokeWidth: millimetersToDots(element.strokeWidth),
-            fill: element.fill,
-            stroke: element.stroke,
-            radius: millimetersToDots(element.radius),
-            rotation: element.rotation ?? 0,
-          } as DirectCanvasDefinition["elements"][number]
-        case "circle":
-          return {
-            kind: "circle",
-            x: millimetersToDots(element.x),
-            y: millimetersToDots(element.y),
-            size: millimetersToDots(element.size),
-            strokeWidth: millimetersToDots(element.strokeWidth),
-            fill: element.fill,
-            stroke: element.stroke,
-          } as DirectCanvasDefinition["elements"][number]
-        case "triangle":
-          return {
-            kind: "triangle",
-            x: millimetersToDots(element.x),
-            y: millimetersToDots(element.y),
-            width: millimetersToDots(element.width),
-            height: millimetersToDots(element.height),
-            strokeWidth: millimetersToDots(element.strokeWidth),
-            fill: element.fill,
-            stroke: element.stroke,
-            rotation: element.rotation ?? 0,
-          } as DirectCanvasDefinition["elements"][number]
-        case "line":
-          return {
-            kind: "line",
-            x1: millimetersToDots(element.x),
-            y1: millimetersToDots(element.y),
-            x2: millimetersToDots(element.x2),
-            y2: millimetersToDots(element.y2),
-            strokeWidth: millimetersToDots(element.strokeWidth),
-            stroke: element.stroke,
-          } as DirectCanvasDefinition["elements"][number]
-        case "barcode":
-          return {
-            kind: "barcode",
-            key: resolvedKey,
-            x: millimetersToDots(element.x),
-            y: millimetersToDots(element.y),
-            width: millimetersToDots(element.width),
-            height: millimetersToDots(element.height),
-            value: resolvedValue ?? "",
-            format: element.format,
-            showValue: element.showValue,
-            rotation: element.rotation ?? 0,
-          } as DirectCanvasDefinition["elements"][number]
-        case "qr":
-          return {
-            kind: "qr",
-            key: resolvedKey,
-            x: millimetersToDots(element.x),
-            y: millimetersToDots(element.y),
-            size: millimetersToDots(element.size),
-            value: resolvedValue ?? "",
-            errorCorrectionLevel: element.errorCorrectionLevel,
-            rotation: element.rotation ?? 0,
-          } as DirectCanvasDefinition["elements"][number]
-        case "datamatrix":
-          return {
-            kind: "datamatrix",
-            key: resolvedKey,
-            x: millimetersToDots(element.x),
-            y: millimetersToDots(element.y),
-            size: millimetersToDots(element.size),
-            value: resolvedValue ?? "",
-            rotation: element.rotation ?? 0,
-          } as DirectCanvasDefinition["elements"][number]
-        default:
-          throw new Error("Unsupported draft element kind")
-      }
-    }) as DirectCanvasDefinition["elements"]
+  const sourceElements = options.includeHidden
+    ? document.elements
+    : document.elements.filter((element) => element.meta.visible)
+  const elements = sourceElements.map((element) => {
+    const resolvedValue =
+      "binding" in element && element.binding
+        ? (fieldDefaults.get(element.binding.fieldKey) ?? element.value)
+        : "value" in element
+          ? element.value
+          : undefined
+    const resolvedKey =
+      "binding" in element && element.binding ? element.binding.fieldKey : element.id
+    switch (element.kind) {
+      case "text":
+        return {
+          kind: "text",
+          key: resolvedKey,
+          x: millimetersToDots(element.x),
+          y: millimetersToDots(element.y),
+          width: millimetersToDots(element.width),
+          height: millimetersToDots(element.height),
+          fontSize: millimetersToDots(element.fontSize),
+          fontFamily:
+            element.fontFamily as DirectCanvasDefinition["elements"][number] extends infer T
+              ? T extends { kind: "text"; fontFamily?: infer TFontFamily }
+                ? TFontFamily
+                : never
+              : never,
+          lineHeight: element.lineHeight,
+          fontWeight: element.fontWeight,
+          align: element.align,
+          justifyAlign: element.justifyAlign,
+          verticalAlign: element.verticalAlign,
+          stretchXGrow: element.stretchXGrow,
+          stretchXShrink: element.stretchXShrink,
+          stretchYGrow: element.stretchYGrow,
+          stretchYShrink: element.stretchYShrink,
+          autoWrap: element.autoWrap,
+          adaptiveFontSize: element.adaptiveFontSize,
+          verticalText: element.verticalText,
+          value: resolvedValue ?? "",
+          maxLines: element.maxLines,
+          rotation: element.rotation ?? 0,
+        } as DirectCanvasDefinition["elements"][number]
+      case "rect":
+        return {
+          kind: "rect",
+          x: millimetersToDots(element.x),
+          y: millimetersToDots(element.y),
+          width: millimetersToDots(element.width),
+          height: millimetersToDots(element.height),
+          strokeWidth: millimetersToDots(element.strokeWidth),
+          fill: element.fill,
+          stroke: element.stroke,
+          radius: millimetersToDots(element.radius),
+          rotation: element.rotation ?? 0,
+        } as DirectCanvasDefinition["elements"][number]
+      case "circle":
+        return {
+          kind: "circle",
+          x: millimetersToDots(element.x),
+          y: millimetersToDots(element.y),
+          size: millimetersToDots(element.size),
+          strokeWidth: millimetersToDots(element.strokeWidth),
+          fill: element.fill,
+          stroke: element.stroke,
+        } as DirectCanvasDefinition["elements"][number]
+      case "triangle":
+        return {
+          kind: "triangle",
+          x: millimetersToDots(element.x),
+          y: millimetersToDots(element.y),
+          width: millimetersToDots(element.width),
+          height: millimetersToDots(element.height),
+          strokeWidth: millimetersToDots(element.strokeWidth),
+          fill: element.fill,
+          stroke: element.stroke,
+          rotation: element.rotation ?? 0,
+        } as DirectCanvasDefinition["elements"][number]
+      case "line":
+        return {
+          kind: "line",
+          x1: millimetersToDots(element.x),
+          y1: millimetersToDots(element.y),
+          x2: millimetersToDots(element.x2),
+          y2: millimetersToDots(element.y2),
+          strokeWidth: millimetersToDots(element.strokeWidth),
+          stroke: element.stroke,
+        } as DirectCanvasDefinition["elements"][number]
+      case "barcode":
+        return {
+          kind: "barcode",
+          key: resolvedKey,
+          x: millimetersToDots(element.x),
+          y: millimetersToDots(element.y),
+          width: millimetersToDots(element.width),
+          height: millimetersToDots(element.height),
+          value: resolvedValue ?? "",
+          format: element.format,
+          showValue: element.showValue,
+          rotation: element.rotation ?? 0,
+        } as DirectCanvasDefinition["elements"][number]
+      case "qr":
+        return {
+          kind: "qr",
+          key: resolvedKey,
+          x: millimetersToDots(element.x),
+          y: millimetersToDots(element.y),
+          size: millimetersToDots(element.size),
+          value: resolvedValue ?? "",
+          errorCorrectionLevel: element.errorCorrectionLevel,
+          rotation: element.rotation ?? 0,
+        } as DirectCanvasDefinition["elements"][number]
+      case "datamatrix":
+        return {
+          kind: "datamatrix",
+          key: resolvedKey,
+          x: millimetersToDots(element.x),
+          y: millimetersToDots(element.y),
+          size: millimetersToDots(element.size),
+          value: resolvedValue ?? "",
+          rotation: element.rotation ?? 0,
+        } as DirectCanvasDefinition["elements"][number]
+      default:
+        throw new Error("Unsupported draft element kind")
+    }
+  }) as DirectCanvasDefinition["elements"]
   return {
     id: document.id,
     name: document.name,
@@ -818,6 +838,59 @@ function compileFilledCanvasFromDraft(
     height: millimetersToDots(document.height),
     elements,
   }
+}
+
+export function createUserTemplatePackageFromDraft(args: {
+  document: CanvasDraftDocument
+  template: { id: string; name: string; description: string; currentVersionId?: string }
+  workingCopyUpdatedAt?: string | null
+  editable?: boolean
+}): UserTemplatePackage {
+  const currentVersionId = args.template.currentVersionId
+  if (args.editable && !currentVersionId) {
+    throw new Error("Editable template exports require a current version ID.")
+  }
+  const sampleInput = Object.fromEntries(
+    args.document.fields.map((field) => [field.key, field.sampleValue ?? field.defaultValue ?? ""])
+  )
+  const canvas = compileFilledCanvasFromDraft(args.document, sampleInput, {
+    includeHidden: true,
+  })
+  return parseUserTemplatePackage({
+    schema: "tuckmark.user-template-package.v1",
+    id: args.template.id,
+    name: args.template.name,
+    description: args.template.description,
+    canvas: { width: canvas.width, height: canvas.height },
+    fields: args.document.fields.map((field) => ({
+      key: field.key,
+      label: field.label,
+      defaultValue: field.defaultValue,
+      multiline: field.multiline,
+    })),
+    elements: canvas.elements,
+    sampleInput,
+    renderOptions: args.document.renderOptions ?? {},
+    tags: args.document.tags,
+    ...(args.document.recommendedUse ? { recommendedUse: args.document.recommendedUse } : {}),
+    ...(args.editable
+      ? {
+          editBaseline: {
+            currentVersionId: currentVersionId as string,
+            workingCopyUpdatedAt: args.workingCopyUpdatedAt ?? null,
+          },
+        }
+      : {}),
+    editor: {
+      ...args.document.editor,
+      layers: args.document.elements.map((element) => ({
+        id: element.id,
+        name: element.meta.name,
+        visible: element.meta.visible,
+        locked: element.meta.locked,
+      })),
+    },
+  })
 }
 
 async function readJsonFile<T>(filePath: string, parser: (value: unknown) => T): Promise<T | null> {

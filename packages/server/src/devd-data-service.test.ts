@@ -141,6 +141,93 @@ describe("DevdDataService", () => {
     ).rejects.toBeInstanceOf(DevdDataConflictError)
   })
 
+  it("atomically rejects create-only template ID collisions", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const created = await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: 0,
+      args: {
+        templateId: "existing-template",
+        createOnly: true,
+        name: "Existing template",
+        document: mockDocument("Existing template"),
+      },
+    })
+
+    await expect(
+      service.mutateRuntime({
+        command: "save-template",
+        expectedRevision: created.revision,
+        args: {
+          templateId: "existing-template",
+          createOnly: true,
+          name: "Replacement template",
+          document: mockDocument("Replacement template"),
+        },
+      })
+    ).rejects.toThrow("Template already exists")
+    expect((await service.runtimeSnapshot()).versions).toHaveLength(1)
+  })
+
+  it("updates and restores templates only from a matching template baseline", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const created = await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: 0,
+      args: { name: "Editable mock", document: mockDocument("Editable mock") },
+    })
+    const templateId = created.data.template.id as string
+    const baselineVersionId = created.data.version.id as string
+    const baselineWorkingCopyUpdatedAt = created.data.workingCopy.updatedAt as string
+
+    const updated = await service.mutateRuntime({
+      command: "update-template-package",
+      expectedRevision: created.revision,
+      args: {
+        templateId,
+        name: "Edited mock",
+        document: mockDocument("Edited mock"),
+        baselineVersionId,
+        baselineWorkingCopyUpdatedAt,
+      },
+    })
+    expect(updated.data.template.name).toBe("Edited mock")
+
+    await expect(
+      service.mutateRuntime({
+        command: "update-template-package",
+        expectedRevision: updated.revision,
+        args: {
+          templateId,
+          name: "Stale edit",
+          document: mockDocument("Stale edit"),
+          baselineVersionId,
+          baselineWorkingCopyUpdatedAt,
+        },
+      })
+    ).rejects.toThrow("Template changed after export")
+
+    const restored = await service.mutateRuntime({
+      command: "restore-template-version",
+      expectedRevision: updated.revision,
+      args: {
+        templateId,
+        versionId: baselineVersionId,
+        baselineVersionId: updated.data.version.id,
+        baselineWorkingCopyUpdatedAt: updated.data.workingCopy.updatedAt,
+      },
+    })
+    expect(restored.data.version).toMatchObject({
+      version: 3,
+      sourceVersionId: baselineVersionId,
+    })
+    expect((await service.runtimeSnapshot()).versions).toHaveLength(3)
+  })
+
   it("preserves grid and snap settings in templates and working copies", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
     cleanupPaths.push(root)
@@ -375,6 +462,41 @@ describe("DevdDataService", () => {
     expect(autosaves).toHaveLength(10)
     expect(autosaves.at(0)?.version).toBe(23)
     expect(autosaves.at(-1)?.version).toBe(32)
+
+    const currentTemplate = snapshot.templates.find((template) => template.id === templateId)
+    const currentWorkingCopy = snapshot.workingCopies.find(
+      (workingCopy) => workingCopy.sourceKey === `user:${templateId}`
+    )
+    const autosaveId = autosaves[0]?.id
+    if (!autosaveId || !currentTemplate || !currentWorkingCopy) {
+      throw new Error("Expected retained template history and a current working copy.")
+    }
+    await service.mutateRuntime({
+      command: "restore-template-version",
+      expectedRevision: revision,
+      args: {
+        templateId,
+        versionId: autosaveId,
+        baselineVersionId: currentTemplate.currentVersionId,
+        baselineWorkingCopyUpdatedAt: currentWorkingCopy.updatedAt,
+      },
+    })
+    const afterRestore = await service.runtimeSnapshot()
+    expect(
+      afterRestore.versions.filter(
+        (version) => version.templateId === templateId && version.kind === "autosave"
+      )
+    ).toHaveLength(10)
+    const savedAfterRestore = afterRestore.versions.filter(
+      (version) => version.templateId === templateId && version.kind === "saved"
+    )
+    expect(savedAfterRestore).toHaveLength(21)
+    expect(savedAfterRestore.map((version) => version.id)).toEqual(
+      expect.arrayContaining(savedVersions.map((version) => version.id))
+    )
+    expect(
+      savedAfterRestore.find((version) => version.sourceVersionId === autosaveId)
+    ).toBeDefined()
   })
 
   it("writes only runtime records changed by a routine command", async () => {
