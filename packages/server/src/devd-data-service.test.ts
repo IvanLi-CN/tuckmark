@@ -481,11 +481,22 @@ describe("DevdDataService", () => {
         baselineWorkingCopyUpdatedAt: currentWorkingCopy.updatedAt,
       },
     })
+    const afterRestore = await service.runtimeSnapshot()
     expect(
-      (await service.runtimeSnapshot()).versions.filter(
+      afterRestore.versions.filter(
         (version) => version.templateId === templateId && version.kind === "autosave"
       )
     ).toHaveLength(10)
+    const savedAfterRestore = afterRestore.versions.filter(
+      (version) => version.templateId === templateId && version.kind === "saved"
+    )
+    expect(savedAfterRestore).toHaveLength(21)
+    expect(savedAfterRestore.map((version) => version.id)).toEqual(
+      expect.arrayContaining(savedVersions.map((version) => version.id))
+    )
+    expect(
+      savedAfterRestore.find((version) => version.sourceVersionId === autosaveId)
+    ).toBeDefined()
   })
 
   it("writes only runtime records changed by a routine command", async () => {

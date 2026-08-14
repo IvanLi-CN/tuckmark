@@ -1307,7 +1307,9 @@ export class DevdDataService {
             versions.splice(index, 1)
         }
       }
-      this.pruneTemplateVersions(versions, templateId, "saved", MAX_SAVED_TEMPLATE_VERSIONS)
+      if (command !== "restore-template-version") {
+        this.pruneTemplateVersions(versions, templateId, "saved", MAX_SAVED_TEMPLATE_VERSIONS)
+      }
       const hasRecommendedUse = Object.hasOwn(document, "recommendedUse")
       const recommendedUse = hasRecommendedUse
         ? normalizeRecommendedUse(document.recommendedUse)
