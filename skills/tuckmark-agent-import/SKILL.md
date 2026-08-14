@@ -1,5 +1,5 @@
 ---
-name: tuckmark-agent-import-user
+name: tuckmark-agent-import
 description: Parse private order exports outside Tuckmark, identify materials and quantities, research product pages when permitted, then submit and complete a Tuckmark managed inventory import with the released CLI. Use outside a Tuckmark source checkout for Taobao or other order-derived intake.
 ---
 
