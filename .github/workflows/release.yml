@@ -61,6 +61,8 @@ jobs:
           path: |
             work/release/release-context.json
             work/release/release-notes.md
+      - name: Preserve release bundle builder
+        run: cp .github/scripts/release-bundles.mjs work/release/release-bundles.mjs
       - name: Check out release commit
         run: |
           MERGE_SHA="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).merge_sha")"
@@ -71,7 +73,7 @@ jobs:
       - name: Build bundles
         run: |
           bun run build
-          node .github/scripts/release-bundles.mjs work/release/bundles
+          node work/release/release-bundles.mjs work/release/bundles
       - name: Publish GitHub Release
         run: |
           VERSION="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).release_version")"
