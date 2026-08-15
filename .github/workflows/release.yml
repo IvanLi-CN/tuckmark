@@ -61,6 +61,8 @@ jobs:
           path: |
             work/release/release-context.json
             work/release/release-notes.md
+      - name: Preserve release bundle builder
+        run: cp .github/scripts/release-bundles.mjs work/release/release-bundles.mjs
       - name: Check out release commit
         run: |
           MERGE_SHA="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).merge_sha")"
@@ -71,9 +73,7 @@ jobs:
       - name: Build bundles
         run: |
           bun run build
-          mkdir -p work/release/bundles
-          tar -czf work/release/bundles/tuckmark-runtime-bundle.tgz packages packages/server package.json bun.lock README.md PRODUCT.md DESIGN.md CONTEXT.md
-          tar -czf work/release/bundles/tuckmark-cli-bundle.tgz packages/cli packages/core package.json bun.lock README.md
+          node work/release/release-bundles.mjs work/release/bundles
       - name: Publish GitHub Release
         run: |
           VERSION="$(node -p "JSON.parse(require('fs').readFileSync('work/release/release-plan.json','utf8')).release_version")"
