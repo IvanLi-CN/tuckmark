@@ -1,7 +1,6 @@
 import fs from "node:fs/promises"
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http"
 import path from "node:path"
-import { pathToFileURL } from "node:url"
 import {
   type ArtifactPackets,
   assertServerSidePrintRuntimeReady,
@@ -43,6 +42,7 @@ import {
   DevdDataService,
   DevdDataUnavailableError,
 } from "./devd-data-service.js"
+import { resolveEmbeddedWebAssets, serveEmbeddedWebAsset } from "./embedded-web.js"
 
 export interface ServerService {
   listTemplates(): Promise<Awaited<ReturnType<TuckmarkService["listTemplates"]>>>
@@ -920,11 +920,16 @@ export function createApp(
     }
   })
 
+  const embeddedWebAssets = process.env.TUCKMARK_WEB_DIST
+    ? new Map<string, Blob>()
+    : resolveEmbeddedWebAssets()
   const staticWebRoot = process.env.TUCKMARK_WEB_DIST
     ? path.resolve(process.env.TUCKMARK_WEB_DIST)
     : path.resolve(process.cwd(), "../../apps/web/dist")
 
-  app.use(express.static(staticWebRoot, { index: false }))
+  if (embeddedWebAssets.size === 0) {
+    app.use(express.static(staticWebRoot, { index: false }))
+  }
   app.get(/^(?!\/api\/|\/health$).*/, async (req, res, next) => {
     if (req.path.startsWith("/api/") || req.path === "/health") {
       next()
@@ -932,6 +937,16 @@ export function createApp(
     }
 
     try {
+      if (embeddedWebAssets.size > 0) {
+        if (await serveEmbeddedWebAsset(req.path, res, embeddedWebAssets)) return
+        const indexAsset = embeddedWebAssets.get("/index.html")
+        if (!indexAsset) {
+          next(new Error("Embedded Web assets are missing index.html."))
+          return
+        }
+        res.send(Buffer.from(await indexAsset.arrayBuffer()))
+        return
+      }
       res.sendFile("index.html", { root: staticWebRoot })
     } catch (error) {
       next(error)
@@ -1038,16 +1053,4 @@ export function startServer(
       }
     })
   return httpServer
-}
-
-function isMainModule(metaUrl: string): boolean {
-  const entry = process.argv[1]
-  if (!entry) {
-    return false
-  }
-  return metaUrl === pathToFileURL(entry).href
-}
-
-if (isMainModule(import.meta.url)) {
-  startServer()
 }

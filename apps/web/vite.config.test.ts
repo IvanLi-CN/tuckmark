@@ -239,12 +239,14 @@ describe("Pages workflow metadata", () => {
     "utf8"
   )
 
-  it("redeploys Pages when a GitHub Release is published", () => {
-    expect(pagesWorkflow).toContain("release:\n    types: [published]")
+  it("only deploys Pages from main or an explicit main-ref dispatch", () => {
+    expect(pagesWorkflow).not.toContain("release:\n    types: [published]")
+    expect(pagesWorkflow).toContain("ref: refs/heads/main")
   })
 
-  it("checks out the published release tag for release-triggered Pages builds", () => {
-    expect(pagesWorkflow).toContain("github.event.release.tag_name")
+  it("checks out a requested published tag within the main-ref dispatch", () => {
+    expect(pagesWorkflow).toContain('git checkout --detach "refs/tags/$tag_name"')
+    expect(pagesWorkflow).not.toContain("github.event.release.tag_name")
   })
 
   it("accepts an explicit release tag for release workflow dispatches", () => {
@@ -258,10 +260,8 @@ describe("Pages workflow metadata", () => {
   })
 
   it("keeps manual Pages dispatches pinned to main when no release tag is provided", () => {
-    expect(pagesWorkflow).toContain(
-      `ref: \${{ github.event_name == 'release' && github.event.release.tag_name || 'refs/heads/main' }}`
-    )
-    expect(pagesWorkflow).not.toContain("&& inputs.release_tag != '' && inputs.release_tag")
+    expect(pagesWorkflow).toContain("ref: refs/heads/main")
+    expect(pagesWorkflow).toContain("inputs.release_tag != ''")
   })
 })
 
@@ -284,13 +284,13 @@ describe("Release workflow Pages redeploy", () => {
   it("publishes release notes from a generated notes file instead of an inline placeholder", () => {
     expect(releaseWorkflow).toContain("Render release notes and context")
     expect(releaseWorkflow).toContain("node .github/scripts/release-notes.mjs")
-    expect(releaseWorkflow).toContain("--notes-file work/release/release-notes.md")
+    expect(releaseWorkflow).toContain("--notes-file work/release/context/release-notes.md")
     expect(releaseWorkflow).not.toContain('--notes "Tuckmark release $VERSION"')
   })
 
-  it("renders release notes before checking out the release commit for backfill safety", () => {
+  it("renders release notes before native host-tools jobs begin", () => {
     expect(releaseWorkflow.indexOf("Render release notes and context")).toBeLessThan(
-      releaseWorkflow.indexOf("Check out release commit")
+      releaseWorkflow.indexOf("build-host-tools:")
     )
   })
 
@@ -300,8 +300,22 @@ describe("Release workflow Pages redeploy", () => {
     expect(releaseWorkflow).toContain("work/release/release-context.json")
     expect(releaseWorkflow).toContain("work/release/release-notes.md")
     expect(releaseWorkflow.indexOf("Upload release context artifact")).toBeLessThan(
-      releaseWorkflow.indexOf("Check out release commit")
+      releaseWorkflow.indexOf("build-host-tools:")
     )
+  })
+
+  it("builds, verifies, and publishes the four native host-tools assets", () => {
+    for (const target of ["darwin-arm64", "darwin-x64", "linux-x64", "windows-x64"]) {
+      expect(releaseWorkflow).toContain(`target: ${target}`)
+    }
+    expect(releaseWorkflow).toContain("name: host-tools-$" + "{{ matrix.target }}")
+    expect(releaseWorkflow).toContain("scripts/verify-host-tools.mjs")
+    expect(releaseWorkflow).toContain("for target in darwin-arm64 darwin-x64 linux-x64")
+    expect(releaseWorkflow).toContain("tuckmark-host-tools-$" + "{target}.tar.gz")
+    expect(releaseWorkflow).toContain("tuckmark-host-tools-windows-x64.zip")
+    expect(releaseWorkflow).toContain("SHA256SUMS")
+    expect(releaseWorkflow).toContain("Download and verify published release assets")
+    expect(releaseWorkflow).toContain("scripts/verify-release-skills.mjs")
   })
 
   it("lets release failure notification read release context artifacts when they exist", () => {

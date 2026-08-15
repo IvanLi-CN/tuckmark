@@ -12,7 +12,7 @@ const typeLabel = labels.find((label) => label.startsWith("type:")) ?? "type:non
 const channelLabel = labels.find((label) => label.startsWith("channel:")) ?? null
 
 const releaseIntent = {
-  version: 1,
+  version: 2,
   merge_sha: mergeSha,
   pr_number: prNumber,
   merged_at: mergedAt,
@@ -20,10 +20,10 @@ const releaseIntent = {
   channel_label: channelLabel,
   release_pending: typeLabel !== "type:none",
   state: typeLabel === "type:none" ? "skipped" : "next-pending",
-  artifacts: ["runtime bundle", "CLI bundle"],
+  artifacts: ["four platform host-tools archives", "SHA256SUMS"],
 }
 
-const artifactName = `release-intent-${releaseIntent.state}-${mergeSha}`
+const artifactName = `release-intent-host-tools-${releaseIntent.state}-${mergeSha}`
 
 await fs.mkdir("work/release", { recursive: true })
 await fs.writeFile("work/release/release-intent.json", JSON.stringify(releaseIntent, null, 2))

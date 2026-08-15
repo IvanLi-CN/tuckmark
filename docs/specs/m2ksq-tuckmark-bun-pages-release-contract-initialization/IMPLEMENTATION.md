@@ -131,6 +131,16 @@
   body. Pages always injects `TUCKMARK_BUILD_REF`, and tagged deploys also
   inject `TUCKMARK_APP_VERSION`, so the browser-static footer metadata and its
   OctoRill deep link match the release/build that triggered the redeploy.
+- `.github/workflows/release.yml` builds host tools on four native runners,
+  verifies each isolated archive layout, publishes only the four host-tools
+  archives plus `SHA256SUMS`, then downloads the Linux asset for a final
+  post-publication smoke test. The downloaded archive is also used for a
+  temporary-home `npx skills add` check that installs exactly the released
+  Skills. Pages is dispatched from `main` after that release smoke succeeds so
+  protected Pages environments do not receive a tag deployment ref.
+- `scripts/build-host-tools.mjs` compiles the public CLI and DEVD executables,
+  embeds the built Web surface in DEVD, stages private detonger helpers next to
+  the stable runtime layout, and applies ad-hoc signatures to macOS binaries.
 - `.github/workflows/notify-release-failure.yml` attempts to download the
   release-context artifact from the failed release run and includes the release
   version, PR number, channel, type label, merge SHA, and run URL when that

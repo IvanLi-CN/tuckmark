@@ -7,8 +7,8 @@
 - `artifact`: a rendered preview or printable output tracked by Tuckmark
 - `browser-direct print path`: the Web product path where the browser itself renders, encodes, and sends print data to hardware over Web Bluetooth
 - `service-api print path`: the Web product path where the Web app asks the service runtime API to control hardware on its behalf
-- `runtime bundle`: the release artifact for the HTTP runtime surface
-- `CLI bundle`: the release artifact for the CLI surface
+- `host-tools archive`: a platform-native archive containing the two public
+  Tuckmark executables, private detonger helpers, and released Agent Skills
 - `Web app static runtime`: the owner-facing static deployment that runs fully in
   the browser
 - `demo mode`: the formal Web route tree backed by the Mock API layer with

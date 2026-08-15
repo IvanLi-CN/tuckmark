@@ -90,9 +90,18 @@ and a reproducible worktree bootstrap path.
 ### Delivery
 
 - PR labels are the release-intent source of truth.
-- Mainline release uses a durable snapshot and supports backfill.
+- Mainline release uses a durable host-tools snapshot and supports backfill
+  within that host-tools release contract.
 - Published GitHub Releases must include human-readable release notes generated
   from the verified release snapshot and merged PR metadata.
+- Published GitHub Releases contain only four platform-native host-tools
+  archives and `SHA256SUMS`. Each archive provides standalone `tuckmark` and
+  `tuckmark-devd` executables, private detonger helpers, and the released Agent
+  Skills without requiring Node, Bun, Cargo, `node_modules`, or a source
+  checkout at runtime. Both public executable version commands identify the
+  release version, complete merge SHA, and target triple.
+- Release installation is manual and documented. Tuckmark does not ship an
+  installer script or change PATH settings.
 - Releasable snapshots fail publication before `gh release create` when PR
   context is missing or the generated release notes do not satisfy the required
   `Included Change`, `Release Metadata`, and `Bundles` sections.
@@ -156,7 +165,7 @@ and a reproducible worktree bootstrap path.
   active, focused, or returns online.
 - `version.json` stays aligned with the active Pages build metadata and is not
   precached by the service worker.
-- Release can publish stable and preview bundles from durable snapshots
+- Release can publish stable and preview host-tools archives from durable snapshots
 - Release notes show the merged PR title/link, release type/channel, merge SHA,
   and published bundles instead of a one-line placeholder body
 - Pages redeploys after release publication display the published release tag

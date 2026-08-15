@@ -12,6 +12,7 @@
   "scripts": {
     "build": "bun run build:packages && bun run build:web",
     "build:packages": "bun run --filter @tuckmark/core build && bun run --filter @tuckmark/ipc build && bun run --filter @tuckmark/server build && bun run --filter @tuckmark/cli build && bun run --filter @tuckmark/mcp build && bun run --filter @tuckmark/inventory build",
+    "build:host-tools": "node scripts/build-host-tools.mjs",
     "build:web": "bun run --filter @tuckmark/web build",
     "build:web:pages": "bun run --filter @tuckmark/web build:pages",
     "check": "bun run lint && bun run format:check && bun run typecheck && bun run test && bun run build",

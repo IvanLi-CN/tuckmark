@@ -18,8 +18,22 @@ Clone or sync with:
 
 - `git submodule update --init --recursive`
 
-By default, the core adapter runs a Rust preview helper for packet generation and `cargo run -q -p detonger -- ...` for scan/print commands with `cwd=./detonger`.
-You can still override this with `TUCKMARK_DETONGER_COMMAND` or `TUCKMARK_DETONGER_REPO_ROOT`.
+In a source checkout, the core adapter uses the local Rust preview helper and
+`cargo run -q -p detonger -- ...` for scan/print commands with `cwd=./detonger`.
+Released host tools instead resolve their private detonger helpers next to the
+installed executable, without requiring Cargo, a workspace, or a source checkout.
+`TUCKMARK_DETONGER_COMMAND` remains an explicit diagnostic override.
+
+## Released Host Tools
+
+GitHub Releases publish standalone `tuckmark` and `tuckmark-devd` executables
+for macOS arm64/x64, Linux x64, and Windows x64. Each archive also contains
+private detonger helpers and the two released Agent Skills. The executables do
+not require Node, Bun, `node_modules`, a workspace, or the current directory.
+
+Tuckmark does not provide an installation script or modify PATH. Follow the
+manual checksum, stable-path, and Skill installation instructions in
+[Install Tuckmark Host Tools](docs/install.md).
 
 ## Workspace
 

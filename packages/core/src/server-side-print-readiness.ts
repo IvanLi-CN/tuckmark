@@ -2,6 +2,8 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { resolveBundledDetongerCommand } from "./runtime-paths.js"
+
 const moduleDir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(moduleDir, "../../..")
 const defaultDetongerRepoRoot = path.resolve(moduleDir, "../../../detonger")
@@ -15,13 +17,22 @@ export function isServerSidePrintEnabled(env: NodeJS.ProcessEnv = process.env): 
   return raw === "1" || raw?.toLowerCase() === "true"
 }
 
-export function assertServerSidePrintRuntimeReady(env: NodeJS.ProcessEnv = process.env): void {
+export function assertServerSidePrintRuntimeReady(
+  env: NodeJS.ProcessEnv = process.env,
+  executablePath: string = process.execPath
+): void {
   if (!isServerSidePrintEnabled(env)) {
     return
   }
 
-  const command = env.TUCKMARK_DETONGER_COMMAND?.trim() || "cargo"
+  const command = resolveBundledDetongerCommand(env, executablePath)
   const packetEncoder = env.TUCKMARK_DETONGER_PACKET_ENCODER?.trim().toLowerCase() || "rust"
+
+  // A bundled or explicitly selected helper owns its own packet implementation.
+  // Only the source-checkout cargo fallback requires the repository and manifest.
+  if (command !== "cargo") {
+    return
+  }
 
   const resolvedRepoRoot = path.resolve(
     repoRoot,
@@ -48,8 +59,7 @@ export function assertServerSidePrintRuntimeReady(env: NodeJS.ProcessEnv = proce
     throw new Error(`${messageBase} Missing detonger Cargo.toml at ${resolvedRepoRoot}`)
   }
 
-  const requiresPreviewEncoderManifest = command === "cargo" && packetEncoder === "rust"
-  if (requiresPreviewEncoderManifest && !fs.existsSync(manifestPath)) {
+  if (packetEncoder === "rust" && !fs.existsSync(manifestPath)) {
     throw new Error(`${messageBase} Missing preview encoder manifest: ${manifestPath}`)
   }
 }
