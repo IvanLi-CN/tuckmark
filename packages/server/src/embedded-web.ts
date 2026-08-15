@@ -44,3 +44,14 @@ export async function serveEmbeddedWebAsset(
   res.send(Buffer.from(await asset.arrayBuffer()))
   return true
 }
+
+export async function serveEmbeddedWebIndex(
+  res: { type: (value: string) => unknown; send: (value: Buffer) => unknown },
+  assets: Map<string, Blob>
+): Promise<boolean> {
+  const indexAsset = assets.get("/index.html")
+  if (!indexAsset) return false
+  res.type("html")
+  res.send(Buffer.from(await indexAsset.arrayBuffer()))
+  return true
+}

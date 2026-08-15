@@ -42,7 +42,11 @@ import {
   DevdDataService,
   DevdDataUnavailableError,
 } from "./devd-data-service.js"
-import { resolveEmbeddedWebAssets, serveEmbeddedWebAsset } from "./embedded-web.js"
+import {
+  resolveEmbeddedWebAssets,
+  serveEmbeddedWebAsset,
+  serveEmbeddedWebIndex,
+} from "./embedded-web.js"
 
 export interface ServerService {
   listTemplates(): Promise<Awaited<ReturnType<TuckmarkService["listTemplates"]>>>
@@ -939,12 +943,8 @@ export function createApp(
     try {
       if (embeddedWebAssets.size > 0) {
         if (await serveEmbeddedWebAsset(req.path, res, embeddedWebAssets)) return
-        const indexAsset = embeddedWebAssets.get("/index.html")
-        if (!indexAsset) {
-          next(new Error("Embedded Web assets are missing index.html."))
-          return
-        }
-        res.send(Buffer.from(await indexAsset.arrayBuffer()))
+        if (await serveEmbeddedWebIndex(res, embeddedWebAssets)) return
+        next(new Error("Embedded Web assets are missing index.html."))
         return
       }
       res.sendFile("index.html", { root: staticWebRoot })

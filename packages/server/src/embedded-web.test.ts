@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { serveEmbeddedWebAsset } from "./embedded-web.js"
+import { serveEmbeddedWebAsset, serveEmbeddedWebIndex } from "./embedded-web.js"
 
 describe("embedded Web assets", () => {
   it("serves an embedded static asset and rejects traversal paths", async () => {
@@ -21,5 +21,24 @@ describe("embedded Web assets", () => {
 
     expect(types).toEqual([".js"])
     expect(sent[0]?.toString("utf8")).toBe("self.skipWaiting()")
+  })
+
+  it("serves the SPA fallback as HTML", async () => {
+    const sent: Buffer[] = []
+    const types: string[] = []
+    const response = {
+      type: (value: string) => {
+        types.push(value)
+      },
+      send: (value: Buffer) => {
+        sent.push(value)
+      },
+    }
+    const assets = new Map<string, Blob>([["/index.html", new Blob(["<main>Tuckmark</main>"])]])
+
+    await expect(serveEmbeddedWebIndex(response, assets)).resolves.toBe(true)
+
+    expect(types).toEqual(["html"])
+    expect(sent[0]?.toString("utf8")).toBe("<main>Tuckmark</main>")
   })
 })

@@ -310,12 +310,27 @@ describe("Release workflow Pages redeploy", () => {
     }
     expect(releaseWorkflow).toContain("name: host-tools-$" + "{{ matrix.target }}")
     expect(releaseWorkflow).toContain("scripts/verify-host-tools.mjs")
+    expect(releaseWorkflow).toContain("Archive host tools for permission-preserving transfer")
+    expect(releaseWorkflow).toContain("Rehydrate and verify transferred host tools")
+    expect(releaseWorkflow).toContain(
+      "work/release/transfer/tuckmark-$" + "{{ matrix.target }}.tar.gz"
+    )
     expect(releaseWorkflow).toContain("for target in darwin-arm64 darwin-x64 linux-x64")
     expect(releaseWorkflow).toContain("tuckmark-host-tools-$" + "{target}.tar.gz")
     expect(releaseWorkflow).toContain("tuckmark-host-tools-windows-x64.zip")
     expect(releaseWorkflow).toContain("SHA256SUMS")
     expect(releaseWorkflow).toContain("Download and verify published release assets")
     expect(releaseWorkflow).toContain("scripts/verify-release-skills.mjs")
+    expect(releaseWorkflow.indexOf("Rehydrate and verify transferred host tools")).toBeLessThan(
+      releaseWorkflow.indexOf("Publish GitHub Release")
+    )
+  })
+
+  it("starts the sync server through the explicit DEVD entrypoint", () => {
+    const syncPlaywrightConfig = readFileSync("playwright.config.sync.ts", "utf8")
+
+    expect(syncPlaywrightConfig).toContain("packages/server/dist/entry.js")
+    expect(syncPlaywrightConfig).not.toContain("packages/server/dist/index.js")
   })
 
   it("lets release failure notification read release context artifacts when they exist", () => {

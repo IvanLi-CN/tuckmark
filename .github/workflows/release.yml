@@ -125,10 +125,15 @@ jobs:
           --target ${{ matrix.target }}
           --version ${{ needs.prepare.outputs.release_version }}
           --sha ${{ needs.prepare.outputs.merge_sha }}
+      - name: Archive host tools for permission-preserving transfer
+        shell: bash
+        run: |
+          mkdir -p work/release/transfer
+          tar -C work/release/host-tools -czf "work/release/transfer/tuckmark-${{ matrix.target }}.tar.gz" "tuckmark-${{ matrix.target }}"
       - uses: actions/upload-artifact@v4
         with:
           name: host-tools-${{ matrix.target }}
-          path: work/release/host-tools/tuckmark-${{ matrix.target }}
+          path: work/release/transfer/tuckmark-${{ matrix.target }}.tar.gz
           if-no-files-found: error
 
   publish:
@@ -155,7 +160,18 @@ jobs:
         with:
           pattern: host-tools-*
           merge-multiple: true
-          path: work/release/host-tools
+          path: work/release/transfer
+      - name: Rehydrate and verify transferred host tools
+        run: |
+          mkdir -p work/release/host-tools
+          for target in darwin-arm64 darwin-x64 linux-x64 windows-x64; do
+            tar -xzf "work/release/transfer/tuckmark-${target}.tar.gz" -C work/release/host-tools
+          done
+          node scripts/verify-host-tools.mjs \
+            --release-root work/release/host-tools \
+            --target linux-x64 \
+            --version "${{ needs.prepare.outputs.release_version }}" \
+            --sha "${{ needs.prepare.outputs.merge_sha }}"
       - name: Archive host tools and write checksums
         run: |
           mkdir -p work/release/assets
