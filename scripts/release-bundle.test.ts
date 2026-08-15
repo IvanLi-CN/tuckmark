@@ -29,6 +29,8 @@ async function createFixture() {
     "DESIGN.md",
     "CONTEXT.md",
     "tsconfig.base.json",
+    "detonger/Cargo.toml",
+    "detonger/crates/detonger-protocol/Cargo.toml",
     "packages/cli/dist/index.js",
     "packages/core/dist/index.js",
     "packages/ipc/dist/index.js",
@@ -36,6 +38,7 @@ async function createFixture() {
     "packages/mcp/dist/index.js",
     "plugins/inventory/dist/index.js",
     "skills/tuckmark-agent-import/SKILL.md",
+    "tools/detonger-preview-encoder/Cargo.toml",
     "biome.json",
     "commitlint.config.cjs",
     "lefthook.yml",
@@ -81,6 +84,8 @@ describe("release bundles", () => {
     expect(cliEntries).toContain("packages/ipc/dist/index.js")
     expect(cliEntries).toContain("plugins/inventory/dist/index.js")
     expect(cliEntries).toContain("skills/tuckmark-agent-import/SKILL.md")
+    expect(cliEntries).toContain("detonger/crates/detonger-protocol/Cargo.toml")
+    expect(cliEntries).toContain("tools/detonger-preview-encoder/Cargo.toml")
     expect([...runtimeEntries, ...cliEntries].some((entry) => entry.includes("node_modules"))).toBe(
       false
     )

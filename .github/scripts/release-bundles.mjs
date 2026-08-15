@@ -41,11 +41,13 @@ export const RUNTIME_BUNDLE_PATHS = [
 
 export const CLI_BUNDLE_PATHS = [
   ...ROOT_FILES,
+  "detonger",
   "packages/cli",
   "packages/core",
   "packages/ipc",
   "plugins/inventory",
   "skills",
+  "tools",
 ]
 
 async function assertPathsExist(repoRoot, entries) {
