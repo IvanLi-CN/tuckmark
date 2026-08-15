@@ -91,4 +91,23 @@ describe("release bundles", () => {
     )
     await expect(readFile(result.runtimeBundle)).resolves.toBeTruthy()
   })
+
+  it("supports historical snapshots without newer optional inputs", async () => {
+    const repoRoot = await createFixture()
+    await Promise.all(
+      [".env.local.example", "detonger", "plugins", "skills", "tools"].map((entry) =>
+        rm(path.join(repoRoot, entry), { recursive: true, force: true })
+      )
+    )
+
+    const result = await buildReleaseBundles({
+      repoRoot,
+      outputDir: path.join(repoRoot, "bundles"),
+    })
+    const cliEntries = await archiveEntries(result.cliBundle)
+
+    expect(cliEntries).toContain("packages/cli/dist/index.js")
+    expect(cliEntries).toContain("packages/core/dist/index.js")
+    expect(cliEntries).not.toContain("skills/")
+  })
 })

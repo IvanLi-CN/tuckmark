@@ -50,17 +50,33 @@ export const CLI_BUNDLE_PATHS = [
   "tools",
 ]
 
+const REQUIRED_RUNTIME_BUNDLE_PATHS = ["package.json", "bun.lock", "packages", "packages/server"]
+const REQUIRED_CLI_BUNDLE_PATHS = ["package.json", "bun.lock", "packages/cli", "packages/core"]
+
 async function assertPathsExist(repoRoot, entries) {
-  await Promise.all(
-    entries.map(async (entry) => {
-      const entryPath = path.join(repoRoot, entry)
-      try {
-        await stat(entryPath)
-      } catch (error) {
-        throw new Error(`release bundle input is missing: ${entry}`, { cause: error })
+  for (const entry of entries) {
+    const entryPath = path.join(repoRoot, entry)
+    try {
+      await stat(entryPath)
+    } catch (error) {
+      throw new Error(`release bundle input is missing: ${entry}`, { cause: error })
+    }
+  }
+}
+
+async function resolveExistingPaths(repoRoot, entries) {
+  const existingEntries = []
+  for (const entry of entries) {
+    try {
+      await stat(path.join(repoRoot, entry))
+      existingEntries.push(entry)
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        throw new Error(`failed to inspect release bundle input: ${entry}`, { cause: error })
       }
-    })
-  )
+    }
+  }
+  return existingEntries
 }
 
 function createArchive({ repoRoot, outputPath, entries }) {
@@ -79,8 +95,12 @@ export async function buildReleaseBundles({ repoRoot = process.cwd(), outputDir 
   )
   await mkdir(resolvedOutputDir, { recursive: true })
   await Promise.all([
-    assertPathsExist(resolvedRoot, RUNTIME_BUNDLE_PATHS),
-    assertPathsExist(resolvedRoot, CLI_BUNDLE_PATHS),
+    assertPathsExist(resolvedRoot, REQUIRED_RUNTIME_BUNDLE_PATHS),
+    assertPathsExist(resolvedRoot, REQUIRED_CLI_BUNDLE_PATHS),
+  ])
+  const [runtimeEntries, cliEntries] = await Promise.all([
+    resolveExistingPaths(resolvedRoot, RUNTIME_BUNDLE_PATHS),
+    resolveExistingPaths(resolvedRoot, CLI_BUNDLE_PATHS),
   ])
 
   const runtimeBundle = path.join(resolvedOutputDir, "tuckmark-runtime-bundle.tgz")
@@ -88,9 +108,9 @@ export async function buildReleaseBundles({ repoRoot = process.cwd(), outputDir 
   createArchive({
     repoRoot: resolvedRoot,
     outputPath: runtimeBundle,
-    entries: RUNTIME_BUNDLE_PATHS,
+    entries: runtimeEntries,
   })
-  createArchive({ repoRoot: resolvedRoot, outputPath: cliBundle, entries: CLI_BUNDLE_PATHS })
+  createArchive({ repoRoot: resolvedRoot, outputPath: cliBundle, entries: cliEntries })
   return { runtimeBundle, cliBundle }
 }
 
