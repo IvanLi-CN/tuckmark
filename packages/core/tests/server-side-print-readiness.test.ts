@@ -31,39 +31,37 @@ describe("server-side print readiness", () => {
     expect(existsSync).toHaveBeenCalledWith(path.resolve(detongerRoot, "Cargo.toml"))
   })
 
-  it("still validates detonger repo roots for custom commands", () => {
-    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
-    const detongerRoot = path.resolve(repoRoot, "./detonger")
-    const existsSync = vi.spyOn(fs, "existsSync").mockImplementation((target) => {
-      const resolved = String(target)
-      return resolved === detongerRoot || resolved === path.resolve(detongerRoot, "Cargo.toml")
-    })
+  it("does not require a source checkout for explicit helper commands", () => {
+    const existsSync = vi.spyOn(fs, "existsSync")
 
     expect(() =>
       assertServerSidePrintRuntimeReady({
         TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
         TUCKMARK_DETONGER_COMMAND: "/usr/local/bin/detonger",
-        TUCKMARK_DETONGER_REPO_ROOT: "./detonger",
+        TUCKMARK_DETONGER_REPO_ROOT: "/tmp/tuckmark-missing-detonger",
       })
     ).not.toThrow()
 
-    expect(existsSync).toHaveBeenCalledWith(detongerRoot)
-    expect(existsSync).toHaveBeenCalledWith(path.resolve(detongerRoot, "Cargo.toml"))
+    expect(existsSync).not.toHaveBeenCalledWith("/tmp/tuckmark-missing-detonger")
   })
 
-  it("skips preview encoder manifest checks for custom commands", () => {
+  it("keeps the Cargo readiness check for source-checkout development", () => {
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
     const detongerRoot = path.resolve(repoRoot, "./detonger")
     const manifestPath = path.resolve(repoRoot, "tools/detonger-preview-encoder/Cargo.toml")
     const existsSync = vi.spyOn(fs, "existsSync").mockImplementation((target) => {
       const resolved = String(target)
-      return resolved === detongerRoot || resolved === path.resolve(detongerRoot, "Cargo.toml")
+      return (
+        resolved === detongerRoot ||
+        resolved === path.resolve(detongerRoot, "Cargo.toml") ||
+        resolved === manifestPath
+      )
     })
 
     expect(() =>
       assertServerSidePrintRuntimeReady({
         TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
-        TUCKMARK_DETONGER_COMMAND: "/usr/local/bin/detonger",
+        TUCKMARK_DETONGER_COMMAND: "cargo",
         TUCKMARK_DETONGER_REPO_ROOT: "./detonger",
       })
     ).not.toThrow()
@@ -71,10 +69,10 @@ describe("server-side print readiness", () => {
     existsSync.mockClear()
     assertServerSidePrintRuntimeReady({
       TUCKMARK_ENABLE_SERVER_SIDE_PRINT: "1",
-      TUCKMARK_DETONGER_COMMAND: "/usr/local/bin/detonger",
+      TUCKMARK_DETONGER_COMMAND: "cargo",
       TUCKMARK_DETONGER_REPO_ROOT: "./detonger",
     })
 
-    expect(existsSync).not.toHaveBeenCalledWith(manifestPath)
+    expect(existsSync).toHaveBeenCalledWith(manifestPath)
   })
 })

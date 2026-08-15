@@ -33,10 +33,10 @@ The published site:
 - defaults to `runtime` when no query parameter is present
 - supports `?demo=true` and `?demo=false` on the same app surface
 
-Pages is independent from GitHub Release publication.
-Mainline pushes produce the default owner-facing Pages deployment, while
-published GitHub Releases and manual `release_tag` dispatches may trigger a
-fresh Pages deploy that carries tagged footer metadata for the released build.
+Pages is independent from GitHub Release publication. Mainline pushes produce
+the default owner-facing Pages deployment, while release publication dispatches
+the Pages workflow from `main` with a `release_tag` input so protected Pages
+environments never receive a tag deployment ref.
 Owner-facing footer metadata follows one contract:
 
 - tagged deploys show the published release version and keep the build ref in
@@ -67,7 +67,7 @@ The generated release notes follow one contract:
 - `Included Change` lists the merged PR link and title
 - `Release Metadata` lists the release version, `channel:*`, `type:*`,
   `merge_sha`, and PR link
-- `Bundles` lists the published release artifacts
+- `Bundles` lists the published host-tools artifacts
 
 Before publication, the release workflow must also emit a durable
 `release-context-<merge_sha>` artifact containing:
@@ -89,12 +89,30 @@ line.
 
 The release workflow uploads:
 
-- `runtime bundle`
-- `CLI bundle`
+- `tuckmark-host-tools-darwin-arm64.tar.gz`
+- `tuckmark-host-tools-darwin-x64.tar.gz`
+- `tuckmark-host-tools-linux-x64.tar.gz`
+- `tuckmark-host-tools-windows-x64.zip`
+- `SHA256SUMS`
 - `release-context-<merge_sha>` artifact with release notes and release context
 
-`workflow_dispatch` can backfill pending snapshots without recomputing release
-intent from a PR head.
+Each platform archive contains standalone `tuckmark` and `tuckmark-devd`
+executables, private detonger helpers, and only the two released Skills. The
+build matrix creates every archive on its native platform and verifies it in an
+isolated directory before publication. A post-publication Linux smoke test
+downloads the release assets, validates `SHA256SUMS`, and runs the extracted
+host tools again. That same isolated smoke directly runs the documented
+`npx --yes skills add` command against the downloaded archive with a temporary
+home directory and verifies that only the two released Skills are installed.
+
+Released host tools never ship an installer script. Installation is a manual,
+documented copy into stable unversioned paths; the release workflow does not
+change user PATH settings.
+
+`workflow_dispatch` can backfill pending host-tools snapshots without
+recomputing release intent from a PR head. Snapshots created for the retired
+workspace-bundle release contract are intentionally not eligible for this
+binary release path.
 
 ## Drift Policy
 

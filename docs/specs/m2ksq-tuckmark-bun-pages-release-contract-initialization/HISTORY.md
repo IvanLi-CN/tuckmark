@@ -110,3 +110,8 @@ installed complete version and all browser user data.
 The install-identity surface was later clarified so browser-static builds keep
 the standard icon, maskable safe-zone icon, Apple Touch icon, and favicon
 contracts distinct instead of relying on one PNG for every browser context.
+
+The release contract now uses native host-tools archives rather than workspace
+bundles. The archives carry standalone public executables, private detonger
+helpers, and released Agent Skills with one checksum manifest, while
+installation remains a documented manual copy into stable paths.

@@ -15,7 +15,7 @@ describe("release notes contract", () => {
       type_label: "type:patch",
       channel_label: "channel:stable",
       merge_sha: "7c61a5faf50462245602ad3a63858597676f7cc0",
-      artifacts: ["runtime bundle", "CLI bundle"],
+      artifacts: ["four platform host-tools archives", "SHA256SUMS"],
     })
     const notesModel = buildReleaseNotesModel(releaseContext, {
       number: 44,
@@ -33,8 +33,8 @@ describe("release notes contract", () => {
     expect(notes).toContain("`channel:stable`")
     expect(notes).toContain("`7c61a5faf50462245602ad3a63858597676f7cc0`")
     expect(notes).toContain("## Bundles")
-    expect(notes).toContain("- runtime bundle")
-    expect(notes).toContain("- CLI bundle")
+    expect(notes).toContain("- four platform host-tools archives")
+    expect(notes).toContain("- SHA256SUMS")
     expect(notes).not.toContain("Tuckmark release v0.5.2")
     expect(() => assertReleaseNotesContract(notes)).not.toThrow()
   })
@@ -46,7 +46,7 @@ describe("release notes contract", () => {
       type_label: "type:minor",
       channel_label: "channel:preview",
       merge_sha: "1111111111111111111111111111111111111111",
-      artifacts: ["runtime bundle", "CLI bundle"],
+      artifacts: ["four platform host-tools archives", "SHA256SUMS"],
     })
     const notesModel = buildReleaseNotesModel(releaseContext, {
       number: 45,
@@ -69,7 +69,7 @@ describe("release notes contract", () => {
         type_label: "type:patch",
         channel_label: "channel:stable",
         merge_sha: "7c61a5faf50462245602ad3a63858597676f7cc0",
-        artifacts: ["runtime bundle", "CLI bundle"],
+        artifacts: ["four platform host-tools archives", "SHA256SUMS"],
       })
     ).toThrow("pr_number must be a positive integer")
   })
@@ -81,7 +81,7 @@ describe("release notes contract", () => {
       type_label: "type:patch",
       channel_label: "channel:stable",
       merge_sha: "7c61a5faf50462245602ad3a63858597676f7cc0",
-      artifacts: ["runtime bundle", "CLI bundle"],
+      artifacts: ["four platform host-tools archives", "SHA256SUMS"],
     })
 
     expect(() =>

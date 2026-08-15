@@ -7,5 +7,5 @@
     "require_exactly_one_channel_when_releasing": true,
     "forbid_channel_when_type_none": true
   },
-  "release_artifacts": ["runtime bundle", "CLI bundle"]
+  "release_artifacts": ["four platform host-tools archives", "SHA256SUMS"]
 }

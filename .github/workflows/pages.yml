@@ -3,8 +3,6 @@ name: pages
 on:
   push:
     branches: [main]
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       release_tag:
@@ -28,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || 'refs/heads/main' }}
+          ref: refs/heads/main
           fetch-depth: 0
           submodules: recursive
       - name: Validate and check out manual release tag
@@ -60,7 +58,7 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Resolve build metadata
         env:
-          RELEASE_TAG_NAME: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
+          RELEASE_TAG_NAME: ${{ inputs.release_tag }}
         run: |
           echo "TUCKMARK_BUILD_REF=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
           tag_name="$RELEASE_TAG_NAME"

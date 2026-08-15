@@ -9,6 +9,10 @@ import { promisify } from "node:util"
 import { encodeArtifactWithDetongerRustPreview } from "./detonger-preview-encoder.js"
 import { encodeArtifactWithLpapiCompact } from "./lpapi-compact-encoder.js"
 import {
+  resolveBundledDetongerCommand,
+  resolveBundledPreviewEncoderCommand,
+} from "./runtime-paths.js"
+import {
   type ArtifactPackets,
   type PreviewArtifact,
   type Printer,
@@ -54,6 +58,7 @@ export class DetongerAdapter {
   private readonly command: string
   private readonly repoRoot: string
   private readonly previewEncoderManifestPath: string
+  private readonly previewEncoderCommand: string | undefined
   private readonly mockEnabled: boolean
   private readonly lockRoot: string
   private readonly pngRowsPerChunk: number | undefined
@@ -61,12 +66,13 @@ export class DetongerAdapter {
   private printerCache = new Map<string, { printer: Printer; seenAt: number }>()
 
   constructor(options?: DetongerAdapterOptions) {
-    this.command = options?.detongerCommand ?? process.env.TUCKMARK_DETONGER_COMMAND ?? "cargo"
+    this.command = options?.detongerCommand ?? resolveBundledDetongerCommand()
     this.repoRoot =
       options?.detongerRepoRoot ??
       process.env.TUCKMARK_DETONGER_REPO_ROOT ??
       defaultDetongerRepoRoot
     this.previewEncoderManifestPath = defaultPreviewEncoderManifestPath
+    this.previewEncoderCommand = resolveBundledPreviewEncoderCommand(this.command)
     this.mockEnabled = process.env.TUCKMARK_MOCK_PRINTERS !== "0"
     this.lockRoot = path.join(os.tmpdir(), "tuckmark-printer-locks")
     this.pngRowsPerChunk = this.resolveRowsPerChunk()
@@ -91,13 +97,16 @@ export class DetongerAdapter {
     throw new Error(`Invalid ${packetEncoderEnvName}: ${raw}`)
   }
 
+  private commandWorkingDirectory(command: string = this.command): string | undefined {
+    return command === "cargo" ? this.repoRoot : undefined
+  }
+
   private async runScan(timeoutSeconds = 8): Promise<DetongerScanItem[]> {
+    const workingDirectory = this.commandWorkingDirectory()
     const { stdout } = await execFileAsync(
       this.command,
       this.detongerArgs(["scan", "--timeout-s", String(timeoutSeconds), "--format", "json"]),
-      {
-        cwd: this.repoRoot,
-      }
+      workingDirectory ? { cwd: workingDirectory } : {}
     )
     return JSON.parse(stdout) as DetongerScanItem[]
   }
@@ -160,9 +169,10 @@ export class DetongerAdapter {
     }
   ): Promise<{ stdout: string; stderr: string }> {
     try {
+      const workingDirectory = this.commandWorkingDirectory()
       const result = await execFileAsync(this.command, this.detongerArgs(args), {
-        cwd: this.repoRoot,
-        timeout: options?.timeoutMs,
+        ...(workingDirectory ? { cwd: workingDirectory } : {}),
+        ...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
       })
       const stdout = this.toUtf8(result.stdout)
       const stderr = this.toUtf8(result.stderr)
@@ -563,10 +573,7 @@ export class DetongerAdapter {
   ): Promise<ArtifactPackets> {
     const rowsPerChunk = this.rowsPerChunkForArtifact(artifact)
     const args = [
-      "preview",
-      "packets",
-      "--format",
-      "json",
+      ...(this.previewEncoderCommand ? [] : ["preview", "packets", "--format", "json"]),
       "--png",
       artifact.pngPath,
       "--out",
@@ -577,22 +584,29 @@ export class DetongerAdapter {
       String(artifact.renderOptions.threshold),
       "--x-offset",
       String(artifact.renderOptions.xOffsetDots),
-      "--y-offset",
-      String(artifact.renderOptions.yOffsetDots),
-      "--print-strength",
-      String(artifact.renderOptions.printStrengthLevel),
       "--paper-type",
       artifact.renderOptions.paperType,
     ]
+
+    if (this.previewEncoderCommand) {
+      args.push(
+        "--y-offset",
+        String(artifact.renderOptions.yOffsetDots),
+        "--print-strength",
+        String(artifact.renderOptions.printStrengthLevel)
+      )
+    }
 
     if (rowsPerChunk !== undefined) {
       args.push("--rows-per-chunk", String(rowsPerChunk))
     }
 
     const packetsLogPath = path.join(path.dirname(artifact.pngPath), "packets-command.log")
-    await this.runDetongerCommandWithLogs(args, {
-      logPath: packetsLogPath,
-    })
+    if (this.previewEncoderCommand) {
+      await this.runPreviewEncoderWithLogs(args, packetsLogPath)
+    } else {
+      await this.runDetongerCommandWithLogs(args, { logPath: packetsLogPath })
+    }
 
     const raw = await readFile(packetsJsonPath, "utf8")
     const packets = this.parsePacketsJson(raw, packetsJsonPath)
@@ -607,6 +621,39 @@ export class DetongerAdapter {
       packets,
       packetCount: packets.length,
       totalBytes,
+    }
+  }
+
+  private async runPreviewEncoderWithLogs(args: string[], logPath: string): Promise<void> {
+    const command = this.previewEncoderCommand
+    if (!command) throw new Error("Bundled preview encoder is unavailable.")
+    try {
+      const workingDirectory = this.commandWorkingDirectory(command)
+      const result = await execFileAsync(
+        command,
+        args,
+        workingDirectory ? { cwd: workingDirectory } : {}
+      )
+      await writeFile(
+        logPath,
+        `timestamp=${new Date().toISOString()}\nok=true\ncommand=${command}\nargs=${JSON.stringify(args)}\n--- stdout ---\n${this.toUtf8(result.stdout)}\n--- stderr ---\n${this.toUtf8(result.stderr)}\n`,
+        "utf8"
+      )
+    } catch (error) {
+      const nodeError = error as NodeJS.ErrnoException & {
+        stdout?: string | Buffer
+        stderr?: string | Buffer
+      }
+      const stdout = this.toUtf8(nodeError.stdout)
+      const stderr = this.toUtf8(nodeError.stderr)
+      await writeFile(
+        logPath,
+        `timestamp=${new Date().toISOString()}\nok=false\ncommand=${command}\nargs=${JSON.stringify(args)}\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}\n`,
+        "utf8"
+      )
+      throw new Error(
+        `detonger preview packets failed: ${stderr.trim() || stdout.trim() || String(error)}`
+      )
     }
   }
 

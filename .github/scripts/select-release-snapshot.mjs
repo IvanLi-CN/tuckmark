@@ -58,7 +58,7 @@ if (eventName === "workflow_dispatch") {
       continue
     }
 
-    const artifact = await findSnapshotArtifact(run.id, "release-intent-next-pending-")
+    const artifact = await findSnapshotArtifact(run.id, "release-intent-host-tools-next-pending-")
     if (!artifact) {
       continue
     }
@@ -70,7 +70,7 @@ if (eventName === "workflow_dispatch") {
 } else {
   runId = String(event.workflow_run?.id ?? "")
   if (runId) {
-    const artifact = await findSnapshotArtifact(runId, "release-intent-")
+    const artifact = await findSnapshotArtifact(runId, "release-intent-host-tools-")
     artifactName = artifact?.name ?? ""
   }
 }

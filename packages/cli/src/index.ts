@@ -7,6 +7,7 @@ import path from "node:path"
 
 import {
   compileUserTemplatePackageToCanvas,
+  formatReleaseMetadata,
   parseUserTemplatePackage,
   type RenderOptions,
   resolveUserTemplatePackageRenderOptions,
@@ -69,7 +70,12 @@ const inventoryLabelBindingSchema = z.array(
 
 async function main(): Promise<void> {
   switch (command) {
+    case "--version":
+    case "version":
+      console.log(formatReleaseMetadata())
+      break
     case "help":
+    case "--help":
       printHelp()
       break
     case "templates":

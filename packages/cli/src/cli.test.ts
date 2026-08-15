@@ -137,6 +137,12 @@ describe("cli smoke", () => {
     expect(true).toBe(true)
   })
 
+  it("treats explicit help as a successful command", async () => {
+    const { stdout } = await runCli(["--help"])
+
+    expect(stdout).toContain("tuckmark commands:")
+  })
+
   it("gets and sets the DEVD data directory through named IPC", async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-config-data-"))
     const nextDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-config-next-"))

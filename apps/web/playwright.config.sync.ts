@@ -26,7 +26,7 @@ export default defineConfig({
       "mkdir -p work/playwright-sync",
       "bun run build",
       "cd work/playwright-sync",
-      `PORT=${syncPort} TUCKMARK_WEB_DIST=../../apps/web/dist node ../../packages/server/dist/index.js`,
+      `PORT=${syncPort} TUCKMARK_WEB_DIST=../../apps/web/dist node ../../packages/server/dist/entry.js`,
     ].join(" && "),
     url: `${syncBaseURL}/health`,
     timeout: 240_000,

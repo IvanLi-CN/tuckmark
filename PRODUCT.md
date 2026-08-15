@@ -121,7 +121,7 @@ This repository releases a single product line.
 - canonical release target: GitHub Releases
 - version model: one SemVer line for the whole product
 - channels: `stable` and `preview`
-- bundled artifacts: `runtime bundle` and `CLI bundle`
+- bundled artifacts: four platform-native host-tools archives and `SHA256SUMS`
 
 There is no `component:*` version line in this repository.
 

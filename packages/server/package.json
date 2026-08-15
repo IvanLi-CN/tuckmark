@@ -9,7 +9,7 @@
     "pretest": "bun --cwd=../../packages/ipc run build && bun --cwd=../../plugins/inventory run build",
     "pretypecheck": "bun --cwd=../../packages/ipc run build && bun --cwd=../../plugins/inventory run build",
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx watch --tsconfig tsconfig.typecheck.json src/index.ts",
+    "dev": "tsx watch --tsconfig tsconfig.typecheck.json src/entry.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.typecheck.json"
   },
