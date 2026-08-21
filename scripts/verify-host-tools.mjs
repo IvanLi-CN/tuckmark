@@ -42,11 +42,14 @@ async function run(command, args, options = {}) {
   return await execFileAsync(command, args, { encoding: "utf8", ...options })
 }
 
-async function waitForHealth(baseUrl, child) {
+async function waitForHealth(baseUrl, child, childOutput) {
   const deadline = Date.now() + 30_000
   let lastError
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`tuckmark-devd exited with ${child.exitCode}`)
+    if (child.exitCode !== null) {
+      const output = childOutput.join("").trim()
+      throw new Error(`tuckmark-devd exited with ${child.exitCode}${output ? `: ${output}` : ""}`)
+    }
     try {
       const response = await fetch(`${baseUrl}/health`)
       if (response.ok) return
@@ -195,10 +198,13 @@ export async function verifyHostTools({ releaseRoot, target, version, sha }) {
   const packagePath = path.join(smokeRoot, "release-smoke.package.json")
   await writeFile(packagePath, `${JSON.stringify(releaseTemplatePackage())}\n`, "utf8")
 
+  const childOutput = []
   const child = spawn(devd, [], { cwd: smokeRoot, env, stdio: "pipe" })
+  child.stdout?.on("data", (chunk) => childOutput.push(String(chunk)))
+  child.stderr?.on("data", (chunk) => childOutput.push(String(chunk)))
   try {
     const baseUrl = `http://127.0.0.1:${port}`
-    await waitForHealth(baseUrl, child)
+    await waitForHealth(baseUrl, child, childOutput)
     const [rootPage, deepLink, serviceWorker] = await Promise.all([
       fetch(`${baseUrl}/`),
       fetch(`${baseUrl}/release-smoke/deep-link`),
