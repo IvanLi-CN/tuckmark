@@ -55,8 +55,8 @@ function normalizeServiceWorkerPath(value: string): string {
   return value.replace(/\\/g, "/")
 }
 
-function toServiceWorkerUrl(fileName: string): string {
-  return `./${normalizeServiceWorkerPath(fileName)}`
+function toServiceWorkerUrl(fileName: string, baseUrl = "./"): string {
+  return `${baseUrl}${normalizeServiceWorkerPath(fileName)}`
 }
 
 export function hashPwaString(value: string): string {
@@ -80,37 +80,37 @@ function hashAssetSource(source: string | Uint8Array): string {
   return hash.toString(16)
 }
 
-export function createPwaManifest(): PwaManifest {
+export function createPwaManifest(baseUrl = "./"): PwaManifest {
   return {
     name: "Tuckmark Web",
     short_name: "Tuckmark",
     description: "Label printing for people and agents.",
-    start_url: "./",
-    scope: "./",
+    start_url: baseUrl,
+    scope: baseUrl,
     display: "standalone",
     background_color: "#F6EFE6",
     theme_color: "#9b6a44",
     icons: [
       {
-        src: "./pwa/tuckmark-icon-192.png",
+        src: `${baseUrl}pwa/tuckmark-icon-192.png`,
         sizes: "192x192",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "./pwa/tuckmark-icon-512.png",
+        src: `${baseUrl}pwa/tuckmark-icon-512.png`,
         sizes: "512x512",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "./pwa/tuckmark-icon-maskable-192.png",
+        src: `${baseUrl}pwa/tuckmark-icon-maskable-192.png`,
         sizes: "192x192",
         type: "image/png",
         purpose: "maskable",
       },
       {
-        src: "./pwa/tuckmark-icon-maskable-512.png",
+        src: `${baseUrl}pwa/tuckmark-icon-maskable-512.png`,
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",
@@ -119,7 +119,8 @@ export function createPwaManifest(): PwaManifest {
   }
 }
 
-export function createPwaHtmlTags(): HtmlTagDescriptor[] {
+export function createPwaHtmlTags(baseUrl = "./"): HtmlTagDescriptor[] {
+  const assetUrl = (fileName: string) => `${baseUrl}${fileName}`
   return [
     {
       tag: "meta",
@@ -135,7 +136,16 @@ export function createPwaHtmlTags(): HtmlTagDescriptor[] {
       tag: "link",
       attrs: {
         rel: "manifest",
-        href: "./manifest.webmanifest",
+        href: assetUrl("manifest.webmanifest"),
+        "data-tuckmark-pwa": "true",
+      },
+      injectTo: "head",
+    },
+    {
+      tag: "meta",
+      attrs: {
+        name: "tuckmark-service-worker",
+        content: assetUrl("sw.js"),
         "data-tuckmark-pwa": "true",
       },
       injectTo: "head",
@@ -145,7 +155,7 @@ export function createPwaHtmlTags(): HtmlTagDescriptor[] {
       attrs: {
         rel: "icon",
         type: "image/svg+xml",
-        href: "./pwa/tuckmark-favicon.svg",
+        href: assetUrl("pwa/tuckmark-favicon.svg"),
       },
       injectTo: "head",
     },
@@ -155,7 +165,7 @@ export function createPwaHtmlTags(): HtmlTagDescriptor[] {
         rel: "icon",
         type: "image/png",
         sizes: "32x32",
-        href: "./pwa/tuckmark-favicon-32.png",
+        href: assetUrl("pwa/tuckmark-favicon-32.png"),
       },
       injectTo: "head",
     },
@@ -165,7 +175,7 @@ export function createPwaHtmlTags(): HtmlTagDescriptor[] {
         rel: "icon",
         type: "image/png",
         sizes: "48x48",
-        href: "./pwa/tuckmark-favicon-48.png",
+        href: assetUrl("pwa/tuckmark-favicon-48.png"),
       },
       injectTo: "head",
     },
@@ -175,13 +185,13 @@ export function createPwaHtmlTags(): HtmlTagDescriptor[] {
         rel: "icon",
         type: "image/png",
         sizes: "16x16",
-        href: "./pwa/tuckmark-favicon-16.png",
+        href: assetUrl("pwa/tuckmark-favicon-16.png"),
       },
       injectTo: "head",
     },
     {
       tag: "link",
-      attrs: { rel: "icon", type: "image/x-icon", href: "./pwa/favicon.ico" },
+      attrs: { rel: "icon", type: "image/x-icon", href: assetUrl("pwa/favicon.ico") },
       injectTo: "head",
     },
     {
@@ -190,7 +200,7 @@ export function createPwaHtmlTags(): HtmlTagDescriptor[] {
         rel: "apple-touch-icon",
         type: "image/png",
         sizes: "120x120",
-        href: "./pwa/tuckmark-apple-touch-icon-120.png",
+        href: assetUrl("pwa/tuckmark-apple-touch-icon-120.png"),
       },
       injectTo: "head",
     },
@@ -200,7 +210,7 @@ export function createPwaHtmlTags(): HtmlTagDescriptor[] {
         rel: "apple-touch-icon",
         type: "image/png",
         sizes: "152x152",
-        href: "./pwa/tuckmark-apple-touch-icon-152.png",
+        href: assetUrl("pwa/tuckmark-apple-touch-icon-152.png"),
       },
       injectTo: "head",
     },
@@ -210,7 +220,7 @@ export function createPwaHtmlTags(): HtmlTagDescriptor[] {
         rel: "apple-touch-icon",
         type: "image/png",
         sizes: "167x167",
-        href: "./pwa/tuckmark-apple-touch-icon-167.png",
+        href: assetUrl("pwa/tuckmark-apple-touch-icon-167.png"),
       },
       injectTo: "head",
     },
@@ -220,7 +230,7 @@ export function createPwaHtmlTags(): HtmlTagDescriptor[] {
         rel: "apple-touch-icon",
         type: "image/png",
         sizes: "180x180",
-        href: "./pwa/tuckmark-apple-touch-icon-180.png",
+        href: assetUrl("pwa/tuckmark-apple-touch-icon-180.png"),
       },
       injectTo: "head",
     },
@@ -231,17 +241,19 @@ export function createServiceWorkerSource({
   assets,
   version,
   versionMetadataFile,
+  baseUrl = "./",
 }: {
   assets: PwaAsset[]
   version: string
   versionMetadataFile: string
+  baseUrl?: string
 }): string {
   return `const CACHE_VERSION = ${JSON.stringify(version)}
 const APP_CACHE = \`tuckmark-app-\${CACHE_VERSION}\`
 const PRECACHE_ASSETS = ${JSON.stringify(assets, null, 2)}
-const NAVIGATION_FALLBACK = "./index.html"
-const VERSION_METADATA_URL = ${JSON.stringify(`./${versionMetadataFile}`)}
-const CACHE_READY_MARKER = "./__tuckmark-cache-ready__"
+const NAVIGATION_FALLBACK = ${JSON.stringify(`${baseUrl}index.html`)}
+const VERSION_METADATA_URL = ${JSON.stringify(`${baseUrl}${versionMetadataFile}`)}
+const CACHE_READY_MARKER = ${JSON.stringify(`${baseUrl}__tuckmark-cache-ready__`)}
 
 async function cacheCompleteApp() {
   const cache = await caches.open(APP_CACHE)
@@ -313,7 +325,16 @@ self.addEventListener("fetch", (event) => {
     return
   }
   const requestUrl = new URL(request.url)
-  if (requestUrl.pathname.endsWith(VERSION_METADATA_URL.slice(1))) {
+  const versionMetadataPath = new URL(VERSION_METADATA_URL, self.location.href).pathname
+  if (requestUrl.pathname === versionMetadataPath) {
+    event.respondWith(fetch(request))
+    return
+  }
+  if (
+    requestUrl.pathname.startsWith("/api/") ||
+    requestUrl.pathname === "/health" ||
+    request.headers.get("accept")?.includes("text/event-stream")
+  ) {
     event.respondWith(fetch(request))
     return
   }
@@ -334,92 +355,86 @@ function tuckmarkPwaPlugin(
     name: "tuckmark-pwa",
     apply: "build",
     transformIndexHtml() {
-      if (surface !== "browser-static") {
-        return
-      }
-      return createPwaHtmlTags()
+      return createPwaHtmlTags(surface === "browser-static" ? "./" : "/")
     },
     generateBundle(_options, bundle) {
-      if (surface !== "browser-static") {
-        return
-      }
-
-      const manifestSource = JSON.stringify(createPwaManifest(), null, 2)
+      const baseUrl = surface === "browser-static" ? "./" : "/"
+      const manifestSource = JSON.stringify(createPwaManifest(baseUrl), null, 2)
       const versionMetadataSource = createRuntimeBuildMetadataSource(runtimeBuildMetadata)
       const assets: PwaAsset[] = [
         {
-          url: "./",
+          url: baseUrl,
           revision: "app-shell",
         },
         {
-          url: "./404.html",
+          url: `${baseUrl}404.html`,
           revision: "spa-fallback",
         },
         {
-          url: "./index.html",
+          url: `${baseUrl}index.html`,
           revision: "app-shell",
         },
         {
-          url: "./pwa/tuckmark-icon-192.png",
+          url: `${baseUrl}pwa/tuckmark-icon-192.png`,
           revision: "pwa-icon-192",
         },
         {
-          url: "./pwa/tuckmark-icon-512.png",
+          url: `${baseUrl}pwa/tuckmark-icon-512.png`,
           revision: "pwa-icon-512",
         },
         {
           tier: "shell",
-          url: "./pwa/tuckmark-icon-maskable-192.png",
+          url: `${baseUrl}pwa/tuckmark-icon-maskable-192.png`,
           revision: "pwa-icon-maskable-192",
         },
         {
           tier: "shell",
-          url: "./pwa/tuckmark-icon-maskable-512.png",
+          url: `${baseUrl}pwa/tuckmark-icon-maskable-512.png`,
           revision: "pwa-icon-maskable-512",
         },
         {
           tier: "shell",
-          url: "./pwa/tuckmark-apple-touch-icon-120.png",
+          url: `${baseUrl}pwa/tuckmark-apple-touch-icon-120.png`,
           revision: "pwa-apple-touch-icon-120",
         },
         {
           tier: "shell",
-          url: "./pwa/tuckmark-apple-touch-icon-152.png",
+          url: `${baseUrl}pwa/tuckmark-apple-touch-icon-152.png`,
           revision: "pwa-apple-touch-icon-152",
         },
         {
           tier: "shell",
-          url: "./pwa/tuckmark-apple-touch-icon-167.png",
+          url: `${baseUrl}pwa/tuckmark-apple-touch-icon-167.png`,
           revision: "pwa-apple-touch-icon-167",
         },
         {
           tier: "shell",
-          url: "./pwa/tuckmark-apple-touch-icon-180.png",
+          url: `${baseUrl}pwa/tuckmark-apple-touch-icon-180.png`,
           revision: "pwa-apple-touch-icon-180",
         },
         {
           tier: "shell",
-          url: "./pwa/tuckmark-favicon.svg",
+          url: `${baseUrl}pwa/tuckmark-favicon.svg`,
           revision: "pwa-favicon-svg",
         },
         {
           tier: "shell",
-          url: "./pwa/tuckmark-favicon-16.png",
+          url: `${baseUrl}pwa/tuckmark-favicon-16.png`,
           revision: "pwa-favicon-16",
         },
         {
           tier: "shell",
-          url: "./pwa/tuckmark-favicon-32.png",
+          url: `${baseUrl}pwa/tuckmark-favicon-32.png`,
           revision: "pwa-favicon-32",
         },
         {
           tier: "shell",
-          url: "./pwa/tuckmark-favicon-48.png",
+          url: `${baseUrl}pwa/tuckmark-favicon-48.png`,
           revision: "pwa-favicon-48",
         },
         {
           tier: "shell",
-          url: "./pwa/favicon.ico",
+          url: `${baseUrl}pwa/favicon.ico`,
           revision: "pwa-favicon-ico",
         },
       ]
@@ -432,13 +447,13 @@ function tuckmarkPwaPlugin(
           continue
         }
         assets.push({
-          url: toServiceWorkerUrl(fileName),
+          url: toServiceWorkerUrl(fileName, baseUrl),
           revision: item.type === "chunk" ? hashPwaString(item.code) : hashAssetSource(item.source),
         })
       }
 
       assets.push({
-        url: `./${PWA_MANIFEST_FILE}`,
+        url: `${baseUrl}${PWA_MANIFEST_FILE}`,
         revision: manifestSource,
       })
 
@@ -473,6 +488,7 @@ function tuckmarkPwaPlugin(
           assets: uniqueAssets,
           version,
           versionMetadataFile: VERSION_METADATA_FILE,
+          baseUrl,
         }),
       })
     },

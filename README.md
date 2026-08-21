@@ -207,7 +207,9 @@ Override ports or runtime wiring with:
 - In `server-http`, the active data directory is a DEVD-owned unified data location for user templates and inventory:
   - Web `/templates`, `/canvas`, `/inventory`, and `/system` use the DEVD HTTP resource API
   - CLI `template`, `inventory`, and Agent Import commands use named IPC instances
-  - installed PWA and CLI share one dataset through DEVD without direct file access
+  - the DEVD-hosted installed Web shell and CLI share one dataset through DEVD
+    without direct file access; cached Web assets never replace DEVD for data or
+    printing operations
 - DEVD owns data-directory configuration and maintenance:
   - formal startup defaults to the user's `Documents/Tuckmark` directory
   - `devd.json` in the platform configuration directory stores the saved path

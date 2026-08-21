@@ -910,6 +910,11 @@
         const updateRestartButton = launchRoot?.querySelector("[data-launch-update-restart]")
         const pwaEnabled = Boolean(document.querySelector("[data-tuckmark-pwa='true']"))
         const serviceWorkerSupported = "serviceWorker" in navigator
+        const serviceWorkerUrl =
+          document.querySelector("meta[name='tuckmark-service-worker']")?.getAttribute("content") ||
+          "./sw.js"
+        const resolvedServiceWorkerUrl = new URL(serviceWorkerUrl, document.baseURI)
+        const serviceWorkerScope = new URL("./", resolvedServiceWorkerUrl).pathname
         let mounted = false
         let slowStartVisible = false
         let terminalFailureVisible = false
@@ -918,7 +923,9 @@
         let reloadTimer = 0
         const earlyRegistrationPromise =
           pwaEnabled && serviceWorkerSupported
-            ? navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => null)
+            ? navigator.serviceWorker
+                .register(resolvedServiceWorkerUrl, { scope: serviceWorkerScope })
+                .catch(() => null)
             : Promise.resolve(null)
 
         const phaseState = {

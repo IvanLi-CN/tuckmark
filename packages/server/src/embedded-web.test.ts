@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest"
 
-import { serveEmbeddedWebAsset, serveEmbeddedWebIndex } from "./embedded-web.js"
+import {
+  EMBEDDED_WEB_CONTROL_PATHS,
+  serveEmbeddedWebAsset,
+  serveEmbeddedWebIndex,
+} from "./embedded-web.js"
 
 describe("embedded Web assets", () => {
+  it("keeps PWA control paths distinct from SPA fallback paths", () => {
+    expect(EMBEDDED_WEB_CONTROL_PATHS).toEqual(
+      new Set(["/sw.js", "/manifest.webmanifest", "/version.json"])
+    )
+  })
+
   it("serves an embedded static asset and rejects traversal paths", async () => {
     const sent: Buffer[] = []
     const types: string[] = []

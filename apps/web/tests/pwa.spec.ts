@@ -250,7 +250,12 @@ test("browser-static build ships complete PWA assets without remote font depende
   expect(serviceWorker).toContain('"./pwa/tuckmark-apple-touch-icon-167.png"')
   expect(serviceWorker).toContain("SKIP_WAITING")
   expect(serviceWorker).toContain('const VERSION_METADATA_URL = "./version.json"')
-  expect(serviceWorker).toContain("requestUrl.pathname.endsWith(VERSION_METADATA_URL.slice(1))")
+  expect(serviceWorker).toContain(
+    "const versionMetadataPath = new URL(VERSION_METADATA_URL, self.location.href).pathname"
+  )
+  expect(serviceWorker).toContain('requestUrl.pathname.startsWith("/api/")')
+  expect(serviceWorker).toContain('requestUrl.pathname === "/health"')
+  expect(serviceWorker).toContain('request.headers.get("accept")?.includes("text/event-stream")')
   expect(serviceWorker).not.toContain('"url": "./version.json"')
 })
 

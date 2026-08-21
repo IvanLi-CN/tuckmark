@@ -20,7 +20,9 @@ export function usePwaOfflineReadiness(
   enabled: boolean
 ): PwaOfflineReadinessStatus {
   const [status, setStatus] = React.useState<PwaOfflineReadinessStatus>(() =>
-    import.meta.env.PROD && context.surface === "browser-static" && context.mode === "runtime"
+    import.meta.env.PROD &&
+    (context.surface === "browser-static" || context.surface === "server-http") &&
+    context.mode === "runtime"
       ? "idle"
       : "unsupported"
   )
@@ -29,11 +31,13 @@ export function usePwaOfflineReadiness(
     if (
       !enabled ||
       !import.meta.env.PROD ||
-      context.surface !== "browser-static" ||
+      (context.surface !== "browser-static" && context.surface !== "server-http") ||
       context.mode !== "runtime"
     ) {
       setStatus(
-        import.meta.env.PROD && context.surface === "browser-static" && context.mode === "runtime"
+        import.meta.env.PROD &&
+          (context.surface === "browser-static" || context.surface === "server-http") &&
+          context.mode === "runtime"
           ? "idle"
           : "unsupported"
       )

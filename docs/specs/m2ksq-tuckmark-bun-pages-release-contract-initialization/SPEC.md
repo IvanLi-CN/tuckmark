@@ -30,9 +30,10 @@ and a reproducible worktree bootstrap path.
 
 - The Web app resolves its mode through an explicit API abstraction.
 - Static Pages uses the browser-static runtime with relative asset URLs.
-- Static Pages ships a browser-static PWA manifest, maskable icons, and a root
-  service worker.
-- Offline navigation is eligible only after a browser-static worker has cached
+- Production Web surfaces ship a PWA manifest, maskable icons, and a root
+  service worker. `browser-static` keeps relative asset URLs for Pages, while
+  `server-http` uses root-relative URLs for DEVD-hosted Web.
+- Offline navigation is eligible only after a production worker has cached
   every executable static asset, HTML entry, manifest, and icon and then written
   its version-ready marker. A partial cache must never answer navigation or
   asset requests.
@@ -40,18 +41,21 @@ and a reproducible worktree bootstrap path.
   icons, while entry HTML provides SVG/PNG/ICO favicon fallbacks and the Apple
   Touch icon sizes required by installed browser surfaces.
 - After the first successful online load, the browser-static runtime must open
-  from cached app-shell resources while offline.
-- Browser-static updates are non-blocking: a newly detected version caches
+  from cached app-shell resources while offline. The `server-http` runtime may
+  open its cached Web shell offline, but business data and device operations
+  remain online DEVD operations.
+- Production runtime updates are non-blocking: a newly detected version caches
   silently in the background, then prompts the user to update only when the
   runtime has confirmed a newer build through either a ready waiting worker or
   a same-origin version probe mismatch.
-- Browser-static update checks run immediately on runtime startup, then continue
+- Production runtime update checks run immediately on runtime startup, then continue
   at a low-frequency cadence while the page remains open.
-- Browser-static cold starts may show a lightweight launch shell from static
+- Production runtime cold starts may show a lightweight launch shell from static
   `index.html` while the routed React workbench mounts. This shell must stay
   offline-safe, require no network data, adapt to the active light or dark
   color scheme, and disappear automatically once the app takes over.
-- The static launch shell registers the PWA before React boot and reports mount
+- The static launch shell registers the PWA at the active surface's root before
+  React boot and reports mount
   success or bootstrap failure. After 10 seconds it offers a non-blocking
   update-and-restart suggestion; after 60 seconds it exposes terminal recovery
   actions. Startup never clears caches, activates a waiting worker, or reloads
@@ -63,10 +67,12 @@ and a reproducible worktree bootstrap path.
 - Launch-shell state is driven by real startup milestones, but the
   owner-facing shell stays coarse: it must not enumerate internal parallel
   task names or imply byte-level network download progress.
-- Service-worker installation is an all-or-nothing offline-version transaction:
-  it precaches the complete static application and writes the readiness marker
-  only after every request succeeds. `sw.js` and `version.json` remain outside
-  that version cache so browser update checks and metadata probing stay current.
+- Service-worker installation is an all-or-nothing offline-version transaction
+  on both production surfaces: it precaches the complete static application and
+  writes the readiness marker only after every request succeeds. API, health,
+  SSE, version-probe, and non-GET requests remain network-bound. `sw.js` and
+  `version.json` remain outside that version cache so update checks and metadata
+  probing stay current.
 - Once the current-route shell is visible, browser-static must warm the
   remaining route chunks in the background so ordinary in-app page switches do
   not reopen the owner-facing startup shell.
@@ -125,6 +131,8 @@ and a reproducible worktree bootstrap path.
 - Pages serves the formal app from the root path with relative assets
 - Browser-static PWA install metadata is complete enough for browser-native
   installation.
+- DEVD-hosted `server-http` serves root-relative PWA metadata, worker, and
+  static assets from the embedded Web archive.
 - Browser-static builds ship an owner-facing launch shell in `index.html` so
   installed-PWA cold starts do not expose a blank body before JavaScript boot.
 - While that launch shell is visible, the routed runtime shell must remain
@@ -140,6 +148,8 @@ and a reproducible worktree bootstrap path.
 - Service-worker `install` succeeds only after the complete browser-static
   application cache has been written and marked ready; failed or unmarked
   versions cannot serve offline navigation.
+- A packaged DEVD worker registers at root scope, serves the cached Web shell,
+  and never claims offline authority over DEVD APIs, data, or printing.
 - Ordinary page switches inside the mounted workbench do not reopen the
   owner-facing launch shell; after shell-ready they should resolve from warmed
   route chunks, with at most a local route placeholder if prefetch loses a

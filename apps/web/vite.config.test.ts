@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
 import { buildReleasePlan } from "../../.github/scripts/release-plan.mjs"
+import { resolveRuntimeBuildMetadata } from "./build-metadata.js"
 import {
   createPwaHtmlTags,
   createPwaManifest,
@@ -54,7 +55,7 @@ describe("resolvePublicBase", () => {
 })
 
 describe("PWA build assets", () => {
-  it("defines browser-static-only head tags for install metadata", () => {
+  it("defines relative head tags for browser-static install metadata", () => {
     expect(createPwaHtmlTags()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -97,6 +98,24 @@ describe("PWA build assets", () => {
     )
   })
 
+  it("defines root-relative head tags for server-http install metadata", () => {
+    expect(createPwaHtmlTags("/")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tag: "link",
+          attrs: expect.objectContaining({ rel: "manifest", href: "/manifest.webmanifest" }),
+        }),
+        expect.objectContaining({
+          tag: "meta",
+          attrs: expect.objectContaining({
+            name: "tuckmark-service-worker",
+            content: "/sw.js",
+          }),
+        }),
+      ])
+    )
+  })
+
   it("uses relative manifest and icon URLs for browser-static Pages builds", () => {
     const manifest = createPwaManifest()
 
@@ -133,6 +152,13 @@ describe("PWA build assets", () => {
     ])
   })
 
+  it("uses root-relative manifest and icon URLs for server-http builds", () => {
+    const manifest = createPwaManifest("/")
+
+    expect(manifest).toMatchObject({ start_url: "/", scope: "/", display: "standalone" })
+    expect(manifest.icons[0]).toMatchObject({ src: "/pwa/tuckmark-icon-192.png" })
+  })
+
   it("generates a service worker that publishes only complete offline app versions", () => {
     const source = createServiceWorkerSource({
       version: "test-version",
@@ -159,7 +185,11 @@ describe("PWA build assets", () => {
     expect(source).not.toContain("caches.match(request")
     expect(source).toContain('event.data?.type === "SKIP_WAITING"')
     expect(source).toContain('const VERSION_METADATA_URL = "./version.json"')
-    expect(source).toContain("requestUrl.pathname.endsWith(VERSION_METADATA_URL.slice(1))")
+    expect(source).toContain(
+      "const versionMetadataPath = new URL(VERSION_METADATA_URL, self.location.href).pathname"
+    )
+    expect(source).toContain('requestUrl.pathname.startsWith("/api/")')
+    expect(source).toContain('request.headers.get("accept")?.includes("text/event-stream")')
     expect(source).toContain('request.mode === "navigate"')
   })
 
@@ -208,6 +238,16 @@ describe("footer metadata", () => {
     expect(resolveBuildRef(env)).toBe("e499426")
     expect(resolveRepositoryUrl(env)).toBe("https://example.test/repo/")
     expect(resolveRightsUrl(env)).toBe("https://example.test/rights/")
+  })
+
+  it("preserves a full build ref for packaged host-tool metadata", () => {
+    const env = {
+      TUCKMARK_BUILD_REF: "e4994267326eb940dca6878193b0c514e69a7f0e",
+      TUCKMARK_BUILD_REF_FULL: "e4994267326eb940dca6878193b0c514e69a7f0e",
+    }
+
+    expect(resolveBuildRef(env)).toBe(env.TUCKMARK_BUILD_REF_FULL)
+    expect(resolveRuntimeBuildMetadata(env).buildRef).toBe(env.TUCKMARK_BUILD_REF_FULL)
   })
 
   it("uses the GitHub tag name for release-triggered Pages builds", () => {

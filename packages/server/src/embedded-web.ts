@@ -2,6 +2,12 @@ import path from "node:path"
 
 type BunEmbeddedFiles = ReadonlyArray<Blob & { name: string }>
 
+export const EMBEDDED_WEB_CONTROL_PATHS = new Set([
+  "/sw.js",
+  "/manifest.webmanifest",
+  "/version.json",
+])
+
 function resolveEmbeddedFiles(): BunEmbeddedFiles {
   const runtime = globalThis as typeof globalThis & {
     Bun?: { embeddedFiles?: BunEmbeddedFiles }
