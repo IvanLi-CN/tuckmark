@@ -215,6 +215,6 @@ async function main() {
   console.log(JSON.stringify(await buildHostTools({ target, outDir, version, sha }), null, 2))
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   await main()
 }
