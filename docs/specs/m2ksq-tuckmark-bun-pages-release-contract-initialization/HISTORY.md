@@ -115,3 +115,9 @@ The release contract now uses native host-tools archives rather than workspace
 bundles. The archives carry standalone public executables, private detonger
 helpers, and released Agent Skills with one checksum manifest, while
 installation remains a documented manual copy into stable paths.
+
+The embedded Web contract was later extended to the released `server-http`
+surface after host-tools smoke accepted an SPA fallback page as `sw.js`. DEVD
+now ships a real root-scoped PWA shell with surface-aware URLs; its worker
+keeps business data, API, SSE, and printing network-bound while browser-static
+Pages retains its relative deployment contract.

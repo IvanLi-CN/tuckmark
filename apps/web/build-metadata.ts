@@ -11,6 +11,10 @@ const DEFAULT_REPOSITORY_URL = "https://github.com/IvanLi-CN/tuckmark"
 const DEFAULT_RIGHTS_URL = "https://ivanli.cc/"
 
 export function resolveBuildRef(env: Record<string, string | undefined>): string {
+  const fullBuildRef = env.TUCKMARK_BUILD_REF_FULL?.trim()
+  if (fullBuildRef) {
+    return fullBuildRef
+  }
   return normalizeBuildRef(env.TUCKMARK_BUILD_REF || env.GITHUB_SHA || "")
 }
 
@@ -27,10 +31,12 @@ export function resolveAppVersion(env: Record<string, string | undefined>): stri
 export function resolveRuntimeBuildMetadata(
   env: Record<string, string | undefined>
 ): RuntimeBuildMetadata {
-  return normalizeRuntimeBuildMetadata({
+  const runtimeMetadata = normalizeRuntimeBuildMetadata({
     appVersion: resolveAppVersion(env),
     buildRef: resolveBuildRef(env),
   })
+  const fullBuildRef = env.TUCKMARK_BUILD_REF_FULL?.trim()
+  return fullBuildRef ? { ...runtimeMetadata, buildRef: fullBuildRef } : runtimeMetadata
 }
 
 export function createRuntimeBuildMetadataSource(metadata: RuntimeBuildMetadata): string {

@@ -44,6 +44,7 @@ import {
   DevdDataUnavailableError,
 } from "./devd-data-service.js"
 import {
+  EMBEDDED_WEB_CONTROL_PATHS,
   resolveEmbeddedWebAssets,
   serveEmbeddedWebAsset,
   serveEmbeddedWebIndex,
@@ -973,8 +974,16 @@ export function createApp(
     try {
       if (embeddedWebAssets.size > 0) {
         if (await serveEmbeddedWebAsset(req.path, res, embeddedWebAssets)) return
+        if (EMBEDDED_WEB_CONTROL_PATHS.has(req.path)) {
+          res.status(404).type("text").send("Embedded Web control asset is missing.")
+          return
+        }
         if (await serveEmbeddedWebIndex(res, embeddedWebAssets)) return
         next(new Error("Embedded Web assets are missing index.html."))
+        return
+      }
+      if (EMBEDDED_WEB_CONTROL_PATHS.has(req.path)) {
+        res.status(404).type("text").send("Embedded Web control asset is missing.")
         return
       }
       res.sendFile("index.html", { root: staticWebRoot })

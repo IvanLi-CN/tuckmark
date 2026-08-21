@@ -84,7 +84,7 @@ export function usePwaUpdate(context: AppContext): PwaUpdateSnapshot {
   React.useEffect(() => {
     if (
       !import.meta.env.PROD ||
-      context.surface !== "browser-static" ||
+      (context.surface !== "browser-static" && context.surface !== "server-http") ||
       context.mode !== "runtime"
     ) {
       return

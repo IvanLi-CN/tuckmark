@@ -205,19 +205,56 @@ export async function verifyHostTools({ releaseRoot, target, version, sha }) {
   try {
     const baseUrl = `http://127.0.0.1:${port}`
     await waitForHealth(baseUrl, child, childOutput)
-    const [rootPage, deepLink, serviceWorker] = await Promise.all([
+    const [rootPage, deepLink, serviceWorker, manifest, versionMetadata] = await Promise.all([
       fetch(`${baseUrl}/`),
       fetch(`${baseUrl}/release-smoke/deep-link`),
       fetch(`${baseUrl}/sw.js`),
+      fetch(`${baseUrl}/manifest.webmanifest`),
+      fetch(`${baseUrl}/version.json`),
     ])
-    if (!rootPage.ok || !deepLink.ok || !serviceWorker.ok) {
+    if (!rootPage.ok || !deepLink.ok || !serviceWorker.ok || !manifest.ok || !versionMetadata.ok) {
       throw new Error("Embedded Web asset request failed")
     }
-    if ((await rootPage.text()) !== (await deepLink.text())) {
+    const [rootHtml, deepLinkHtml, serviceWorkerSource, manifestSource, versionSource] =
+      await Promise.all([
+        rootPage.text(),
+        deepLink.text(),
+        serviceWorker.text(),
+        manifest.text(),
+        versionMetadata.text(),
+      ])
+    if (rootHtml !== deepLinkHtml) {
       throw new Error("Embedded Web deep link did not fall back to index.html")
     }
-    if (!(await serviceWorker.text()).includes("service")) {
-      throw new Error("Embedded service worker was not served")
+    if (
+      !rootHtml.includes('href="/manifest.webmanifest"') ||
+      !rootHtml.includes('content="/sw.js"') ||
+      !deepLinkHtml.includes('href="/manifest.webmanifest"') ||
+      !deepLinkHtml.includes('content="/sw.js"')
+    ) {
+      throw new Error("Embedded Web PWA control URLs were not root-relative")
+    }
+    if (!serviceWorker.headers.get("content-type")?.includes("javascript")) {
+      throw new Error("Embedded service worker did not have a JavaScript MIME type")
+    }
+    if (
+      !serviceWorkerSource.includes('self.addEventListener("install"') ||
+      !serviceWorkerSource.includes('self.addEventListener("fetch"') ||
+      serviceWorkerSource.includes("<!doctype html>")
+    ) {
+      throw new Error("Embedded service worker source was not served")
+    }
+    const manifestJson = JSON.parse(manifestSource)
+    if (
+      manifest.headers.get("content-type")?.includes("manifest") !== true ||
+      manifestJson.start_url !== "/" ||
+      manifestJson.scope !== "/"
+    ) {
+      throw new Error("Embedded Web manifest did not describe the server-http root")
+    }
+    const versionJson = JSON.parse(versionSource)
+    if (versionJson.appVersion !== version.replace(/^v/, "") || versionJson.buildRef !== sha) {
+      throw new Error("Embedded Web version metadata did not match the release")
     }
     const { stdout } = await run(cli, ["template-package", "packets", "--file", packagePath], {
       cwd: smokeRoot,

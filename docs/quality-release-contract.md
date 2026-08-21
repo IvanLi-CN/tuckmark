@@ -101,7 +101,10 @@ executables, private detonger helpers, and only the two released Skills. The
 build matrix creates every archive on its native platform and verifies it in an
 isolated directory before publication. A post-publication Linux smoke test
 downloads the release assets, validates `SHA256SUMS`, and runs the extracted
-host tools again. That same isolated smoke directly runs the documented
+host tools again. It also verifies the embedded `server-http` PWA control resources by MIME and
+content, uses a real browser to register the worker at root scope, confirms the
+complete-cache marker, and proves that DEVD API and printing operations remain
+online. The same isolated smoke directly runs the documented
 `npx --yes skills add` command against the downloaded archive with a temporary
 home directory and verifies that only the two released Skills are installed.
 

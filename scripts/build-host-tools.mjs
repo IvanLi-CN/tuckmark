@@ -110,6 +110,7 @@ export async function buildHostTools({
       ...process.env,
       TUCKMARK_APP_VERSION: version.replace(/^v/, ""),
       TUCKMARK_BUILD_REF: sha,
+      TUCKMARK_BUILD_REF_FULL: sha,
     },
   })
   const webRoot = path.join(rootDir, "apps", "web", "dist")

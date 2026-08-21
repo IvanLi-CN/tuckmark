@@ -5,7 +5,7 @@
 - docs and product context files
 - Bun-first workspace tooling
 - Web API abstraction and explicit `surface + mode` resolver
-- browser-static PWA manifest, icons, app-shell service worker, and update
+- production PWA manifest, icons, app-shell service worker, and update
   prompt lifecycle
 - Storybook and Playwright QA surfaces
 - split GitHub workflows for label gate, CI, Pages, release, and notifications
@@ -13,8 +13,9 @@
 
 ## PWA Coverage
 
-- `apps/web/vite.config.ts` emits `manifest.webmanifest` and `sw.js` only for
-  `browser-static` production builds.
+- `apps/web/vite.config.ts` emits `manifest.webmanifest`, `sw.js`, and
+  `version.json` for both production surfaces. `browser-static` uses relative
+  deployment URLs; `server-http` uses root-relative URLs for embedded DEVD Web.
 - `apps/web/vite.config.ts` and `apps/web/build-metadata.ts` now split
   owner-facing footer metadata into `TUCKMARK_APP_VERSION` and
   `TUCKMARK_BUILD_REF`.
@@ -25,7 +26,7 @@
   - local no-build-ref fallback can still use the root package version so local
     previews do not go blank
 - `apps/web/vite.config.ts` also emits a same-origin `version.json` payload
-  from the same runtime build metadata truth source. The browser-static service
+  from the same runtime build metadata truth source. The production service
   worker explicitly bypasses cache handling for this file so the probe never
   enters app-shell precache.
 - `apps/web/public/pwa/` stores the generated PWA icon family: standard `any`
@@ -37,17 +38,17 @@
   detection, low-frequency background rechecks, stale-tab catch-up triggers,
   `SKIP_WAITING`, reload-on-controller-change behavior, and a same-origin
   `version.json` fallback for stranded clients that do not currently surface a
-  waiting worker.
+  waiting worker on either production surface.
 - `apps/web/src/pwa-lifecycle.ts` exposes the update-detection source in its
   runtime snapshot so owner-facing UI can stay generic while tests and stories
   still distinguish waiting-worker versus version-probe prompts.
 - `apps/web/src/pwa-update-toast.tsx` owns the non-blocking update prompt shown
   from the shared workbench shell. Its update action uses a project-owned
   confirmation dialog instead of browser-native `confirm`.
-- `apps/web/index.html` now ships a static launch shell so installed-PWA cold
-  starts show branded startup feedback before the routed workbench JavaScript
-  mounts. The static entry follows `prefers-color-scheme` so cold starts match
-  the active light or dark system theme before React boots.
+- `apps/web/index.html` now ships a static launch shell so installed-PWA and
+  DEVD-hosted cold starts show branded startup feedback before the routed
+  workbench JavaScript mounts. The static entry follows `prefers-color-scheme`
+  so cold starts match the active light or dark system theme before React boots.
 - `apps/web/src/main.tsx` is now a thin bootstrap: it restores SPA fallback
   location, preloads the current route chunk, and asynchronously imports
   `apps/web/src/app-runtime.tsx` instead of mounting the whole workbench bundle
@@ -72,11 +73,13 @@
   code-loading continuity, but hides it with the platform `hidden` contract
   until `shellReady` flips true so the startup overlay never reveals the
   workbench underneath before the current route is actually ready.
-- `apps/web/vite.config.ts` emits an atomic browser-static offline version. The
-  worker caches every emitted static application asset, HTML entry, manifest,
-  and icon during `install`, then writes `./__tuckmark-cache-ready__`; it reads
-  only that ready cache for navigation and asset responses. `sw.js` and
-  `version.json` are intentionally excluded from the version cache.
+- `apps/web/vite.config.ts` emits an atomic offline version for both production
+  surfaces. The worker caches every emitted static application asset, HTML
+  entry, manifest, and icon during `install`, then writes a root-aware
+  `__tuckmark-cache-ready__` marker; it reads only that ready cache for
+  navigation and asset responses. API, health, SSE, version metadata, and
+  non-GET requests stay network-bound. `sw.js` and `version.json` are
+  intentionally excluded from the version cache.
 - `apps/web/index.html` registers the worker before React starts and owns a
   10-second slow-start notice plus a 60-second terminal startup guard. The
   notice suggests checking for the latest version and restarting without
@@ -85,8 +88,8 @@
   owner-triggered update restart may activate a complete waiting worker. The
   flow never deletes IndexedDB, LocalStorage, OPFS, or permissions.
 - `apps/web/src/pwa-offline-readiness.ts` reports whether an active worker is
-  available for a complete offline version; it replaces the former runtime
-  asset-warmup message protocol.
+  available for a complete offline version on either production surface; it
+  replaces the former runtime asset-warmup message protocol.
 - `apps/web/src/workbench-route-registry.tsx` now exposes route preloading
   helpers for `/templates`, `/canvas`, and `/system`, and
   `apps/web/src/workbench-app.tsx` uses them in two places:
