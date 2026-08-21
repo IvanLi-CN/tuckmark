@@ -1,5 +1,6 @@
 import fs from "node:fs/promises"
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http"
+import { createConnection, type Socket as TcpSocket } from "node:net"
 import path from "node:path"
 import {
   type ArtifactPackets,
@@ -94,28 +95,33 @@ export interface ServerService {
   ): Promise<Awaited<ReturnType<TuckmarkService["printSafeTextLabel"]>>>
 }
 
+type BunPipeSocket = {
+  data?: TcpSocket
+  write: (data: Uint8Array | string) => unknown
+  end: () => void
+  terminate: () => void
+}
+
 type BunIpcServer = {
   stop: (closeActiveConnections?: boolean) => void | Promise<void>
 }
 
 type BunRuntime = {
-  serve: (options: {
+  listen: (options: {
     unix: string
-    fetch: (request: Request) => Response | Promise<Response>
+    socket: {
+      open: (socket: BunPipeSocket) => void
+      data: (socket: BunPipeSocket, data: Uint8Array | ArrayBuffer | string) => void
+      close: (socket: BunPipeSocket) => void
+      error: (socket: BunPipeSocket, error: unknown) => void
+    }
   }) => BunIpcServer
 }
 
 function resolveBunRuntime(): BunRuntime | undefined {
   if (process.platform !== "win32") return undefined
   const runtime = globalThis as typeof globalThis & { Bun?: BunRuntime }
-  return typeof runtime.Bun?.serve === "function" ? runtime.Bun : undefined
-}
-
-function removeHopByHopHeaders(headers: Headers): Headers {
-  for (const name of ["connection", "content-length", "host", "transfer-encoding"]) {
-    headers.delete(name)
-  }
-  return headers
+  return typeof runtime.Bun?.listen === "function" ? runtime.Bun : undefined
 }
 
 const previewOptionsSchema = z.object({
@@ -1002,6 +1008,7 @@ export function startServer(
   const ipcServer = createHttpServer(app)
   const bunRuntime = resolveBunRuntime()
   let bunIpcServer: BunIpcServer | undefined
+  const bunIpcConnections = new Set<TcpSocket>()
   let httpClosing = false
   let ipcReady = false
   let ipcStartupError: Error | undefined
@@ -1026,11 +1033,15 @@ export function startServer(
         .then(() => server.stop(true))
         .then(
           () => {
+            for (const connection of bunIpcConnections) connection.destroy()
+            bunIpcConnections.clear()
             ipcCloseComplete = true
             finishClose()
           },
           (error: unknown) => {
             closeError ??= error instanceof Error ? error : new Error(String(error))
+            for (const connection of bunIpcConnections) connection.destroy()
+            bunIpcConnections.clear()
             ipcCloseComplete = true
             finishClose()
           }
@@ -1078,28 +1089,42 @@ export function startServer(
   const startWindowsBunIpc = () => {
     if (!bunRuntime) throw new Error("Bun native IPC runtime is unavailable on Windows.")
     const endpoint = resolveIpcEndpoint(instance)
-    bunIpcServer = bunRuntime.serve({
+    const tcpHost = host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host
+    // Bun's node:http bridge cannot bind Windows Named Pipes. Bun.listen uses
+    // its native WindowsNamedPipe path, so proxy the raw pipe bytes to the
+    // existing Node HTTP server and keep the application contract unchanged.
+    bunIpcServer = bunRuntime.listen({
       unix: endpoint.address,
-      async fetch(request) {
-        const target = new URL(request.url)
-        target.protocol = "http:"
-        target.hostname = host
-        target.port = String(port)
-        const headers = removeHopByHopHeaders(new Headers(request.headers))
-        headers.set("x-tuckmark-ipc", "1")
-        const fetchOptions: RequestInit = {
-          method: request.method,
-          headers,
-        }
-        if (request.method !== "GET" && request.method !== "HEAD") {
-          fetchOptions.body = await request.arrayBuffer()
-        }
-        const response = await fetch(target, fetchOptions)
-        return new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: response.headers,
-        })
+      socket: {
+        open(socket) {
+          const connection = createConnection({ host: tcpHost, port })
+          socket.data = connection
+          bunIpcConnections.add(connection)
+          connection.on("data", (data: Buffer) => socket.write(data))
+          connection.on("end", () => socket.end())
+          connection.on("close", () => {
+            bunIpcConnections.delete(connection)
+            socket.terminate()
+          })
+          connection.on("error", () => socket.terminate())
+        },
+        data(socket, data) {
+          const connection = socket.data
+          if (!connection) return
+          connection.write(
+            typeof data === "string"
+              ? data
+              : data instanceof ArrayBuffer
+                ? new Uint8Array(data)
+                : data
+          )
+        },
+        close(socket) {
+          socket.data?.destroy()
+        },
+        error(socket) {
+          socket.data?.destroy()
+        },
       },
     })
     return endpoint
@@ -1119,6 +1144,7 @@ export function startServer(
     .catch((error: unknown) => {
       if (bunRuntime) {
         try {
+          startHttpListener()
           const endpoint = startWindowsBunIpc()
           ipcReady = true
           if (httpClosing) {
@@ -1126,7 +1152,6 @@ export function startServer(
             return
           }
           console.log(`tuckmark DEVD IPC listening on ${endpoint.address}`)
-          startHttpListener()
           return
         } catch (fallbackError) {
           error = fallbackError
