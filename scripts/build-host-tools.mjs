@@ -27,7 +27,9 @@ export const HOST_TOOL_TARGETS = {
     targetTriple: "x86_64-unknown-linux-gnu",
   },
   "windows-x64": {
-    bunTarget: "bun-windows-x64-baseline",
+    // The Windows runner is already the target platform; cross-target extraction
+    // is unreliable in Bun 1.3.14 on the hosted runner.
+    bunTarget: null,
     extension: ".exe",
     sign: false,
     targetTriple: "x86_64-pc-windows-msvc",
@@ -129,12 +131,13 @@ export async function buildHostTools({
   )
 
   const defines = buildDefines({ version, sha, target: targetConfig.targetTriple })
+  const compileTargetArgs = targetConfig.bunTarget ? [`--target=${targetConfig.bunTarget}`] : []
   run("bun", [
     "build",
     "--compile",
     "--no-compile-autoload-dotenv",
     "--no-compile-autoload-bunfig",
-    `--target=${targetConfig.bunTarget}`,
+    ...compileTargetArgs,
     ...defines,
     path.join(rootDir, "packages", "cli", "src", "index.ts"),
     "--outfile",
@@ -145,7 +148,7 @@ export async function buildHostTools({
     "--compile",
     "--no-compile-autoload-dotenv",
     "--no-compile-autoload-bunfig",
-    `--target=${targetConfig.bunTarget}`,
+    ...compileTargetArgs,
     "--asset-naming=[dir]/[name].[ext]",
     ...defines,
     serverEntry,

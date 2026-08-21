@@ -15,7 +15,7 @@ describe("host-tools build contract", () => {
     expect(HOST_TOOL_TARGETS["darwin-arm64"].bunTarget).toBe("bun-darwin-arm64")
     expect(HOST_TOOL_TARGETS["darwin-x64"].bunTarget).toBe("bun-darwin-x64")
     expect(HOST_TOOL_TARGETS["linux-x64"].bunTarget).toBe("bun-linux-x64-baseline")
-    expect(HOST_TOOL_TARGETS["windows-x64"].bunTarget).toBe("bun-windows-x64-baseline")
+    expect(HOST_TOOL_TARGETS["windows-x64"].bunTarget).toBeNull()
   })
 
   it("embeds a complete target triple in each executable", () => {
