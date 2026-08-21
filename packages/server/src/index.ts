@@ -30,7 +30,7 @@ import {
   agentImportTemplateSchema,
   buildInventoryTemplateInput,
 } from "@tuckmark/inventory"
-import { isIpcSocket, listenIpc, resolveRequiredInstance } from "@tuckmark/ipc"
+import { isIpcSocket, listenIpc, resolveIpcEndpoint, resolveRequiredInstance } from "@tuckmark/ipc"
 import cors from "cors"
 import express from "express"
 import { z } from "zod"
@@ -92,6 +92,30 @@ export interface ServerService {
     request: SafeTextLabelInput,
     printerName?: string
   ): Promise<Awaited<ReturnType<TuckmarkService["printSafeTextLabel"]>>>
+}
+
+type BunIpcServer = {
+  stop: (closeActiveConnections?: boolean) => void | Promise<void>
+}
+
+type BunRuntime = {
+  serve: (options: {
+    unix: string
+    fetch: (request: Request) => Response | Promise<Response>
+  }) => BunIpcServer
+}
+
+function resolveBunRuntime(): BunRuntime | undefined {
+  if (process.platform !== "win32") return undefined
+  const runtime = globalThis as typeof globalThis & { Bun?: BunRuntime }
+  return typeof runtime.Bun?.serve === "function" ? runtime.Bun : undefined
+}
+
+function removeHopByHopHeaders(headers: Headers): Headers {
+  for (const name of ["connection", "content-length", "host", "transfer-encoding"]) {
+    headers.delete(name)
+  }
+  return headers
 }
 
 const previewOptionsSchema = z.object({
@@ -976,6 +1000,8 @@ export function startServer(
   const app = createApp(service, { agentImportService, devdConfigService, devdDataService })
   const httpServer = createHttpServer(app)
   const ipcServer = createHttpServer(app)
+  const bunRuntime = resolveBunRuntime()
+  let bunIpcServer: BunIpcServer | undefined
   let httpClosing = false
   let ipcReady = false
   let ipcStartupError: Error | undefined
@@ -993,6 +1019,24 @@ export function startServer(
   }
   const closeIpcServer = () => {
     if (ipcCloseComplete) return
+    if (bunIpcServer) {
+      const server = bunIpcServer
+      bunIpcServer = undefined
+      Promise.resolve()
+        .then(() => server.stop(true))
+        .then(
+          () => {
+            ipcCloseComplete = true
+            finishClose()
+          },
+          (error: unknown) => {
+            closeError ??= error instanceof Error ? error : new Error(String(error))
+            ipcCloseComplete = true
+            finishClose()
+          }
+        )
+      return
+    }
     if (!ipcServer.listening) {
       if (ipcReady || ipcStartupError) {
         ipcCloseComplete = true
@@ -1023,6 +1067,44 @@ export function startServer(
     return httpServer
   }) as typeof httpServer.close
   ;(httpServer as HttpServer & { ipcServer?: HttpServer }).ipcServer = ipcServer
+
+  const startHttpListener = () => {
+    if (httpClosing) return
+    httpServer.listen(port, host, () => {
+      console.log(`tuckmark server listening on http://${host}:${port}`)
+    })
+  }
+
+  const startWindowsBunIpc = () => {
+    if (!bunRuntime) throw new Error("Bun native IPC runtime is unavailable on Windows.")
+    const endpoint = resolveIpcEndpoint(instance)
+    bunIpcServer = bunRuntime.serve({
+      unix: endpoint.address,
+      async fetch(request) {
+        const target = new URL(request.url)
+        target.protocol = "http:"
+        target.hostname = host
+        target.port = String(port)
+        const headers = removeHopByHopHeaders(new Headers(request.headers))
+        headers.set("x-tuckmark-ipc", "1")
+        const fetchOptions: RequestInit = {
+          method: request.method,
+          headers,
+        }
+        if (request.method !== "GET" && request.method !== "HEAD") {
+          fetchOptions.body = await request.arrayBuffer()
+        }
+        const response = await fetch(target, fetchOptions)
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        })
+      },
+    })
+    return endpoint
+  }
+
   void listenIpc(ipcServer, instance)
     .then((endpoint) => {
       ipcReady = true
@@ -1032,11 +1114,24 @@ export function startServer(
       }
       console.log(`tuckmark DEVD IPC listening on ${endpoint.address}`)
       if (httpClosing) return
-      httpServer.listen(port, host, () => {
-        console.log(`tuckmark server listening on http://${host}:${port}`)
-      })
+      startHttpListener()
     })
-    .catch((error) => {
+    .catch((error: unknown) => {
+      if (bunRuntime) {
+        try {
+          const endpoint = startWindowsBunIpc()
+          ipcReady = true
+          if (httpClosing) {
+            closeIpcServer()
+            return
+          }
+          console.log(`tuckmark DEVD IPC listening on ${endpoint.address}`)
+          startHttpListener()
+          return
+        } catch (fallbackError) {
+          error = fallbackError
+        }
+      }
       ipcStartupError = error instanceof Error ? error : new Error(String(error))
       if (httpClosing) {
         ipcCloseComplete = true

@@ -112,9 +112,62 @@ export type IpcResponse<T> = {
   body: T
 }
 
+type BunPipeFetch = (input: string, init?: RequestInit & { unix: string }) => Promise<Response>
+
+function resolveBunPipeFetch(): BunPipeFetch | undefined {
+  if (process.platform !== "win32") return undefined
+  const runtime = globalThis as typeof globalThis & {
+    Bun?: { serve?: unknown }
+  }
+  if (typeof runtime.Bun?.serve !== "function") return undefined
+  return globalThis.fetch as BunPipeFetch
+}
+
+async function requestIpcWithBunPipe<T>(
+  endpoint: IpcEndpoint,
+  options: IpcRequest,
+  body: string | undefined,
+  fetchPipe: BunPipeFetch
+): Promise<IpcResponse<T>> {
+  const headers = new Headers({
+    accept: "application/json",
+    ...(body === undefined
+      ? {}
+      : {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(body).toString(),
+        }),
+    ...options.headers,
+    "x-tuckmark-ipc": "1",
+  })
+  const fetchOptions: RequestInit & { unix: string } = {
+    unix: endpoint.address,
+    method: options.method ?? (body === undefined ? "GET" : "POST"),
+    headers,
+  }
+  if (body !== undefined) fetchOptions.body = body
+  const response = await fetchPipe(`http://tuckmark-ipc${options.path}`, fetchOptions)
+  const text = await response.text()
+  let parsed: T
+  try {
+    parsed = (text ? JSON.parse(text) : undefined) as T
+  } catch (error) {
+    throw new Error(
+      `DEVD IPC returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+  return {
+    status: response.status,
+    headers: Object.fromEntries(response.headers.entries()),
+    body: parsed,
+  }
+}
+
 export async function requestIpc<T>(options: IpcRequest): Promise<IpcResponse<T>> {
   const endpoint = resolveIpcEndpoint(options.instance)
   const body = options.body === undefined ? undefined : JSON.stringify(options.body)
+  const fetchPipe = endpoint.transport === "pipe" ? resolveBunPipeFetch() : undefined
+  if (fetchPipe) return requestIpcWithBunPipe(endpoint, options, body, fetchPipe)
   const requestOptions: RequestOptions = {
     method: options.method ?? (body === undefined ? "GET" : "POST"),
     path: options.path,
