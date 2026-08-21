@@ -277,7 +277,12 @@ export async function listenIpc(server: Server, instance: string): Promise<IpcEn
       }
       server.once("error", onError)
       server.once("listening", onListening)
-      server.listen(endpoint.address)
+      // Bun's Windows node:net bridge requires the options form for named
+      // pipes; the bare path form is interpreted as a filesystem path and
+      // fails with ENOENT in compiled host tools.
+      const listenTarget =
+        endpoint.transport === "pipe" ? { path: endpoint.address } : endpoint.address
+      server.listen(listenTarget)
     })
     if (endpoint.transport === "unix") {
       // The IPC marker bypasses HTTP loopback checks, so the filesystem
