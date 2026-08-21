@@ -48,9 +48,7 @@ async function waitForHealth(baseUrl, child, childOutput) {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       const output = childOutput.join("").trim()
-      throw new Error(
-        `tuckmark-devd exited with ${child.exitCode}${output ? `: ${output}` : ""}`
-      )
+      throw new Error(`tuckmark-devd exited with ${child.exitCode}${output ? `: ${output}` : ""}`)
     }
     try {
       const response = await fetch(`${baseUrl}/health`)
