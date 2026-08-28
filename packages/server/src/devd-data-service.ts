@@ -333,6 +333,7 @@ const canvasDraftDocumentSchema = z
     id: dataIdentifierSchema,
     presetId: dataIdentifierSchema,
     name: dataIdentifierSchema,
+    description: z.string().optional(),
     source: canvasDraftSourceSchema,
     templateId: dataIdentifierSchema.optional(),
     baseVersionId: dataIdentifierSchema.optional(),

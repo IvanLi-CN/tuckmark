@@ -259,6 +259,7 @@ export type CanvasDraftDocument = {
   id: string
   presetId: string
   name: string
+  description?: string
   source: CanvasDraftSource
   templateId?: string
   baseVersionId?: string

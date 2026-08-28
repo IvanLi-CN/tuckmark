@@ -359,6 +359,7 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     normalizedFields,
     source
   )
+  const hasDescription = Object.getOwnPropertyDescriptor(unitDocument, "description") !== undefined
   const hasRecommendedUse =
     Object.getOwnPropertyDescriptor(unitDocument, "recommendedUse") !== undefined
   return {
@@ -367,6 +368,7 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     id: unitDocument.id,
     presetId: unitDocument.presetId,
     name: unitDocument.name,
+    ...(hasDescription ? { description: unitDocument.description } : {}),
     source,
     ...(unitDocument.templateId ? { templateId: unitDocument.templateId } : {}),
     ...(unitDocument.baseVersionId ? { baseVersionId: unitDocument.baseVersionId } : {}),

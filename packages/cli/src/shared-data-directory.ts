@@ -254,6 +254,7 @@ const canvasDraftDocumentSchema = z
     id: z.string().min(1),
     presetId: z.string().min(1),
     name: z.string().min(1),
+    description: z.string().optional(),
     source: canvasDraftSourceSchema,
     templateId: z.string().min(1).optional(),
     baseVersionId: z.string().min(1).optional(),
