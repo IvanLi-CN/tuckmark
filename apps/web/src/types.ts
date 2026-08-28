@@ -266,6 +266,7 @@ export type CanvasDraftDocument = {
   width: number
   height: number
   renderOptions?: Partial<DocumentRenderOptions>
+  tags?: string[]
   recommendedUse?: string
   fields: CanvasDraftField[]
   elements: CanvasDraftElement[]

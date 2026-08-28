@@ -338,6 +338,7 @@ describe("cli smoke", () => {
         (await runCli(["agent-import", "catalog", "--instance", instance])).stdout
       ) as { templates: Array<{ recommendedUse?: string }> }
       expect(catalog.templates[0]?.recommendedUse).toBe("electronics")
+      expect(catalog.templates[0]).not.toHaveProperty("recommendedUses")
 
       const waiting = JSON.parse(
         (
@@ -510,6 +511,13 @@ describe("cli smoke", () => {
         name: "Component Bin SOT-23",
       })
 
+      const listResult = JSON.parse(
+        (await runCliOn(instance, ["template", "list", "--source", "user"])).stdout
+      ) as { templates: Array<{ id: string; recommendedUse?: string }> }
+      const listed = listResult.templates.find((template) => template.id === "component-bin-sot23")
+      expect(listed).toBeDefined()
+      expect(listed).not.toHaveProperty("recommendedUses")
+
       const updated = await runCliOn(instance, [
         "template",
         "update",
@@ -530,6 +538,7 @@ describe("cli smoke", () => {
       expect(showResult.source).toBe("user-template")
       expect(showResult.template.id).toBe("component-bin-sot23")
       expect(showResult.template.recommendedUse).toBeUndefined()
+      expect(showResult.template).not.toHaveProperty("recommendedUses")
       expect(showResult.savedVersions[0]?.version).toBe(1)
     })
   })
@@ -563,6 +572,7 @@ describe("cli smoke", () => {
       expect(exported.editBaseline.workingCopyUpdatedAt).toBeTruthy()
       expect(exported.editor.layers.length).toBeGreaterThan(0)
       expect(exported.tags).toEqual(["electronics", "component-bin"])
+      expect(exported).not.toHaveProperty("recommendedUses")
 
       const collision = await runCliWithEnvAllowFailure(
         ["template", "import", "--file", fixturePath, "--instance", instance],

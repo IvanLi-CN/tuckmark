@@ -34,16 +34,8 @@ const sharedTemplateRecordSchema = z
     archivedAt: z.string().nullable().optional(),
     currentVersionId: z.string().min(1),
     recommendedUse: agentImportRecommendedUseSchema.optional(),
-    // Read old shared records without exposing the retired collection field.
-    recommendedUses: z.array(agentImportRecommendedUseSchema).optional(),
   })
-  .transform(({ recommendedUses, ...record }) => {
-    const legacyRecommendedUse = recommendedUses?.filter(Boolean).join("；") || undefined
-    return {
-      ...record,
-      recommendedUse: record.recommendedUse ?? legacyRecommendedUse,
-    }
-  })
+  .strict()
 
 const sharedTemplateVersionSchema = z.object({
   document: z.object({

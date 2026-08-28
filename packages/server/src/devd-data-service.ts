@@ -170,24 +170,7 @@ export type DevdDataArchive = {
   }
 }
 
-const recommendedUseSchema = z
-  .union([z.string().trim(), z.object({ scope: z.string().trim().min(1) })])
-  .transform((value) => (typeof value === "string" ? value : value.scope))
-
-const legacyRecommendedUsesSchema = z.array(recommendedUseSchema)
-
-function normalizeRecommendedUse(value: unknown): string | undefined {
-  if (typeof value === "string") return value.trim() || undefined
-  if (Array.isArray(value)) {
-    return (
-      value
-        .flatMap((entry) => recommendedUseSchema.safeParse(entry).data ?? [])
-        .filter(Boolean)
-        .join("；") || undefined
-    )
-  }
-  return recommendedUseSchema.safeParse(value).data
-}
+const recommendedUseSchema = z.string().trim()
 
 const templateRecordSchema = z
   .object({
@@ -202,12 +185,8 @@ const templateRecordSchema = z
     currentVersionId: z.string().min(1),
     fieldOrder: z.array(z.string()),
     recommendedUse: recommendedUseSchema.optional(),
-    recommendedUses: legacyRecommendedUsesSchema.optional(),
   })
-  .transform(({ recommendedUses, ...record }) => ({
-    ...record,
-    recommendedUse: record.recommendedUse ?? normalizeRecommendedUse(recommendedUses),
-  }))
+  .strict()
 
 const dataIdentifierSchema = z.string().trim().min(1)
 const canvasDraftSourceSchema = z.discriminatedUnion("kind", [
@@ -363,7 +342,6 @@ const canvasDraftDocumentSchema = z
     renderOptions: z.record(z.string(), z.unknown()).optional(),
     tags: z.array(z.string().min(1)).default([]),
     recommendedUse: recommendedUseSchema.optional(),
-    recommendedUses: legacyRecommendedUsesSchema.optional(),
     fields: z.array(
       z.object({ key: dataIdentifierSchema, label: dataIdentifierSchema }).passthrough()
     ),
@@ -381,16 +359,7 @@ const canvasDraftDocumentSchema = z
       ),
     }),
   })
-  .passthrough()
-  .transform(({ recommendedUses, ...document }) => {
-    if (Object.hasOwn(document, "recommendedUse")) {
-      return document
-    }
-    const legacyRecommendedUse = normalizeRecommendedUse(recommendedUses)
-    return legacyRecommendedUse === undefined
-      ? document
-      : { ...document, recommendedUse: legacyRecommendedUse }
-  })
+  .strict()
 
 const versionRecordSchema = z.object({
   id: z.string().min(1),
@@ -891,26 +860,26 @@ export class DevdDataService {
     const workingCopies: WorkingCopyRecord[] = []
     for (const templateId of templateIds) {
       const root = path.join(this.dataDir, "templates", safeSegment(templateId))
-      const template = await readJsonIfPresent<TemplateRecord>(path.join(root, "template.json"))
+      const template = await readJsonIfPresent<unknown>(path.join(root, "template.json"))
       if (!template) continue
-      templates.push(template)
+      templates.push(templateRecordSchema.parse(template))
       for (const versionPath of await listJsonFiles(path.join(root, "versions"))) {
-        versions.push(JSON.parse(await readFile(versionPath, "utf8")) as VersionRecord)
+        versions.push(versionRecordSchema.parse(JSON.parse(await readFile(versionPath, "utf8"))))
       }
-      const workingCopy = await readJsonIfPresent<WorkingCopyRecord>(
-        path.join(root, "working-copy.json")
-      )
-      if (workingCopy) workingCopies.push(workingCopy)
+      const workingCopy = await readJsonIfPresent<unknown>(path.join(root, "working-copy.json"))
+      if (workingCopy) workingCopies.push(workingCopyRecordSchema.parse(workingCopy))
     }
     for (const kind of ["scratch", "preset-template"] as const) {
       for (const filePath of await listJsonFiles(path.join(this.dataDir, "drafts", kind))) {
-        workingCopies.push(JSON.parse(await readFile(filePath, "utf8")) as WorkingCopyRecord)
+        workingCopies.push(
+          workingCopyRecordSchema.parse(JSON.parse(await readFile(filePath, "utf8")))
+        )
       }
     }
-    const legacyScratch = await readJsonIfPresent<WorkingCopyRecord>(
+    const legacyScratch = await readJsonIfPresent<unknown>(
       path.join(this.dataDir, "drafts", "scratch.json")
     )
-    if (legacyScratch) workingCopies.push(legacyScratch)
+    if (legacyScratch) workingCopies.push(workingCopyRecordSchema.parse(legacyScratch))
     const settings =
       (await readJsonIfPresent<Record<string, any>>(
         path.join(this.dataDir, "settings", "app-settings.json")
@@ -1312,7 +1281,7 @@ export class DevdDataService {
       }
       const hasRecommendedUse = Object.hasOwn(document, "recommendedUse")
       const recommendedUse = hasRecommendedUse
-        ? normalizeRecommendedUse(document.recommendedUse)
+        ? document.recommendedUse?.trim() || undefined
         : existing?.recommendedUse
       const template: TemplateRecord = {
         id: templateId,
@@ -1365,7 +1334,7 @@ export class DevdDataService {
       }
       const working = workingCopies.find((item) => item.sourceKey === `user:${template.id}`)
       if (patch.recommendedUse !== undefined) {
-        const recommendedUse = normalizeRecommendedUse(patch.recommendedUse)
+        const recommendedUse = patch.recommendedUse.trim()
         if (recommendedUse) template.recommendedUse = recommendedUse
         else delete template.recommendedUse
         if (working) {

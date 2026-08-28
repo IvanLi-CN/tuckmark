@@ -919,13 +919,15 @@ describe("canvas-editor-model monochrome contract", () => {
     })
   })
 
-  it("normalizes legacy suggested-use arrays in browser drafts", () => {
+  it("does not retain the retired collection key in normalized browser drafts", () => {
     const normalized = normalizeDraftDocument({
       ...createDraftFromSystemTemplate(getSystemTemplateById("cable-tag")),
+      recommendedUse: "electronics",
       recommendedUses: [{ scope: "electronics", weight: 90 }],
     } as unknown as CanvasDraftDocument)
 
-    expect(normalized.recommendedUse).toBe("electronics and cable labeling")
+    expect(normalized.recommendedUse).toBe("electronics")
+    expect(normalized).not.toHaveProperty("recommendedUses")
   })
 
   it("assigns a fallback width to widthless system template text elements when imported", () => {

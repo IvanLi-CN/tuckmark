@@ -8,17 +8,17 @@ export const agentImportTemplateFieldSchema = z.object({
 })
 export type AgentImportTemplateField = z.infer<typeof agentImportTemplateFieldSchema>
 
-export const agentImportRecommendedUseSchema = z
-  .union([z.string().trim().min(1), z.object({ scope: z.string().trim().min(1) })])
-  .transform((value) => (typeof value === "string" ? value : value.scope))
+export const agentImportRecommendedUseSchema = z.string().trim().min(1)
 
-export const agentImportTemplateSchema = z.object({
-  source: z.enum(["system", "user-template"]),
-  id: z.string().min(1),
-  name: z.string().min(1),
-  fields: z.array(agentImportTemplateFieldSchema).default([]),
-  recommendedUse: agentImportRecommendedUseSchema.optional(),
-})
+export const agentImportTemplateSchema = z
+  .object({
+    source: z.enum(["system", "user-template"]),
+    id: z.string().min(1),
+    name: z.string().min(1),
+    fields: z.array(agentImportTemplateFieldSchema).default([]),
+    recommendedUse: agentImportRecommendedUseSchema.optional(),
+  })
+  .strict()
 export type AgentImportTemplate = z.infer<typeof agentImportTemplateSchema>
 
 export const agentImportMaterialSchema = z.object({
