@@ -301,26 +301,92 @@ describe("DevdDataService", () => {
     )
   })
 
-  it("persists template recommendations carried by an imported draft", async () => {
+  it("persists one suggested-use string and rejects the retired collection key", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
     cleanupPaths.push(root)
     const service = new DevdDataService(root)
 
-    await service.mutateRuntime({
+    const saved = await service.mutateRuntime({
       command: "save-template",
       expectedRevision: 0,
       args: {
         name: "Recommended mock template",
         document: {
           ...mockDocument("Recommended mock template"),
-          recommendedUses: [{ scope: "electronics", weight: 90 }],
+          recommendedUse: "electronics",
         },
       },
     })
 
-    expect((await service.runtimeSnapshot()).templates[0]).toMatchObject({
+    const snapshot = await service.runtimeSnapshot()
+    expect(snapshot.templates[0]).toMatchObject({
       recommendedUse: "electronics",
     })
+    expect(snapshot.templates[0]).not.toHaveProperty("recommendedUses")
+    expect(snapshot.versions[0]?.document).not.toHaveProperty("recommendedUses")
+    expect(snapshot.workingCopies[0]?.draft).not.toHaveProperty("recommendedUses")
+
+    await expect(
+      service.mutateRuntime({
+        command: "save-template",
+        expectedRevision: saved.revision,
+        args: {
+          name: "Rejected mock template",
+          document: {
+            ...mockDocument("Rejected mock template"),
+            recommendedUses: ["electronics"],
+          },
+        },
+      })
+    ).rejects.toThrow(/Unrecognized key/)
+  })
+
+  it("rejects the retired collection key from durable runtime records", async () => {
+    for (const recordType of ["template", "version", "working-copy"] as const) {
+      const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+      cleanupPaths.push(root)
+      const service = new DevdDataService(root)
+      const saved = await service.mutateRuntime({
+        command: "save-template",
+        expectedRevision: 0,
+        args: {
+          name: "Durable mock template",
+          document: {
+            ...mockDocument("Durable mock template"),
+            recommendedUse: "electronics",
+          },
+        },
+      })
+      const templateRoot = path.join(root, "templates", saved.data.template.id)
+      const filePath =
+        recordType === "template"
+          ? path.join(templateRoot, "template.json")
+          : recordType === "version"
+            ? path.join(templateRoot, "versions", `${saved.data.version.id}.json`)
+            : path.join(templateRoot, "working-copy.json")
+      const stored = JSON.parse(await readFile(filePath, "utf8")) as Record<string, unknown>
+      const invalid =
+        recordType === "template"
+          ? { ...stored, recommendedUses: ["electronics"] }
+          : recordType === "version"
+            ? {
+                ...stored,
+                document: {
+                  ...(stored.document as Record<string, unknown>),
+                  recommendedUses: ["electronics"],
+                },
+              }
+            : {
+                ...stored,
+                draft: {
+                  ...(stored.draft as Record<string, unknown>),
+                  recommendedUses: ["electronics"],
+                },
+              }
+      await writeFile(filePath, JSON.stringify(invalid))
+
+      await expect(service.runtimeSnapshot()).rejects.toThrow(/Unrecognized key/)
+    }
   })
 
   it("allows an explicit empty suggested-use value to clear existing metadata", async () => {

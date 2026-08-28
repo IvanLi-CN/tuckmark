@@ -23,6 +23,7 @@ import {
   RuntimeDataSourceChangedError,
 } from "./cross-tab-coordinator.js"
 import { setDataDirectoryRuntimeMode } from "./data-directory-service.js"
+import type { CanvasDraftDocument } from "./types.js"
 import {
   archiveUserTemplate,
   clearTemplateAutosaves,
@@ -348,6 +349,31 @@ describe("user-template-store", () => {
     })
 
     expect((await readUserTemplate(saved.template.id))?.recommendedUse).toBeUndefined()
+  })
+
+  it("does not retain the retired collection key in saved versions or working copies", async () => {
+    const draft = {
+      ...createDraftFromPreset(getPresetById("shipping-wide")),
+      recommendedUse: "warehouse labels",
+      recommendedUses: ["warehouse labels"],
+    } as unknown as CanvasDraftDocument
+    const saved = await saveUserTemplate({
+      name: "Warehouse Label",
+      document: draft,
+    })
+
+    expect(saved.version.document.recommendedUse).toBe("warehouse labels")
+    expect(saved.version.document).not.toHaveProperty("recommendedUses")
+    expect(saved.workingCopy.draft).not.toHaveProperty("recommendedUses")
+    expect(
+      (await readUserTemplateHistory(saved.template.id))?.saved[0]?.document
+    ).not.toHaveProperty("recommendedUses")
+    const workingCopy = await loadWorkingCopy({
+      kind: "user-template",
+      templateId: saved.template.id,
+    })
+    expect(workingCopy).not.toBeNull()
+    expect(workingCopy?.draft).not.toHaveProperty("recommendedUses")
   })
 
   it("creates autosaves only for named user templates and respects the autosave interval", async () => {

@@ -129,7 +129,7 @@ describe("AgentImportService", () => {
     ).toThrow("Agent import item IDs must be unique.")
   })
 
-  it("recovers a prepared DEVD transaction before listing the import catalog", async () => {
+  it("rejects a recovered template with the retired collection key", async () => {
     const dataDir = await createDataDir()
     const service = new AgentImportService(dataDir)
     const createdAt = "2026-07-02T00:00:00.000Z"
@@ -174,16 +174,7 @@ describe("AgentImportService", () => {
       })
     )
 
-    const catalog = await service.catalog()
-
-    expect(catalog.templates).toContainEqual(
-      expect.objectContaining({
-        source: "user-template",
-        id: "recovered-template",
-        name: "Recovered mock template",
-        recommendedUse: "mock electronics",
-      })
-    )
+    await expect(service.catalog()).rejects.toThrow(/Unrecognized key/)
   })
 
   it("authenticates a session, exposes template metadata, and commits both intake classes", async () => {

@@ -235,39 +235,22 @@ export const templateElementSchema = z.discriminatedUnion("kind", [
 ])
 export type TemplateElement = z.infer<typeof templateElementSchema>
 
-export const templateRecommendedUseSchema = z
-  .union([
-    z.string().trim().min(1),
-    // Read packages created before applicability was simplified to strings.
-    z.object({ scope: z.string().trim().min(1) }),
-  ])
-  .transform((value) => (typeof value === "string" ? value : value.scope))
+export const templateRecommendedUseSchema = z.string().trim().min(1)
 export type TemplateRecommendedUse = z.infer<typeof templateRecommendedUseSchema>
 
-export function normalizeTemplateRecommendedUse(value: unknown): string | undefined {
-  if (typeof value === "string") {
-    return value.trim() || undefined
-  }
-  if (Array.isArray(value)) {
-    const legacyUses = value
-      .flatMap((entry) => templateRecommendedUseSchema.safeParse(entry).data ?? [])
-      .filter(Boolean)
-    return legacyUses.join("；") || undefined
-  }
-  return templateRecommendedUseSchema.safeParse(value).data
-}
-
-export const templateSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string().default(""),
-  width: z.number().positive(),
-  height: z.number().positive(),
-  fields: z.array(templateFieldSchema),
-  elements: z.array(templateElementSchema),
-  tags: z.array(z.string()).default([]),
-  recommendedUse: templateRecommendedUseSchema.optional(),
-})
+export const templateSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string().default(""),
+    width: z.number().positive(),
+    height: z.number().positive(),
+    fields: z.array(templateFieldSchema),
+    elements: z.array(templateElementSchema),
+    tags: z.array(z.string()).default([]),
+    recommendedUse: templateRecommendedUseSchema.optional(),
+  })
+  .strict()
 export type TemplateDefinition = z.infer<typeof templateSchema>
 
 export const directCanvasSchema = z.object({

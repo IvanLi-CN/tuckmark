@@ -9,7 +9,6 @@ import {
 import {
   type DirectCanvasDefinition,
   directCanvasSchema,
-  normalizeTemplateRecommendedUse,
   renderOptionsSchema,
   type TemplateElement,
   templateElementSchema,
@@ -72,22 +71,14 @@ export const userTemplatePackageSchema = z
       })
       .strict()
       .optional(),
-    // Read packages exported before the scope model was corrected to one suggestion string.
-    recommendedUses: z.array(templateRecommendedUseSchema).optional(),
   })
   .strict()
 export type UserTemplatePackage = z.infer<typeof userTemplatePackageSchema>
 
 export function parseUserTemplatePackage(input: unknown): UserTemplatePackage {
   const parsed = userTemplatePackageSchema.parse(input)
-  const normalized = {
-    ...parsed,
-    recommendedUse:
-      parsed.recommendedUse ?? normalizeTemplateRecommendedUse(parsed.recommendedUses),
-  }
-  delete (normalized as { recommendedUses?: unknown }).recommendedUses
-  validateUserTemplatePackageSemantics(normalized)
-  return normalized
+  validateUserTemplatePackageSemantics(parsed)
+  return parsed
 }
 
 export function compileUserTemplatePackageToCanvas(

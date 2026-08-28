@@ -359,20 +359,25 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     normalizedFields,
     source
   )
+  const hasDescription = Object.getOwnPropertyDescriptor(unitDocument, "description") !== undefined
   const hasRecommendedUse =
-    Object.getOwnPropertyDescriptor(unitDocument, "recommendedUse") !== undefined ||
-    Object.getOwnPropertyDescriptor(unitDocument, "recommendedUses") !== undefined
-  const recommendedUse = normalizeRecommendedUse(
-    unitDocument.recommendedUse ?? (unitDocument as { recommendedUses?: unknown }).recommendedUses
-  )
+    Object.getOwnPropertyDescriptor(unitDocument, "recommendedUse") !== undefined
   return {
-    ...unitDocument,
+    version: unitDocument.version,
     unit: "mm",
+    id: unitDocument.id,
+    presetId: unitDocument.presetId,
+    name: unitDocument.name,
+    ...(hasDescription ? { description: unitDocument.description } : {}),
     source,
-    templateId: unitDocument.templateId,
-    baseVersionId: unitDocument.baseVersionId,
-    lastSavedAt: unitDocument.lastSavedAt,
-    ...(hasRecommendedUse ? { recommendedUse } : {}),
+    ...(unitDocument.templateId ? { templateId: unitDocument.templateId } : {}),
+    ...(unitDocument.baseVersionId ? { baseVersionId: unitDocument.baseVersionId } : {}),
+    ...(unitDocument.lastSavedAt ? { lastSavedAt: unitDocument.lastSavedAt } : {}),
+    width: unitDocument.width,
+    height: unitDocument.height,
+    ...(unitDocument.renderOptions ? { renderOptions: unitDocument.renderOptions } : {}),
+    ...(unitDocument.tags ? { tags: unitDocument.tags } : {}),
+    ...(hasRecommendedUse ? { recommendedUse: unitDocument.recommendedUse?.trim() ?? "" } : {}),
     editor: {
       ...unitDocument.editor,
       gridSize: normalizeCanvasGridSize(
@@ -385,29 +390,6 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     fields: synced.fields,
     elements: synced.elements,
   }
-}
-
-function normalizeRecommendedUse(value: unknown): string | undefined {
-  if (typeof value === "string") return value.trim()
-  if (Array.isArray(value)) {
-    const legacyUses = value.flatMap((entry) => {
-      if (typeof entry === "string" && entry.trim()) return [entry.trim()]
-      if (
-        entry &&
-        typeof entry === "object" &&
-        "scope" in entry &&
-        typeof entry.scope === "string"
-      ) {
-        return entry.scope.trim() ? [entry.scope.trim()] : []
-      }
-      return []
-    })
-    return legacyUses.join("；") || undefined
-  }
-  if (value && typeof value === "object" && "scope" in value && typeof value.scope === "string") {
-    return value.scope.trim() || undefined
-  }
-  return undefined
 }
 
 export function createCanvasElement(

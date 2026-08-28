@@ -230,22 +230,48 @@ export function scaleTemplateElementGeometry(
   }
 }
 
+function canonicalizeCanvasDraftDocument(document: CanvasDraftDocument): CanvasDraftDocument {
+  const hasDescription = Object.getOwnPropertyDescriptor(document, "description") !== undefined
+  const hasRecommendedUse =
+    Object.getOwnPropertyDescriptor(document, "recommendedUse") !== undefined
+  return {
+    version: document.version,
+    unit: "mm",
+    id: document.id,
+    presetId: document.presetId,
+    name: document.name,
+    ...(hasDescription ? { description: document.description } : {}),
+    source: document.source,
+    ...(document.templateId ? { templateId: document.templateId } : {}),
+    ...(document.baseVersionId ? { baseVersionId: document.baseVersionId } : {}),
+    ...(document.lastSavedAt ? { lastSavedAt: document.lastSavedAt } : {}),
+    width: document.width,
+    height: document.height,
+    ...(document.renderOptions ? { renderOptions: document.renderOptions } : {}),
+    ...(document.tags ? { tags: document.tags } : {}),
+    ...(hasRecommendedUse ? { recommendedUse: document.recommendedUse } : {}),
+    fields: document.fields,
+    elements: document.elements,
+    editor: document.editor,
+  }
+}
+
 export function canvasDraftDocumentFromDots(document: CanvasDraftDocument): CanvasDraftDocument {
   const scale = 1 / CANVAS_DOTS_PER_MILLIMETER
-  return {
+  return canonicalizeCanvasDraftDocument({
     ...document,
     unit: "mm",
     width: scaleValue(document.width, scale),
     height: scaleValue(document.height, scale),
     elements: document.elements.map((element) => scaleDraftElementGeometry(element, scale)),
-  }
+  })
 }
 
 export function normalizeCanvasDraftDocumentUnits(
   document: CanvasDraftDocument
 ): CanvasDraftDocument {
   return document.unit === "mm"
-    ? { ...document, unit: "mm" }
+    ? canonicalizeCanvasDraftDocument(document)
     : canvasDraftDocumentFromDots(document)
 }
 

@@ -245,23 +245,7 @@ const canvasSnapStepSchema = z.preprocess(
   z.union([z.literal(0.25), z.literal(0.5), z.literal(1)])
 )
 
-const recommendedUseSchema = z
-  .union([z.string().trim(), z.object({ scope: z.string().trim().min(1) })])
-  .transform((value) => (typeof value === "string" ? value : value.scope))
-const legacyRecommendedUsesSchema = z.array(recommendedUseSchema)
-
-function normalizeRecommendedUse(value: unknown): string | undefined {
-  if (typeof value === "string") return value.trim() || undefined
-  if (Array.isArray(value)) {
-    return (
-      value
-        .flatMap((entry) => recommendedUseSchema.safeParse(entry).data ?? [])
-        .filter(Boolean)
-        .join("；") || undefined
-    )
-  }
-  return recommendedUseSchema.safeParse(value).data
-}
+const recommendedUseSchema = z.string().trim()
 
 const canvasDraftDocumentSchema = z
   .object({
@@ -270,6 +254,7 @@ const canvasDraftDocumentSchema = z
     id: z.string().min(1),
     presetId: z.string().min(1),
     name: z.string().min(1),
+    description: z.string().optional(),
     source: canvasDraftSourceSchema,
     templateId: z.string().min(1).optional(),
     baseVersionId: z.string().min(1).optional(),
@@ -279,7 +264,6 @@ const canvasDraftDocumentSchema = z
     renderOptions: renderOptionsSchema.partial().optional(),
     tags: z.array(z.string().min(1)).default([]),
     recommendedUse: recommendedUseSchema.optional(),
-    recommendedUses: legacyRecommendedUsesSchema.optional(),
     fields: z.array(canvasDraftFieldSchema),
     elements: z.array(canvasDraftElementSchema),
     editor: z.object({
@@ -289,19 +273,7 @@ const canvasDraftDocumentSchema = z
       snapStep: canvasSnapStepSchema,
     }),
   })
-  .passthrough()
-  .transform(({ recommendedUses, ...document }) => {
-    if (Object.getOwnPropertyDescriptor(document, "recommendedUse") !== undefined) {
-      return {
-        ...document,
-        recommendedUse: normalizeRecommendedUse(document.recommendedUse),
-      }
-    }
-    const legacyRecommendedUse = normalizeRecommendedUse(recommendedUses)
-    return legacyRecommendedUse === undefined
-      ? document
-      : { ...document, recommendedUse: legacyRecommendedUse }
-  })
+  .strict()
 
 const userTemplateRecordSchema = z
   .object({
@@ -316,13 +288,8 @@ const userTemplateRecordSchema = z
     currentVersionId: z.string().min(1),
     fieldOrder: z.array(z.string()),
     recommendedUse: recommendedUseSchema.optional(),
-    recommendedUses: legacyRecommendedUsesSchema.optional(),
   })
-  .transform(({ recommendedUses, ...record }) => ({
-    ...record,
-    recommendedUse:
-      normalizeRecommendedUse(record.recommendedUse) ?? normalizeRecommendedUse(recommendedUses),
-  }))
+  .strict()
 
 const userTemplateVersionSchema = z.object({
   id: z.string().min(1),
