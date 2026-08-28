@@ -4,6 +4,8 @@ import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import { pathToFileURL } from "node:url"
 
+import { assertReleasableReleaseIntent } from "./release-intent.mjs"
+
 export function parseVersion(value) {
   const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(value)
   if (!match) {
@@ -99,6 +101,7 @@ function readNextPreviewNumber(tagNames, stableVersion) {
 }
 
 export function buildReleasePlan(snapshot, tagNames, packageVersion) {
+  assertReleasableReleaseIntent(snapshot)
   const latestStableVersion = readLatestStableVersion(tagNames, packageVersion)
   const requestedVersion = bumpVersion(latestStableVersion, snapshot.type_label)
   const currentTrainVersion = readCurrentTrainVersion(tagNames, latestStableVersion)
@@ -126,6 +129,8 @@ async function main() {
   const snapshot = JSON.parse(await fs.readFile(snapshotPath, "utf8"))
   const packageJson = JSON.parse(await fs.readFile("package.json", "utf8"))
   const plan = buildReleasePlan(snapshot, readGitTags(), packageJson.version)
+  const expectedIntentId = process.env.TUCKMARK_RELEASE_INTENT_ID?.trim() ?? ""
+  assertReleasableReleaseIntent(plan, expectedIntentId)
 
   await fs.mkdir("work/release", { recursive: true })
   await fs.writeFile("work/release/release-plan.json", JSON.stringify(plan, null, 2))

@@ -11,6 +11,7 @@ describe("release notes contract", () => {
   it("renders stable release notes from a verified release plan and pull request", () => {
     const releaseContext = buildReleaseContext({
       release_version: "v0.5.2",
+      intent_id: "pr-44-7c61a5faf50462245602ad3a63858597676f7cc0-patch-stable",
       pr_number: 44,
       type_label: "type:patch",
       channel_label: "channel:stable",
@@ -31,6 +32,10 @@ describe("release notes contract", () => {
     expect(notes).toContain("[#44](https://github.com/IvanLi-CN/tuckmark/pull/44)")
     expect(notes).toContain("## Release Metadata")
     expect(notes).toContain("`channel:stable`")
+    expect(notes).toContain("`pr-44-7c61a5faf50462245602ad3a63858597676f7cc0-patch-stable`")
+    expect(notes).toContain(
+      "<!-- tuckmark-release-intent:pr-44-7c61a5faf50462245602ad3a63858597676f7cc0-patch-stable -->"
+    )
     expect(notes).toContain("`7c61a5faf50462245602ad3a63858597676f7cc0`")
     expect(notes).toContain("## Bundles")
     expect(notes).toContain("- four platform host-tools archives")
@@ -42,6 +47,7 @@ describe("release notes contract", () => {
   it("renders preview release notes without changing the required sections", () => {
     const releaseContext = buildReleaseContext({
       release_version: "v0.6.0-preview.1",
+      intent_id: "pr-45-1111111111111111111111111111111111111111-minor-preview",
       pr_number: 45,
       type_label: "type:minor",
       channel_label: "channel:preview",
@@ -66,6 +72,7 @@ describe("release notes contract", () => {
     expect(() =>
       buildReleaseContext({
         release_version: "v0.5.2",
+        intent_id: "pr-44-7c61a5faf50462245602ad3a63858597676f7cc0-patch-stable",
         type_label: "type:patch",
         channel_label: "channel:stable",
         merge_sha: "7c61a5faf50462245602ad3a63858597676f7cc0",
@@ -77,6 +84,7 @@ describe("release notes contract", () => {
   it("fails fast when the pull request metadata does not match the release context", () => {
     const releaseContext = buildReleaseContext({
       release_version: "v0.5.2",
+      intent_id: "pr-44-7c61a5faf50462245602ad3a63858597676f7cc0-patch-stable",
       pr_number: 44,
       type_label: "type:patch",
       channel_label: "channel:stable",

@@ -385,6 +385,9 @@ describe("release train planning", () => {
   it("continues the current higher preview train instead of falling back to a lower patch line", () => {
     const plan = buildReleasePlan(
       {
+        intent_id: "pr-101-1111111111111111111111111111111111111111-patch-preview",
+        pr_number: 101,
+        merge_sha: "1111111111111111111111111111111111111111",
         type_label: "type:patch",
         channel_label: "channel:preview",
       },
@@ -401,6 +404,9 @@ describe("release train planning", () => {
   it("promotes the active preview train when a stable release is published after preview work moved ahead", () => {
     const plan = buildReleasePlan(
       {
+        intent_id: "pr-102-2222222222222222222222222222222222222222-patch-stable",
+        pr_number: 102,
+        merge_sha: "2222222222222222222222222222222222222222",
         type_label: "type:patch",
         channel_label: "channel:stable",
       },
@@ -414,6 +420,9 @@ describe("release train planning", () => {
   it("starts a new preview train when the requested bump is higher than the current one", () => {
     const plan = buildReleasePlan(
       {
+        intent_id: "pr-103-3333333333333333333333333333333333333333-major-preview",
+        pr_number: 103,
+        merge_sha: "3333333333333333333333333333333333333333",
         type_label: "type:major",
         channel_label: "channel:preview",
       },

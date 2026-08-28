@@ -1,0 +1,81 @@
+name: release-intent-promotion
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Merged pull request number to promote."
+        required: true
+        type: string
+      merge_sha:
+        description: "Exact merge SHA of the merged pull request."
+        required: true
+        type: string
+      source_run_id:
+        description: "Exact ci-main run containing the skipped source snapshot."
+        required: true
+        type: string
+      source_artifact_name:
+        description: "Exact skipped release-intent artifact name."
+        required: true
+        type: string
+      type_label:
+        description: "Release type for this post-merge promotion."
+        required: true
+        type: choice
+        options:
+          - type:major
+          - type:minor
+          - type:patch
+      channel_label:
+        description: "Release channel for this post-merge promotion."
+        required: true
+        type: choice
+        options:
+          - channel:stable
+          - channel:preview
+      reason:
+        description: "Why the skipped release intent requires post-merge promotion."
+        required: true
+        type: string
+
+jobs:
+  promote:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    name: Release Intent / Promote
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+      - name: Restore immutable skipped source snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.source_artifact_name }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: work/release/source
+      - id: promote
+        name: Validate and promote release intent
+        run: node .github/scripts/promote-release-intent.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TUCKMARK_PROMOTION_PR_NUMBER: ${{ inputs.pr_number }}
+          TUCKMARK_PROMOTION_MERGE_SHA: ${{ inputs.merge_sha }}
+          TUCKMARK_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          TUCKMARK_SOURCE_ARTIFACT_NAME: ${{ inputs.source_artifact_name }}
+          TUCKMARK_PROMOTION_TYPE_LABEL: ${{ inputs.type_label }}
+          TUCKMARK_PROMOTION_CHANNEL_LABEL: ${{ inputs.channel_label }}
+          TUCKMARK_PROMOTION_REASON: ${{ inputs.reason }}
+      - name: Upload promoted release intent
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.promote.outputs.artifact_name }}
+          path: work/release/release-intent.json
+          if-no-files-found: error

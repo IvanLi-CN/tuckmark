@@ -9,6 +9,12 @@
 - `service-api print path`: the Web product path where the Web app asks the service runtime API to control hardware on its behalf
 - `host-tools archive`: a platform-native archive containing the two public
   Tuckmark executables, private detonger helpers, and released Agent Skills
+- `release intent`: an immutable authority to publish one merged pull request
+  at one exact merge commit with one legal release type and channel
+- `release-intent snapshot`: the durable artifact that records a label-gated
+  or manually promoted release intent
+- `release-intent promotion`: an audited post-merge action that derives a new
+  releasable intent from an immutable skipped snapshot without altering it
 - `Web app static runtime`: the owner-facing static deployment that runs fully in
   the browser
 - `demo mode`: the formal Web route tree backed by the Mock API layer with

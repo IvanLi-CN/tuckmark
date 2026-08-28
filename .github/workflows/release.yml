@@ -5,6 +5,19 @@ on:
     workflows: ["ci-main"]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Exact trusted workflow run that produced the release intent."
+        required: true
+        type: string
+      source_artifact_name:
+        description: "Exact release-intent artifact name from the source run."
+        required: true
+        type: string
+      intent_id:
+        description: "Exact stable release intent identifier."
+        required: true
+        type: string
 
 concurrency:
   group: release
@@ -12,7 +25,9 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     name: Release Prepare
     runs-on: ubuntu-24.04
     permissions:
@@ -63,6 +78,13 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `channel_label=${plan.channel_label ?? ""}\n`)
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `should_publish=${plan.type_label !== "type:none"}\n`)
           NODE
+        env:
+          TUCKMARK_RELEASE_INTENT_ID: ${{ inputs.intent_id }}
+      - name: Reject published release-intent replay
+        if: steps.plan.outputs.should_publish == 'true'
+        run: node .github/scripts/release-publication-guard.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - id: release-notes
         name: Render release notes and context
         run: node .github/scripts/release-notes.mjs

@@ -3,6 +3,8 @@
 import fs from "node:fs/promises"
 import { pathToFileURL } from "node:url"
 
+import { releaseIntentPublicationMarker } from "./release-publication-guard.mjs"
+
 function requireString(value, fieldName) {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`${fieldName} must be a non-empty string`)
@@ -31,6 +33,7 @@ function requireStringArray(value, fieldName) {
 export function buildReleaseContext(plan) {
   return {
     release_version: requireString(plan.release_version, "release_version"),
+    intent_id: requireString(plan.intent_id, "intent_id"),
     pr_number: requirePositiveInteger(plan.pr_number, "pr_number"),
     type_label: requireString(plan.type_label, "type_label"),
     channel_label: requireString(plan.channel_label, "channel_label"),
@@ -77,7 +80,9 @@ export function renderReleaseNotes(releaseContext, notesModel) {
     `- Channel: \`${releaseContext.channel_label}\``,
     `- Release type: \`${releaseContext.type_label}\``,
     `- Merge commit: \`${releaseContext.merge_sha}\``,
+    `- Release intent: \`${releaseContext.intent_id}\``,
     `- Pull request: ${pullRequestLink}`,
+    releaseIntentPublicationMarker(releaseContext.intent_id),
     "",
     "## Bundles",
     ...releaseContext.artifacts.map((artifact) => `- ${artifact}`),
