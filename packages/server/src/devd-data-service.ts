@@ -381,6 +381,18 @@ const workingCopyRecordSchema = z.object({
   baseVersionId: z.string().optional(),
 })
 
+function parseStoredTemplateRecord(value: unknown): TemplateRecord {
+  return templateRecordSchema.parse(value) as TemplateRecord
+}
+
+function parseStoredVersionRecord(value: unknown): VersionRecord {
+  return versionRecordSchema.parse(value) as VersionRecord
+}
+
+function parseStoredWorkingCopyRecord(value: unknown): WorkingCopyRecord {
+  return workingCopyRecordSchema.parse(value) as WorkingCopyRecord
+}
+
 const devdDataArchiveSchema = z.object({
   schema: z.literal("tuckmark.devd-data-archive.v1"),
   exportedAt: z.string().min(1),
@@ -862,24 +874,24 @@ export class DevdDataService {
       const root = path.join(this.dataDir, "templates", safeSegment(templateId))
       const template = await readJsonIfPresent<unknown>(path.join(root, "template.json"))
       if (!template) continue
-      templates.push(templateRecordSchema.parse(template))
+      templates.push(parseStoredTemplateRecord(template))
       for (const versionPath of await listJsonFiles(path.join(root, "versions"))) {
-        versions.push(versionRecordSchema.parse(JSON.parse(await readFile(versionPath, "utf8"))))
+        versions.push(parseStoredVersionRecord(JSON.parse(await readFile(versionPath, "utf8"))))
       }
       const workingCopy = await readJsonIfPresent<unknown>(path.join(root, "working-copy.json"))
-      if (workingCopy) workingCopies.push(workingCopyRecordSchema.parse(workingCopy))
+      if (workingCopy) workingCopies.push(parseStoredWorkingCopyRecord(workingCopy))
     }
     for (const kind of ["scratch", "preset-template"] as const) {
       for (const filePath of await listJsonFiles(path.join(this.dataDir, "drafts", kind))) {
         workingCopies.push(
-          workingCopyRecordSchema.parse(JSON.parse(await readFile(filePath, "utf8")))
+          parseStoredWorkingCopyRecord(JSON.parse(await readFile(filePath, "utf8")))
         )
       }
     }
     const legacyScratch = await readJsonIfPresent<unknown>(
       path.join(this.dataDir, "drafts", "scratch.json")
     )
-    if (legacyScratch) workingCopies.push(workingCopyRecordSchema.parse(legacyScratch))
+    if (legacyScratch) workingCopies.push(parseStoredWorkingCopyRecord(legacyScratch))
     const settings =
       (await readJsonIfPresent<Record<string, any>>(
         path.join(this.dataDir, "settings", "app-settings.json")

@@ -359,7 +359,8 @@ export function normalizeDraftDocument(document: CanvasDraftDocument): CanvasDra
     normalizedFields,
     source
   )
-  const hasRecommendedUse = Object.hasOwn(unitDocument, "recommendedUse")
+  const hasRecommendedUse =
+    Object.getOwnPropertyDescriptor(unitDocument, "recommendedUse") !== undefined
   return {
     version: unitDocument.version,
     unit: "mm",

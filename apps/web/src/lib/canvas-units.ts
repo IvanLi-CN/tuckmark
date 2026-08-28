@@ -231,7 +231,8 @@ export function scaleTemplateElementGeometry(
 }
 
 function canonicalizeCanvasDraftDocument(document: CanvasDraftDocument): CanvasDraftDocument {
-  const hasRecommendedUse = Object.hasOwn(document, "recommendedUse")
+  const hasRecommendedUse =
+    Object.getOwnPropertyDescriptor(document, "recommendedUse") !== undefined
   return {
     version: document.version,
     unit: "mm",
