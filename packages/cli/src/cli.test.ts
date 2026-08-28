@@ -543,6 +543,118 @@ describe("cli smoke", () => {
     })
   })
 
+  it("updates metadata for persisted Data Matrix working copies without legacy leakage", {
+    timeout: 20_000,
+  }, async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "tuckmark-cli-datamatrix-template-"))
+    tempDirs.push(dataDir)
+
+    await withDevd(dataDir, async (instance) => {
+      await runCliOn(instance, ["template", "import", "--file", dataMatrixFixturePath])
+      const workingCopyPath = path.join(
+        dataDir,
+        "templates",
+        "rack-tag-datamatrix",
+        "working-copy.json"
+      )
+      const persistedWorkingCopy = JSON.parse(await readFile(workingCopyPath, "utf8")) as {
+        draft: { elements: Array<Record<string, unknown>> }
+      }
+      persistedWorkingCopy.draft.elements.push({
+        id: "legacy-auto-width-text",
+        kind: "text",
+        x: 2.5,
+        y: 2.75,
+        width: null,
+        height: 4.25,
+        fontSize: 4.25,
+        fontFamily: "inter",
+        lineHeight: 1.2,
+        fontWeight: "normal",
+        align: "left",
+        verticalAlign: "top",
+        stretchX: false,
+        stretchY: false,
+        autoWrap: true,
+        verticalText: false,
+        value: "Rack",
+        rotation: 0,
+        meta: { name: "Legacy text", visible: true, locked: false },
+      })
+      await writeFile(workingCopyPath, JSON.stringify(persistedWorkingCopy))
+
+      const persistedDataMatrix = persistedWorkingCopy.draft.elements.find(
+        (element) => element.kind === "datamatrix"
+      )
+      expect(persistedDataMatrix?.size).toBeTypeOf("number")
+      expect(persistedDataMatrix).not.toHaveProperty("width")
+
+      const updated = JSON.parse(
+        (
+          await runCliOn(instance, [
+            "template",
+            "update",
+            "--id",
+            "rack-tag-datamatrix",
+            "--recommended-use",
+            "rack inventory",
+          ])
+        ).stdout
+      ) as { template: { id: string; recommendedUse?: string } }
+      expect(updated.template).toMatchObject({
+        id: "rack-tag-datamatrix",
+        recommendedUse: "rack inventory",
+      })
+      expect(updated.template).not.toHaveProperty("recommendedUses")
+
+      const shown = JSON.parse(
+        (await runCliOn(instance, ["template", "show", "--id", "rack-tag-datamatrix"])).stdout
+      ) as {
+        template: {
+          recommendedUse?: string
+          document: {
+            recommendedUse?: string
+            elements: Array<{ kind: string; size?: number; width?: number }>
+          }
+        }
+      }
+      const dataMatrix = shown.template.document.elements.find(
+        (element) => element.kind === "datamatrix"
+      )
+
+      expect(shown.template.recommendedUse).toBe("rack inventory")
+      expect(shown.template).not.toHaveProperty("recommendedUses")
+      expect(shown.template.document.recommendedUse).toBe("rack inventory")
+      expect(shown.template.document).not.toHaveProperty("recommendedUses")
+      expect(dataMatrix).toMatchObject({ kind: "datamatrix" })
+      expect(dataMatrix?.size).toBeTypeOf("number")
+      expect(dataMatrix).not.toHaveProperty("width")
+
+      const storedWorkingCopy = JSON.parse(
+        await readFile(
+          path.join(dataDir, "templates", "rack-tag-datamatrix", "working-copy.json"),
+          "utf8"
+        )
+      ) as { draft: { recommendedUse?: string; recommendedUses?: unknown } }
+      expect(storedWorkingCopy.draft.recommendedUse).toBe("rack inventory")
+      expect(storedWorkingCopy.draft).not.toHaveProperty("recommendedUses")
+
+      await writeFile(
+        workingCopyPath,
+        JSON.stringify({
+          ...storedWorkingCopy,
+          draft: { ...storedWorkingCopy.draft, recommendedUses: ["rack inventory"] },
+        })
+      )
+      const rejected = await runCliWithEnvAllowFailure(
+        ["template", "list", "--source", "user", "--instance", instance],
+        {}
+      )
+      expect(rejected).toMatchObject({ failed: true, code: 1 })
+      expect(rejected.stderr).toContain("recommendedUses")
+    })
+  })
+
   it("round-trips editable templates with conflict-safe history operations", {
     timeout: 45_000,
   }, async () => {

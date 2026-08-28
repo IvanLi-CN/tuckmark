@@ -389,6 +389,129 @@ describe("DevdDataService", () => {
     }
   })
 
+  it("reads legacy null-width text only from persisted working copies", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const source = { kind: "scratch" as const, presetId: "legacy-datamatrix" }
+    const document = {
+      ...mockDocument("Legacy Data Matrix"),
+      id: "legacy-datamatrix",
+      presetId: "legacy-datamatrix",
+      source,
+      elements: [
+        {
+          id: "legacy-datamatrix-symbol",
+          kind: "datamatrix",
+          x: 30,
+          y: 2,
+          size: 12,
+          value: "TM-0001",
+          rotation: 0,
+          meta: { name: "Data Matrix", visible: true, locked: false },
+        },
+        {
+          id: "legacy-auto-width-text",
+          kind: "text",
+          x: 2.5,
+          y: 2.75,
+          width: null,
+          height: 4.25,
+          fontSize: 4.25,
+          fontFamily: "inter",
+          lineHeight: 1.2,
+          fontWeight: "normal",
+          align: "left",
+          verticalAlign: "top",
+          stretchX: false,
+          stretchY: false,
+          autoWrap: true,
+          verticalText: false,
+          value: "Rack",
+          rotation: 0,
+          meta: { name: "Legacy text", visible: true, locked: false },
+        },
+      ],
+    }
+    const filePath = path.join(root, "drafts", "scratch", "legacy-datamatrix.json")
+    await mkdir(path.dirname(filePath), { recursive: true })
+    await writeFile(
+      filePath,
+      JSON.stringify({
+        sourceKey: "scratch:legacy-datamatrix",
+        source,
+        draft: document,
+        updatedAt: "2026-08-28T00:00:00.000Z",
+      })
+    )
+
+    const snapshot = await service.runtimeSnapshot()
+    expect(snapshot.workingCopies[0]?.draft.elements[0]).toMatchObject({
+      kind: "datamatrix",
+      size: 12,
+    })
+    expect(snapshot.workingCopies[0]?.draft.elements[0]).not.toHaveProperty("width")
+    expect(snapshot.workingCopies[0]?.draft.elements[1]).toMatchObject({
+      kind: "text",
+      width: null,
+    })
+
+    await expect(
+      service.mutateRuntime({
+        command: "replace-working-copy",
+        expectedRevision: 0,
+        args: { source, document },
+      })
+    ).rejects.toThrow(/expected number, received null/)
+  })
+
+  it("keeps persisted version documents strict about text width", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
+    cleanupPaths.push(root)
+    const service = new DevdDataService(root)
+    const created = await service.mutateRuntime({
+      command: "save-template",
+      expectedRevision: 0,
+      args: { name: "Strict version", document: mockDocument("Strict version") },
+    })
+    const versionPath = path.join(
+      root,
+      "templates",
+      created.data.template.id as string,
+      "versions",
+      `${created.data.version.id as string}.json`
+    )
+    const version = JSON.parse(await readFile(versionPath, "utf8")) as {
+      document: { elements: unknown[] }
+    }
+    version.document.elements = [
+      {
+        id: "legacy-auto-width-text",
+        kind: "text",
+        x: 2.5,
+        y: 2.75,
+        width: null,
+        height: 4.25,
+        fontSize: 4.25,
+        fontFamily: "inter",
+        lineHeight: 1.2,
+        fontWeight: "normal",
+        align: "left",
+        verticalAlign: "top",
+        stretchX: false,
+        stretchY: false,
+        autoWrap: true,
+        verticalText: false,
+        value: "Rack",
+        rotation: 0,
+        meta: { name: "Legacy text", visible: true, locked: false },
+      },
+    ]
+    await writeFile(versionPath, JSON.stringify(version))
+
+    await expect(service.runtimeSnapshot()).rejects.toThrow(/expected number, received null/)
+  })
+
   it("allows an explicit empty suggested-use value to clear existing metadata", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tuckmark-devd-data-"))
     cleanupPaths.push(root)
