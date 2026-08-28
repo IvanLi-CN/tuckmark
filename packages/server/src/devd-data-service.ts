@@ -205,35 +205,36 @@ const canvasDraftElementBaseShape = {
     })
     .optional(),
 }
+const canvasDraftTextElementShape = {
+  ...canvasDraftElementBaseShape,
+  kind: z.literal("text"),
+  x: finiteNumberSchema,
+  y: finiteNumberSchema,
+  width: finiteNumberSchema,
+  height: finiteNumberSchema,
+  fontSize: finiteNumberSchema,
+  fontFamily: z.string().min(1),
+  lineHeight: finiteNumberSchema,
+  fontWeight: z.enum(["normal", "bold"]),
+  align: z.string(),
+  justifyAlign: z.string().optional(),
+  verticalAlign: z.string(),
+  stretchXGrow: z.boolean().optional(),
+  stretchXShrink: z.boolean().optional(),
+  stretchYGrow: z.boolean().optional(),
+  stretchYShrink: z.boolean().optional(),
+  stretchX: z.boolean().optional(),
+  stretchY: z.boolean().optional(),
+  autoWrap: z.boolean(),
+  adaptiveFontSize: z.boolean().optional(),
+  verticalText: z.boolean(),
+  value: z.string(),
+  maxLines: finiteNumberSchema.optional(),
+  rotation: finiteNumberSchema.optional(),
+}
 const canvasDraftElementSchema = z
   .discriminatedUnion("kind", [
-    z.object({
-      ...canvasDraftElementBaseShape,
-      kind: z.literal("text"),
-      x: finiteNumberSchema,
-      y: finiteNumberSchema,
-      width: finiteNumberSchema,
-      height: finiteNumberSchema,
-      fontSize: finiteNumberSchema,
-      fontFamily: z.string().min(1),
-      lineHeight: finiteNumberSchema,
-      fontWeight: z.enum(["normal", "bold"]),
-      align: z.string(),
-      justifyAlign: z.string().optional(),
-      verticalAlign: z.string(),
-      stretchXGrow: z.boolean().optional(),
-      stretchXShrink: z.boolean().optional(),
-      stretchYGrow: z.boolean().optional(),
-      stretchYShrink: z.boolean().optional(),
-      stretchX: z.boolean().optional(),
-      stretchY: z.boolean().optional(),
-      autoWrap: z.boolean(),
-      adaptiveFontSize: z.boolean().optional(),
-      verticalText: z.boolean(),
-      value: z.string(),
-      maxLines: finiteNumberSchema.optional(),
-      rotation: finiteNumberSchema.optional(),
-    }),
+    z.object(canvasDraftTextElementShape),
     z.object({
       ...canvasDraftElementBaseShape,
       kind: z.literal("rect"),
@@ -326,6 +327,20 @@ const canvasDraftElementSchema = z
       })
     }
   })
+
+// Older durable text layers can carry a null width alongside legacy stretch flags.
+// Keep that allowance scoped to durable reads; mutation payloads remain numeric-only.
+const storedLegacyTextElementSchema = z.object({
+  ...canvasDraftTextElementShape,
+  width: z.null(),
+  stretchX: z.boolean(),
+  stretchY: z.boolean(),
+})
+const storedCanvasDraftElementSchema = z.union([
+  canvasDraftElementSchema,
+  storedLegacyTextElementSchema,
+])
+
 const canvasDraftDocumentSchema = z
   .object({
     version: z.literal(1),
@@ -361,6 +376,9 @@ const canvasDraftDocumentSchema = z
     }),
   })
   .strict()
+const storedCanvasDraftDocumentSchema = canvasDraftDocumentSchema
+  .extend({ elements: z.array(storedCanvasDraftElementSchema) })
+  .strict()
 
 const versionRecordSchema = z.object({
   id: z.string().min(1),
@@ -381,17 +399,23 @@ const workingCopyRecordSchema = z.object({
   updatedAt: z.string().min(1),
   baseVersionId: z.string().optional(),
 })
+const storedVersionRecordSchema = versionRecordSchema.extend({
+  document: storedCanvasDraftDocumentSchema,
+})
+const storedWorkingCopyRecordSchema = workingCopyRecordSchema.extend({
+  draft: storedCanvasDraftDocumentSchema,
+})
 
 function parseStoredTemplateRecord(value: unknown): TemplateRecord {
   return templateRecordSchema.parse(value) as TemplateRecord
 }
 
 function parseStoredVersionRecord(value: unknown): VersionRecord {
-  return versionRecordSchema.parse(value) as VersionRecord
+  return storedVersionRecordSchema.parse(value) as VersionRecord
 }
 
 function parseStoredWorkingCopyRecord(value: unknown): WorkingCopyRecord {
-  return workingCopyRecordSchema.parse(value) as WorkingCopyRecord
+  return storedWorkingCopyRecordSchema.parse(value) as WorkingCopyRecord
 }
 
 const devdDataArchiveSchema = z.object({
