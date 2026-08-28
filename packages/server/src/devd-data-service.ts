@@ -376,7 +376,7 @@ const canvasDraftDocumentSchema = z
     }),
   })
   .strict()
-const storedCanvasDraftDocumentSchema = canvasDraftDocumentSchema
+const storedWorkingCopyDraftSchema = canvasDraftDocumentSchema
   .extend({ elements: z.array(storedCanvasDraftElementSchema) })
   .strict()
 
@@ -399,11 +399,8 @@ const workingCopyRecordSchema = z.object({
   updatedAt: z.string().min(1),
   baseVersionId: z.string().optional(),
 })
-const storedVersionRecordSchema = versionRecordSchema.extend({
-  document: storedCanvasDraftDocumentSchema,
-})
 const storedWorkingCopyRecordSchema = workingCopyRecordSchema.extend({
-  draft: storedCanvasDraftDocumentSchema,
+  draft: storedWorkingCopyDraftSchema,
 })
 
 function parseStoredTemplateRecord(value: unknown): TemplateRecord {
@@ -411,7 +408,7 @@ function parseStoredTemplateRecord(value: unknown): TemplateRecord {
 }
 
 function parseStoredVersionRecord(value: unknown): VersionRecord {
-  return storedVersionRecordSchema.parse(value) as VersionRecord
+  return versionRecordSchema.parse(value) as VersionRecord
 }
 
 function parseStoredWorkingCopyRecord(value: unknown): WorkingCopyRecord {

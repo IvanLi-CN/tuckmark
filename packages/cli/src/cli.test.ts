@@ -551,67 +551,42 @@ describe("cli smoke", () => {
 
     await withDevd(dataDir, async (instance) => {
       await runCliOn(instance, ["template", "import", "--file", dataMatrixFixturePath])
-      const legacyScratchPath = path.join(dataDir, "drafts", "scratch", "legacy-datamatrix.json")
-      const legacyScratch = {
-        sourceKey: "scratch:legacy-datamatrix",
-        source: { kind: "scratch", presetId: "legacy-datamatrix" },
-        updatedAt: "2026-08-28T00:00:00.000Z",
-        draft: {
-          version: 1,
-          unit: "mm",
-          id: "legacy-datamatrix",
-          presetId: "legacy-datamatrix",
-          name: "Legacy Data Matrix",
-          source: { kind: "scratch", presetId: "legacy-datamatrix" },
-          width: 48,
-          height: 20,
-          fields: [],
-          elements: [
-            {
-              id: "legacy-datamatrix-symbol",
-              kind: "datamatrix",
-              x: 30,
-              y: 2,
-              size: 12,
-              value: "TM-0001",
-              rotation: 0,
-              meta: { name: "Data Matrix", visible: true, locked: false },
-            },
-            {
-              id: "legacy-auto-width-text",
-              kind: "text",
-              x: 2.5,
-              y: 2.75,
-              width: null,
-              height: 4.25,
-              fontSize: 4.25,
-              fontFamily: "inter",
-              lineHeight: 1.2,
-              fontWeight: "normal",
-              align: "left",
-              verticalAlign: "top",
-              stretchX: false,
-              stretchY: false,
-              autoWrap: true,
-              verticalText: false,
-              value: "Rack",
-              rotation: 0,
-              meta: { name: "Legacy text", visible: true, locked: false },
-            },
-          ],
-          editor: { gridEnabled: true, gridSize: 1, snapEnabled: true, snapStep: 1 },
-        },
+      const workingCopyPath = path.join(
+        dataDir,
+        "templates",
+        "rack-tag-datamatrix",
+        "working-copy.json"
+      )
+      const persistedWorkingCopy = JSON.parse(await readFile(workingCopyPath, "utf8")) as {
+        draft: { elements: Array<Record<string, unknown>> }
       }
-      await mkdir(path.dirname(legacyScratchPath), { recursive: true })
-      await writeFile(legacyScratchPath, JSON.stringify(legacyScratch))
+      persistedWorkingCopy.draft.elements.push({
+        id: "legacy-auto-width-text",
+        kind: "text",
+        x: 2.5,
+        y: 2.75,
+        width: null,
+        height: 4.25,
+        fontSize: 4.25,
+        fontFamily: "inter",
+        lineHeight: 1.2,
+        fontWeight: "normal",
+        align: "left",
+        verticalAlign: "top",
+        stretchX: false,
+        stretchY: false,
+        autoWrap: true,
+        verticalText: false,
+        value: "Rack",
+        rotation: 0,
+        meta: { name: "Legacy text", visible: true, locked: false },
+      })
+      await writeFile(workingCopyPath, JSON.stringify(persistedWorkingCopy))
 
-      const persistedScratch = JSON.parse(await readFile(legacyScratchPath, "utf8")) as {
-        draft: { elements: Array<{ kind: string; size?: number; width?: number }> }
-      }
-      const persistedDataMatrix = persistedScratch.draft.elements.find(
+      const persistedDataMatrix = persistedWorkingCopy.draft.elements.find(
         (element) => element.kind === "datamatrix"
       )
-      expect(persistedDataMatrix?.size).toBe(12)
+      expect(persistedDataMatrix?.size).toBeTypeOf("number")
       expect(persistedDataMatrix).not.toHaveProperty("width")
 
       const updated = JSON.parse(
@@ -665,10 +640,10 @@ describe("cli smoke", () => {
       expect(storedWorkingCopy.draft).not.toHaveProperty("recommendedUses")
 
       await writeFile(
-        legacyScratchPath,
+        workingCopyPath,
         JSON.stringify({
-          ...legacyScratch,
-          draft: { ...legacyScratch.draft, recommendedUses: ["rack inventory"] },
+          ...storedWorkingCopy,
+          draft: { ...storedWorkingCopy.draft, recommendedUses: ["rack inventory"] },
         })
       )
       const rejected = await runCliWithEnvAllowFailure(
