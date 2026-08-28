@@ -2,26 +2,17 @@
 
 import fs from "node:fs/promises"
 
+import { createMergedReleaseSnapshot } from "./release-intent.mjs"
+
 const event = JSON.parse(await fs.readFile(process.env.GITHUB_EVENT_PATH, "utf8"))
-const labels = (event.pull_request?.labels ?? []).map((label) => label.name)
-const mergedAt = event.pull_request?.merged_at ?? new Date().toISOString()
-const mergeSha = event.pull_request?.merge_commit_sha ?? process.env.GITHUB_SHA
-const prNumber = event.pull_request?.number
-
-const typeLabel = labels.find((label) => label.startsWith("type:")) ?? "type:none"
-const channelLabel = labels.find((label) => label.startsWith("channel:")) ?? null
-
-const releaseIntent = {
-  version: 2,
-  merge_sha: mergeSha,
-  pr_number: prNumber,
-  merged_at: mergedAt,
-  type_label: typeLabel,
-  channel_label: channelLabel,
-  release_pending: typeLabel !== "type:none",
-  state: typeLabel === "type:none" ? "skipped" : "next-pending",
-  artifacts: ["four platform host-tools archives", "SHA256SUMS"],
+const pullRequest = event.pull_request
+if (!pullRequest?.merged) {
+  throw new Error("release snapshots require a merged pull_request event")
 }
+
+const labels = (pullRequest.labels ?? []).map((label) => label.name)
+const releaseIntent = createMergedReleaseSnapshot({ pullRequest, labels })
+const mergeSha = releaseIntent.merge_sha
 
 const artifactName = `release-intent-host-tools-${releaseIntent.state}-${mergeSha}`
 

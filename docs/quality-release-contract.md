@@ -48,7 +48,17 @@ Owner-facing footer metadata follows one contract:
 
 ## Release Contract
 
-`ci-main` writes a durable `release-intent.json` snapshot after merge.
+`ci-main` writes an immutable `release-intent.json` snapshot after merge. Its
+release type and channel come only from the pull request's merge-time labels.
+Manual `ci-main` dispatch is not a mechanism for recovering or recomputing
+those labels.
+
+A skipped `type:none` snapshot may be promoted only by the dedicated manual
+post-merge promotion workflow. Promotion requires the exact merged PR, merge
+SHA, source CI run, source artifact, legal non-`none` type/channel, an actor,
+and a reason. It validates that the PR and source snapshot match, writes a new
+immutable intent with a stable `intent_id`, and never edits the original
+snapshot or its labels.
 
 `release.yml` consumes that snapshot, checks out the snapshot `merge_sha`, and
 publishes:
@@ -59,6 +69,12 @@ publishes:
 Published GitHub Releases must include human-readable release notes generated
 from the verified release snapshot and its merged pull request context. A
 single-line placeholder body is not a valid release.
+
+Manual release and backfill require the exact source workflow run, artifact,
+and `intent_id`; they never select the newest pending artifact by scanning
+history. Before building or publishing, the workflow rejects an intent that is
+already recorded in an existing GitHub Release, so replay cannot create a
+second version for the same intent.
 
 The generated release notes follow one contract:
 
@@ -112,10 +128,10 @@ Released host tools never ship an installer script. Installation is a manual,
 documented copy into stable unversioned paths; the release workflow does not
 change user PATH settings.
 
-`workflow_dispatch` can backfill pending host-tools snapshots without
-recomputing release intent from a PR head. Snapshots created for the retired
-workspace-bundle release contract are intentionally not eligible for this
-binary release path.
+`workflow_dispatch` can backfill an explicitly identified pending host-tools
+intent without recomputing release intent from a PR head. Snapshots created for
+the retired workspace-bundle release contract are intentionally not eligible
+for this binary release path.
 
 ## Drift Policy
 

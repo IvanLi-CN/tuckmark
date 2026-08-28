@@ -134,6 +134,13 @@
   body. Pages always injects `TUCKMARK_BUILD_REF`, and tagged deploys also
   inject `TUCKMARK_APP_VERSION`, so the browser-static footer metadata and its
   OctoRill deep link match the release/build that triggered the redeploy.
+- `.github/workflows/release-intent-promotion.yml` promotes only an exact,
+  immutable skipped CI snapshot after validating its merged PR and merge SHA.
+  It records the source run/artifact, legal type/channel, actor, reason, and
+  stable intent identifier in a new artifact; it never changes the source
+  snapshot. Manual release dispatch names that resulting intent artifact and intent
+  exactly, and release prepare rejects an intent already recorded in a GitHub
+  Release before the platform builds begin.
 - `.github/workflows/release.yml` builds host tools on four native runners,
   verifies each isolated archive layout, publishes only the four host-tools
   archives plus `SHA256SUMS`, then downloads the Linux asset for a final

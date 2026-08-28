@@ -121,3 +121,9 @@ surface after host-tools smoke accepted an SPA fallback page as `sw.js`. DEVD
 now ships a real root-scoped PWA shell with surface-aware URLs; its worker
 keeps business data, API, SSE, and printing network-bound while browser-static
 Pages retains its relative deployment contract.
+
+The release recovery path now keeps merge-time labels authoritative while
+allowing a skipped snapshot to receive a separately audited post-merge intent.
+Backfill selects that intent by its exact workflow run, artifact, and stable
+identifier rather than searching pending history, and published release notes
+provide the durable replay record that blocks duplicate publication.

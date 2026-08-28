@@ -10,6 +10,10 @@ Tuckmark must converge on a Bun-first product repository contract with a formal
 Web surface, a browser-static owner runtime, a durable PR-label release pipeline,
 and a reproducible worktree bootstrap path.
 
+## Related ADRs
+
+- None
+
 ## Requirements
 
 ### Product and naming
@@ -96,8 +100,16 @@ and a reproducible worktree bootstrap path.
 ### Delivery
 
 - PR labels are the release-intent source of truth.
-- Mainline release uses a durable host-tools snapshot and supports backfill
-  within that host-tools release contract.
+- Mainline release uses immutable host-tools snapshots. `ci-main` derives them
+  only from merge-time PR labels; manual dispatch does not recompute labels.
+- An audited post-merge promotion may derive one releasable intent from an
+  exact skipped `type:none` snapshot when its merged PR, merge SHA, source run,
+  source artifact, legal non-`none` type/channel, actor, and reason agree.
+  Promotion never mutates the original snapshot or PR labels.
+- Manual release/backfill consumes only an exact source run, artifact, and
+  stable intent identifier. It must not infer a target by scanning historical
+  pending artifacts, and an intent already recorded in a published release is
+  rejected before a second version can be created.
 - Published GitHub Releases must include human-readable release notes generated
   from the verified release snapshot and merged PR metadata.
 - Published GitHub Releases contain only four platform-native host-tools
@@ -176,6 +188,10 @@ and a reproducible worktree bootstrap path.
 - `version.json` stays aligned with the active Pages build metadata and is not
   precached by the service worker.
 - Release can publish stable and preview host-tools archives from durable snapshots
+- A skipped snapshot can be promoted only with matching merged-PR/source-snapshot
+  evidence and a legal patch/minor/major plus stable/preview intent
+- Manual release rejects missing or mismatched run/artifact/intent selection and
+  rejects an already-published intent before host-tool builds start
 - Release notes show the merged PR title/link, release type/channel, merge SHA,
   and published bundles instead of a one-line placeholder body
 - Pages redeploys after release publication display the published release tag
