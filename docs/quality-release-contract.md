@@ -60,7 +60,10 @@ and a reason. It validates that the PR and source snapshot match, writes a new
 immutable intent with a stable `intent_id`, and never edits the original
 snapshot or its labels.
 
-`release.yml` consumes that snapshot, checks out the snapshot `merge_sha`, and
+`release.yml` consumes that snapshot with release orchestration checked out
+from the trusted workflow revision on `main`. It retains full history so a
+historical snapshot `merge_sha` can be tagged, while host-tools builds, the
+release plan, and the published tag remain bound to that snapshot target. It
 publishes:
 
 - `stable`: `vX.Y.Z`
