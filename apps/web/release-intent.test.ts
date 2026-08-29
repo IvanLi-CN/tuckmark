@@ -274,7 +274,7 @@ describe("release-intent promotion", () => {
       name: "v0.12.0-preview.7",
       isDraft: true,
       isPrerelease: true,
-      targetCommitish: mergeSha,
+      targetCommitish: "main",
       body: `Release metadata\n${releaseIntentPublicationMarker(intent.intent_id)}`,
       assets: [],
     }
@@ -285,7 +285,6 @@ describe("release-intent promotion", () => {
         version: release.tagName,
         intentId: intent.intent_id,
         channelLabel: "channel:preview",
-        mergeSha,
       })
     ).toEqual(release)
     expect(() =>
@@ -294,7 +293,6 @@ describe("release-intent promotion", () => {
         version: release.tagName,
         intentId: intent.intent_id,
         channelLabel: "channel:preview",
-        mergeSha,
       })
     ).toThrow("not a recoverable draft")
     expect(() =>
@@ -303,25 +301,14 @@ describe("release-intent promotion", () => {
         version: release.tagName,
         intentId: intent.intent_id,
         channelLabel: "channel:preview",
-        mergeSha,
       })
     ).toThrow("not bound")
-    expect(() =>
-      assertRecoverableReleaseDraft({
-        release: { ...release, targetCommitish: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
-        version: release.tagName,
-        intentId: intent.intent_id,
-        channelLabel: "channel:preview",
-        mergeSha,
-      })
-    ).toThrow("target")
     expect(() =>
       assertRecoverableReleaseDraft({
         release: { ...release, assets: [{ name: "unexpected.txt" }] },
         version: release.tagName,
         intentId: intent.intent_id,
         channelLabel: "channel:preview",
-        mergeSha,
       })
     ).toThrow("unexpected assets")
     expect(() =>
@@ -330,7 +317,6 @@ describe("release-intent promotion", () => {
         version: release.tagName,
         intentId: intent.intent_id,
         channelLabel: "channel:preview",
-        mergeSha,
       })
     ).toThrow("complete expected asset set")
     const completeRelease = { ...release, assets: releaseAssetNames.map((name) => ({ name })) }
@@ -340,7 +326,6 @@ describe("release-intent promotion", () => {
         version: release.tagName,
         intentId: intent.intent_id,
         channelLabel: "channel:preview",
-        mergeSha,
       })
     ).toEqual(completeRelease)
   })

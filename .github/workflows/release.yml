@@ -238,7 +238,7 @@ jobs:
       - name: Create or resume release draft
         run: |
           VERSION="${{ needs.prepare.outputs.release_version }}"
-          if gh release view "$VERSION" --json tagName,targetCommitish,name,isDraft,isPrerelease,body,assets > work/release/release-draft.json 2>/dev/null; then
+          if gh release view "$VERSION" --json tagName,name,isDraft,isPrerelease,body,assets > work/release/release-draft.json 2>/dev/null; then
             node .github/scripts/release-draft.mjs
             exit 0
           fi
@@ -257,7 +257,6 @@ jobs:
           TUCKMARK_RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
           TUCKMARK_RELEASE_INTENT_ID: ${{ needs.prepare.outputs.intent_id }}
           TUCKMARK_RELEASE_CHANNEL_LABEL: ${{ needs.prepare.outputs.channel_label }}
-          TUCKMARK_RELEASE_MERGE_SHA: ${{ needs.prepare.outputs.merge_sha }}
       - name: Upload release assets
         run: >-
           gh release upload "${{ needs.prepare.outputs.release_version }}"
@@ -266,14 +265,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - name: Verify draft release assets
         run: |
-          gh release view "${{ needs.prepare.outputs.release_version }}" --json tagName,targetCommitish,name,isDraft,isPrerelease,body,assets > work/release/release-draft.json
+          gh release view "${{ needs.prepare.outputs.release_version }}" --json tagName,name,isDraft,isPrerelease,body,assets > work/release/release-draft.json
           node .github/scripts/release-draft.mjs verify-assets
         env:
           GH_TOKEN: ${{ github.token }}
           TUCKMARK_RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
           TUCKMARK_RELEASE_INTENT_ID: ${{ needs.prepare.outputs.intent_id }}
           TUCKMARK_RELEASE_CHANNEL_LABEL: ${{ needs.prepare.outputs.channel_label }}
-          TUCKMARK_RELEASE_MERGE_SHA: ${{ needs.prepare.outputs.merge_sha }}
       - name: Publish GitHub Release
         run: gh release edit "${{ needs.prepare.outputs.release_version }}" --draft=false
         env:

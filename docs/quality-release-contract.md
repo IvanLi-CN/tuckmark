@@ -79,10 +79,11 @@ create a tag from an arbitrary default-branch or historical target.
 
 The workflow creates a draft bound to that tag and the release intent marker,
 uploads or re-uploads its assets, and publishes it only after the uploads
-succeed. A retry may resume only that exact draft at the snapshot merge SHA; it
-may contain only a subset of the five expected asset names before upload and
-must contain exactly that complete set before publication. A published,
-mismatched, or extra-asset release is rejected.
+succeed. A retry may resume only that exact draft after the reservation tag has
+been verified at the snapshot merge SHA; it may contain only a subset of the
+five expected asset names before upload and must contain exactly that complete
+set before publication. A published, mismatched, or extra-asset release is
+rejected.
 
 Published GitHub Releases must include human-readable release notes generated
 from the verified release snapshot and its merged pull request context. A

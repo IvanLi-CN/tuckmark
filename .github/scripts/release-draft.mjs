@@ -25,13 +25,7 @@ function assertReleaseAssetsAreExpected(assets) {
   }
 }
 
-export function assertRecoverableReleaseDraft({
-  release,
-  version,
-  intentId,
-  channelLabel,
-  mergeSha,
-}) {
+export function assertRecoverableReleaseDraft({ release, version, intentId, channelLabel }) {
   if (!release || typeof release !== "object") {
     throw new Error("release draft must be an object")
   }
@@ -40,9 +34,6 @@ export function assertRecoverableReleaseDraft({
   }
   if (release.name !== version) {
     throw new Error(`release draft title must be ${version}`)
-  }
-  if (release.targetCommitish !== mergeSha) {
-    throw new Error(`release draft target must be ${mergeSha}`)
   }
   if (release.isDraft !== true) {
     throw new Error(`release ${version} already exists and is not a recoverable draft`)
@@ -90,7 +81,6 @@ async function main() {
     version: requireEnvironment("TUCKMARK_RELEASE_VERSION"),
     intentId: requireEnvironment("TUCKMARK_RELEASE_INTENT_ID"),
     channelLabel: requireEnvironment("TUCKMARK_RELEASE_CHANNEL_LABEL"),
-    mergeSha: requireEnvironment("TUCKMARK_RELEASE_MERGE_SHA"),
   }
   const result =
     mode === "recover"
