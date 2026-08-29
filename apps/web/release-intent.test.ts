@@ -410,3 +410,19 @@ describe("release-intent replay protection", () => {
     )
   })
 })
+
+describe("release publish orchestration", () => {
+  it("keeps release controls on the workflow revision while fetching historical targets", async () => {
+    const workflowPath = fileURLToPath(
+      new URL("../../.github/workflows/release.yml", import.meta.url)
+    )
+    const workflow = await readFile(workflowPath, "utf8")
+    const publishStart = workflow.indexOf("\n  publish:\n")
+    const smokeStart = workflow.indexOf("\n  post-publish-smoke:\n")
+    const publishJob = workflow.slice(publishStart, smokeStart)
+
+    expect(publishJob).toContain(`ref: \${{ github.sha }}`)
+    expect(publishJob).toContain("fetch-depth: 0")
+    expect(publishJob).not.toContain(`ref: \${{ needs.prepare.outputs.merge_sha }}`)
+  })
+})

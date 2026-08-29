@@ -177,8 +177,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.prepare.outputs.merge_sha }}
-          fetch-depth: 1
+          # Keep release controls at the trusted workflow revision. Build outputs and
+          # the reservation tag remain explicitly bound to the historical target SHA.
+          ref: ${{ github.sha }}
+          fetch-depth: 0
       - name: Restore release context
         uses: actions/download-artifact@v4
         with:
