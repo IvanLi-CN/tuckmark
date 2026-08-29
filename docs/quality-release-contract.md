@@ -69,6 +69,10 @@ publishes:
 - `stable`: `vX.Y.Z`
 - `preview`: `vX.Y.Z-preview.<n>`
 
+A valid `type:none` snapshot completes release preparation as a successful
+no-op. It must not reserve a tag, build host tools, publish a release, or
+refresh Pages release metadata.
+
 Before creating a GitHub Release, publication creates an annotated tag at the
 exact snapshot `merge_sha`. The tag carries the release intent marker and is a
 recoverable reservation: a failed publish retry must rediscover the same marker,

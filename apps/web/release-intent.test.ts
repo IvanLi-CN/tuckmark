@@ -16,6 +16,7 @@ import {
   promoteSkippedReleaseSnapshot,
   releaseIntentArtifactName,
 } from "../../.github/scripts/release-intent.mjs"
+import { classifyReleaseIntent } from "../../.github/scripts/release-intent-gate.mjs"
 import { buildReleasePlan } from "../../.github/scripts/release-plan.mjs"
 import {
   assertReleaseIntentNotPublished,
@@ -397,6 +398,30 @@ describe("release-intent replay protection", () => {
 })
 
 describe("release publish orchestration", () => {
+  it("treats a skipped type:none snapshot as a successful release no-op", async () => {
+    expect(classifyReleaseIntent(skippedSnapshot())).toEqual({
+      intentId: "",
+      shouldPublish: false,
+    })
+    expect(classifyReleaseIntent(promote())).toEqual({
+      intentId: `pr-88-${mergeSha}-patch-preview`,
+      shouldPublish: true,
+    })
+    expect(() => classifyReleaseIntent(skippedSnapshot(), "pr-88-test")).toThrow("releasable")
+
+    const workflowPath = fileURLToPath(
+      new URL("../../.github/workflows/release.yml", import.meta.url)
+    )
+    const workflow = await readFile(workflowPath, "utf8")
+    const prepareStart = workflow.indexOf("\n  prepare:\n")
+    const buildStart = workflow.indexOf("\n  build-host-tools:\n")
+    const prepareJob = workflow.slice(prepareStart, buildStart)
+
+    expect(prepareJob).toContain("id: intent-gate")
+    expect(prepareJob).toContain("if: steps.intent-gate.outputs.should_publish == 'true'")
+    expect(prepareJob).toContain(`should_publish: \${{ steps.intent-gate.outputs.should_publish }}`)
+  })
+
   it("keeps release controls on the workflow revision while fetching historical targets", async () => {
     const workflowPath = fileURLToPath(
       new URL("../../.github/workflows/release.yml", import.meta.url)
