@@ -66,6 +66,21 @@ publishes:
 - `stable`: `vX.Y.Z`
 - `preview`: `vX.Y.Z-preview.<n>`
 
+Before creating a GitHub Release, publication creates an annotated tag at the
+exact snapshot `merge_sha`. The tag carries the release intent marker and is a
+recoverable reservation: a failed publish retry must rediscover the same marker,
+target SHA, and version rather than advancing the release train. A pre-existing
+tag that is not reserved for the exact intent and SHA is rejected. Release
+creation verifies that this remote tag already exists and never asks GitHub to
+create a tag from an arbitrary default-branch or historical target.
+
+The workflow creates a draft bound to that tag and the release intent marker,
+uploads or re-uploads its assets, and publishes it only after the uploads
+succeed. A retry may resume only that exact draft at the snapshot merge SHA; it
+may contain only a subset of the five expected asset names before upload and
+must contain exactly that complete set before publication. A published,
+mismatched, or extra-asset release is rejected.
+
 Published GitHub Releases must include human-readable release notes generated
 from the verified release snapshot and its merged pull request context. A
 single-line placeholder body is not a valid release.

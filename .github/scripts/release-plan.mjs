@@ -100,27 +100,44 @@ function readNextPreviewNumber(tagNames, stableVersion) {
   return (previewTags.at(-1) ?? 0) + 1
 }
 
-export function buildReleasePlan(snapshot, tagNames, packageVersion) {
+export function buildReleasePlan(
+  snapshot,
+  tagNames,
+  packageVersion,
+  { reservedReleaseVersion = "" } = {}
+) {
   assertReleasableReleaseIntent(snapshot)
-  const latestStableVersion = readLatestStableVersion(tagNames, packageVersion)
+  const normalizedReservation = reservedReleaseVersion.trim()
+  if (normalizedReservation && !tagNames.includes(normalizedReservation)) {
+    throw new Error(`reserved release tag ${normalizedReservation} is not available locally`)
+  }
+  const effectiveTagNames = normalizedReservation
+    ? tagNames.filter((tagName) => tagName !== normalizedReservation)
+    : tagNames
+  const latestStableVersion = readLatestStableVersion(effectiveTagNames, packageVersion)
   const requestedVersion = bumpVersion(latestStableVersion, snapshot.type_label)
-  const currentTrainVersion = readCurrentTrainVersion(tagNames, latestStableVersion)
+  const currentTrainVersion = readCurrentTrainVersion(effectiveTagNames, latestStableVersion)
   const nextTrainVersion =
     compareVersion(requestedVersion, currentTrainVersion) > 0
       ? requestedVersion
       : currentTrainVersion
   const stableVersion = formatVersion(nextTrainVersion)
-  const previewNumber = readNextPreviewNumber(tagNames, stableVersion)
+  const previewNumber = readNextPreviewNumber(effectiveTagNames, stableVersion)
   const previewVersion = `${stableVersion}-preview.${previewNumber}`
-  const releaseVersion =
+  const plannedReleaseVersion =
     snapshot.channel_label === "channel:preview" ? previewVersion : stableVersion
+  if (normalizedReservation && normalizedReservation !== plannedReleaseVersion) {
+    throw new Error(
+      `reserved release tag ${normalizedReservation} does not match the planned version ${plannedReleaseVersion}`
+    )
+  }
 
   return {
     ...snapshot,
     requested_version: formatVersion(requestedVersion),
     current_train_version: formatVersion(currentTrainVersion),
     stable_version: stableVersion,
-    release_version: releaseVersion,
+    release_version: normalizedReservation || plannedReleaseVersion,
   }
 }
 
@@ -128,7 +145,9 @@ async function main() {
   const snapshotPath = process.argv[2] ?? "work/release/release-intent.json"
   const snapshot = JSON.parse(await fs.readFile(snapshotPath, "utf8"))
   const packageJson = JSON.parse(await fs.readFile("package.json", "utf8"))
-  const plan = buildReleasePlan(snapshot, readGitTags(), packageJson.version)
+  const plan = buildReleasePlan(snapshot, readGitTags(), packageJson.version, {
+    reservedReleaseVersion: process.env.TUCKMARK_RESERVED_RELEASE_VERSION ?? "",
+  })
   const expectedIntentId = process.env.TUCKMARK_RELEASE_INTENT_ID?.trim() ?? ""
   assertReleasableReleaseIntent(plan, expectedIntentId)
 
